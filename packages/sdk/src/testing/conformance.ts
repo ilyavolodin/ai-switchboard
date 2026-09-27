@@ -198,40 +198,38 @@ export function sourceConformanceChecks(
         },
         {
           name: 'parse is deterministic and its events validate against the declared schemas',
-          run: () => {
+          run: async () => {
             const src = make();
             assert(typeof src.parse === 'function', 'push sources must implement parse');
             for (const d of push.deliveries) {
-              const a = src.parse(d);
-              const b = make().parse?.(d);
+              const a = await src.parse(d);
+              const b = await make().parse?.(d);
               assert(
                 JSON.stringify(a) === JSON.stringify(b),
                 'parse returned different events for the same delivery',
               );
               checkEvents(a, specs(), d.body, secrets);
             }
-            return Promise.resolve();
           },
         },
         {
           name: 'dedupeKey is stable for the same change and differs across changes',
-          run: () => {
+          run: async () => {
             const src = make();
-            const keys = (r: RawRequest): string[] =>
-              (src.parse?.(r) ?? []).map((e) => e.dedupeKey).sort();
+            const keys = async (r: RawRequest): Promise<string[]> =>
+              ((await src.parse?.(r)) ?? []).map((e) => e.dedupeKey).sort();
             const [s1, s2] = push.sameChange;
-            const k1 = keys(s1);
+            const k1 = await keys(s1);
             assert(k1.length > 0, 'sameChange fixture produced no events');
             assert(
-              JSON.stringify(k1) === JSON.stringify(keys(s2)),
+              JSON.stringify(k1) === JSON.stringify(await keys(s2)),
               'same change produced different dedupe keys',
             );
             const [d1, d2] = push.differentChange;
-            const a = keys(d1);
-            const b = keys(d2);
+            const a = await keys(d1);
+            const b = await keys(d2);
             assert(a.length > 0 && b.length > 0, 'differentChange fixtures produced no events');
             assert(!a.some((k) => b.includes(k)), 'different changes share a dedupe key');
-            return Promise.resolve();
           },
         },
       );

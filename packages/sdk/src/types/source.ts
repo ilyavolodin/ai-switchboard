@@ -27,8 +27,11 @@ export interface Source {
   // push
   /** Signature / shared-secret check. Runs before `parse`; never trust an unverified body. */
   verify?(req: RawRequest): VerifyResult;
-  /** One delivery → 0..n events. Must be pure and deterministic. */
-  parse?(req: RawRequest): EventDraft[];
+  /**
+   * One delivery → 0..n events. Must be pure and deterministic (no I/O, no clock). May be async
+   * because JSONata evaluation is.
+   */
+  parse?(req: RawRequest): EventDraft[] | Promise<EventDraft[]>;
   /** Register the webhook in the external system via its API. */
   provision?(webhookUrl: string): Promise<ProvisionResult>;
   // pull
