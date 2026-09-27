@@ -11,6 +11,7 @@ import type {
   GlobalSettings,
   Page,
   Reasoned,
+  SetPasswordRequest,
   UpdateSettingsRequest,
   UpdateUserRequest,
   UserDTO,
@@ -78,6 +79,27 @@ export function useRevokeUserSessions() {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'POST',
     path: (v) => `/users/${seg(v.id)}/sessions/revoke`,
+    invalidate: [qk.users],
+  });
+}
+
+/**
+ * PUT /users/:id/password (admin) — set or reset a temporary password. The user must change it at
+ * their next password sign-in, and every session they have ends.
+ */
+export function useSetUserPassword() {
+  return useApiMutation<SetPasswordRequest & { id: string }, UserDTO>({
+    method: 'PUT',
+    path: (v) => `/users/${seg(v.id)}/password`,
+    invalidate: [qk.users],
+  });
+}
+
+/** DELETE /users/:id/password (admin) — the account becomes OIDC-only. */
+export function useRemoveUserPassword() {
+  return useApiMutation<Reasoned & { id: string }, UserDTO>({
+    method: 'DELETE',
+    path: (v) => `/users/${seg(v.id)}/password`,
     invalidate: [qk.users],
   });
 }

@@ -3,6 +3,8 @@ import type {
   InspectPluginRequest,
   InspectPluginResponse,
   InstallPluginRequest,
+  PluginSearchKind,
+  PluginSearchResponse,
   PluginSummary,
   Reasoned,
 } from '@ai-switchboard/core/contract';
@@ -30,6 +32,21 @@ export function useCatalogue() {
   });
 }
 
+/**
+ * GET /plugins/search — npm packages that follow the plugin naming convention. A 503 means the
+ * registry is unreachable (offline installs); the error says so.
+ */
+export function usePluginSearch(kind: PluginSearchKind | undefined, q: string, enabled = true) {
+  return useQuery({
+    queryKey: qk.plugins.search(kind ?? 'all', q),
+    queryFn: ({ signal }) =>
+      apiFetch<PluginSearchResponse>('/plugins/search', { signal, query: { kind, q } }),
+    enabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 /** POST /plugins/inspect — read a package's manifest before installing (no side effect). */
 export function useInspectPlugin() {
   return useMutation<InspectPluginResponse, Error, InspectPluginRequest>({
@@ -38,12 +55,15 @@ export function useInspectPlugin() {
   });
 }
 
-/** POST /plugins — install; applies on restart. */
+/**
+ * POST /plugins — install and load it now (`pendingRestart` when another version of it is
+ * already loaded). Its types appear in the add-instance pickers straight away.
+ */
 export function useInstallPlugin() {
   return useApiMutation<InstallPluginRequest, PluginSummary>({
     method: 'POST',
     path: () => '/plugins',
-    invalidate: [qk.plugins.all],
+    invalidate: [qk.plugins.all, ['plugin-types']],
   });
 }
 

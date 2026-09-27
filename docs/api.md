@@ -21,14 +21,34 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 
 ## Auth
 
-| Method | Path                  | Body → Response                    | Role                            |
-| ------ | --------------------- | ---------------------------------- | ------------------------------- |
-| GET    | `/auth/me`            | → `MeResponse`                     | any (user null when signed out) |
-| POST   | `/auth/login`         | `LocalLoginRequest` → `MeResponse` | — (local mode only)             |
-| GET    | `/auth/oidc/start`    | redirect to issuer                 | —                               |
-| GET    | `/auth/oidc/callback` | redirect to `/` (or `/no-access`)  | —                               |
-| POST   | `/auth/logout`        | → 204                              | any                             |
-| GET    | `/auth/whoami`        | → `{ actor }` (the audit identity) | viewer                          |
+| Method | Path                  | Body → Response                        | Role                            |
+| ------ | --------------------- | -------------------------------------- | ------------------------------- |
+| GET    | `/auth/me`            | → `MeResponse`                         | any (user null when signed out) |
+| POST   | `/auth/login`         | `LocalLoginRequest` → `MeResponse`     | — (always, alongside OIDC)      |
+| POST   | `/auth/password`      | `ChangePasswordRequest` → `MeResponse` | viewer (own, session only)      |
+| GET    | `/auth/oidc/start`    | redirect to issuer                     | — (OIDC configured)             |
+| GET    | `/auth/oidc/callback` | redirect to `/` (or `/no-access`)      | —                               |
+| POST   | `/auth/logout`        | → 204                                  | any                             |
+| GET    | `/auth/whoami`        | → `{ actor }` (the audit identity)     | viewer                          |
+
+Local password sign-in works whether or not OIDC is configured; an account can have a password,
+an OIDC identity, or both. `MeResponse.oidcIssuer` names the issuer for the "Sign in with …"
+button.
+
+**Temporary passwords.** A password an admin sets (on create or with `PUT /users/:id/password`),
+and the generated bootstrap password, is temporary (`mustChangePassword`). A session that signed
+in with it is restricted: every `/api` route except `GET /auth/me`, `POST /auth/password`,
+`POST /auth/logout` (and the sign-in routes) answers 403 `{ error: 'password_change_required' }`
+until the password changes, and `MeResponse.mustChangePassword` is true. An OIDC session or an API
+token of the same user is not restricted.
+
+**`POST /auth/password`** checks `currentPassword` (a wrong one is 400 `invalid_credentials`,
+throttled like sign-in), applies the password rules (400 with the rule in `message`), stores the
+new password, clears `mustChangePassword` and signs out the user's other sessions. It carries no
+`reason`; the audit row reads "changed own password". An account without a password gets 409.
+
+**Password rules:** at least 12 characters (at most 256), not the account's email (or the part
+before `@`), not one of the most common passwords.
 
 ## Board and status
 
@@ -128,17 +148,46 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 
 ## Plugins
 
-| Method | Path                 | Body → Response                                               | Role   |
-| ------ | -------------------- | ------------------------------------------------------------- | ------ |
-| GET    | `/plugins`           | → `PluginSummary[]`                                           | viewer |
-| GET    | `/plugins/catalogue` | → `CatalogueEntry[]`                                          | viewer |
-| POST   | `/plugins/inspect`   | `InspectPluginRequest` → `InspectPluginResponse`              | admin  |
-| POST   | `/plugins`           | `InstallPluginRequest` → `PluginSummary` (applies on restart) | admin  |
-| DELETE | `/plugins/:name`     | `Reasoned` → 204 (applies on restart)                         | admin  |
+| Method | Path                       | Body → Response                                                                          | Role   |
+| ------ | -------------------------- | ---------------------------------------------------------------------------------------- | ------ |
+| GET    | `/plugins`                 | → `PluginSummary[]`                                                                      | viewer |
+| GET    | `/plugins/catalogue`       | → `CatalogueEntry[]`                                                                     | viewer |
+| GET    | `/plugins/search?kind=&q=` | → `PluginSearchResponse`; 503 `registry_unavailable` when the registry cannot be reached | viewer |
+| POST   | `/plugins/inspect`         | `InspectPluginRequest` → `InspectPluginResponse`                                         | admin  |
+| POST   | `/plugins`                 | `InstallPluginRequest` → 201 `PluginSummary` (loaded at once; see below)                 | admin  |
+| DELETE | `/plugins/:name`           | `Reasoned` → 204 (the loaded code is unloaded on the next restart)                       | admin  |
+
+`GET /plugins/search` queries the npm registry (`SWITCHBOARD_NPM_REGISTRY`) for the union of the
+name prefix (`ai-switchboard-{kind}`) and `keywords:switchboard-plugin`, and keeps only packages
+that follow the naming convention — `ai-switchboard-{kind}-{name}`,
+`@scope/ai-switchboard-{kind}-{name}` or `@ai-switchboard/{kind}-{name}` — where `kind` is
+`source`, `executor`, `notifier` or `secrets` (the optional `kind` query parameter). Each result
+carries the latest version, description, publisher, publish date, links, weekly downloads when the
+registry reports them, `installed`/`installedVersion` on this replica, and `reviewed` (in the
+catalogue).
+
+`POST /plugins` installs the package into `$SWITCHBOARD_HOME/plugins`, pins it in
+`plugins.lock.json`, records the spec and version in the `plugins` row and loads it into the
+running process: its types are usable immediately. Every other replica installs and loads the
+recorded plugin at boot and on a sync pass every `SWITCHBOARD_PLUGIN_SYNC_SECONDS` (60 s).
+`pendingRestart: true` means another version of the plugin is already loaded (an upgrade); the new
+version loads on the next restart. `DELETE /plugins/:name` uninstalls it here and removes the record
+so replicas stop installing it.
 
 ## Notifiers and secret providers
 
 `/notifiers` and `/secret-providers` share one shape: `GET` → `InstanceSummary[]`, `POST` `CreateInstanceRequest`, `PUT /:id` `UpdateInstanceRequest`, `POST /:id/enable` `EnableRequest`, `POST /:id/reload`, `DELETE /:id`, and for notifiers `POST /:id/test` (`Reasoned`). Role: admin for writes.
+
+`GET /secret-providers/:id/secrets` → `ProviderSecretsResponse` (role: **admin**; secret names map
+out the credentials a deployment holds, so viewers and operators get 403). It returns secret
+**names only, never values**: each listed secret has its `secret://<provider>/<name>` `ref`, the
+provider's optional `description` and `updatedAt`, and `usedBy` (every source, executor,
+notifier, secret provider and process whose settings or document reference it, with the field
+path). `missing` holds references to this provider whose names the provider does not list
+(broken references). The core keeps only `name`, `description` and `updatedAt` from what the
+plugin's `SecretProvider.list()` returns. A provider type without `list()`, a disabled or
+stopped provider, or a failed or timed-out (10 s) listing gives `available: false` with an
+`error`, and empty `secrets` and `missing`.
 
 ## Settings, users, tokens, audit, export
 
@@ -151,6 +200,8 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 | PUT    | `/users/:id`                           | `UpdateUserRequest` → `UserDTO`                    | admin                |
 | DELETE | `/users/:id`                           | `Reasoned` → 204                                   | admin                |
 | POST   | `/users/:id/sessions/revoke`           | `Reasoned` → 204 (signs the user out everywhere)   | admin                |
+| PUT    | `/users/:id/password`                  | `SetPasswordRequest` → `UserDTO` (temporary)       | admin (not own)      |
+| DELETE | `/users/:id/password`                  | `Reasoned` → `UserDTO` (OIDC-only from now on)     | admin (OIDC on)      |
 | GET    | `/tokens`                              | → `ApiTokenDTO[]` (own)                            | viewer               |
 | POST   | `/tokens`                              | `CreateApiTokenRequest` → `CreateApiTokenResponse` | viewer (role ≤ own)  |
 | DELETE | `/tokens/:id`                          | `Reasoned` → 204                                   | viewer (own) / admin |
@@ -158,3 +209,11 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 | GET    | `/export`                              | → YAML (`text/yaml`)                               | operator             |
 | POST   | `/apply`                               | `ApplyRequest` → `ApplyResponse`                   | admin                |
 | GET    | `/about`                               | → `AboutResponse`                                  | viewer               |
+
+`POST /users` takes an optional `password`: the user signs in with it once and must change it.
+`PUT /users/:id/password` sets or resets a temporary password (the rules above apply), marks the
+account `mustChangePassword` and signs the user out everywhere; an admin changes their own
+password with `POST /auth/password` instead (409 here). `DELETE /users/:id/password` removes the
+password and signs the user out; it is refused (409) while OIDC is not configured, since the
+account could no longer sign in. The audit rows record `password` / `password_reset` with
+`temporary`, `set` or `removed`, never the value.

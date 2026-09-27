@@ -13,11 +13,12 @@ import {
 import { pluginStatusLabel } from '../../domain/labels.js';
 import {
   inspectPlugin,
-  installPlugin,
   isPluginInstallError,
   listInstalled,
   removePlugin,
 } from '../../plugins/install.js';
+import { isPluginNameKind, PLUGIN_NAME_KINDS, pluginKindOf } from '../../plugins/naming.js';
+import { isRegistryUnavailableError, searchRegistry } from '../../plugins/search.js';
 import { recordAudit } from '../../services/audit.js';
 import type { ApiContext } from '../context.js';
 import type {
@@ -26,10 +27,11 @@ import type {
   InspectPluginResponse,
   InstallPluginRequest,
   PluginKind,
+  PluginSearchResponse,
   PluginSummary,
   PluginTypeDTO,
 } from '../contract.js';
-import { badRequest, notFound, requireReason, unprocessable } from '../errors.js';
+import { badRequest, HttpError, notFound, requireReason, unprocessable } from '../errors.js';
 
 /** The project's reviewed plugins. Reference plugins ship in the image. */
 export const CATALOGUE: Omit<CatalogueEntry, 'installed'>[] = [
@@ -93,6 +95,15 @@ export const CATALOGUE: Omit<CatalogueEntry, 'installed'>[] = [
     package: '@ai-switchboard/executor-github-actions',
     displayName: 'GitHub Actions',
     description: 'workflow_dispatch with billable-minute usage.',
+    kinds: ['executor'],
+    reviewed: true,
+    latestVersion: '1.0.0',
+  },
+  {
+    package: '@ai-switchboard/executor-log',
+    displayName: 'Log (testing)',
+    description:
+      'Logs every invocation and simulates outcomes, delays and a meter — for trying processes out.',
     kinds: ['executor'],
     reviewed: true,
     latestVersion: '1.0.0',
@@ -225,7 +236,7 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
     return out;
   };
 
-  app.get('/api/v1/plugins', viewer, async (): Promise<PluginSummary[]> => {
+  const pluginSummaries = async (): Promise<PluginSummary[]> => {
     const [rows, types, counts, lock] = await Promise.all([
       db.select().from(plugins).orderBy(plugins.displayName),
       db.select().from(pluginTypes),
@@ -234,14 +245,20 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
     ]);
     const summaries: PluginSummary[] = rows.map((p) => {
       const locked = lock.find((l) => l.name === p.name);
+      const pendingRestart =
+        p.origin === 'installed' && locked !== undefined && locked.version !== p.version;
       return {
         name: p.name,
         pluginId: p.pluginId,
         displayName: p.displayName,
         version: p.version,
         status: p.status as PluginSummary['status'],
-        statusLabel: pluginStatusLabel(p.status),
-        statusMessage: p.statusMessage,
+        statusLabel: pendingRestart
+          ? { tone: 'warn', label: 'restart to apply' }
+          : pluginStatusLabel(p.status),
+        statusMessage: pendingRestart
+          ? `Version ${locked.version} is installed; restart to load it.`
+          : p.statusMessage,
         origin: p.origin as PluginSummary['origin'],
         sdkRange: p.sdkRange,
         capabilities: p.capabilities,
@@ -256,10 +273,10 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
         errorCount: p.errorCount,
         invalidEventCount: p.invalidEventCount,
         integrity: locked?.integrity ?? p.integrity,
-        pendingRestart: p.origin === 'installed' && locked?.version !== p.version,
+        pendingRestart,
       };
     });
-    // Installed since the last start: in the lockfile, not yet loaded.
+    // Added with the CLI since the last start: in the lockfile, not yet loaded.
     for (const l of lock) {
       if (rows.some((r) => r.name === l.name)) continue;
       summaries.push({
@@ -281,7 +298,65 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
       });
     }
     return summaries;
-  });
+  };
+
+  app.get('/api/v1/plugins', viewer, async (): Promise<PluginSummary[]> => pluginSummaries());
+
+  app.get<{ Querystring: { kind?: string; q?: string } }>(
+    '/api/v1/plugins/search',
+    viewer,
+    async (req): Promise<PluginSearchResponse> => {
+      const { kind, q } = req.query;
+      if (kind !== undefined && kind !== '' && !isPluginNameKind(kind))
+        throw badRequest(`kind must be one of ${PLUGIN_NAME_KINDS.join(', ')}.`);
+      const query = (q ?? '').trim().slice(0, 100);
+      let found;
+      try {
+        found = await searchRegistry({
+          registry: config.npmRegistry,
+          ...(isPluginNameKind(kind) ? { kind } : {}),
+          q: query,
+          ...(ctx.registryFetch ? { fetch: ctx.registryFetch } : {}),
+        });
+      } catch (err) {
+        if (isRegistryUnavailableError(err))
+          throw new HttpError(
+            503,
+            'registry_unavailable',
+            `${err.message} Search needs the registry; install by name with Add plugin, or bake plugins into the image for offline installs.`,
+          );
+        throw err;
+      }
+      const [rows, lock] = await Promise.all([
+        db
+          .select({ name: plugins.name, version: plugins.version, status: plugins.status })
+          .from(plugins),
+        listInstalled(config.home).catch(() => []),
+      ]);
+      const reviewed = new Set(CATALOGUE.map((c) => c.package));
+      return {
+        registry: config.npmRegistry,
+        results: found.map((pkg) => {
+          const row = rows.find((r) => r.name === pkg.name && r.status === 'loaded');
+          const locked = lock.find((l) => l.name === pkg.name);
+          const installedVersion = locked?.version ?? row?.version ?? null;
+          return {
+            package: pkg.name,
+            kind: pluginKindOf(pkg.kind),
+            version: pkg.version,
+            description: pkg.description,
+            publisher: pkg.publisher,
+            date: pkg.date,
+            links: pkg.links,
+            weeklyDownloads: pkg.weeklyDownloads,
+            installed: installedVersion !== null,
+            installedVersion,
+            reviewed: reviewed.has(pkg.name),
+          };
+        }),
+      };
+    },
+  );
 
   app.get('/api/v1/plugins/catalogue', viewer, async (): Promise<CatalogueEntry[]> => {
     const rows = await db.select({ name: plugins.name, status: plugins.status }).from(plugins);
@@ -319,43 +394,36 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
   app.post<{ Body: InstallPluginRequest }>('/api/v1/plugins', admin, async (req, reply) => {
     const reason = requireReason(req.body);
     const spec = specOf(req.body.package, req.body.range);
-    const result = await installPlugin({
-      home: config.home,
-      spec,
-      ...(runNpm ? { runNpm } : {}),
-      now: () => clock.now(),
-    }).catch(installError);
+    const {
+      install: result,
+      plugin,
+      pendingRestart,
+    } = await ctx.host.installAndLoad(spec, runNpm).catch(installError);
     await recordAudit(db, {
       actor: actorOf(req),
       scope: 'plugin',
       targetId: result.name,
       field: 'installed',
       after: {
+        spec,
         version: result.version,
         integrity: result.integrity,
         capabilities: result.capabilities ?? null,
+        loaded: plugin.status === 'loaded' && !pendingRestart,
       },
       reason,
       at: clock.now(),
     });
-    const summary: PluginSummary = {
-      name: result.name,
-      pluginId: result.plugin?.pluginId ?? result.name,
-      displayName: result.plugin?.displayName ?? result.name,
-      version: result.version,
-      status: 'unavailable',
-      statusLabel: { tone: 'warn', label: 'restart to load' },
-      statusMessage: result.warnings.join('; ') || 'Installed; restart Switchboard to load it.',
-      origin: 'installed',
-      sdkRange: result.sdkRange,
-      capabilities: result.capabilities ?? {},
-      types: (result.plugin?.types ?? []).map((t) => ({ ...t, instanceCount: 0 })),
-      errorCount: 0,
-      invalidEventCount: 0,
-      integrity: result.integrity,
-      pendingRestart: true,
-    };
-    return reply.code(201).send(summary);
+    const summary = (await pluginSummaries()).find((p) => p.name === result.name);
+    if (!summary) throw new HttpError(500, 'internal', 'the installed plugin has no row');
+    const warnings = [...result.warnings, ...(plugin.message ? [plugin.message] : [])];
+    return reply.code(201).send({
+      ...summary,
+      pendingRestart,
+      ...(warnings.length > 0 && !pendingRestart && plugin.status !== 'loaded'
+        ? { statusMessage: warnings.join('; ') }
+        : {}),
+    } satisfies PluginSummary);
   });
 
   app.delete<{ Params: { name: string }; Body: { reason: string } }>(
@@ -366,20 +434,24 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
       const name = decodeURIComponent(req.params.name);
       const [row] = await db.select().from(plugins).where(eq(plugins.name, name));
       const installed = (await listInstalled(config.home)).find((l) => l.name === name);
-      if (!installed) {
+      if (!installed && !row?.installSpec) {
         if (row?.origin === 'baked')
           throw unprocessable(`${name} is baked into the image; rebuild without it to remove it.`);
         throw notFound('Installed plugin');
       }
-      await removePlugin({ home: config.home, name, ...(runNpm ? { runNpm } : {}) }).catch(
-        installError,
-      );
+      if (installed) {
+        await removePlugin({ home: config.home, name, ...(runNpm ? { runNpm } : {}) }).catch(
+          installError,
+        );
+      }
+      // Replicas stop installing it; the loaded code stays in memory until the next restart.
+      await ctx.host.forgetInstall(name);
       await recordAudit(db, {
         actor: actorOf(req),
         scope: 'plugin',
         targetId: name,
         field: 'removed',
-        before: { version: installed.version },
+        before: { version: installed?.version ?? row?.installVersion ?? row?.version ?? null },
         reason,
         at: clock.now(),
       });

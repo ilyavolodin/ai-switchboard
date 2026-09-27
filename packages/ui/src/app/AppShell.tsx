@@ -15,8 +15,8 @@ import { TopBar } from './TopBar.js';
 
 /**
  * The layout route for every signed-in screen: resolves the session from `GET /auth/me`
- * (signed out → `/login`), then renders the rail, top bar, the evaluation-mode banner and the
- * screen. Installs the global keyboard shortcuts.
+ * (signed out → `/login`; a temporary password → `/change-password`), then renders the rail, top
+ * bar, the evaluation-mode banner and the screen. Installs the global keyboard shortcuts.
  */
 export function AppShell() {
   const me = useMe();
@@ -68,13 +68,25 @@ export function AppShell() {
     );
   }
 
+  if (me.data.mustChangePassword) {
+    return (
+      <Navigate
+        to="/change-password"
+        replace
+        state={{ from: `${location.pathname}${location.search}` }}
+      />
+    );
+  }
+
   const session: Session = {
     user: me.data.user,
     authMode: me.data.authMode,
     oidcConfigured: me.data.oidcConfigured,
     evaluation: me.data.evaluation,
   };
-  const evaluation = session.evaluation || !session.oidcConfigured;
+  // Local accounts are first-class, so a missing issuer alone is no warning: only an evaluation
+  // install (the Compose quick start) without OIDC shows the banner.
+  const evaluation = session.evaluation && !session.oidcConfigured;
 
   return (
     <SessionContext.Provider value={session}>
@@ -102,7 +114,8 @@ export function AppShell() {
                 ) : undefined
               }
             >
-              Anyone with the local password can sign in. Set an OIDC issuer before real use.
+              This is an evaluation install that signs in with local passwords only. Set an OIDC
+              issuer for single sign-on before real use.
             </Banner>
           )}
           <main id="main" className={styles.content} tabIndex={-1}>

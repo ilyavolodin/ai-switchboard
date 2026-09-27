@@ -79,6 +79,14 @@ export const plugins = pgTable('plugins', {
   statusMessage: text('status_message'),
   /** `baked` (image node_modules) or `installed` ($SWITCHBOARD_HOME/plugins). */
   origin: text('origin').notNull().default('baked'),
+  /**
+   * Set when an admin installed the plugin through the API: the npm spec and exact version every
+   * replica converges on (installing it into its own $SWITCHBOARD_HOME). Null for baked plugins
+   * and for plugins added with the CLI.
+   */
+  installSpec: text('install_spec'),
+  installVersion: text('install_version'),
+  installedAt: ts('installed_at'),
   errorCount: integer('error_count').notNull().default(0),
   invalidEventCount: integer('invalid_event_count').notNull().default(0),
   loadedAt: ts('loaded_at'),
@@ -489,8 +497,10 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   role: text('role').$type<Role>().notNull(),
   oidcSubject: text('oidc_subject'),
-  /** scrypt hash for the bootstrap local admin only. */
+  /** scrypt hash (`auth/crypto.ts`) for a local password; null for an OIDC-only account. */
   passwordHash: text('password_hash'),
+  /** Set when an admin (or bootstrap) chose the password; the next password sign-in must change it. */
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
   lastLoginAt: ts('last_login_at'),
   createdAt: createdAt(),
 });
@@ -502,6 +512,8 @@ export const sessions = pgTable(
     tokenHash: text('token_hash').primaryKey(),
     userId: uuid('user_id').notNull(),
     expiresAt: ts('expires_at').notNull(),
+    /** How the session signed in; a `password` session is restricted while the user must change it. */
+    method: text('method').$type<'password' | 'oidc'>().notNull().default('password'),
     createdAt: createdAt(),
     lastSeenAt: ts('last_seen_at').notNull().defaultNow(),
   },

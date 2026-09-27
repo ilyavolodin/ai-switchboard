@@ -3,15 +3,25 @@ import { QueryCache, QueryClient } from '@tanstack/react-query';
 import { isApiRequestError } from '../api/client.js';
 import { qk } from '../api/keys.js';
 
+/** A 401, or the 403 a session with a temporary password gets: the shell re-checks `/auth/me`. */
+function needsSessionCheck(error: unknown): boolean {
+  if (!isApiRequestError(error)) return false;
+  return (
+    error.status === 401 ||
+    (error.status === 403 && error.body.error === 'password_change_required')
+  );
+}
+
 /**
- * The app's QueryClient. Client errors (4xx) are not retried; a 401 from any query re-checks
- * `/auth/me` so the shell can send the person to sign in.
+ * The app's QueryClient. Client errors (4xx) are not retried; a 401 (or a pending password change)
+ * from any query re-checks `/auth/me` so the shell can send the person to sign in or to
+ * `/change-password`.
  */
 export function createQueryClient(): QueryClient {
   const client: QueryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (isApiRequestError(error) && error.status === 401 && query.queryKey[0] !== qk.me[0]) {
+        if (needsSessionCheck(error) && query.queryKey[0] !== qk.me[0]) {
           void client.invalidateQueries({ queryKey: qk.me });
         }
       },

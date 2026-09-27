@@ -12,7 +12,7 @@ test kit). The SDK is the contract and follows semver strictly.
 
 ```json
 {
-  "name": "@acme/switchboard-source-deploys",
+  "name": "@acme/ai-switchboard-source-deploys",
   "version": "1.2.0",
   "type": "module",
   "keywords": ["switchboard-plugin"],
@@ -37,6 +37,23 @@ test kit). The SDK is the contract and follows semver strictly.
 | `peerDependencies`   | `@ai-switchboard/sdk`, so the plugin shares the host's copy                                                 |
 
 `switchboard plugins add` refuses a package without a `switchboard` field.
+
+### Naming
+
+Name the package so admins can find it from the UI (Plugins → Browse npm, and "Find more on npm"
+in Add source / Add executor):
+
+| Pattern                               | Example                                                    |
+| ------------------------------------- | ---------------------------------------------------------- |
+| `ai-switchboard-{kind}-{name}`        | `ai-switchboard-source-jira`                               |
+| `@scope/ai-switchboard-{kind}-{name}` | `@acme/ai-switchboard-executor-n8n`                        |
+| `@ai-switchboard/{kind}-{name}`       | `@ai-switchboard/source-webhook` (the project's own scope) |
+
+`{kind}` is `source`, `executor`, `notifier` or `secrets` — the kind of types the package mainly
+contributes. The pattern is `PLUGIN_NAME_PATTERN` in `packages/core/src/plugins/naming.ts`. Search
+unions the name prefix with `keywords:switchboard-plugin` and shows only packages that match the
+pattern, so keep the keyword too. A package with another name still installs by name with Add
+plugin or `switchboard plugins add`.
 
 ## definePlugin
 
@@ -68,14 +85,15 @@ targets and inputs that validate.
 Every type declares `settingsSchema` as JSON Schema draft 2020-12. The UI renders the form from
 it, so a plugin never ships UI code. A few annotations steer the form:
 
-| Annotation      | Effect                                                                                                                                         |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `x-secret`      | The field holds a secret. The UI takes a `secret://<provider>/<name>` reference, never shows a value, and the core resolves it before `create` |
-| `x-widget`      | Picks a control: `expression` (JSONata editor), `textarea`, `json`                                                                             |
-| `x-group`       | Groups fields under a heading                                                                                                                  |
-| `x-order`       | Orders fields within a group                                                                                                                   |
-| `x-placeholder` | Placeholder text                                                                                                                               |
-| `x-help`        | Longer help shown under the field                                                                                                              |
+| Annotation      | Effect                                                                                                                                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `x-secret`      | The field holds a secret. The UI takes a `secret://<provider>/<name>` reference, never shows a value, and the core resolves it before `create`                                                                           |
+| `x-widget`      | Picks a control: `expression` (JSONata editor), `textarea`, `json`                                                                                                                                                       |
+| `x-group`       | Groups fields under a heading                                                                                                                                                                                            |
+| `x-order`       | Orders fields within a group                                                                                                                                                                                             |
+| `x-placeholder` | Placeholder text                                                                                                                                                                                                         |
+| `x-help`        | Longer help shown under the field                                                                                                                                                                                        |
+| `x-warning`     | `{ when: <JSON Schema>, message }` (or a list): a red warning under the field while its value matches `when`, e.g. `{ when: { const: 'none' }, message: 'Anyone who knows the URL can send events — evaluation only.' }` |
 
 ```typescript
 import type { JSONSchema } from '@ai-switchboard/sdk';
@@ -103,6 +121,35 @@ export const settingsSchema: JSONSchema = {
   },
 };
 ```
+
+### Conditional fields
+
+The form honours `if`/`then`/`else` (at the top level or inside `allOf`) and `dependentRequired`
+for the current value. A property named by a branch — in its `properties` (a `true` schema is
+enough) or its `required` — is shown only while a branch that names it applies, and the active
+branches' `required` lists mark fields required. Properties no branch names are always shown.
+The generic webhook uses this so `verification: none` hides the secret and header fields:
+
+```typescript
+allOf: [
+  {
+    if: { properties: { verification: { const: 'hmac' } } },
+    then: {
+      required: ['secret'],
+      properties: { secret: { minLength: 1 }, signatureHeader: true, algorithm: true },
+    },
+  },
+  {
+    if: { properties: { verification: { const: 'shared_secret' } } },
+    then: { required: ['secret'], properties: { secret: { minLength: 1 }, sharedSecretHeader: true } },
+  },
+],
+```
+
+A source type with `allowsUnauthenticated: true` may build an instance without `verify`; the core
+then marks that instance unauthenticated (the red chip) — it is derived from the built instance, so
+the plugin's own setting is the one switch. Flag that setting with `x-warning`. Types without
+`allowsUnauthenticated` are refused when they build a push instance without `verify`.
 
 `create(settings, ctx)` receives the settings with every `secret://` reference already resolved
 to its value. Validate them (`compileSchema` / `validateAgainst` from the SDK) and throw a named
@@ -610,7 +657,12 @@ interface SecretProviderType {
   create(
     settings: Settings,
     ctx: PluginContext,
-  ): { resolve(name: string): Promise<string>; health(): Promise<Health> };
+  ): {
+    resolve(name: string): Promise<string>;
+    health(): Promise<Health>;
+    /** Optional (SDK 1.1+). Names only, never values. */
+    list?(): Promise<{ name: string; description?: string; updatedAt?: string }[]>;
+  };
 }
 ```
 
@@ -618,6 +670,12 @@ A notifier receives `{ on, severity, title, text, url?, fields? }` for process n
 (`ok`, `error`, `held`, `throttled`) and system alerts (`system`). A secret provider resolves
 `secret://<provider instance name>/<name>` to a value, and throws when the secret does not exist.
 Values it returns live only in the built instance's memory.
+
+A provider that can enumerate what it holds implements the optional `list()` (SDK 1.1). It returns
+secret **names only**: never a value, and nothing derived from one (no length, prefix, hash or
+preview) in any field. Admins see the names under Settings › Secret providers, together with
+which instances use each one and which references point at names the provider does not list.
+Return only names `resolve` would accept. Omit `list()` if the backend cannot enumerate.
 
 ## The conformance kit
 
@@ -635,6 +693,10 @@ The checks encode the contracts above:
   target and input against your stub returns a well-formed `InvokeResult`; `verifyCallback`
   rejects an unsigned request; `readMeters` returns readings for the declared meters; every usage
   dimension has a unit and reported usage uses declared ids only.
+- **Secret provider** (`secretProviderConformanceChecks(type, { settings, expectNames?, secrets? })`):
+  manifest validates; `health()` resolves; `list()`, when implemented, returns unique non-empty
+  names with only `name` / `description` / `updatedAt`; and no value `resolve` returns for a
+  listed name (or any value in `secrets`) appears anywhere in the listing.
 
 ```typescript
 // src/plugin.test.ts
@@ -777,8 +839,10 @@ with a real token.
 - Ship built JavaScript in `files`. The host imports `switchboard.entry` directly.
 - Document the credentials and scopes each action needs, the capabilities you declare and why,
   and how usage numbers are obtained.
-- Admins install with `switchboard plugins add @acme/switchboard-source-deploys@^1`, which pins
-  the exact version and integrity and shows your capabilities before the next start loads it.
+- Admins install from the UI (Plugins → Browse npm, or "Find more on npm" when adding a source or
+  executor), which shows your capabilities and SDK compatibility, pins the exact version and
+  integrity, and loads the plugin at once on every replica. For images, `switchboard plugins add
+@acme/ai-switchboard-source-deploys@^1` does the same at build time.
 - To be listed in the catalogue of reviewed plugins, open an issue on the Switchboard repository
   with a link to your package and a passing conformance run.
 

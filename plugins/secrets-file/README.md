@@ -18,6 +18,9 @@ directory: the Docker secrets and Kubernetes secret-volume pattern. No network.
 - Symlinks inside the directory are followed (Kubernetes mounts each key as a symlink into
   `..data/`).
 - A missing, unreadable or empty file throws `SecretNotFoundError` naming the path (never a value).
+- `list()` (SDK 1.1) returns the **names** of the non-empty regular files in the directory (symlinks
+  followed, dotfiles such as `..data` skipped) with `updatedAt` from the file's mtime. It never
+  reads a file's contents. A directory that cannot be read throws `SecretNotFoundError`.
 - `health()` is `healthy` when the directory exists and is readable, `unhealthy` otherwise.
 
 Rotation: update the file (Kubernetes does this in place), then _Reload instance_ on the

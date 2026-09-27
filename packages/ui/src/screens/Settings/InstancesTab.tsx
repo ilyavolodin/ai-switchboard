@@ -28,6 +28,7 @@ import { TextField } from '../../components/TextField.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
+import { ProviderSecrets } from './ProviderSecrets.js';
 import styles from './Settings.module.css';
 
 const COPY = {
@@ -54,6 +55,7 @@ export function InstancesTab({ route }: { route: InstanceRoute }) {
   const copy = COPY[route];
   const instances = useInstances(route);
   const [editing, setEditing] = useState<Editing>(null);
+  const [showingSecrets, setShowingSecrets] = useState<string | null>(null);
   const nameOf = (id: string) => instances.data?.find((i) => i.id === id)?.name ?? copy.one;
 
   const enable = useReasonedMutation(useEnableInstance(route), (v) => ({
@@ -153,7 +155,25 @@ export function InstancesTab({ route }: { route: InstanceRoute }) {
               {Object.keys(inst.settings).length > 0 && (
                 <KeyValueList data={inst.settings} label={`${inst.name} settings`} />
               )}
+              {route === 'secret-providers' && showingSecrets === inst.id && (
+                <ProviderSecrets instance={inst} />
+              )}
               <div className={styles.rowActions}>
+                {route === 'secret-providers' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="key"
+                    requires="admin"
+                    aria-expanded={showingSecrets === inst.id}
+                    aria-label={`${showingSecrets === inst.id ? 'Hide' : 'Show'} secrets in ${inst.name}`}
+                    onClick={() => {
+                      setShowingSecrets((cur) => (cur === inst.id ? null : inst.id));
+                    }}
+                  >
+                    Secrets
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"

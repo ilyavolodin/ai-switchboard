@@ -18,6 +18,12 @@ import { buildServer } from '../../src/server.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
 import type { TestDatabase } from './db.js';
 
+/** What the `test-vault` secret provider holds (fixture values). */
+export const TEST_VAULT: Record<string, string> = {
+  SOURCE_SECRET: 's-fixture-vault-secret',
+  UNUSED_TOKEN: 'fixture-vault-unused',
+};
+
 /** A minimal push source for API tests: shared-secret verify, one event type. */
 export const testSourceType: SourceType = {
   id: 'test-source',
@@ -50,10 +56,58 @@ export const testSourceType: SourceType = {
   }),
 };
 
+const healthy = () =>
+  Promise.resolve({ status: 'healthy' as const, checkedAt: new Date().toISOString() });
+
+const itemCreated = (sourceId: string) => ({
+  type: `${sourceId}.item.created`,
+  title: 'Item created',
+  description: 'An item was created',
+  attributes: { type: 'object', properties: { label: { type: 'string' } } },
+  examples: [{ label: 'x' }],
+});
+
+/** Like the generic webhook: may run without verify, when its settings say `none`. */
+export const openSourceType: SourceType = {
+  id: 'test-open',
+  displayName: 'Test open',
+  mode: 'push',
+  allowsUnauthenticated: true,
+  settingsSchema: {
+    type: 'object',
+    properties: {
+      verification: { type: 'string', enum: ['secret', 'none'], default: 'secret' },
+      secret: { type: 'string', 'x-secret': true },
+    },
+  },
+  eventTypes: [itemCreated('test-open')],
+  create: (settings) =>
+    settings.verification === 'none'
+      ? { parse: () => [], health: healthy }
+      : {
+          verify: (req) =>
+            safeEqual(req.headers['x-secret'], String(settings.secret))
+              ? { ok: true }
+              : { ok: false, reason: 'bad secret' },
+          parse: () => [],
+          health: healthy,
+        },
+};
+
+/** A push source that never verifies and whose type does not allow that. */
+export const noVerifySourceType: SourceType = {
+  id: 'test-noverify',
+  displayName: 'Test no-verify',
+  mode: 'push',
+  settingsSchema: { type: 'object' },
+  eventTypes: [itemCreated('test-noverify')],
+  create: () => ({ parse: () => [], health: healthy }),
+};
+
 export const testPlugin: PluginDefinition = definePlugin({
   id: 'test-plugin',
   displayName: 'Test plugin',
-  sources: [testSourceType],
+  sources: [testSourceType, openSourceType, noVerifySourceType],
   executors: [
     {
       id: 'test-executor',
@@ -88,6 +142,29 @@ export const testPlugin: PluginDefinition = definePlugin({
           const v = process.env[name];
           return v ? Promise.resolve(v) : Promise.reject(new Error(`${name} is not set`));
         },
+        health: () => Promise.resolve({ status: 'healthy', checkedAt: new Date().toISOString() }),
+      }),
+    },
+    {
+      // A provider that can list. Its listing deliberately carries an extra `value` field, so
+      // tests can check the API strips anything but names, descriptions and times.
+      id: 'test-vault',
+      displayName: 'Test vault',
+      settingsSchema: { type: 'object' },
+      create: () => ({
+        resolve: (name) => {
+          const v = TEST_VAULT[name];
+          return v ? Promise.resolve(v) : Promise.reject(new Error(`${name} is not in the vault`));
+        },
+        list: () =>
+          Promise.resolve(
+            Object.entries(TEST_VAULT).map(([name, value]) => ({
+              name,
+              description: `vault entry ${name}`,
+              updatedAt: '2026-03-01T00:00:00.000Z',
+              value,
+            })),
+          ),
         health: () => Promise.resolve({ status: 'healthy', checkedAt: new Date().toISOString() }),
       }),
     },
@@ -150,11 +227,24 @@ export interface ApiHarness {
 export const ADMIN_EMAIL = 'admin@switchboard.local';
 export const ADMIN_PASSWORD = 'correct-horse-battery';
 
-export async function createApiHarness(tdb: TestDatabase): Promise<ApiHarness> {
+export interface ApiHarnessOptions {
+  /** `$SWITCHBOARD_HOME` (default a fresh path under /tmp). */
+  home?: string;
+  runNpm?: ApiContext['runNpm'];
+  registryFetch?: ApiContext['registryFetch'];
+}
+
+export async function createApiHarness(
+  tdb: TestDatabase,
+  options: ApiHarnessOptions = {},
+): Promise<ApiHarness> {
   const clock = new FakeClock('2026-03-02T10:00:00Z');
   const logger = silentLogger();
   const telemetry = createRecordingTelemetry();
-  const config = testConfig({ databaseUrl: tdb.url, home: `/tmp/sb-test-${Date.now()}` });
+  const config = testConfig({
+    databaseUrl: tdb.url,
+    home: options.home ?? `/tmp/sb-test-${Date.now()}`,
+  });
   const host = new PluginHost({
     db: tdb.db,
     clock,
@@ -163,6 +253,7 @@ export async function createApiHarness(tdb: TestDatabase): Promise<ApiHarness> {
     config,
     builtin: [{ name: 'test-plugin', version: '1.0.0', definition: testPlugin }],
     scanDirs: [],
+    ...(options.runNpm ? { runNpm: options.runNpm } : {}),
   });
   await host.boot();
   const calls: RecordedCall[] = [];
@@ -178,6 +269,8 @@ export async function createApiHarness(tdb: TestDatabase): Promise<ApiHarness> {
     pipeline: stubPipeline(calls),
     preview: stubPreview,
     oidc: undefined,
+    ...(options.runNpm ? { runNpm: options.runNpm } : {}),
+    ...(options.registryFetch ? { registryFetch: options.registryFetch } : {}),
   };
   await bootstrapAdmin(tdb.db, config, logger, clock.now(), { password: ADMIN_PASSWORD });
   const app = await buildServer(ctx, { serveUi: false });

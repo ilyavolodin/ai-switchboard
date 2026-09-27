@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt } from 'drizzle-orm';
+import { and, eq, isNull, lt, ne } from 'drizzle-orm';
 
 import type { DbOrTx } from '../db/client.js';
 import { apiTokens, sessions, users } from '../db/schema.js';
@@ -15,13 +15,27 @@ export interface AuthUser {
   role: Role;
   /** `session` or `token:<name>` */
   via: string;
+  /**
+   * A password session whose user must change the password: every route except the few in
+   * `PASSWORD_CHANGE_ALLOWED` answers 403 `password_change_required`.
+   */
+  passwordChangeRequired: boolean;
 }
 
-export async function createSession(db: DbOrTx, userId: string, now: Date): Promise<string> {
+/** How a session signed in. */
+export type SessionMethod = 'password' | 'oidc';
+
+export async function createSession(
+  db: DbOrTx,
+  userId: string,
+  method: SessionMethod,
+  now: Date,
+): Promise<string> {
   const token = randomToken('sbs_');
   await db.insert(sessions).values({
     tokenHash: sha256(token),
     userId,
+    method,
     expiresAt: new Date(now.getTime() + SESSION_TTL_MS),
     createdAt: now,
     lastSeenAt: now,
@@ -55,15 +69,32 @@ export async function userForSession(
       .set({ lastSeenAt: now, expiresAt: new Date(now.getTime() + SESSION_TTL_MS) })
       .where(eq(sessions.tokenHash, hash));
   }
-  return { id: row.user.id, email: row.user.email, role: row.user.role, via: 'session' };
+  return {
+    id: row.user.id,
+    email: row.user.email,
+    role: row.user.role,
+    via: 'session',
+    passwordChangeRequired: row.session.method === 'password' && row.user.mustChangePassword,
+  };
 }
 
 export async function revokeSession(db: DbOrTx, token: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.tokenHash, sha256(token)));
 }
 
-export async function revokeUserSessions(db: DbOrTx, userId: string): Promise<void> {
-  await db.delete(sessions).where(eq(sessions.userId, userId));
+/** Sign the user out everywhere, or everywhere except the session whose cookie is `keepToken`. */
+export async function revokeUserSessions(
+  db: DbOrTx,
+  userId: string,
+  keepToken?: string,
+): Promise<void> {
+  await db
+    .delete(sessions)
+    .where(
+      keepToken === undefined
+        ? eq(sessions.userId, userId)
+        : and(eq(sessions.userId, userId), ne(sessions.tokenHash, sha256(keepToken))),
+    );
 }
 
 export async function pruneSessions(db: DbOrTx, now: Date): Promise<void> {
@@ -101,5 +132,12 @@ export async function userForApiToken(
   if (!row) return null;
   await db.update(apiTokens).set({ lastUsedAt: now }).where(eq(apiTokens.id, row.token.id));
   const role = roleAtLeast(row.user.role, row.token.role) ? row.token.role : row.user.role;
-  return { id: row.user.id, email: row.user.email, role, via: `token:${row.token.name}` };
+  // A token is its own credential; a pending password change restricts password sessions only.
+  return {
+    id: row.user.id,
+    email: row.user.email,
+    role,
+    via: `token:${row.token.name}`,
+    passwordChangeRequired: false,
+  };
 }

@@ -61,7 +61,10 @@ that fails throws a `MappingError`, which the core records against the plugin.
 - `shared_secret`: `safeEqual` of `sharedSecretHeader` against `secret`.
 - `none`: the live source has **no `verify` method**, which is how the core knows the instance is
   unauthenticated. The type sets `allowsUnauthenticated: true`, and the UI shows the red
-  _unauthenticated (evaluation)_ chip. Use it only for trying things out.
+  _unauthenticated (evaluation)_ chip. Use it only for trying things out. `verification` is the
+  only switch: the core derives the instance's unauthenticated state from it, the form hides the
+  secret and header fields (each `allOf` branch names the fields its mode uses) and shows a red
+  warning under Verification (`x-warning`).
 
 ## Example settings
 

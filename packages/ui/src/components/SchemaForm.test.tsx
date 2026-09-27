@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { linearSettingsSchema } from '../api/fixtures.js';
-import { validateAgainstSchema } from '../lib/schema.js';
+import { linearSettingsSchema, webhookSettingsSchema } from '../api/fixtures.js';
+import { resolveConditionals, validateAgainstSchema, warningFor } from '../lib/schema.js';
 import { SchemaForm } from './SchemaForm.js';
 
 let latest: Record<string, unknown> = {};
@@ -139,6 +139,66 @@ describe('SchemaForm', () => {
     expect(within(retry).getByText('default')).toHaveTextContent('default 3');
     await user.type(within(retry).getByLabelText('Attempts'), '5');
     expect(latest.retry).toEqual({ attempts: 5 });
+  });
+
+  it('honours if/then: fields of branches that do not apply are hidden and not required', async () => {
+    const user = userEvent.setup();
+    render(<Harness schema={webhookSettingsSchema} initial={{ verification: 'hmac' }} />);
+    expect(screen.getByText('Secret').closest('label')).toHaveTextContent('(required)');
+    expect(screen.getByLabelText(/Signature header/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Shared-secret header/)).toBeNull();
+
+    await user.selectOptions(screen.getByLabelText(/^Verification/), 'none');
+    expect(screen.queryByText('Secret')).toBeNull();
+    expect(screen.queryByLabelText(/Signature header/)).toBeNull();
+    expect(screen.queryByLabelText(/Shared-secret header/)).toBeNull();
+    // Fields no branch names stay.
+    expect(screen.getByLabelText(/^Mapping/)).toBeInTheDocument();
+    expect(validateAgainstSchema(webhookSettingsSchema, { ...latest, mapping: 'x' })).toEqual({});
+  });
+
+  it('honours if/then/else and dependentRequired for required-ness', () => {
+    const schema: JSONSchema = {
+      type: 'object',
+      properties: {
+        auth: { type: 'string', enum: ['token', 'app'] },
+        token: { type: 'string' },
+        appId: { type: 'string' },
+        proxy: { type: 'string' },
+        proxyUser: { type: 'string' },
+      },
+      allOf: [
+        {
+          if: { properties: { auth: { const: 'token' } }, required: ['auth'] },
+          then: { required: ['token'] },
+          else: { required: ['appId'] },
+        },
+      ],
+      dependentRequired: { proxy: ['proxyUser'] },
+    };
+    expect(resolveConditionals(schema, { auth: 'token' })).toEqual({
+      required: ['token'],
+      hidden: new Set(['appId']),
+    });
+    expect(resolveConditionals(schema, { auth: 'app', proxy: 'p' })).toEqual({
+      required: ['appId', 'proxyUser'],
+      hidden: new Set(['token']),
+    });
+  });
+
+  it('shows an x-warning under the field while its value matches', async () => {
+    const user = userEvent.setup();
+    render(<Harness schema={webhookSettingsSchema} initial={{ verification: 'hmac' }} />);
+    expect(screen.queryByRole('note')).toBeNull();
+    await user.selectOptions(screen.getByLabelText(/^Verification/), 'none');
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Anyone who knows the URL can send events — evaluation only.',
+    );
+    expect(screen.getByLabelText(/^Verification/)).toHaveAccessibleDescription(
+      /Anyone who knows the URL/,
+    );
+    const verification = webhookSettingsSchema.properties as Record<string, JSONSchema>;
+    expect(warningFor(verification.verification ?? {}, 'hmac')).toBeNull();
   });
 
   it('exposes the same validation for gating a save', () => {

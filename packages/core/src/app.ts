@@ -45,6 +45,7 @@ export interface CreateOptions {
   /** Evaluation admin password (tests, e2e); otherwise generated and printed once. */
   adminPassword?: string;
   runNpm?: ApiContext['runNpm'];
+  registryFetch?: ApiContext['registryFetch'];
 }
 
 async function waitForDatabase(database: Database, logger: CoreLogger): Promise<void> {
@@ -90,6 +91,7 @@ export async function createSwitchboard(options: CreateOptions): Promise<Switchb
     telemetry,
     config,
     ...options.plugins,
+    ...(options.runNpm ? { runNpm: options.runNpm } : {}),
   });
   await host.boot();
   for (const p of host.loaded) {
@@ -139,6 +141,7 @@ export async function createSwitchboard(options: CreateOptions): Promise<Switchb
     preview,
     oidc,
     ...(options.runNpm ? { runNpm: options.runNpm } : {}),
+    ...(options.registryFetch ? { registryFetch: options.registryFetch } : {}),
   };
   let ready = false;
   const app = await buildServer(ctx, {
@@ -163,6 +166,8 @@ export async function createSwitchboard(options: CreateOptions): Promise<Switchb
         });
         await queue.schedule('auth.prune', '17 3 * * *');
       }
+      // Every replica (not one queue worker) converges on the plugins admins installed.
+      host.startSync();
       await app.listen({ host: config.host, port: config.port });
       ready = true;
       logger.info(

@@ -31,6 +31,7 @@ import type {
   MeterGaugeDTO,
   MeterHistoryResponse,
   PipelineDots,
+  PluginSearchResult,
   PluginSummary,
   PluginTypeDTO,
   ProcessDetail,
@@ -38,6 +39,7 @@ import type {
   ProcessStatsResponse,
   ProcessSummary,
   ProcessVersionSummary,
+  ProviderSecretsResponse,
   RecentBatchDTO,
   RunDetail,
   RunSummary,
@@ -113,6 +115,73 @@ const OFF5: [StatusTone, StatusTone, StatusTone, StatusTone, StatusTone] = [
 // ---------------------------------------------------------------------------------------------
 // Schemas (plugin manifests)
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * The generic webhook's verification settings (as `@ai-switchboard/source-webhook` declares
+ * them): `if`/`then` branches name the fields each mode uses, and `x-warning` flags `none`.
+ */
+export const webhookSettingsSchema: JSONSchema = {
+  type: 'object',
+  required: ['mapping'],
+  properties: {
+    verification: {
+      type: 'string',
+      enum: ['hmac', 'shared_secret', 'none'],
+      default: 'hmac',
+      title: 'Verification',
+      description: 'How deliveries are authenticated.',
+      'x-group': 'Verification',
+      'x-warning': {
+        when: { const: 'none' },
+        message: 'Anyone who knows the URL can send events — evaluation only.',
+      },
+    },
+    secret: {
+      type: 'string',
+      title: 'Secret',
+      description: 'The HMAC key or the shared secret.',
+      'x-secret': true,
+      'x-group': 'Verification',
+    },
+    signatureHeader: {
+      type: 'string',
+      default: 'x-signature-256',
+      title: 'Signature header',
+      description: 'Header that carries the HMAC signature.',
+      'x-group': 'Verification',
+    },
+    sharedSecretHeader: {
+      type: 'string',
+      default: 'x-webhook-secret',
+      title: 'Shared-secret header',
+      description: 'Header that carries the shared secret.',
+      'x-group': 'Verification',
+    },
+    mapping: {
+      type: 'string',
+      minLength: 1,
+      title: 'Mapping',
+      description: 'JSONata over `{ body, headers, query }`.',
+      'x-group': 'Mapping',
+    },
+  },
+  allOf: [
+    {
+      if: { properties: { verification: { const: 'hmac' } } },
+      then: {
+        required: ['secret'],
+        properties: { secret: { minLength: 1 }, signatureHeader: true },
+      },
+    },
+    {
+      if: { properties: { verification: { const: 'shared_secret' } } },
+      then: {
+        required: ['secret'],
+        properties: { secret: { minLength: 1 }, sharedSecretHeader: true },
+      },
+    },
+  ],
+};
 
 /** Linear source settings: groups, secrets, enum, array, long help. */
 export const linearSettingsSchema: JSONSchema = {
@@ -306,10 +375,20 @@ export function buildFixtures(now: number) {
     id: 'u-ilya',
     email: 'ilya@lola.com',
     role: 'operator',
+    hasPassword: true,
+    hasOidc: false,
+    mustChangePassword: false,
     lastLoginAt: iso(-2 * HOUR),
     createdAt: iso(-90 * DAY),
   };
-  const me: MeResponse = { user, authMode: 'local', oidcConfigured: false, evaluation: true };
+  const me: MeResponse = {
+    user,
+    authMode: 'local',
+    oidcConfigured: false,
+    oidcIssuer: null,
+    evaluation: true,
+    mustChangePassword: false,
+  };
 
   // ---- Meters ---------------------------------------------------------------------------
   const fiveHour: MeterGaugeDTO = {
@@ -1723,6 +1802,18 @@ export function buildFixtures(now: number) {
     },
     {
       kind: 'source',
+      typeId: 'webhook',
+      displayName: 'Webhook',
+      plugin: '@ai-switchboard/source-webhook',
+      available: true,
+      settingsSchema: webhookSettingsSchema,
+      mode: 'push',
+      eventTypes: [],
+      dynamicEventTypes: true,
+      allowsUnauthenticated: true,
+    },
+    {
+      kind: 'source',
       typeId: 'datadog',
       displayName: 'Datadog',
       plugin: '@ai-switchboard/source-datadog',
@@ -1880,6 +1971,74 @@ export function buildFixtures(now: number) {
     },
   ];
 
+  // npm packages that follow the naming convention (GET /plugins/search).
+  const searchResult = (
+    pkg: string,
+    kind: PluginSearchResult['kind'],
+    version: string,
+    description: string,
+    extra: Partial<PluginSearchResult> = {},
+  ): PluginSearchResult => ({
+    package: pkg,
+    kind,
+    version,
+    description,
+    publisher: 'switchboard-bot',
+    date: '2026-02-20T09:00:00.000Z',
+    links: { npm: `https://www.npmjs.com/package/${pkg}` },
+    weeklyDownloads: 1200,
+    installed: false,
+    installedVersion: null,
+    reviewed: false,
+    ...extra,
+  });
+  const pluginSearch: PluginSearchResult[] = [
+    searchResult(
+      '@ai-switchboard/source-sentry',
+      'source',
+      '1.2.0',
+      'Issues and alerts from Sentry as events.',
+      {
+        reviewed: true,
+        links: {
+          npm: 'https://www.npmjs.com/package/@ai-switchboard/source-sentry',
+          homepage: 'https://github.com/ai-switchboard/switchboard',
+        },
+      },
+    ),
+    searchResult(
+      '@ai-switchboard/source-linear',
+      'source',
+      '1.4.2',
+      'Issues, labels and comments from Linear.',
+      {
+        reviewed: true,
+        installed: true,
+        installedVersion: '1.4.2',
+      },
+    ),
+    searchResult(
+      '@acme/ai-switchboard-source-jira',
+      'source',
+      '0.4.1',
+      'Jira issue transitions and comments.',
+      {
+        publisher: 'acme-dev',
+        weeklyDownloads: 85,
+      },
+    ),
+    searchResult(
+      'ai-switchboard-executor-n8n',
+      'executor',
+      '2.0.0',
+      'Start n8n executions and track them.',
+      {
+        publisher: 'n8n-community',
+        weeklyDownloads: null,
+      },
+    ),
+  ];
+
   // ---- Instances, settings, users, audit ---------------------------------------------------
   const notifiers: InstanceSummary[] = [
     {
@@ -1924,6 +2083,69 @@ export function buildFixtures(now: number) {
       instanceError: null,
     },
   ];
+  // GET /secret-providers/:id/secrets, keyed by provider id. Names only, never values.
+  const providerSecrets: Record<string, ProviderSecretsResponse> = {
+    'sp-env': {
+      providerId: 'sp-env',
+      provider: 'env',
+      available: true,
+      secrets: [
+        {
+          name: 'CLAUDE_API_KEY',
+          ref: 'secret://env/CLAUDE_API_KEY',
+          usedBy: [
+            {
+              kind: 'executor',
+              id: E.routines,
+              name: 'Claude Routines — automation seat',
+              field: 'apiKey',
+            },
+          ],
+        },
+        {
+          name: 'LINEAR_API_KEY',
+          ref: 'secret://env/LINEAR_API_KEY',
+          usedBy: [{ kind: 'source', id: S.linear, name: 'Linear — lola', field: 'apiKey' }],
+        },
+        {
+          name: 'LINEAR_WEBHOOK_SECRET',
+          ref: 'secret://env/LINEAR_WEBHOOK_SECRET',
+          usedBy: [{ kind: 'source', id: S.linear, name: 'Linear — lola', field: 'webhookSecret' }],
+        },
+        {
+          name: 'SLACK_WEBHOOK_URL',
+          ref: 'secret://env/SLACK_WEBHOOK_URL',
+          usedBy: [
+            { kind: 'notifier', id: 'n-slack', name: 'Slack — #loops', field: 'webhookUrl' },
+          ],
+        },
+        { name: 'SPARE_TOKEN', ref: 'secret://env/SPARE_TOKEN', usedBy: [] },
+      ],
+      missing: [
+        {
+          name: 'LOOPS_ROUTINE_TOKEN_AUTOFIX',
+          ref: 'secret://env/LOOPS_ROUTINE_TOKEN_AUTOFIX',
+          usedBy: [
+            { kind: 'process', id: P.autofix, name: 'Autofix', field: 'executor.target.token' },
+          ],
+        },
+      ],
+    },
+    'sp-file': {
+      providerId: 'sp-file',
+      provider: 'file',
+      available: true,
+      secrets: [
+        {
+          name: 'github-app-key',
+          ref: 'secret://file/github-app-key',
+          updatedAt: iso(-3 * DAY),
+          usedBy: [],
+        },
+      ],
+      missing: [],
+    },
+  };
   const settings: GlobalSettings = {
     timezone: 'America/New_York',
     defaultQuietHours: { start: '22:00', end: '07:00' },
@@ -1952,6 +2174,9 @@ export function buildFixtures(now: number) {
       id: 'u-daria',
       email: 'daria@lola.com',
       role: 'operator',
+      hasPassword: false,
+      hasOidc: true,
+      mustChangePassword: false,
       lastLoginAt: iso(-1 * DAY),
       createdAt: iso(-80 * DAY),
     },
@@ -1959,6 +2184,9 @@ export function buildFixtures(now: number) {
       id: 'u-priya',
       email: 'priya@lola.com',
       role: 'operator',
+      hasPassword: true,
+      hasOidc: true,
+      mustChangePassword: false,
       lastLoginAt: iso(-3 * DAY),
       createdAt: iso(-60 * DAY),
     },
@@ -1966,6 +2194,9 @@ export function buildFixtures(now: number) {
       id: 'u-sam',
       email: 'sam@lola.com',
       role: 'viewer',
+      hasPassword: true,
+      hasOidc: false,
+      mustChangePassword: true,
       lastLoginAt: null,
       createdAt: iso(-5 * DAY),
     },
@@ -2101,8 +2332,10 @@ export function buildFixtures(now: number) {
     pluginTypes,
     plugins,
     catalogue,
+    pluginSearch,
     notifiers,
     secretProviders,
+    providerSecrets,
     settings,
     users,
     tokens,

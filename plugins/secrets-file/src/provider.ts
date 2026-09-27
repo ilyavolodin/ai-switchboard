@@ -1,11 +1,12 @@
 import { constants } from 'node:fs';
-import { access, readFile, stat } from 'node:fs/promises';
+import { access, readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type {
   Health,
   JSONSchema,
   PluginContext,
+  SecretListing,
   SecretProvider,
   SecretProviderType,
   Settings,
@@ -85,6 +86,34 @@ function createFileProvider(settings: FileSecretSettings, ctx: PluginContext): S
       const value = content.replace(/(\r?\n)+$/, '');
       if (value === '') throw new SecretNotFoundError(`Secret file ${path} is empty`);
       return value;
+    },
+
+    /**
+     * Names only: the regular, non-empty files in the directory, following symlinks (Kubernetes
+     * mounts each key as a symlink into `..data/`). Dotfiles, including `..data` itself, are
+     * skipped. `updatedAt` is the file's mtime. File contents are never read.
+     */
+    async list(): Promise<SecretListing[]> {
+      let entries: string[];
+      try {
+        entries = await readdir(settings.directory);
+      } catch (err) {
+        throw new SecretNotFoundError(
+          `${settings.directory} cannot be listed (${codeOf(err) ?? 'error'})`,
+        );
+      }
+      const out: SecretListing[] = [];
+      for (const name of entries.sort()) {
+        if (name.startsWith('.') || !isSafeName(name)) continue;
+        try {
+          const info = await stat(join(settings.directory, name));
+          if (!info.isFile() || info.size === 0) continue;
+          out.push({ name, updatedAt: info.mtime.toISOString() });
+        } catch {
+          // A dangling symlink or a file removed mid-listing: not available, so not listed.
+        }
+      }
+      return out;
     },
 
     async health(): Promise<Health> {

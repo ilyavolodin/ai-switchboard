@@ -41,14 +41,17 @@ curl -fsS http://localhost:8080/readyz && echo ready
 
 ## 2. Sign in
 
-Evaluation mode creates a local admin and prints its password once:
+The first start creates a local admin and prints a temporary password once:
 
 ```bash
 docker compose -f deploy/docker-compose.yml logs switchboard | grep -i password
 ```
 
-Open <http://localhost:8080> and sign in with that email and password. The amber banner saying
-OIDC is not configured stays until you configure an issuer ([configuration](configuration.md)).
+Open <http://localhost:8080> and sign in with that email and password. Because the password is
+temporary, Switchboard asks you to choose your own right away (at least 12 characters, not your
+email); after that you land on the Board. You can change it again any time from **Settings ›
+Account**, and add people with their own temporary passwords in **Settings › Users**. The amber
+evaluation banner stays until you configure an issuer ([configuration](configuration.md)).
 The Board is empty and shows a three-step guide: add a source, add an executor, draw a process.
 
 ## 3. Add a webhook source

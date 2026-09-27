@@ -32,8 +32,12 @@ export const settingsSchema: JSONSchema = {
       default: 'hmac',
       title: 'Verification',
       description:
-        'How deliveries are authenticated: an HMAC signature over the body, a shared-secret header, or none (evaluation only; the UI marks the instance unauthenticated).',
+        'How deliveries are authenticated: an HMAC signature over the body, a shared-secret header, or none (evaluation only; the instance is marked unauthenticated).',
       'x-group': GROUP_VERIFY,
+      'x-warning': {
+        when: { const: 'none' },
+        message: 'Anyone who knows the URL can send events — evaluation only.',
+      },
     },
     secret: {
       type: 'string',
@@ -107,10 +111,28 @@ export const settingsSchema: JSONSchema = {
       'x-group': 'Mapping',
     },
   },
+  // Each branch names the fields its mode uses: the UI shows them only while the branch applies
+  // (so `verification: none` hides the secret and header fields and nothing is required).
   allOf: [
     {
-      if: { properties: { verification: { enum: ['hmac', 'shared_secret'] } } },
-      then: { required: ['secret'], properties: { secret: { minLength: 1 } } },
+      if: { properties: { verification: { const: 'hmac' } } },
+      then: {
+        required: ['secret'],
+        properties: {
+          secret: { minLength: 1 },
+          signatureHeader: true,
+          signaturePrefix: true,
+          algorithm: true,
+          signatureEncoding: true,
+        },
+      },
+    },
+    {
+      if: { properties: { verification: { const: 'shared_secret' } } },
+      then: {
+        required: ['secret'],
+        properties: { secret: { minLength: 1 }, sharedSecretHeader: true },
+      },
     },
   ],
 };

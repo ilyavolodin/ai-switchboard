@@ -26,10 +26,35 @@ export interface NotifierType {
   create(settings: Settings, ctx: PluginContext): Notifier;
 }
 
+/**
+ * One secret a provider makes available, as `SecretProvider.list()` reports it. It carries the
+ * secret's **name only**: never its value, and nothing derived from the value (no length, prefix,
+ * hash or preview). The UI shows these names next to the `secret://<provider>/<name>` reference
+ * they form.
+ */
+export interface SecretListing {
+  /** The `<name>` in `secret://<provider>/<name>`: exactly what `resolve(name)` accepts. */
+  name: string;
+  /** Optional human-readable note from the backend (a label or description). Never a value. */
+  description?: string;
+  /** ISO-8601 time the secret last changed, when the backend knows it. */
+  updatedAt?: string;
+}
+
 export interface SecretProvider {
   /** Return the secret value for `name`, or throw if it does not exist. */
   resolve(name: string): Promise<string>;
   health(): Promise<Health>;
+  /**
+   * Optional (since SDK 1.1): the names of the secrets this provider can resolve, so an admin
+   * can see what is available and which references are broken.
+   *
+   * **Names only, never values.** A listing must not contain a secret value, or any part or
+   * derivative of one, in any field. The conformance kit (`secretProviderConformanceChecks`)
+   * resolves every listed name and fails when a value appears anywhere in the listing.
+   * Return only names `resolve` would accept. Providers that cannot enumerate omit this method.
+   */
+  list?(): Promise<SecretListing[]>;
 }
 
 export interface SecretProviderType {

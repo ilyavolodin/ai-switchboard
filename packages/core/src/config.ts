@@ -33,6 +33,10 @@ export interface CoreConfig {
   pluginDirs: string[];
   /** Load plugins from their `switchboard.source` TypeScript entry (dev with tsx). */
   devSource: boolean;
+  /** npm registry searched by "Browse npm" (`SWITCHBOARD_NPM_REGISTRY`). */
+  npmRegistry: string;
+  /** How often each replica installs plugins recorded in the database but missing locally. */
+  pluginSyncSeconds: number;
   /** Run pipeline workers and the scheduler in this process (false for an API-only replica). */
   workers: boolean;
   /** Trust X-Forwarded-* (behind an ingress or load balancer). */
@@ -59,6 +63,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
   const port = Number(env.PORT ?? env.SWITCHBOARD_PORT ?? 8080);
   const publicUrl = (env.SWITCHBOARD_PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/$/, '');
   const issuer = env.SWITCHBOARD_OIDC_ISSUER;
+  const registry = env.SWITCHBOARD_NPM_REGISTRY;
   const oidc =
     issuer !== undefined && issuer !== ''
       ? {
@@ -89,6 +94,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     uiDir: resolve(env.SWITCHBOARD_UI_DIR ?? new URL('../public', import.meta.url).pathname),
     pluginDirs: list(env.SWITCHBOARD_PLUGIN_DIRS),
     devSource: bool(env.SWITCHBOARD_DEV_SOURCE, false),
+    npmRegistry: (registry !== undefined && registry !== ''
+      ? registry
+      : 'https://registry.npmjs.org'
+    ).replace(/\/+$/, ''),
+    pluginSyncSeconds: Math.max(Number(env.SWITCHBOARD_PLUGIN_SYNC_SECONDS ?? 60) || 60, 5),
     workers: bool(env.SWITCHBOARD_WORKERS, true),
     trustProxy: bool(env.SWITCHBOARD_TRUST_PROXY, false),
     secureCookies: bool(env.SWITCHBOARD_SECURE_COOKIES, publicUrl.startsWith('https://')),

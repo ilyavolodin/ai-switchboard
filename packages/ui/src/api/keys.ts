@@ -78,6 +78,7 @@ export const qk = {
     all: ['plugins'] as const,
     installed: () => ['plugins', 'installed'] as const,
     catalogue: () => ['plugins', 'catalogue'] as const,
+    search: (kind: string, q: string) => ['plugins', 'search', kind, q] as const,
   },
 
   instances: (kind: 'notifiers' | 'secret-providers') => [kind] as const,

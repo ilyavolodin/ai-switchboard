@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { roleAtLeast } from '../../auth/crypto.js';
 import { actorOf, requireRole } from '../../auth/fastify.js';
+import { passwordProblem } from '../../auth/password-policy.js';
 import { createApiToken, revokeUserSessions } from '../../auth/sessions.js';
 import {
   apiTokens,
@@ -20,6 +21,7 @@ import {
 import { ROLES, type Role } from '../../domain/status.js';
 import { recordAudit, recordAuditDiff } from '../../services/audit.js';
 import { getSettings, putSettings } from '../../services/settings.js';
+import { removePassword, storePassword } from '../../services/users.js';
 import type { ApiContext } from '../context.js';
 import type {
   AboutResponse,
@@ -31,6 +33,7 @@ import type {
   CreateUserRequest,
   GlobalSettings,
   Page,
+  SetPasswordRequest,
   UpdateSettingsRequest,
   UpdateUserRequest,
 } from '../contract.js';
@@ -182,6 +185,12 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
       const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
       if (!/^[^@\s]+@[^@\s]+$/.test(email)) throw badRequest('A valid email is required.');
       const role = checkRole(req.body.role);
+      const password = req.body.password;
+      if (password !== undefined) {
+        if (typeof password !== 'string') throw badRequest('password must be a string');
+        const problem = passwordProblem(password, email);
+        if (problem) throw badRequest(problem);
+      }
       const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
       if (existing.length > 0) throw conflict(`${email} already has access.`);
       const now = clock.now();
@@ -197,7 +206,13 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
           reason,
           at: now,
         });
-        return r;
+        if (password === undefined) return r;
+        const withPassword = await storePassword(tx, r.id, password, {
+          temporary: true,
+          field: 'password',
+          audit: { actor: actorOf(req), reason, at: now },
+        });
+        return withPassword ?? r;
       });
       return reply.code(201).send(toUserDTO(row));
     },
@@ -263,6 +278,60 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
         });
       });
       return reply.code(204).send();
+    },
+  );
+
+  app.put<{ Params: { id: string }; Body: SetPasswordRequest }>(
+    '/api/v1/users/:id/password',
+    {
+      ...admin,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['reason', 'password'],
+          properties: { reason: { type: 'string' }, password: { type: 'string' } },
+        },
+      },
+    },
+    async (req) => {
+      const reason = requireReason(req.body);
+      const [before] = await db.select().from(users).where(eq(users.id, req.params.id));
+      if (!before) throw notFound('User');
+      if (before.id === req.user?.id)
+        throw conflict('Change your own password from your account, not the Users tab.');
+      const problem = passwordProblem(req.body.password, before.email);
+      if (problem) throw badRequest(problem);
+      const now = clock.now();
+      const row = await db.transaction((tx) =>
+        storePassword(tx, before.id, req.body.password, {
+          temporary: true,
+          field: before.passwordHash === null ? 'password' : 'password_reset',
+          audit: { actor: actorOf(req), reason, at: now },
+        }),
+      );
+      if (!row) throw notFound('User');
+      return toUserDTO(row);
+    },
+  );
+
+  app.delete<{ Params: { id: string }; Body: { reason: string } }>(
+    '/api/v1/users/:id/password',
+    admin,
+    async (req) => {
+      const reason = requireReason(req.body);
+      const [before] = await db.select().from(users).where(eq(users.id, req.params.id));
+      if (!before) throw notFound('User');
+      if (before.passwordHash === null) throw conflict(`${before.email} has no password.`);
+      if (!ctx.oidc)
+        throw conflict(
+          'OIDC is not configured; without a password this account could not sign in.',
+        );
+      const now = clock.now();
+      const row = await db.transaction((tx) =>
+        removePassword(tx, before.id, { actor: actorOf(req), reason, at: now }),
+      );
+      if (!row) throw notFound('User');
+      return toUserDTO(row);
     },
   );
 

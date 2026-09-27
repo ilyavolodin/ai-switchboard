@@ -102,6 +102,20 @@ switchboard serve                     start the server
 Server commands take `--url` (`SWITCHBOARD_URL`, default `http://localhost:8080`) and `--token`
 (`SWITCHBOARD_TOKEN`). Plugin commands take `--home` (`SWITCHBOARD_HOME`, default `./.switchboard`).
 
+## Plugins and naming
+
+Admins install plugins from the UI: **Plugins → Browse npm** searches the registry
+(`SWITCHBOARD_NPM_REGISTRY`), and **Add source / Add executor** offer "Find more on npm". Each
+install shows the package's capabilities and SDK compatibility first, asks for a reason, and loads
+the plugin at once on every replica; only upgrading or removing a loaded plugin waits for a
+restart. Search finds packages named
+
+- `ai-switchboard-{kind}-{name}` or `@scope/ai-switchboard-{kind}-{name}`, or
+- `@ai-switchboard/{kind}-{name}` (the project's own scope),
+
+where `{kind}` is `source`, `executor`, `notifier` or `secrets`. See the
+[plugin author guide](docs/plugin-author-guide.md#naming).
+
 ## Deploying
 
 - **Container image:** `ghcr.io/ai-switchboard/switchboard:1.0.0`, with the reference plugins

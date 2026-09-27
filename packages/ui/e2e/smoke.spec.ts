@@ -34,7 +34,7 @@ test.describe('every screen renders against the real API', () => {
     ['/activity', 'Activity'],
     ['/approvals', 'Approvals'],
     ['/plugins', 'Plugins'],
-    ['/plugins/catalogue', 'Plugins'],
+    ['/plugins/browse', 'Plugins'],
   ];
   for (const [path, heading] of statics) {
     test(path, async ({ page }) => {

@@ -1,4 +1,8 @@
-import type { LocalLoginRequest, MeResponse } from '@ai-switchboard/core/contract';
+import type {
+  ChangePasswordRequest,
+  LocalLoginRequest,
+  MeResponse,
+} from '@ai-switchboard/core/contract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '../client.js';
@@ -21,6 +25,24 @@ export function useLogin() {
     mutationFn: (body) => apiFetch<MeResponse>('/auth/login', { method: 'POST', body }),
     onSuccess: (me) => {
       qc.setQueryData(qk.me, me);
+    },
+  });
+}
+
+/**
+ * POST /auth/password — change the signed-in user's own password. Lifts the temporary-password
+ * restriction and signs out the user's other sessions; the returned `me` replaces the cached one.
+ */
+export function useChangePassword() {
+  const qc = useQueryClient();
+  return useMutation<MeResponse, Error, ChangePasswordRequest>({
+    mutationFn: (body) => apiFetch<MeResponse>('/auth/password', { method: 'POST', body }),
+    onSuccess: async (me) => {
+      qc.setQueryData(qk.me, me);
+      // Queries that failed with password_change_required refetch now.
+      await qc.invalidateQueries({
+        predicate: (q) => !(q.queryKey.length === 1 && q.queryKey[0] === qk.me[0]),
+      });
     },
   });
 }

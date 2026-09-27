@@ -131,6 +131,114 @@ describe('Sources', () => {
     expect(api.callsTo('POST /sources')).toHaveLength(0);
   });
 
+  it('creates an unauthenticated webhook from Verification alone: none needs no secret', async () => {
+    const { user, api } = renderWithProviders(<Sources />);
+    await user.click(await screen.findByRole('button', { name: 'Add source' }));
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Add a source' })).getByRole('button', {
+        name: /^Webhook/,
+      }),
+    );
+    const form = await screen.findByRole('dialog', { name: 'New Webhook source' });
+    // No separate "accept unauthenticated" switch: the plugin's Verification is the one switch.
+    expect(within(form).queryByText(/Accept unauthenticated/)).toBeNull();
+    expect(within(form).getByRole('textbox', { name: /^Secret/ })).toBeInTheDocument();
+    expect(within(form).queryByText(/Anyone who knows the URL/)).toBeNull();
+
+    await user.selectOptions(within(form).getByLabelText(/^Verification/), 'none');
+    expect(within(form).queryByRole('textbox', { name: /^Secret/ })).toBeNull();
+    expect(within(form).queryByLabelText(/Signature header/)).toBeNull();
+    const verification = within(form).getByLabelText(/^Verification/);
+    expect(verification).toHaveAccessibleDescription(/Anyone who knows the URL can send events/);
+
+    await user.type(within(form).getByLabelText(/^Mapping/), 'body');
+    await user.click(within(form).getByRole('button', { name: 'Create source' }));
+    await user.type(await screen.findByRole('textbox', { name: /Reason/ }), 'trying it out');
+    await user.click(screen.getByRole('button', { name: 'Create source' }));
+    await vi.waitFor(() => {
+      expect(api.callsTo('POST /sources')).toHaveLength(1);
+    });
+    const body = api.callsTo('POST /sources')[0]?.body as {
+      settings: Record<string, unknown>;
+      caps: Record<string, unknown>;
+    };
+    expect(body.settings.verification).toBe('none');
+    expect(body.settings).not.toHaveProperty('secret');
+    expect(body.caps).not.toHaveProperty('unauthenticated');
+  });
+
+  it('requires the secret for an HMAC webhook', async () => {
+    const { user, api } = renderWithProviders(<Sources />);
+    await user.click(await screen.findByRole('button', { name: 'Add source' }));
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Add a source' })).getByRole('button', {
+        name: /^Webhook/,
+      }),
+    );
+    const form = await screen.findByRole('dialog', { name: 'New Webhook source' });
+    expect(within(form).getByLabelText(/^Verification/)).toHaveValue('0');
+    expect(within(form).getByText('Secret').closest('label')).toHaveTextContent('(required)');
+    await user.type(within(form).getByLabelText(/^Mapping/), 'body');
+    await user.click(within(form).getByRole('button', { name: 'Create source' }));
+    expect(within(form).getByText('Some fields need attention')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Reason/ })).toBeNull();
+
+    // Shared secret shows its own header field instead of the signature header.
+    await user.selectOptions(within(form).getByLabelText(/^Verification/), 'shared_secret');
+    expect(within(form).getByLabelText(/Shared-secret header/)).toBeInTheDocument();
+    expect(within(form).queryByLabelText(/Signature header/)).toBeNull();
+    expect(api.callsTo('POST /sources')).toHaveLength(0);
+  });
+
+  it('finds a source type on npm, installs it with a reason and continues into its form', async () => {
+    const { user, api } = renderWithProviders(<Sources />, { role: 'admin' });
+    await user.click(await screen.findByRole('button', { name: 'Add source' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add a source' });
+    const npm = within(picker).getByRole('region', { name: 'Find more on npm' });
+    const results = await within(npm).findByRole('list', { name: 'npm packages' });
+    // Only source plugins are offered here.
+    expect(
+      within(results).queryByRole('listitem', { name: 'ai-switchboard-executor-n8n' }),
+    ).toBeNull();
+    await user.click(
+      within(results).getByRole('button', { name: 'Install @ai-switchboard/source-sentry' }),
+    );
+
+    const review = await screen.findByRole('dialog', {
+      name: 'Install @ai-switchboard/source-sentry',
+    });
+    expect(await within(review).findByText('sentry.io')).toBeInTheDocument();
+    expect(within(review).getByText('sdk ^1.4.0 ok')).toBeInTheDocument();
+    await user.click(within(review).getByRole('button', { name: 'Install and continue' }));
+
+    const reason = await screen.findByRole('dialog', {
+      name: /^Install @ai-switchboard\/source-sentry@\^1\.2\.0/,
+    });
+    await user.type(within(reason).getByRole('textbox', { name: /Reason/ }), 'sentry alerts');
+    await user.click(within(reason).getByRole('button', { name: 'Install plugin' }));
+
+    await vi.waitFor(() => {
+      expect(api.callsTo('POST /plugins')[0]?.body).toEqual({
+        package: '@ai-switchboard/source-sentry',
+        range: '^1.2.0',
+        reason: 'sentry alerts',
+      });
+    });
+    const form = await screen.findByRole('dialog', { name: 'New Sentry source' });
+    // The new type's own settings form.
+    expect(within(form).getByText('API token')).toBeInTheDocument();
+  });
+
+  it('lets operators search npm from Add source but keeps Install for admins', async () => {
+    const { user } = renderWithProviders(<Sources />, { role: 'operator' });
+    await user.click(await screen.findByRole('button', { name: 'Add source' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add a source' });
+    const install = await within(picker).findByRole('button', {
+      name: 'Install @ai-switchboard/source-sentry',
+    });
+    expect(install).toHaveAttribute('aria-disabled', 'true');
+  });
+
   it('shows an empty state that teaches the next step', async () => {
     renderWithProviders(<Sources />, { overrides: { 'GET /sources': () => [] } });
     expect(await screen.findByText('No sources yet')).toBeInTheDocument();

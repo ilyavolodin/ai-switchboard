@@ -12,8 +12,24 @@ people who deploy and operate it.
   `SWITCHBOARD_OIDC_ISSUER`, `SWITCHBOARD_OIDC_CLIENT_ID`, `SWITCHBOARD_OIDC_CLIENT_SECRET` and
   optionally `SWITCHBOARD_OIDC_ALLOWED_DOMAINS`. The redirect URI is
   `<SWITCHBOARD_PUBLIC_URL>/api/v1/auth/oidc/callback`.
+- **Local passwords** work alongside OIDC (or without it). An account can have a password, an
+  OIDC identity, or both. Passwords are hashed with scrypt; the rules are at least 12 characters,
+  not the account's email, and not one of the most common passwords. Failed sign-ins and failed
+  password confirmations are throttled (five misses lock that client or account out for a minute).
+- **Temporary passwords.** A password an admin sets (Settings › Users: "Set password" / "Reset
+  password", with a reason) and the generated bootstrap password are temporary. The session that
+  signs in with one can only read `/auth/me`, change the password or sign out; every other route
+  answers 403 `password_change_required` until the password changes. Setting, resetting or
+  removing a password signs the user out everywhere; a user changing their own password signs out
+  their other sessions. The audit log records that a password changed, never the value. API tokens
+  are separate credentials: revoke them separately when an account is compromised.
 - **A user row is required.** A valid token from the right issuer for an unknown email lands on
-  an "ask an admin" page. The first admin comes from `SWITCHBOARD_BOOTSTRAP_ADMIN`.
+  an "ask an admin" page.
+- **Bootstrap** always leaves a way in. With OIDC and `SWITCHBOARD_BOOTSTRAP_ADMIN`, that email is
+  created as an admin who signs in through the issuer. Otherwise, while no account has a password
+  (and, with OIDC, no admin exists yet), a local admin is created: its generated password is
+  printed once to the log and must be changed at first sign-in; a password given in
+  `SWITCHBOARD_ADMIN_PASSWORD` is used as is.
 - **Sessions** are HttpOnly, SameSite=Lax cookies (Secure when the public URL is https, or with
   `SWITCHBOARD_SECURE_COOKIES=true`), backed by a `sessions` row so an admin can revoke them, with
   a 12-hour sliding lifetime.
@@ -28,9 +44,10 @@ people who deploy and operate it.
 - **API tokens** (for the CLI and CI) are personal, scoped to a role no higher than their
   owner's, shown once, and revocable. Use a dedicated admin token for CI that applies
   configuration, so the audit log names it.
-- **Evaluation mode** (`SWITCHBOARD_EVALUATION=true`) creates a local admin password printed once
-  to the log, and the UI shows a persistent banner that OIDC is not configured. Don't run
-  evaluation mode on a network you don't control.
+- **Evaluation mode** (`SWITCHBOARD_EVALUATION=true`) allows unauthenticated webhook instances and
+  a plain-http OIDC issuer. While OIDC is not configured the UI shows a persistent evaluation
+  banner; a production install that deliberately uses local accounts only (evaluation off) shows
+  none. Don't run evaluation mode on a network you don't control.
 
 ## Unauthenticated surfaces
 
@@ -102,7 +119,9 @@ requires end-user personal data, and source plugins map only documented attribut
 
 ## Hardening checklist
 
-- [ ] OIDC configured, `SWITCHBOARD_EVALUATION` unset, allowed domains set.
+- [ ] OIDC configured, `SWITCHBOARD_EVALUATION` unset, allowed domains set (or, for local
+      accounts only, evaluation unset and every bootstrap password changed).
+- [ ] Remove passwords from accounts that should sign in only through OIDC (Settings › Users).
 - [ ] `SWITCHBOARD_PUBLIC_URL` is `https://…`, TLS terminated at the ingress, Secure cookies on.
 - [ ] `DATABASE_URL` and OIDC client secret come from a secret store (the Helm chart's
       `database.existingSecret`), not plain values.

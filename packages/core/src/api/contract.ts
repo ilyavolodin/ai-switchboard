@@ -93,19 +93,47 @@ export interface UserDTO {
   id: string;
   email: string;
   role: Role;
+  /** The account can sign in with a local password. */
+  hasPassword: boolean;
+  /** The account is linked to an OIDC identity (it has signed in through the issuer). */
+  hasOidc: boolean;
+  /** The password was set by an admin (or bootstrap); the next password sign-in must change it. */
+  mustChangePassword: boolean;
   lastLoginAt: Iso | null;
   createdAt: Iso;
 }
 
 export interface MeResponse {
   user: UserDTO | null;
+  /**
+   * `oidc` when an OIDC issuer is configured. Local password sign-in is available in both modes;
+   * `oidc` only adds the "Sign in with <issuer>" button.
+   */
   authMode: 'oidc' | 'local';
   oidcConfigured: boolean;
+  /** The issuer's host, for the sign-in button label; null without OIDC. */
+  oidcIssuer: string | null;
   evaluation: boolean;
+  /**
+   * This session signed in with a temporary password: every route except `GET /auth/me`,
+   * `POST /auth/password` and `POST /auth/logout` answers 403 `password_change_required`.
+   */
+  mustChangePassword: boolean;
 }
 
 export interface LocalLoginRequest {
   email: string;
+  password: string;
+}
+
+/** POST /auth/password: the signed-in user changes their own password. */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+/** PUT /users/:id/password: an admin sets or resets a user's password (a temporary password). */
+export interface SetPasswordRequest extends Reasoned {
   password: string;
 }
 
@@ -814,6 +842,39 @@ export interface InstallPluginRequest extends Reasoned {
   range?: string;
 }
 
+/**
+ * The `{kind}` segment of the plugin naming convention (`ai-switchboard-{kind}-{name}`), used as
+ * `GET /plugins/search?kind=`.
+ */
+export type PluginSearchKind = 'source' | 'executor' | 'notifier' | 'secrets';
+
+/** One npm package that follows the naming convention. */
+export interface PluginSearchResult {
+  package: string;
+  /** The instance kind its name promises. */
+  kind: PluginKind;
+  /** Latest version on the registry. */
+  version: string;
+  description: string;
+  /** npm user who published the latest version. */
+  publisher: string | null;
+  /** When the latest version was published. */
+  date: Iso | null;
+  links: { npm?: string; homepage?: string; repository?: string };
+  weeklyDownloads: number | null;
+  /** Loaded, or installed and waiting for a restart. */
+  installed: boolean;
+  installedVersion: string | null;
+  /** In the project's catalogue of reviewed plugins. */
+  reviewed: boolean;
+}
+
+export interface PluginSearchResponse {
+  /** The registry that answered (`SWITCHBOARD_NPM_REGISTRY`). */
+  registry: string;
+  results: PluginSearchResult[];
+}
+
 export interface CatalogueEntry {
   package: string;
   displayName: string;
@@ -855,6 +916,50 @@ export interface UpdateInstanceRequest extends Reasoned {
   settings?: Record<string, unknown>;
 }
 
+/** Something whose settings (or, for a process, whose document) hold a `secret://` reference. */
+export interface SecretUserDTO {
+  kind: 'source' | 'executor' | 'notifier' | 'secret_provider' | 'process';
+  id: string;
+  name: string;
+  /** Dotted path of the field holding the reference (`apiKey`, `executor.target.token`). */
+  field: string;
+}
+
+/**
+ * One secret a provider lists. Names only: the API never returns a secret value, nor anything
+ * derived from one.
+ */
+export interface ProviderSecretDTO {
+  name: string;
+  /** `secret://<provider>/<name>`, ready to paste into a secret field. */
+  ref: string;
+  description?: string;
+  updatedAt?: Iso;
+  usedBy: SecretUserDTO[];
+}
+
+/** A reference to this provider whose name the provider does not list (a broken reference). */
+export interface MissingSecretDTO {
+  name: string;
+  ref: string;
+  usedBy: SecretUserDTO[];
+}
+
+/** GET /secret-providers/:id/secrets */
+export interface ProviderSecretsResponse {
+  providerId: string;
+  /** The provider's name: the `<provider>` in `secret://<provider>/<name>`. */
+  provider: string;
+  /**
+   * False when the provider cannot list (its plugin has no `list()`, it is disabled or not
+   * running, or listing failed); `error` says why and `secrets` and `missing` are empty.
+   */
+  available: boolean;
+  error?: string;
+  secrets: ProviderSecretDTO[];
+  missing: MissingSecretDTO[];
+}
+
 // ---------------------------------------------------------------------------------------------
 // Settings, users, audit, export, about
 // ---------------------------------------------------------------------------------------------
@@ -891,6 +996,8 @@ export interface UpdateSettingsRequest extends Reasoned {
 export interface CreateUserRequest extends Reasoned {
   email: string;
   role: Role;
+  /** Optional temporary password; the user must change it at first sign-in. */
+  password?: string;
 }
 
 export interface UpdateUserRequest extends Reasoned {

@@ -1,6 +1,7 @@
 import { and, count, eq, gte, inArray } from 'drizzle-orm';
 
 import { executors, events, processes, runs, sources } from '../../db/schema.js';
+import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import { instanceStatus } from '../../domain/labels.js';
 import type { ProcessDocument } from '../../domain/process.js';
 import { collectSecretRefs } from '../../secrets/refs.js';
@@ -67,6 +68,7 @@ export async function sourceSummaries(
   return list.map((row) => {
     const typeEntry = ctx.runtime.sourceType(row.typeId);
     const error = ctx.runtime.instanceError(row.id);
+    const liveSource = ctx.runtime.source(row.id);
     return {
       id: row.id,
       name: row.name,
@@ -82,7 +84,9 @@ export async function sourceSummaries(
         .map((c) => ({ type: c.type, count: c.n }))
         .sort((a, b) => b.count - a.count),
       pluginAvailable: typeEntry !== undefined,
-      unauthenticated: row.caps.unauthenticated === true,
+      unauthenticated: liveSource
+        ? acceptsUnauthenticated(typeEntry?.type, liveSource.source)
+        : row.caps.unauthenticated === true,
       processCount: procs.filter((p) => p.document.triggers.some((t) => t.sourceId === row.id))
         .length,
     };

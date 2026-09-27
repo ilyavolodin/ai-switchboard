@@ -2,11 +2,12 @@ import { createHash, createSign, generateKeyPairSync, randomBytes } from 'node:c
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { OidcClient } from '../../src/auth/oidc.js';
 import { users } from '../../src/db/schema.js';
-import { createApiHarness, type ApiHarness } from '../helpers/api.js';
+import { ADMIN_EMAIL, ADMIN_PASSWORD, createApiHarness, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
 const CLIENT_ID = 'switchboard';
@@ -191,10 +192,26 @@ describe('OIDC sign-in', () => {
     expect(cb.headers.location).toMatch(/^\/login\?error=/);
   });
 
-  it('disables local password sign-in when OIDC is configured', async () => {
-    const res = await h.request('POST', '/api/v1/auth/login', {
-      body: { email: 'admin@switchboard.local', password: 'x' },
+  it('keeps local password sign-in alongside OIDC', async () => {
+    const wrong = await h.request('POST', '/api/v1/auth/login', {
+      body: { email: ADMIN_EMAIL, password: 'x' },
     });
-    expect(res.statusCode).toBe(404);
+    expect(wrong.statusCode).toBe(401);
+    const cookie = await h.login(ADMIN_EMAIL, ADMIN_PASSWORD);
+    const me = await h.request('GET', '/api/v1/auth/me', { cookie });
+    expect(me.json<{ authMode: string; user: { email: string } }>()).toMatchObject({
+      authMode: 'oidc',
+      user: { email: ADMIN_EMAIL },
+    });
+  });
+
+  it('does not restrict an OIDC session when the account also has a temporary password', async () => {
+    await tdb.db
+      .update(users)
+      .set({ passwordHash: 'scrypt$1$1$1$x$y', mustChangePassword: true })
+      .where(eq(users.email, 'alice@acme.test'));
+    const { cookie } = await signIn('alice@acme.test');
+    const res = await h.request('GET', '/api/v1/processes', { cookie: cookie! });
+    expect(res.statusCode).toBe(200);
   });
 });

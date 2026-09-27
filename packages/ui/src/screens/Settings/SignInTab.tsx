@@ -68,7 +68,7 @@ function SignInForm({ oidc }: { oidc: GlobalSettings['oidc'] }) {
       {!configured && (
         <Banner tone="warn" title="OIDC is not configured">
           {session.authMode === 'local'
-            ? 'Sign-in uses the local admin password created at bootstrap. Set an issuer and client id below (and OIDC_CLIENT_SECRET in the environment), then restart to turn on single sign-on.'
+            ? 'Sign-in uses local passwords (Settings › Users). Set an issuer and client id below (and OIDC_CLIENT_SECRET in the environment), then restart to add single sign-on; local passwords keep working.'
             : 'The issuer is set but the server could not use it. Check the issuer URL and the client secret in the environment, then restart.'}
         </Banner>
       )}

@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { mockStatus } from '../../api/mockApi.js';
 import type { RenderOptions } from '../../test/render.js';
 import { renderWithProviders } from '../../test/render.js';
 import { Plugins } from './Plugins.js';
@@ -76,13 +77,13 @@ describe('Plugins', () => {
       range: '^1',
     });
     expect(api.callsTo('POST /plugins')).toHaveLength(0);
-    expect(within(dialog).getByText(/a restart applies it/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/installs and loads it/)).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: 'Add plugin' }));
     const reason = await screen.findByRole('dialog', {
       name: /Add @ai-switchboard\/source-sentry@\^1/,
     });
-    expect(within(reason).getByText(/the next restart loads it/)).toBeInTheDocument();
+    expect(within(reason).getByText(/loaded now/)).toBeInTheDocument();
     await user.type(within(reason).getByRole('textbox', { name: /Reason/ }), 'we moved to Sentry');
     await user.click(within(reason).getByRole('button', { name: 'Add plugin' }));
     await vi.waitFor(() => {
@@ -92,6 +93,48 @@ describe('Plugins', () => {
         reason: 'we moved to Sentry',
       });
     });
+    // Loaded at once: no restart message.
+    expect(await screen.findByText('Added · ready to use')).toBeInTheDocument();
+    expect(screen.queryByText(/restart to apply/)).toBeNull();
+  });
+
+  it('says so when an upgrade of a loaded plugin needs a restart', async () => {
+    const { user } = renderPlugins('/plugins', {
+      overrides: {
+        'POST /plugins': (r) => ({
+          ...(r.body as object),
+          name: '@ai-switchboard/source-linear',
+          pluginId: 'linear',
+          displayName: 'Linear',
+          version: '1.4.2',
+          status: 'loaded',
+          statusLabel: { tone: 'warn', label: 'restart to apply' },
+          statusMessage: 'Version 1.5.0 is installed; restart to load it.',
+          origin: 'installed',
+          sdkRange: '^1.0.0',
+          capabilities: {},
+          types: [],
+          errorCount: 0,
+          invalidEventCount: 0,
+          integrity: null,
+          pendingRestart: true,
+        }),
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Add plugin' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add plugin' });
+    await user.type(
+      within(dialog).getByLabelText(/Package and version range/),
+      '@ai-switchboard/source-linear@^1.5',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Inspect' }));
+    await within(dialog).findByRole('region', { name: 'Manifest' });
+    await user.click(within(dialog).getByRole('button', { name: 'Add plugin' }));
+    const reason = await screen.findByRole('dialog', {
+      name: /^Add @ai-switchboard\/source-linear/,
+    });
+    await user.type(within(reason).getByRole('textbox', { name: /Reason/ }), 'upgrade');
+    await user.click(within(reason).getByRole('button', { name: 'Add plugin' }));
     expect(await screen.findByText('Added · restart to apply')).toBeInTheDocument();
   });
 
@@ -120,13 +163,41 @@ describe('Plugins', () => {
     expect(api.callsTo('POST /plugins')).toHaveLength(0);
   });
 
-  it('adds from the catalogue in one click, through the same inspect and confirm', async () => {
-    const { user, api } = renderPlugins('/plugins/catalogue');
-    const list = await screen.findByRole('list', { name: 'Catalogue' });
-    const linear = within(list).getByRole('listitem', { name: 'Linear' });
-    expect(within(linear).getByText('installed')).toBeInTheDocument();
+  it('browses npm by kind and text, with reviewed and installed state', async () => {
+    const { user } = renderPlugins('/plugins/browse');
+    const list = await screen.findByRole('list', { name: 'npm packages' });
+    const sentry = within(list).getByRole('listitem', { name: '@ai-switchboard/source-sentry' });
+    expect(within(sentry).getByText('reviewed')).toHaveAttribute('data-tone', 'ok');
+    expect(within(sentry).getByText('1.2k / week')).toBeInTheDocument();
+    expect(within(sentry).getByRole('link', { name: /npm/ })).toHaveAttribute('rel', 'noreferrer');
+    const linear = within(list).getByRole('listitem', { name: '@ai-switchboard/source-linear' });
+    expect(within(linear).getByText('installed · 1.4.2')).toBeInTheDocument();
+    expect(within(linear).queryByRole('button', { name: /Install/ })).toBeNull();
+    const jira = within(list).getByRole('listitem', { name: '@acme/ai-switchboard-source-jira' });
+    expect(within(jira).queryByText('reviewed')).toBeNull();
+    expect(within(jira).getByText(/by acme-dev/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Executors' }));
+    expect(
+      await screen.findByRole('listitem', { name: 'ai-switchboard-executor-n8n' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('listitem', { name: '@ai-switchboard/source-sentry' })).toBeNull();
+
+    await user.click(screen.getByRole('radio', { name: 'All' }));
+    await user.type(screen.getByRole('searchbox', { name: 'Search npm' }), 'jira');
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('listitem', { name: '@ai-switchboard/source-sentry' })).toBeNull();
+    });
+    expect(
+      screen.getByRole('listitem', { name: '@acme/ai-switchboard-source-jira' }),
+    ).toBeInTheDocument();
+  });
+
+  it('installs from Browse npm through the same inspect, review and reason', async () => {
+    const { user, api } = renderPlugins('/plugins/browse');
+    const list = await screen.findByRole('list', { name: 'npm packages' });
     await user.click(
-      within(list).getByRole('button', { name: 'Add @ai-switchboard/source-sentry' }),
+      within(list).getByRole('button', { name: 'Install @ai-switchboard/source-sentry' }),
     );
     const dialog = await screen.findByRole('dialog', { name: 'Add plugin' });
     expect(within(dialog).getByLabelText(/Package and version range/)).toHaveValue(
@@ -137,6 +208,42 @@ describe('Plugins', () => {
       package: '@ai-switchboard/source-sentry',
       range: '^1.2.0',
     });
+    await user.click(within(dialog).getByRole('button', { name: 'Add plugin' }));
+    const reason = await screen.findByRole('dialog', {
+      name: /^Add @ai-switchboard\/source-sentry/,
+    });
+    await user.type(within(reason).getByRole('textbox', { name: /Reason/ }), 'sentry alerts');
+    await user.click(within(reason).getByRole('button', { name: 'Add plugin' }));
+    await vi.waitFor(() => {
+      expect(api.callsTo('POST /plugins')[0]?.body).toEqual({
+        package: '@ai-switchboard/source-sentry',
+        range: '^1.2.0',
+        reason: 'sentry alerts',
+      });
+    });
+    expect(await screen.findByText('Added · ready to use')).toBeInTheDocument();
+  });
+
+  it('says plainly when the registry cannot be reached', async () => {
+    renderPlugins('/plugins/browse', {
+      overrides: {
+        'GET /plugins/search': () =>
+          mockStatus(503, {
+            error: 'registry_unavailable',
+            message: 'The npm registry at https://registry.npmjs.org is unreachable (offline).',
+          }),
+      },
+    });
+    expect(await screen.findByText('npm could not be searched')).toBeInTheDocument();
+    expect(screen.getByText(/is unreachable/)).toBeInTheDocument();
+  });
+
+  it('lets viewers search npm but not install', async () => {
+    renderPlugins('/plugins/browse', { role: 'viewer' });
+    const list = await screen.findByRole('list', { name: 'npm packages' });
+    expect(
+      within(list).getByRole('button', { name: 'Install @ai-switchboard/source-sentry' }),
+    ).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('keeps admin actions visible but disabled for operators', async () => {

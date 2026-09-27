@@ -161,7 +161,6 @@ export function Sources() {
             onChange={onChange}
             eventTypes={t.eventTypes ?? []}
             mode={t.mode}
-            allowsUnauthenticated={t.allowsUnauthenticated}
           />
         )}
         onSubmit={async ({ type, name, settings, caps }) => {

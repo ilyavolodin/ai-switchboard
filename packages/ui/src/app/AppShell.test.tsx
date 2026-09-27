@@ -106,14 +106,15 @@ describe('app shell', () => {
           user: null,
           authMode: 'oidc',
           oidcConfigured: true,
+          oidcIssuer: 'accounts.google.com',
           evaluation: false,
+          mustChangePassword: false,
         }),
       },
     });
-    expect(await screen.findByRole('link', { name: 'Sign in' })).toHaveAttribute(
-      'href',
-      '/api/v1/auth/oidc/start',
-    );
+    expect(
+      await screen.findByRole('link', { name: 'Sign in with accounts.google.com' }),
+    ).toHaveAttribute('href', '/api/v1/auth/oidc/start');
   });
 
   it('routes detail tabs as URL segments', async () => {

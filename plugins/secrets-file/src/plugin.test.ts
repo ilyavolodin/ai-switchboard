@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -8,6 +8,7 @@ import {
   createTestContext,
   pluginConformanceChecks,
   runConformance,
+  secretProviderConformanceChecks,
 } from '@ai-switchboard/sdk/testing';
 
 import plugin, { fileSecretProviderType } from './plugin.js';
@@ -32,6 +33,11 @@ describe('file secret provider', () => {
     await mkdir(join(dir, '..data'));
     await writeFile(join(dir, '..data', 'linked'), 'fixture-secret-linked\n');
     await symlink(join(dir, '..data', 'linked'), join(dir, 'linked'));
+    await symlink(join(dir, 'nowhere'), join(dir, 'dangling'));
+    await writeFile(join(dir, '.hidden'), 'fixture-secret-hidden');
+    await writeFile(join(dir, 'zero'), '');
+    await mkdir(join(dir, 'subdir'));
+    await utimes(join(dir, 'github-token'), new Date(0), new Date('2026-01-02T03:04:05.000Z'));
   });
 
   afterAll(async () => {
@@ -75,6 +81,44 @@ describe('file secret provider', () => {
       await expect(make().resolve(name)).rejects.toThrow(/not a valid secret file name/);
     },
   );
+
+  describe('list', () => {
+    it('lists regular files, following symlinks and skipping dotfiles, dirs and empty files', async () => {
+      const names = (await make().list?.())?.map((s) => s.name);
+      expect(names).toEqual([
+        'crlf',
+        'empty',
+        'github-token',
+        'inner-newline',
+        'linked',
+        'no-newline',
+      ]);
+    });
+
+    it('reports the mtime as updatedAt and never a value', async () => {
+      const listing = (await make().list?.()) ?? [];
+      expect(listing.find((s) => s.name === 'github-token')).toEqual({
+        name: 'github-token',
+        updatedAt: '2026-01-02T03:04:05.000Z',
+      });
+      expect(JSON.stringify(listing)).not.toMatch(/fixture-secret/);
+    });
+
+    it('throws a clear error when the directory cannot be listed', async () => {
+      await expect(make({ directory: join(root, 'nope') }).list?.()).rejects.toThrow(
+        /cannot be listed \(ENOENT\)/,
+      );
+    });
+
+    it('passes the secret provider conformance checks', async () => {
+      for (const check of secretProviderConformanceChecks(fileSecretProviderType, {
+        settings: { directory: dir },
+        expectNames: ['github-token', 'linked'],
+      })) {
+        await check.run();
+      }
+    });
+  });
 
   it('is healthy when the directory is readable', async () => {
     expect((await make().health()).status).toBe('healthy');

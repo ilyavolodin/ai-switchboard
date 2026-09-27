@@ -7,17 +7,10 @@ import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
 import { Field } from '../../components/Field.js';
-import { KeyValueList } from '../../components/KeyValueList.js';
-import { StatusChip } from '../../components/StatusChip.js';
 import { TextField } from '../../components/TextField.js';
 import styles from '../Sources/forms.module.css';
-import {
-  isPackageName,
-  kindLabel,
-  networkText,
-  parsePackageSpec,
-  secretsText,
-} from './pluginModel.js';
+import { ManifestReview } from './ManifestReview.js';
+import { isPackageName, parsePackageSpec } from './pluginModel.js';
 
 export interface AddPluginDialogProps {
   open: boolean;
@@ -33,8 +26,7 @@ export interface AddPluginDialogProps {
 /**
  * "Add plugin": a package name and version range, then the manifest the core read from npm —
  * resolved version, SDK compatibility, contributed types and the declared network and secret
- * capabilities — shown before anything is installed. Adding writes the lockfile; a restart
- * applies it.
+ * capabilities — shown before anything is installed. Adding installs and loads it at once.
  */
 export function AddPluginDialog({
   open,
@@ -142,48 +134,12 @@ export function AddPluginDialog({
           </Banner>
         )}
 
-        {manifest && (
-          <section className={styles.caps} aria-label="Manifest">
-            <div className={styles.footer}>
-              <span className={styles.legend}>
-                Manifest · resolved <span className="mono">{manifest.version}</span>
-              </span>
-              <span className={styles.spacer} />
-              {manifest.compatible ? (
-                <StatusChip tone="ok" size="sm" label={`sdk ${manifest.sdkRange} ok`} />
-              ) : (
-                <StatusChip
-                  tone="error"
-                  size="sm"
-                  label={`incompatible · sdk ${manifest.sdkRange}`}
-                />
-              )}
-            </div>
-            <KeyValueList
-              label="Manifest capabilities"
-              data={[
-                [
-                  'contributes',
-                  manifest.types.length
-                    ? manifest.types.map((t) => `${t.displayName} ${kindLabel(t.kind)}`).join(', ')
-                    : 'nothing',
-                ],
-                ['network', <span className="mono">{networkText(manifest.capabilities)}</span>],
-                ['secrets', <span className="mono">{secretsText(manifest.capabilities)}</span>],
-                [
-                  'integrity',
-                  <span className="mono">
-                    {manifest.integrity ?? 'unknown'} · pinned in plugins.lock.json
-                  </span>,
-                ],
-              ]}
-            />
-          </section>
-        )}
+        {manifest && <ManifestReview manifest={manifest} />}
 
         <Banner tone="info" icon="info">
-          Plugins run in the core&apos;s process as trusted code. Adding one writes the lockfile
-          now; a restart applies it, one replica at a time, so no runs are lost.
+          Plugins run in the core&apos;s process as trusted code. Adding one installs and loads it
+          now, and every replica installs it within a minute. Upgrading or removing a loaded plugin
+          applies on the next restart.
         </Banner>
       </div>
     </Dialog>

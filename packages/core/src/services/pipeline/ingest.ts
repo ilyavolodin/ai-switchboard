@@ -12,6 +12,7 @@ import {
 
 import type { Tx } from '../../db/client.js';
 import { eventRaw, events, sources } from '../../db/schema.js';
+import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import type { EventStage } from '../../domain/status.js';
 import type { LiveSource } from '../../plugins/runtime.js';
 import { recordAudit } from '../audit.js';
@@ -303,12 +304,13 @@ export async function ingestPush(
       return { status: 503 };
     }
 
-    const unauthenticated =
-      row.caps.unauthenticated === true && live.type.allowsUnauthenticated === true;
+    // Derived from the built instance (the webhook's `verification: none`), never from a flag
+    // alone, so a type that must verify can never skip it.
+    const unauthenticated = acceptsUnauthenticated(live.type, live.source);
     if (!unauthenticated) {
       let verdict: { ok: boolean; reason?: string };
       if (!live.source.verify) {
-        verdict = { ok: false, reason: 'source has no verify and is not marked unauthenticated' };
+        verdict = { ok: false, reason: 'source has no verify and its type requires one' };
       } else {
         try {
           verdict = live.source.verify(req);

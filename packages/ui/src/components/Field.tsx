@@ -16,6 +16,8 @@ export interface FieldProps {
   /** Short help under the control; long help can be a node. */
   help?: ReactNode;
   error?: string | null;
+  /** A standing red warning about the current value (not a validation error). */
+  warning?: string | null;
   required?: boolean;
   /** Shows the tangerine "changed, not saved" dot. */
   changed?: boolean;
@@ -37,6 +39,7 @@ export function Field({
   label,
   help,
   error,
+  warning,
   required,
   changed,
   disabled,
@@ -48,7 +51,8 @@ export function Field({
   const id = useId();
   const helpId = help ? `${id}-help` : undefined;
   const errorId = error ? `${id}-error` : undefined;
-  const describedBy = [errorId, helpId].filter(Boolean).join(' ') || undefined;
+  const warningId = warning ? `${id}-warning` : undefined;
+  const describedBy = [errorId, warningId, helpId].filter(Boolean).join(' ') || undefined;
   return (
     <div
       className={cx(
@@ -78,6 +82,12 @@ export function Field({
           <span id={errorId} className={styles.error} role="alert">
             <Icon name="warning" size={13} />
             {error}
+          </span>
+        )}
+        {warning && (
+          <span id={warningId} className={styles.warning} role="note">
+            <Icon name="warning" size={13} />
+            {warning}
           </span>
         )}
         {help && (

@@ -19,8 +19,9 @@ function fromState(state: unknown): string {
 }
 
 /**
- * Sign in. Local mode: email + password (`POST /auth/login`). OIDC mode: a button to the issuer
- * (`/api/v1/auth/oidc/start`). Evaluation mode shows the OIDC-not-configured banner.
+ * Sign in: email + password (`POST /auth/login`) always, plus a button to the issuer
+ * (`/api/v1/auth/oidc/start`) when OIDC is configured. A temporary password continues to
+ * `/change-password`. An evaluation install without OIDC shows the evaluation banner.
  */
 export function Login() {
   const me = useMe();
@@ -38,7 +39,13 @@ export function Login() {
       </div>
     );
   }
-  if (me.data?.user) return <Navigate to={target} replace />;
+  if (me.data?.user) {
+    return me.data.mustChangePassword ? (
+      <Navigate to="/change-password" replace state={{ from: target }} />
+    ) : (
+      <Navigate to={target} replace />
+    );
+  }
 
   const submit = (e: SubmitEvent) => {
     e.preventDefault();
@@ -46,14 +53,18 @@ export function Login() {
       { email: email.trim(), password },
       {
         onSuccess: (res) => {
-          if (res.user) void navigate(target, { replace: true });
+          if (!res.user) return;
+          if (res.mustChangePassword)
+            void navigate('/change-password', { replace: true, state: { from: target } });
+          else void navigate(target, { replace: true });
         },
       },
     );
   };
 
-  const oidc = me.data?.authMode === 'oidc';
-  const evaluation = me.data ? me.data.evaluation || !me.data.oidcConfigured : false;
+  const oidc = me.data?.oidcConfigured ?? false;
+  const issuer = me.data?.oidcIssuer ?? null;
+  const evaluation = me.data ? me.data.evaluation && !me.data.oidcConfigured : false;
   const failure = login.error
     ? isApiRequestError(login.error) && login.error.status === 401
       ? 'That email and password did not match.'
@@ -76,47 +87,57 @@ export function Login() {
             use.
           </Banner>
         )}
-        {oidc ? (
-          <a className={buttonClassName('primary', 'lg', true)} href={OIDC_START_URL}>
-            <Icon name="lock" size={14} />
-            Sign in
-          </a>
-        ) : (
-          <form className={styles.form} onSubmit={submit}>
-            <Field label="Email" required>
-              {({ id }) => (
-                <TextField
-                  id={id}
-                  type="email"
-                  autoComplete="username"
-                  required
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                  }}
-                />
-              )}
-            </Field>
-            <Field label="Password" required>
-              {({ id }) => (
-                <TextField
-                  id={id}
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                  }}
-                />
-              )}
-            </Field>
-            {failure && <Banner tone="error">{failure}</Banner>}
-            <Button type="submit" variant="primary" size="lg" block loading={login.isPending}>
-              Sign in
-            </Button>
-          </form>
+        {oidc && (
+          <>
+            <a className={buttonClassName('primary', 'lg', true)} href={OIDC_START_URL}>
+              <Icon name="lock" size={14} />
+              {issuer ? `Sign in with ${issuer}` : 'Sign in with single sign-on'}
+            </a>
+            <p className={styles.divider}>
+              <span>or use a local password</span>
+            </p>
+          </>
         )}
+        <form className={styles.form} onSubmit={submit}>
+          <Field label="Email" required>
+            {({ id }) => (
+              <TextField
+                id={id}
+                type="email"
+                autoComplete="username"
+                required
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                }}
+              />
+            )}
+          </Field>
+          <Field label="Password" required>
+            {({ id }) => (
+              <TextField
+                id={id}
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                }}
+              />
+            )}
+          </Field>
+          {failure && <Banner tone="error">{failure}</Banner>}
+          <Button
+            type="submit"
+            variant={oidc ? 'outline' : 'primary'}
+            size="lg"
+            block
+            loading={login.isPending}
+          >
+            Sign in
+          </Button>
+        </form>
       </main>
     </div>
   );

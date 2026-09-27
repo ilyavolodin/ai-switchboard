@@ -1,4 +1,4 @@
-import { Link, NavLink } from 'react-router';
+import { Link, NavLink, useNavigate } from 'react-router';
 
 import { usePlugins, useProcesses, useStatus } from '../api/index.js';
 import { useAbout } from '../api/hooks/settings.js';
@@ -28,6 +28,7 @@ function initials(email: string): string {
 export function Rail({ onSignOut }: { onSignOut: () => void }) {
   const { user } = useSession();
   const { theme, toggle } = useTheme();
+  const navigate = useNavigate();
   const processes = useProcesses();
   const status = useStatus();
   const plugins = usePlugins();
@@ -110,6 +111,14 @@ export function Rail({ onSignOut }: { onSignOut: () => void }) {
               label={theme === 'dark' ? 'Use light theme' : 'Use dark theme'}
               variant="ghost"
               onClick={toggle}
+            />
+            <IconButton
+              icon="lock"
+              label="Account and password"
+              variant="ghost"
+              onClick={() => {
+                void navigate('/settings/account');
+              }}
             />
             <IconButton icon="logout" label="Sign out" variant="ghost" onClick={onSignOut} />
           </span>

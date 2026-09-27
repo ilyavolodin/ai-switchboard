@@ -245,3 +245,104 @@ export function validateAgainstSchema(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Conditionals: `if`/`then`/`else` (also inside `allOf`) and `dependentRequired`
+// ---------------------------------------------------------------------------------------------
+
+interface Conditional {
+  if: JSONSchema | boolean;
+  then: JSONSchema | null;
+  else: JSONSchema | null;
+}
+
+function conditionalsOf(s: JSONSchema): Conditional[] {
+  const out: Conditional[] = [];
+  const collect = (node: JSONSchema) => {
+    const cond = node.if;
+    if (typeof cond === 'boolean' || asSchema(cond)) {
+      out.push({
+        if: typeof cond === 'boolean' ? cond : (asSchema(cond) ?? {}),
+        then: asSchema(node.then),
+        else: asSchema(node.else),
+      });
+    }
+    if (Array.isArray(node.allOf))
+      for (const part of node.allOf as unknown[]) {
+        const sub = asSchema(part);
+        if (sub) collect(sub);
+      }
+  };
+  collect(s);
+  return out;
+}
+
+/** Property names a branch talks about: its `properties` and its `required`. */
+function mentioned(branch: JSONSchema | null): string[] {
+  if (!branch) return [];
+  return [...Object.keys(asSchema(branch.properties) ?? {}), ...requiredOf(branch)];
+}
+
+function matches(schema: JSONSchema | boolean, value: unknown): boolean {
+  if (typeof schema === 'boolean') return schema;
+  const validate = validatorFor(schema);
+  return validate ? validate(value) : true;
+}
+
+/** What an object schema's conditionals mean for the form, given the current value. */
+export interface ResolvedObject {
+  /** Top-level `required`, plus the active branches' and `dependentRequired`'s. */
+  required: string[];
+  /** Properties that belong only to branches that do not apply right now. */
+  hidden: Set<string>;
+}
+
+/**
+ * Resolves `if`/`then`/`else` (at the top level and inside `allOf`) and `dependentRequired`
+ * against the current value. A property named by a branch (in its `properties` or `required`)
+ * is conditional: it is shown only while a branch that names it applies. Properties no branch
+ * names are always shown. So `verification: none` hides the webhook's secret and header fields.
+ */
+export function resolveConditionals(s: JSONSchema, value: unknown): ResolvedObject {
+  const base = requiredOf(s);
+  const required = new Set(base);
+  const conditional = new Set<string>();
+  const active = new Set<string>();
+  const obj =
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  for (const c of conditionalsOf(s)) {
+    for (const k of [...mentioned(c.then), ...mentioned(c.else)]) conditional.add(k);
+    const branch = matches(c.if, obj) ? c.then : c.else;
+    for (const k of mentioned(branch)) active.add(k);
+    for (const k of requiredOf(branch ?? {})) required.add(k);
+  }
+  const dependent = asSchema(s.dependentRequired);
+  if (dependent) {
+    for (const [key, list] of Object.entries(dependent)) {
+      if (obj[key] === undefined || !Array.isArray(list)) continue;
+      for (const k of list as unknown[]) required.add(String(k));
+    }
+  }
+  const hidden = new Set<string>();
+  for (const k of conditional) if (!active.has(k) && !base.includes(k)) hidden.add(k);
+  return { required: [...required], hidden };
+}
+
+/**
+ * The `x-warning` annotation: `{ when: <schema>, message }` (or a list of them). Returns the
+ * message of the first entry whose `when` matches the value, else `null`.
+ */
+export function warningFor(s: JSONSchema, value: unknown): string | null {
+  const raw = s['x-warning'];
+  const list = Array.isArray(raw) ? (raw as unknown[]) : raw === undefined ? [] : [raw];
+  for (const entry of list) {
+    const w = asSchema(entry);
+    if (!w || typeof w.message !== 'string') continue;
+    const when = typeof w.when === 'boolean' ? w.when : asSchema(w.when);
+    if (when === null) continue;
+    if (value !== undefined && matches(when, value)) return w.message;
+  }
+  return null;
+}

@@ -1,14 +1,32 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   createTestContext,
   pluginConformanceChecks,
   runConformance,
+  secretProviderConformanceChecks,
 } from '@ai-switchboard/sdk/testing';
 
 import plugin, { envSecretProviderType } from './plugin.js';
 
 runConformance('plugin', pluginConformanceChecks(plugin), { describe, it });
+
+describe('with seeded variables', () => {
+  beforeAll(() => {
+    vi.stubEnv('SBCONF_FIXTURE_TOKEN', 'fixture-secret-conformance');
+  });
+  afterAll(() => {
+    vi.unstubAllEnvs();
+  });
+  runConformance(
+    'env secret provider',
+    secretProviderConformanceChecks(envSecretProviderType, {
+      settings: { prefix: 'SBCONF_' },
+      expectNames: ['FIXTURE_TOKEN'],
+    }),
+    { describe, it },
+  );
+});
 
 describe('env secret provider', () => {
   afterEach(() => {
@@ -52,6 +70,58 @@ describe('env secret provider', () => {
 
   it('rejects an invalid prefix', () => {
     expect(() => make({ prefix: 'bad-prefix' })).toThrow(/prefix/);
+  });
+
+  describe('list', () => {
+    const names = async (settings = {}): Promise<string[]> =>
+      (await make(settings).list?.())?.map((s) => s.name) ?? [];
+
+    it('lists only prefixed variables, with the prefix stripped', async () => {
+      vi.stubEnv('SBLIST_GITHUB_TOKEN', 'fixture-secret-a');
+      vi.stubEnv('SBLIST_SLACK_URL', 'fixture-secret-b');
+      vi.stubEnv('OTHER_TOKEN', 'fixture-secret-c');
+      expect(await names({ prefix: 'SBLIST_' })).toEqual(['GITHUB_TOKEN', 'SLACK_URL']);
+    });
+
+    it('returns names only, never a value', async () => {
+      vi.stubEnv('SBLIST_GITHUB_TOKEN', 'fixture-secret-a');
+      const listing = await make({ prefix: 'SBLIST_' }).list?.();
+      expect(listing).toEqual([{ name: 'GITHUB_TOKEN' }]);
+      expect(JSON.stringify(listing)).not.toContain('fixture-secret-a');
+    });
+
+    it('leaves out empty variables, which would not resolve', async () => {
+      vi.stubEnv('SBLIST_EMPTY', '');
+      vi.stubEnv('SBLIST_SET', 'fixture-secret');
+      expect(await names({ prefix: 'SBLIST_' })).toEqual(['SET']);
+    });
+
+    it('without a prefix, leaves out system variables', async () => {
+      vi.stubEnv('PATH', '/usr/bin');
+      vi.stubEnv('HOME', '/home/x');
+      vi.stubEnv('LC_ALL', 'C');
+      vi.stubEnv('NODE_OPTIONS', '--x');
+      vi.stubEnv('npm_config_cache', '/tmp');
+      vi.stubEnv('FIXTURE_LISTED_TOKEN', 'fixture-secret');
+      const listed = await names();
+      expect(listed).toContain('FIXTURE_LISTED_TOKEN');
+      for (const system of ['PATH', 'HOME', 'LC_ALL', 'NODE_OPTIONS', 'npm_config_cache'])
+        expect(listed).not.toContain(system);
+    });
+
+    it('narrows the listing with include globs, without affecting resolve', async () => {
+      vi.stubEnv('SBLIST_GITHUB_TOKEN', 'fixture-secret-a');
+      vi.stubEnv('SBLIST_GITHUB_APP_KEY', 'fixture-secret-b');
+      vi.stubEnv('SBLIST_SLACK_URL', 'fixture-secret-c');
+      vi.stubEnv('SBLIST_DATADOG_KEY', 'fixture-secret-d');
+      const settings = { prefix: 'SBLIST_', include: 'GITHUB_*, SLACK_URL' };
+      expect(await names(settings)).toEqual(['GITHUB_APP_KEY', 'GITHUB_TOKEN', 'SLACK_URL']);
+      expect(await make(settings).resolve('DATADOG_KEY')).toBe('fixture-secret-d');
+    });
+
+    it('rejects an include with characters other than names, stars and commas', () => {
+      expect(() => make({ include: 'A.*' })).toThrow(/include/);
+    });
   });
 
   it('is healthy', async () => {

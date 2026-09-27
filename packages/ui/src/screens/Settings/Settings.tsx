@@ -5,6 +5,7 @@ import { EmptyState } from '../../components/EmptyState.js';
 import { LinkButton } from '../../components/LinkButton.js';
 import { RoutedTabs } from '../../components/RoutedTabs.js';
 import { AboutTab } from './AboutTab.js';
+import { AccountTab } from './AccountTab.js';
 import { AuditTab } from './AuditTab.js';
 import { ExportTab } from './ExportTab.js';
 import { GeneralTab } from './GeneralTab.js';
@@ -17,7 +18,7 @@ import { TokensTab } from './TokensTab.js';
 import { UsersTab } from './UsersTab.js';
 
 /**
- * Settings (`/settings`, `/settings/:tab`): General, Sign-in, Users, API tokens, Notifiers,
+ * Settings (`/settings`, `/settings/:tab`): General, Sign-in, Users, Account, API tokens, Notifiers,
  * Secret providers, Retention, Export, About and the Audit log. Every save asks for a reason.
  */
 export function Settings() {
@@ -64,6 +65,8 @@ function TabBody({ tab }: { tab: SettingsTabId }) {
       return <SignInTab />;
     case 'users':
       return <UsersTab />;
+    case 'account':
+      return <AccountTab />;
     case 'tokens':
       return <TokensTab />;
     case 'notifiers':

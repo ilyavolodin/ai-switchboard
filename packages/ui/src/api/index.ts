@@ -14,4 +14,5 @@ export * from './hooks/activity.js';
 export * from './hooks/approvals.js';
 export * from './hooks/plugins.js';
 export * from './hooks/instances.js';
+export * from './hooks/secrets.js';
 export * from './hooks/settings.js';

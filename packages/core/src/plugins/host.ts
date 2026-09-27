@@ -19,7 +19,7 @@ import {
   type Settings,
   type SourceType,
 } from '@ai-switchboard/sdk';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import semver from 'semver';
 
 import type { Clock } from '../clock.js';
@@ -38,6 +38,15 @@ import { toPluginLogger, type CoreLogger } from '../logger.js';
 import { parseSecretRef, resolveSecretRefs } from '../secrets/refs.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
 import { discoverPlugins, type DiscoveredPackage } from './discovery.js';
+import {
+  installPlugin,
+  listInstalled,
+  pluginsDir,
+  PluginInstallError,
+  specPackageName,
+  type InstallResult,
+  type RunNpm,
+} from './install.js';
 import type {
   LiveExecutor,
   LiveNotifier,
@@ -67,6 +76,24 @@ export interface PluginHostOptions {
   builtin?: { name: string; version: string; definition: PluginDefinition }[];
   /** Replace the default scan directories. */
   scanDirs?: { path: string; origin: 'baked' | 'installed' }[];
+  /** `npm` runner for installs (injectable for tests). */
+  runNpm?: RunNpm;
+}
+
+/** What loading one installed package did. */
+export interface HotLoadResult {
+  plugin: LoadedPlugin;
+  /**
+   * True when the running process cannot pick the package up: a different version of it is
+   * already loaded (the ES module cache keeps the old code) and a restart applies the change.
+   */
+  pendingRestart: boolean;
+}
+
+/** A package the host is about to validate and register. */
+interface Candidate {
+  pkg: Pick<DiscoveredPackage, 'name' | 'version' | 'origin'> & { sdk: string };
+  load: () => Promise<unknown>;
 }
 
 interface TypeEntry<T> {
@@ -186,6 +213,8 @@ export class PluginHost implements PluginRuntime {
 
   /** Discover, load and register plugins, then build every configured instance. */
   async boot(): Promise<void> {
+    // Install what other replicas recorded first, so this start loads it like any other package.
+    await this.syncInstalled({ load: false });
     await this.loadPlugins();
     await this.ensureDefaultSecretProviders();
     await this.instantiateAll();
@@ -201,23 +230,105 @@ export class PluginHost implements PluginRuntime {
     ];
   }
 
-  private async importDefinition(pkg: DiscoveredPackage): Promise<unknown> {
+  private async importDefinition(pkg: DiscoveredPackage, query = ''): Promise<unknown> {
     const entry = join(pkg.dir, pkg.switchboard.entry);
     const source = pkg.switchboard.source ? join(pkg.dir, pkg.switchboard.source) : undefined;
     const useSource =
       source !== undefined && (this.opts.config.devSource || !(await exists(entry)));
     const file = useSource ? source : entry;
-    const mod = (await import(pathToFileURL(file).href)) as { default?: unknown };
+    const mod = (await import(`${pathToFileURL(file).href}${query}`)) as { default?: unknown };
     return mod.default;
   }
 
+  /** Validate one candidate like boot does and, when it passes, register its types. */
+  private async evaluate({ pkg, load }: Candidate): Promise<LoadedPlugin> {
+    const record: LoadedPlugin = {
+      name: pkg.name,
+      version: pkg.version,
+      origin: pkg.origin,
+      status: 'loaded',
+    };
+    try {
+      if (!semver.satisfies(SDK_VERSION, pkg.sdk, { includePrerelease: true })) {
+        record.status = 'incompatible';
+        record.message = `declares sdk ${pkg.sdk}; running SDK is ${SDK_VERSION}`;
+      } else {
+        const def = await load();
+        if (!isPluginDefinition(def)) {
+          record.status = 'failed';
+          record.message = 'default export is not a definePlugin() result';
+        } else if (def.switchboardSdk.major !== SDK_MAJOR) {
+          record.status = 'incompatible';
+          record.message = `built against SDK major ${def.switchboardSdk.major}`;
+        } else {
+          const problems = validatePlugin(def);
+          const clash = this.findClash(def);
+          if (problems.length > 0) {
+            record.status = 'failed';
+            record.message = problems.slice(0, 5).join('; ');
+          } else if (clash) {
+            record.status = 'failed';
+            record.message = clash;
+          } else {
+            record.definition = def;
+            this.registerTypes(pkg.name, def);
+          }
+        }
+      }
+    } catch (err) {
+      record.status = 'failed';
+      record.message = err instanceof Error ? err.message : String(err);
+    }
+    if (record.status !== 'loaded')
+      this.opts.logger.warn(
+        { plugin: pkg.name, status: record.status, reason: record.message },
+        'plugin not loaded',
+      );
+    return record;
+  }
+
+  /** The `plugins` row for a loaded (or refused) package. Install columns are left alone. */
+  private pluginRow(p: LoadedPlugin, sdkRange: string, now: Date) {
+    const def = p.definition;
+    return {
+      name: p.name,
+      pluginId: def?.id ?? p.name,
+      displayName: def?.displayName ?? p.name,
+      version: p.version,
+      sdkRange,
+      capabilities: def?.capabilities ?? {},
+      status: p.status,
+      statusMessage: p.message ?? null,
+      origin: p.origin,
+      loadedAt: p.status === 'loaded' ? now : null,
+      updatedAt: now,
+    };
+  }
+
+  /** The `plugin_types` rows of every type a plugin registered. */
+  private typeRows(pluginName: string | undefined, now: Date) {
+    const rows = [];
+    for (const kind of ['source', 'executor', 'notifier', 'secret_provider'] as const) {
+      for (const [typeId, entry] of this.types[kind]) {
+        if (pluginName !== undefined && entry.pluginName !== pluginName) continue;
+        rows.push({
+          plugin: entry.pluginName,
+          kind: kind,
+          typeId,
+          displayName: entry.type.displayName,
+          manifest: serializeType(kind, entry.type),
+          available: true,
+          updatedAt: now,
+        });
+      }
+    }
+    return rows;
+  }
+
   async loadPlugins(): Promise<void> {
-    const { db, clock, logger } = this.opts;
+    const { db, clock } = this.opts;
     const discovered = await discoverPlugins(this.opts.scanDirs ?? this.defaultScanDirs());
-    const candidates: {
-      pkg: Pick<DiscoveredPackage, 'name' | 'version' | 'origin'> & { sdk: string };
-      load: () => Promise<unknown>;
-    }[] = [
+    const candidates: Candidate[] = [
       ...(this.opts.builtin ?? []).map((b) => ({
         pkg: {
           name: b.name,
@@ -234,71 +345,18 @@ export class PluginHost implements PluginRuntime {
     ];
 
     this.loaded.length = 0;
-    for (const { pkg, load } of candidates) {
-      const record: LoadedPlugin = {
-        name: pkg.name,
-        version: pkg.version,
-        origin: pkg.origin,
-        status: 'loaded',
-      };
-      try {
-        if (!semver.satisfies(SDK_VERSION, pkg.sdk, { includePrerelease: true })) {
-          record.status = 'incompatible';
-          record.message = `declares sdk ${pkg.sdk}; running SDK is ${SDK_VERSION}`;
-        } else {
-          const def = await load();
-          if (!isPluginDefinition(def)) {
-            record.status = 'failed';
-            record.message = 'default export is not a definePlugin() result';
-          } else if (def.switchboardSdk.major !== SDK_MAJOR) {
-            record.status = 'incompatible';
-            record.message = `built against SDK major ${def.switchboardSdk.major}`;
-          } else {
-            const problems = validatePlugin(def);
-            const clash = this.findClash(def);
-            if (problems.length > 0) {
-              record.status = 'failed';
-              record.message = problems.slice(0, 5).join('; ');
-            } else if (clash) {
-              record.status = 'failed';
-              record.message = clash;
-            } else {
-              record.definition = def;
-              this.registerTypes(pkg.name, def);
-            }
-          }
-        }
-      } catch (err) {
-        record.status = 'failed';
-        record.message = err instanceof Error ? err.message : String(err);
-      }
-      if (record.status !== 'loaded')
-        logger.warn(
-          { plugin: pkg.name, status: record.status, reason: record.message },
-          'plugin not loaded',
-        );
-      this.loaded.push(record);
-    }
+    for (const candidate of candidates) this.loaded.push(await this.evaluate(candidate));
 
     const now = clock.now();
     await db.transaction(async (tx) => {
       const present = new Set<string>();
       for (const p of this.loaded) {
         present.add(p.name);
-        const def = p.definition;
-        const values = {
-          name: p.name,
-          pluginId: def?.id ?? p.name,
-          displayName: def?.displayName ?? p.name,
-          version: p.version,
-          sdkRange: candidates.find((c) => c.pkg.name === p.name)?.pkg.sdk ?? '',
-          capabilities: def?.capabilities ?? {},
-          status: p.status,
-          statusMessage: p.message ?? null,
-          origin: p.origin,
-          loadedAt: p.status === 'loaded' ? now : null,
-          updatedAt: now,
-        };
+        const values = this.pluginRow(
+          p,
+          candidates.find((c) => c.pkg.name === p.name)?.pkg.sdk ?? '',
+          now,
+        );
         await tx
           .insert(plugins)
           .values(values)
@@ -319,24 +377,240 @@ export class PluginHost implements PluginRuntime {
         }
       }
       await tx.update(pluginTypes).set({ available: false, updatedAt: now });
-      for (const kind of ['source', 'executor', 'notifier', 'secret_provider'] as const) {
-        for (const [typeId, entry] of this.types[kind]) {
-          const values = {
-            plugin: entry.pluginName,
-            kind: kind,
-            typeId,
-            displayName: entry.type.displayName,
-            manifest: serializeType(kind, entry.type),
-            available: true,
-            updatedAt: now,
-          };
-          await tx
-            .insert(pluginTypes)
-            .values(values)
-            .onConflictDoUpdate({ target: [pluginTypes.kind, pluginTypes.typeId], set: values });
+      for (const values of this.typeRows(undefined, now)) {
+        await tx
+          .insert(pluginTypes)
+          .values(values)
+          .onConflictDoUpdate({ target: [pluginTypes.kind, pluginTypes.typeId], set: values });
+      }
+    });
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Hot install and replica convergence
+  // ------------------------------------------------------------------------------------------
+
+  /** Serializes npm runs in this process: the API and the sync timer share one plugins dir. */
+  private installChain: Promise<unknown> = Promise.resolve();
+  private syncTimer: NodeJS.Timeout | undefined;
+  private importGeneration = 0;
+
+  private serialized<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.installChain.then(fn, fn);
+    this.installChain = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Load a package that was just installed into `$SWITCHBOARD_HOME/plugins`, without a restart:
+   * import its entry, validate it like boot, register its types, upsert its `plugins` and
+   * `plugin_types` rows and build the configured instances that were waiting for its types.
+   * A package whose other version is already loaded is left for the next start.
+   */
+  async loadInstalled(name: string): Promise<HotLoadResult> {
+    const { db, clock, logger } = this.opts;
+    const dir = join(pluginsDir(this.opts.config.home), 'node_modules');
+    const pkg = (await discoverPlugins([{ path: dir, origin: 'installed' }])).find(
+      (p) => p.name === name,
+    );
+    if (!pkg) throw new PluginInstallError(`${name} is not installed in ${dir}`);
+
+    const index = this.loaded.findIndex((p) => p.name === name);
+    const existing = index === -1 ? undefined : this.loaded[index];
+    if (existing?.status === 'loaded') {
+      return { plugin: existing, pendingRestart: existing.version !== pkg.version };
+    }
+    // A failed earlier import stays in the ES module cache under its URL: import a fresh copy.
+    const bust = existing ? `?v=${encodeURIComponent(pkg.version)}.${++this.importGeneration}` : '';
+    const record = await this.evaluate({
+      pkg: { name: pkg.name, version: pkg.version, origin: 'installed', sdk: pkg.switchboard.sdk },
+      load: () => this.importDefinition(pkg, bust),
+    });
+    if (index === -1) this.loaded.push(record);
+    else this.loaded[index] = record;
+
+    const now = clock.now();
+    const typeRows = this.typeRows(name, now);
+    await db.transaction(async (tx) => {
+      const values = this.pluginRow(record, pkg.switchboard.sdk, now);
+      await tx
+        .insert(plugins)
+        .values(values)
+        .onConflictDoUpdate({ target: plugins.name, set: values });
+      for (const values of typeRows) {
+        await tx
+          .insert(pluginTypes)
+          .values(values)
+          .onConflictDoUpdate({ target: [pluginTypes.kind, pluginTypes.typeId], set: values });
+      }
+    });
+    if (record.status === 'loaded') {
+      logger.info({ plugin: name, version: record.version }, 'plugin hot-loaded');
+      await this.buildInstancesOf(typeRows.map((t) => ({ kind: t.kind, typeId: t.typeId })));
+    }
+    return { plugin: record, pendingRestart: false };
+  }
+
+  /** Build the configured instances of freshly registered types. */
+  private async buildInstancesOf(types: { kind: InstanceKind; typeId: string }[]): Promise<void> {
+    const { db } = this.opts;
+    const ids = (kind: InstanceKind) => types.filter((t) => t.kind === kind).map((t) => t.typeId);
+    const providerTypes = ids('secret_provider');
+    if (providerTypes.length > 0)
+      for (const row of await db
+        .select()
+        .from(secretProviders)
+        .where(inArray(secretProviders.typeId, providerTypes)))
+        this.buildSecretProvider(row);
+    const sourceTypes = ids('source');
+    if (sourceTypes.length > 0)
+      for (const row of await db.select().from(sources).where(inArray(sources.typeId, sourceTypes)))
+        await this.buildSource(row);
+    const executorTypes = ids('executor');
+    if (executorTypes.length > 0)
+      for (const row of await db
+        .select()
+        .from(executors)
+        .where(inArray(executors.typeId, executorTypes)))
+        await this.buildExecutor(row);
+    const notifierTypes = ids('notifier');
+    if (notifierTypes.length > 0)
+      for (const row of await db
+        .select()
+        .from(notifiers)
+        .where(inArray(notifiers.typeId, notifierTypes)))
+        await this.buildNotifier(row);
+  }
+
+  /**
+   * Install a package from npm (admin action), record it in the database so every replica
+   * converges on it, and load it into this process.
+   */
+  async installAndLoad(
+    spec: string,
+    runNpm: RunNpm | undefined = this.opts.runNpm,
+  ): Promise<{ install: InstallResult } & HotLoadResult> {
+    return this.serialized(async () => {
+      const install = await installPlugin({
+        home: this.opts.config.home,
+        spec,
+        allowSource: this.opts.config.devSource,
+        ...(runNpm ? { runNpm } : {}),
+        now: () => this.opts.clock.now(),
+      });
+      await this.recordInstall(install.name, spec, install.version, install.sdkRange);
+      const loaded = await this.loadInstalled(install.name);
+      return { install, ...loaded };
+    });
+  }
+
+  /** Remember an API install in `plugins` (the row may not exist yet on this replica). */
+  private async recordInstall(
+    name: string,
+    spec: string,
+    version: string,
+    sdkRange: string,
+  ): Promise<void> {
+    const now = this.opts.clock.now();
+    const install = { installSpec: spec, installVersion: version, installedAt: now };
+    await this.opts.db
+      .insert(plugins)
+      .values({
+        name,
+        pluginId: name,
+        displayName: name,
+        version,
+        sdkRange,
+        status: 'unavailable',
+        statusMessage: 'installed; loading',
+        origin: 'installed',
+        ...install,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({ target: plugins.name, set: { ...install, origin: 'installed' } });
+  }
+
+  /** Forget an API install, so replicas stop converging on it. */
+  async forgetInstall(name: string): Promise<void> {
+    await this.opts.db
+      .update(plugins)
+      .set({
+        installSpec: null,
+        installVersion: null,
+        statusMessage: 'removed; unloaded on the next restart',
+        updatedAt: this.opts.clock.now(),
+      })
+      .where(eq(plugins.name, name));
+  }
+
+  /**
+   * Converge this replica on the database: install every plugin recorded by an API install that
+   * is missing from (or at another version in) the local `$SWITCHBOARD_HOME`, and with `load`,
+   * hot-load it. Idempotent; failures are logged and retried on the next pass, never thrown.
+   */
+  async syncInstalled(options: { load: boolean } = { load: true }): Promise<void> {
+    const { db, logger, config } = this.opts;
+    let recorded: { name: string; installSpec: string | null; installVersion: string | null }[];
+    try {
+      recorded = await db
+        .select({
+          name: plugins.name,
+          installSpec: plugins.installSpec,
+          installVersion: plugins.installVersion,
+        })
+        .from(plugins)
+        .where(isNotNull(plugins.installSpec));
+    } catch (err) {
+      logger.error({ err }, 'could not read recorded plugin installs');
+      return;
+    }
+    if (recorded.length === 0) return;
+    await this.serialized(async () => {
+      const local = await listInstalled(config.home).catch(() => []);
+      for (const row of recorded) {
+        if (!row.installSpec) continue;
+        const have = local.find((l) => l.name === row.name);
+        const wanted = row.installVersion ?? have?.version;
+        try {
+          if (!have || (wanted !== undefined && have.version !== wanted)) {
+            // Pin registry specs to the recorded version so every replica runs the same code.
+            const spec =
+              specPackageName(row.installSpec) === row.name && row.installVersion
+                ? `${row.name}@${row.installVersion}`
+                : row.installSpec;
+            logger.info(
+              { plugin: row.name, spec },
+              'installing a plugin recorded by another replica',
+            );
+            await installPlugin({
+              home: config.home,
+              spec,
+              allowSource: config.devSource,
+              ...(this.opts.runNpm ? { runNpm: this.opts.runNpm } : {}),
+              now: () => this.opts.clock.now(),
+            });
+          }
+          // Load it unless this process already tried this version (a refused package is not
+          // re-imported every pass; a new version is).
+          const current = this.loaded.find((p) => p.name === row.name);
+          const tried =
+            current !== undefined &&
+            (current.status === 'loaded' || current.version === (wanted ?? current.version));
+          if (options.load && !tried) await this.loadInstalled(row.name);
+        } catch (err) {
+          logger.error({ err, plugin: row.name }, 'could not install a recorded plugin');
         }
       }
     });
+  }
+
+  /** Run {@link syncInstalled} every `seconds` on this replica until {@link stop}. */
+  startSync(seconds = this.opts.config.pluginSyncSeconds): void {
+    if (this.syncTimer) return;
+    this.syncTimer = setInterval(() => {
+      void this.syncInstalled();
+    }, seconds * 1000);
+    this.syncTimer.unref();
   }
 
   private findClash(def: PluginDefinition): string | undefined {
@@ -828,6 +1102,8 @@ export class PluginHost implements PluginRuntime {
   }
 
   async stop(): Promise<void> {
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    this.syncTimer = undefined;
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = undefined;
     await this.flushPluginErrors();

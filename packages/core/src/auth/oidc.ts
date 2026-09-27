@@ -40,6 +40,11 @@ export class OidcClient {
     private readonly options: { allowInsecure?: boolean } = {},
   ) {}
 
+  /** The issuer URL, for the "Sign in with …" button. */
+  get issuer(): string {
+    return this.config.issuer;
+  }
+
   private discover(): Promise<client.Configuration> {
     this.configuration ??= client
       .discovery(

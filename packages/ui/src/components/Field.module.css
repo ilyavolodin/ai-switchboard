@@ -65,6 +65,18 @@
   align-items: flex-start;
 }
 
+.warning {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--st-err-fg);
+  background: var(--st-err-bg);
+  border-radius: var(--radius-control);
+  padding: 6px 10px;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
 .disabled .label {
   color: var(--disabled-foreground);
 }

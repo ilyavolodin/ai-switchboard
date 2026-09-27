@@ -17,6 +17,7 @@ import { registerInstanceRoutes } from './api/routes/instances.js';
 import { registerPluginRoutes } from './api/routes/plugins.js';
 import { registerProcessRoutes } from './api/routes/processes.js';
 import { registerReadRoutes } from './api/routes/read.js';
+import { registerSecretRoutes } from './api/routes/secrets.js';
 import type { TelemetryRuntime } from './telemetry/setup.js';
 
 export interface ServerOptions {
@@ -67,6 +68,7 @@ export async function buildServer(
   });
   registerAuthRoutes(app, ctx);
   registerInstanceRoutes(app, ctx);
+  registerSecretRoutes(app, ctx);
   registerProcessRoutes(app, ctx);
   registerPluginRoutes(app, ctx);
   registerAdminRoutes(app, ctx);

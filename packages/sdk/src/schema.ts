@@ -14,6 +14,7 @@ export const UI_KEYWORDS = [
   'x-order',
   'x-placeholder',
   'x-help',
+  'x-warning',
 ] as const;
 
 /** An Ajv instance for draft 2020-12 with formats and Switchboard's UI annotations registered. */

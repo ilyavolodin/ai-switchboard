@@ -2,7 +2,6 @@ import type { EventTypeSpec, SourceCapsDTO } from '@ai-switchboard/core/contract
 import { useId } from 'react';
 
 import { Checkbox } from '../../components/Checkbox.js';
-import { Toggle } from '../../components/Toggle.js';
 import { sameValue } from '../../lib/instances.js';
 import { CapField } from './CapField.js';
 import styles from './forms.module.css';
@@ -13,8 +12,6 @@ export interface SourceCapsFieldsProps {
   /** The declared event types (the mute list ticks them). */
   eventTypes: EventTypeSpec[];
   mode: 'push' | 'pull' | 'both' | undefined;
-  /** Only types that allow it may accept unauthenticated deliveries. */
-  allowsUnauthenticated?: boolean;
   /** The saved caps; changed fields get the tangerine dot. */
   baseline?: SourceCapsDTO;
   disabled?: boolean;
@@ -22,15 +19,14 @@ export interface SourceCapsFieldsProps {
 
 /**
  * The core's own caps for a source, beside the plugin's settings: hourly and daily event caps,
- * the poll interval (pull sources), which declared event types are muted, and — only when the
- * type allows it — accepting unauthenticated deliveries.
+ * the poll interval (pull sources) and which declared event types are muted. Whether deliveries
+ * are verified is the plugin's own setting (the webhook's Verification), not a cap.
  */
 export function SourceCapsFields({
   value,
   onChange,
   eventTypes,
   mode,
-  allowsUnauthenticated,
   baseline,
   disabled,
 }: SourceCapsFieldsProps) {
@@ -112,16 +108,6 @@ export function SourceCapsFields({
           </div>
           <p className={styles.note}>Unticked types are muted: they are recorded, never matched.</p>
         </div>
-      )}
-      {allowsUnauthenticated && (
-        <Toggle
-          label="Accept unauthenticated deliveries"
-          checked={Boolean(value.unauthenticated)}
-          disabled={disabled}
-          onChange={(v) => {
-            set('unauthenticated', v || undefined);
-          }}
-        />
       )}
     </fieldset>
   );

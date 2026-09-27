@@ -2,7 +2,11 @@
  * Shared primitive types used across every plugin interface.
  */
 
-/** A JSON Schema (draft 2020-12) document. UI annotations: `x-secret`, `x-widget`, `x-group`. */
+/**
+ * A JSON Schema (draft 2020-12) document. UI annotations: `x-secret`, `x-widget`, `x-group`,
+ * `x-order`, `x-placeholder`, `x-help` and `x-warning` (`{ when: <schema>, message }`: a red
+ * warning under the field while its value matches `when`). See the plugin author guide.
+ */
 export type JSONSchema = Record<string, unknown>;
 
 /** Instance settings after `secret://` references have been resolved to their values. */

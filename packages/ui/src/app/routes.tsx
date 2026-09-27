@@ -8,6 +8,7 @@ import type { RouteObject } from 'react-router';
 import { Activity } from '../screens/Activity/Activity.js';
 import { Trace } from '../screens/Activity/Trace.js';
 import { Approvals } from '../screens/Approvals/Approvals.js';
+import { ChangePassword } from '../screens/ChangePassword/ChangePassword.js';
 import { Board } from '../screens/Board/Board.js';
 import { ExecutorDetail } from '../screens/Executors/ExecutorDetail.js';
 import { Executors } from '../screens/Executors/Executors.js';
@@ -30,6 +31,7 @@ const h = (title: string): RouteHandle => ({ title });
 export const routes: RouteObject[] = [
   { path: '/login', element: <Login />, handle: h('Sign in') },
   { path: '/no-access', element: <NoAccess />, handle: h('No access') },
+  { path: '/change-password', element: <ChangePassword />, handle: h('Change password') },
   {
     path: '/',
     element: <AppShell />,

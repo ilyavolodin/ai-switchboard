@@ -516,3 +516,64 @@ describe('read models over pipeline rows', () => {
     );
   });
 });
+
+describe('unauthenticated sources', () => {
+  const create = (typeId: string, settings: Record<string, unknown>, caps = {}) =>
+    h.request('POST', '/api/v1/sources', {
+      cookie: h.adminCookie,
+      body: { typeId, name: `${typeId} ${randomUUID().slice(0, 6)}`, settings, caps, reason },
+    });
+
+  it('derives unauthenticated from the plugin setting alone (verification: none)', async () => {
+    const res = await create('test-open', { verification: 'none' });
+    expect(res.statusCode, res.body).toBe(201);
+    const detail = res.json<SourceDetail>();
+    expect(detail.unauthenticated).toBe(true);
+    expect(detail.caps.unauthenticated).toBe(true);
+    const [row] = await tdb.db.select().from(sources).where(eq(sources.id, detail.id));
+    expect(row?.caps.unauthenticated).toBe(true);
+  });
+
+  it('ignores an unauthenticated flag when the instance verifies, and clears it on update', async () => {
+    const res = await create(
+      'test-open',
+      { verification: 'secret', secret: 'secret://env/TEST_SOURCE_SECRET' },
+      { unauthenticated: true, eventCapPerHour: 10 },
+    );
+    expect(res.statusCode, res.body).toBe(201);
+    const detail = res.json<SourceDetail>();
+    expect(detail.unauthenticated).toBe(false);
+    expect(detail.caps).toEqual({ eventCapPerHour: 10 });
+
+    const open = await h.request('PUT', `/api/v1/sources/${detail.id}`, {
+      cookie: h.adminCookie,
+      body: { settings: { verification: 'none' }, reason },
+    });
+    expect(open.statusCode, open.body).toBe(200);
+    expect(open.json<SourceDetail>()).toMatchObject({
+      unauthenticated: true,
+      caps: { eventCapPerHour: 10, unauthenticated: true },
+    });
+
+    const closed = await h.request('PUT', `/api/v1/sources/${detail.id}`, {
+      cookie: h.adminCookie,
+      body: {
+        settings: { verification: 'secret', secret: 'secret://env/TEST_SOURCE_SECRET' },
+        reason,
+      },
+    });
+    expect(closed.json<SourceDetail>()).toMatchObject({
+      unauthenticated: false,
+      caps: { eventCapPerHour: 10 },
+    });
+    expect(closed.json<SourceDetail>().caps).not.toHaveProperty('unauthenticated');
+  });
+
+  it('refuses a push instance without verify for a type that does not allow it', async () => {
+    const res = await create('test-noverify', {}, { unauthenticated: true });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ message: string }>().message).toMatch(/must verify deliveries/);
+    const rows = await tdb.db.select().from(sources).where(eq(sources.typeId, 'test-noverify'));
+    expect(rows).toHaveLength(0);
+  });
+});

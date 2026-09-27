@@ -1,7 +1,8 @@
-import type { PluginTypeDTO } from '@ai-switchboard/core/contract';
+import type { PluginSearchResult, PluginTypeDTO } from '@ai-switchboard/core/contract';
 import { type ReactNode, useState } from 'react';
 
-import { useSecretProviders } from '../../api/index.js';
+import { errorMessage } from '../../api/client.js';
+import { useInspectPlugin, useInstallPlugin, useSecretProviders } from '../../api/index.js';
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
@@ -11,8 +12,11 @@ import { Icon } from '../../components/Icon.js';
 import { SchemaForm } from '../../components/SchemaForm.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { TextField } from '../../components/TextField.js';
+import { useReasonedMutation } from '../../hooks/reason.js';
 import { asRecord, secretProviderIds, typeIcon } from '../../lib/instances.js';
 import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
+import { ManifestReview } from '../Plugins/ManifestReview.js';
+import { NpmSearch } from '../Plugins/NpmSearch.js';
 import styles from './forms.module.css';
 
 /** What the dialog hands back when the person presses Create. */
@@ -41,10 +45,11 @@ export interface AddInstanceDialogProps<C> {
 }
 
 /**
- * "Add source" / "Add executor": pick an installed type, then name the instance and fill the
- * plugin's settings form (rendered from its `settingsSchema`, secrets as `secret://` references)
- * plus the core's caps. The form is kept while the reason prompt is open, so cancelling it
- * returns here with nothing lost.
+ * "Add source" / "Add executor": pick an installed type — or find one on npm, review what it
+ * asks for and install it (admins), which continues straight into its form — then name the
+ * instance and fill the plugin's settings form (rendered from its `settingsSchema`, secrets as
+ * `secret://` references) plus the core's caps. The form is kept while the reason prompt is
+ * open, so cancelling it returns here with nothing lost.
  */
 export function AddInstanceDialog<C>({
   open,
@@ -64,6 +69,24 @@ export function AddInstanceDialog<C>({
   const [caps, setCaps] = useState<C | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Installing from npm: the package under review, the types it brought, and a note.
+  const [review, setReview] = useState<PluginSearchResult | null>(null);
+  const [awaiting, setAwaiting] = useState<string[] | null>(null);
+  const [installNote, setInstallNote] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
+  const inspect = useInspectPlugin();
+  const install = useReasonedMutation(
+    useInstallPlugin(),
+    (v: { package: string; range?: string }) => ({
+      title: `Install ${v.package}${v.range ? `@${v.range}` : ''}?`,
+      consequence: `The package is installed, pinned in plugins.lock.json and loaded now; every replica installs it within a minute. You continue with its ${kind} form.`,
+      confirmLabel: 'Install plugin',
+    }),
+    {
+      successMessage: (added) =>
+        added.pendingRestart ? 'Installed · restart to apply' : 'Installed · ready to use',
+    },
+  );
 
   const choose = (t: PluginTypeDTO) => {
     setType(t);
@@ -72,6 +95,41 @@ export function AddInstanceDialog<C>({
     setCaps(initialCaps(t));
     setAttempted(false);
   };
+  // Once the installed plugin's types arrive in the picker, continue into the first one
+  // (adjusting state while rendering, as React recommends over an effect).
+  const arrived = awaiting && types?.find((t) => t.available && awaiting.includes(t.typeId));
+  if (arrived) {
+    setAwaiting(null);
+    choose(arrived);
+  }
+
+  const startReview = (r: PluginSearchResult) => {
+    setInstallNote(null);
+    setReview(r);
+    inspect.reset();
+    inspect.mutate({ package: r.package, range: `^${r.version}` });
+  };
+  const manifest =
+    review && inspect.data && inspect.variables.package === review.package ? inspect.data : null;
+  const runInstall = async () => {
+    if (!review || !manifest) return;
+    setHidden(true);
+    const added = await install.run({ package: review.package, range: `^${review.version}` });
+    setHidden(false);
+    if (!added) return;
+    setReview(null);
+    const ids = added.types.filter((t) => t.kind === kind).map((t) => t.typeId);
+    if (added.pendingRestart) {
+      setInstallNote(`${added.name} is installed; restart Switchboard to load this version.`);
+    } else if (ids.length === 0) {
+      setInstallNote(
+        `${added.name} is installed but contributes no ${kind} type${added.statusMessage ? `: ${added.statusMessage}` : '.'}`,
+      );
+    } else {
+      setAwaiting(ids);
+    }
+  };
+
   const reset = () => {
     setType(null);
     setName('');
@@ -99,15 +157,30 @@ export function AddInstanceDialog<C>({
   const installed = types ?? [];
   return (
     <Dialog
-      open={open}
+      open={open && !hidden}
       onClose={onClose}
       size="wide"
       dismissible={false}
       title={
-        type ? `New ${type.displayName} ${noun}` : `Add ${kind === 'source' ? 'a' : 'an'} ${noun}`
+        type
+          ? `New ${type.displayName} ${noun}`
+          : review
+            ? `Install ${review.package}`
+            : `Add ${kind === 'source' ? 'a' : 'an'} ${noun}`
       }
       footer={
         <div className={styles.footer}>
+          {!type && review && (
+            <Button
+              variant="ghost"
+              icon="back"
+              onClick={() => {
+                setReview(null);
+              }}
+            >
+              Back to types
+            </Button>
+          )}
           {type && (
             <Button variant="ghost" icon="back" onClick={reset}>
               Choose another type
@@ -117,6 +190,22 @@ export function AddInstanceDialog<C>({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
+          {!type && review && (
+            <Button
+              variant="primary"
+              requires="admin"
+              loading={install.pending}
+              disabled={!manifest?.compatible}
+              disabledReason={
+                manifest && !manifest.compatible
+                  ? 'This version does not support the running SDK'
+                  : 'Reading the package manifest'
+              }
+              onClick={() => void runInstall()}
+            >
+              Install and continue
+            </Button>
+          )}
           {type && (
             <Button
               variant="primary"
@@ -130,48 +219,77 @@ export function AddInstanceDialog<C>({
         </div>
       }
     >
-      {!type ? (
-        loading ? (
-          <Skeleton lines={3} height={48} label={`Loading ${noun} types`} />
-        ) : installed.length === 0 ? (
-          <EmptyState title={`No ${noun} types are installed`} compact>
-            {kind === 'source' ? 'Source' : 'Executor'} types come from plugins. An admin can add
-            one on the Plugins page.
-          </EmptyState>
-        ) : (
-          <div className={styles.stack}>
-            <p className={styles.note}>
-              Pick a type. Each type comes from an installed plugin; its settings form is the
-              plugin&apos;s own.
-            </p>
-            <div className={styles.typeGrid} role="list" aria-label={`${noun} types`}>
-              {installed.map((t) => (
-                <div role="listitem" key={t.typeId}>
-                  <button
-                    type="button"
-                    className={styles.typeOption}
-                    style={{ width: '100%' }}
-                    aria-disabled={t.available ? undefined : true}
-                    onClick={() => {
-                      if (t.available) choose(t);
-                    }}
-                  >
-                    <span className={styles.iconTile}>
-                      <Icon name={typeIcon(t.typeId, kind)} />
-                    </span>
-                    <span className={styles.typeText}>
-                      <span className={styles.typeName}>{t.displayName}</span>
-                      <span className={styles.typeMeta}>
-                        {t.available ? describeType(t) : 'plugin unavailable'}
+      {!type && review ? (
+        <div className={styles.stack}>
+          <p className={styles.note}>
+            {review.description || review.package} Read what it asks for before installing.
+          </p>
+          {inspect.isPending && <Skeleton lines={3} height={32} label="Reading the manifest" />}
+          {inspect.isError && (
+            <Banner tone="error" title="The package could not be inspected">
+              {errorMessage(inspect.error)}
+            </Banner>
+          )}
+          {manifest && <ManifestReview manifest={manifest} />}
+          <Banner tone="info" icon="info">
+            Plugins run in the core&apos;s process as trusted code. Installing one needs the admin
+            role and a reason, and is recorded in the audit log.
+          </Banner>
+        </div>
+      ) : !type ? (
+        <div className={styles.stack}>
+          {installNote && (
+            <Banner tone="warn" title="Not ready yet">
+              {installNote}
+            </Banner>
+          )}
+          {awaiting && <Skeleton lines={1} height={32} label="Loading the new type" />}
+          {loading ? (
+            <Skeleton lines={3} height={48} label={`Loading ${noun} types`} />
+          ) : installed.length === 0 ? (
+            <EmptyState title={`No ${noun} types are installed`} compact>
+              {kind === 'source' ? 'Source' : 'Executor'} types come from plugins. Find one on npm
+              below, or an admin can add any package on the Plugins page.
+            </EmptyState>
+          ) : (
+            <>
+              <p className={styles.note}>
+                Pick a type. Each type comes from an installed plugin; its settings form is the
+                plugin&apos;s own.
+              </p>
+              <div className={styles.typeGrid} role="list" aria-label={`${noun} types`}>
+                {installed.map((t) => (
+                  <div role="listitem" key={t.typeId}>
+                    <button
+                      type="button"
+                      className={styles.typeOption}
+                      style={{ width: '100%' }}
+                      aria-disabled={t.available ? undefined : true}
+                      onClick={() => {
+                        if (t.available) choose(t);
+                      }}
+                    >
+                      <span className={styles.iconTile}>
+                        <Icon name={typeIcon(t.typeId, kind)} />
                       </span>
-                      <span className={`${styles.typeMeta} mono`}>{t.plugin}</span>
-                    </span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
+                      <span className={styles.typeText}>
+                        <span className={styles.typeName}>{t.displayName}</span>
+                        <span className={styles.typeMeta}>
+                          {t.available ? describeType(t) : 'plugin unavailable'}
+                        </span>
+                        <span className={`${styles.typeMeta} mono`}>{t.plugin}</span>
+                      </span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <section className={styles.stack} aria-label="Find more on npm">
+            <span className={styles.legend}>Find more on npm</span>
+            <NpmSearch kind={kind} compact onInstall={startReview} />
+          </section>
+        </div>
       ) : (
         <div className={styles.stack}>
           {type.description && <p className={styles.note}>{type.description}</p>}

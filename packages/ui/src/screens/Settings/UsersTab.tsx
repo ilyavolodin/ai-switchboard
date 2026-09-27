@@ -5,7 +5,9 @@ import { errorMessage } from '../../api/client.js';
 import {
   useCreateUser,
   useDeleteUser,
+  useRemoveUserPassword,
   useRevokeUserSessions,
+  useSetUserPassword,
   useUpdateUser,
   useUsers,
 } from '../../api/index.js';
@@ -17,11 +19,14 @@ import { EmptyState } from '../../components/EmptyState.js';
 import { Field } from '../../components/Field.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
+import { StatusChip } from '../../components/StatusChip.js';
 import { Table, type TableColumn } from '../../components/Table.js';
 import { TextField } from '../../components/TextField.js';
 import { Time } from '../../components/Time.js';
 import { Tooltip } from '../../components/Tooltip.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { passwordError } from '../ChangePassword/passwordRules.js';
+import { SetPasswordDialog } from './SetPasswordDialog.js';
 import styles from './Settings.module.css';
 import { initials } from './settingsForm.js';
 
@@ -51,7 +56,8 @@ export function UsersTab() {
 
 function UsersAdmin() {
   const users = useUsers();
-  const { user: me } = useSession();
+  const { user: me, oidcConfigured } = useSession();
+  const [passwordFor, setPasswordFor] = useState<UserDTO | null>(null);
   const emailOf = (id: string): string =>
     users.data?.find((u) => u.id === id)?.email ?? 'this user';
   const update = useReasonedMutation(
@@ -82,6 +88,28 @@ function UsersAdmin() {
       danger: true,
     }),
     { successMessage: 'Sessions revoked' },
+  );
+
+  const setPassword = useReasonedMutation(
+    useSetUserPassword(),
+    (v) => ({
+      title: `Set a temporary password for ${emailOf(v.id)}?`,
+      consequence:
+        'Every session they have ends now, and they must choose their own password at the next sign-in.',
+      confirmLabel: 'Set password',
+      danger: true,
+    }),
+    { successMessage: 'Temporary password set — pass it on securely' },
+  );
+  const removePassword = useReasonedMutation(
+    useRemoveUserPassword(),
+    (v) => ({
+      title: `Remove the password for ${emailOf(v.id)}?`,
+      consequence: 'They are signed out everywhere and can sign in only through OIDC from now on.',
+      confirmLabel: 'Remove password',
+      danger: true,
+    }),
+    { successMessage: 'Password removed' },
   );
 
   const columns: TableColumn<UserDTO>[] = [
@@ -121,6 +149,25 @@ function UsersAdmin() {
       },
     },
     {
+      key: 'signIn',
+      header: 'sign-in',
+      cell: (u) => (
+        <span className={styles.rowActions}>
+          {u.hasPassword && (
+            <StatusChip
+              size="sm"
+              tone={u.mustChangePassword ? 'warn' : 'ok'}
+              label={u.mustChangePassword ? 'temporary password' : 'password'}
+            />
+          )}
+          {u.hasOidc && <StatusChip size="sm" tone="ok" label="OIDC" />}
+          {!u.hasPassword && !u.hasOidc && (
+            <StatusChip size="sm" tone="off" label="not yet signed in" />
+          )}
+        </span>
+      ),
+    },
+    {
       key: 'last',
       header: 'last sign-in',
       cell: (u) => <Time value={u.lastLoginAt} fallback="never" />,
@@ -133,6 +180,30 @@ function UsersAdmin() {
         const self = u.id === me?.id;
         return (
           <span className={styles.rowActions}>
+            <Button
+              size="sm"
+              variant="ghost"
+              requires="admin"
+              disabled={self}
+              disabledReason="Change your own password from your account"
+              aria-label={`${u.hasPassword ? 'Reset' : 'Set'} password for ${u.email}`}
+              onClick={() => {
+                setPasswordFor(u);
+              }}
+            >
+              {u.hasPassword ? 'Reset password' : 'Set password'}
+            </Button>
+            {u.hasPassword && oidcConfigured && (
+              <Button
+                size="sm"
+                variant="ghost"
+                requires="admin"
+                aria-label={`Remove password for ${u.email}`}
+                onClick={() => void removePassword.run({ id: u.id })}
+              >
+                Remove password
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -173,6 +244,18 @@ function UsersAdmin() {
           <Table caption="Users" columns={columns} rows={users.data} rowKey={(u) => u.id} />
         )}
       </Card>
+      <SetPasswordDialog
+        email={passwordFor?.email ?? null}
+        reset={passwordFor?.hasPassword ?? false}
+        onClose={() => {
+          setPasswordFor(null);
+        }}
+        onSubmit={(password) => {
+          const target = passwordFor;
+          setPasswordFor(null);
+          if (target) void setPassword.run({ id: target.id, password });
+        }}
+      />
     </div>
   );
 }
@@ -180,12 +263,20 @@ function UsersAdmin() {
 function AddUser() {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('viewer');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [passwordErr, setPasswordErr] = useState<string | null>(null);
+  const { oidcConfigured } = useSession();
   const create = useReasonedMutation(
     useCreateUser(),
     (v) => ({
       title: `Add ${v.email} as ${roleLabel(v.role)}?`,
-      consequence: 'They can sign in with the configured issuer from now on.',
+      consequence:
+        v.password !== undefined
+          ? 'They sign in with the temporary password and must choose their own at the first sign-in.'
+          : oidcConfigured
+            ? 'They can sign in with the configured issuer from now on.'
+            : 'They cannot sign in until you set a password (or configure OIDC).',
       confirmLabel: 'Add user',
     }),
     { successMessage: 'User added' },
@@ -193,13 +284,20 @@ function AddUser() {
   const onSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const value = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      setError('Enter an email address');
-      return;
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+    const pwProblem = password === '' ? null : passwordError(password, value);
+    setError(emailOk ? null : 'Enter an email address');
+    setPasswordErr(pwProblem);
+    if (!emailOk || pwProblem) return;
+    const res = await create.run({
+      email: value,
+      role,
+      ...(password !== '' ? { password } : {}),
+    });
+    if (res) {
+      setEmail('');
+      setPassword('');
     }
-    setError(null);
-    const res = await create.run({ email: value, role });
-    if (res) setEmail('');
   };
   return (
     <Card title="Add a user">
@@ -215,6 +313,26 @@ function AddUser() {
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
+              }}
+            />
+          )}
+        </Field>
+        <Field
+          label="Temporary password"
+          error={passwordErr}
+          help={oidcConfigured ? 'Optional — leave empty for OIDC only' : 'Optional'}
+        >
+          {({ id, describedBy, invalid }) => (
+            <TextField
+              id={id}
+              aria-describedby={describedBy}
+              invalid={invalid}
+              mono
+              autoComplete="off"
+              spellCheck={false}
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
               }}
             />
           )}

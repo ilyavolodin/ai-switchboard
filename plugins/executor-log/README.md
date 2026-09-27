@@ -9,21 +9,21 @@ No network access.
 
 ## Instance settings
 
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| `level` | `info` | Log level of the invocation line (`debug`, `info`, `warn`). |
-| `logInput` | `true` | Include the mapped input in the log line. |
-| `maxLoggedBytes` | `4096` | Truncate the logged input beyond this size (the run keeps it whole). |
-| `hourlyLimit` | — | Optional. Adds an **Hourly runs** meter: invocations in the last hour against this limit. Set a low limit and a meter ceiling on a process to see throttling. |
+| Setting          | Default | Meaning                                                                                                                                                       |
+| ---------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `level`          | `info`  | Log level of the invocation line (`debug`, `info`, `warn`).                                                                                                   |
+| `logInput`       | `true`  | Include the mapped input in the log line.                                                                                                                     |
+| `maxLoggedBytes` | `4096`  | Truncate the logged input beyond this size (the run keeps it whole).                                                                                          |
+| `hourlyLimit`    | —       | Optional. Adds an **Hourly runs** meter: invocations in the last hour against this limit. Set a low limit and a meter ceiling on a process to see throttling. |
 
 ## Target (per process)
 
-| Field | Default | Meaning |
-| --- | --- | --- |
-| `label` | — | A word to find the process's lines in the log. |
-| `outcome` | `ok` | `ok` succeeds · `error` backend error (counts toward the breaker) · `failed` definitive refusal · `held` target paused · `rate_limited` out of capacity (opens a soft-hold for `retryAfterSeconds`). |
-| `delayMs` | `0` | Wait before answering (≤ 30 s), to see a run in flight. |
-| `retryAfterSeconds` | `60` | Soft-hold length for `rate_limited`. |
+| Field               | Default | Meaning                                                                                                                                                                                              |
+| ------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`             | —       | A word to find the process's lines in the log.                                                                                                                                                       |
+| `outcome`           | `ok`    | `ok` succeeds · `error` backend error (counts toward the breaker) · `failed` definitive refusal · `held` target paused · `rate_limited` out of capacity (opens a soft-hold for `retryAfterSeconds`). |
+| `delayMs`           | `0`     | Wait before answering (≤ 30 s), to see a run in flight.                                                                                                                                              |
+| `retryAfterSeconds` | `60`    | Soft-hold length for `rate_limited`.                                                                                                                                                                 |
 
 Input: anything; it is echoed back as the run's result.
 
@@ -39,8 +39,17 @@ Meter: `hourly_runs` (window, %) when `hourlyLimit` is set; dry runs are not cou
 ## Log line
 
 ```json
-{"level":"info","plugin":"@ai-switchboard/executor-log","msg":"log executor invocation",
- "run_id":"…","process":"Alert to stub","mode":"event","label":"demo","outcome":"ok","input":"{…}"}
+{
+  "level": "info",
+  "plugin": "@ai-switchboard/executor-log",
+  "msg": "log executor invocation",
+  "run_id": "…",
+  "process": "Alert to stub",
+  "mode": "event",
+  "label": "demo",
+  "outcome": "ok",
+  "input": "{…}"
+}
 ```
 
 Watch it with `docker compose -f deploy/docker-compose.yml logs -f switchboard | grep "log executor"`.

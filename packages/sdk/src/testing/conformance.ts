@@ -12,6 +12,7 @@ import type {
   TrackingMode,
   UsageReport,
 } from '../types/executor.js';
+import type { SecretProvider, SecretProviderType } from '../types/notifier.js';
 import type { Source, SourceType } from '../types/source.js';
 import { createStubHttp, createTestContext, runHandle, type StubHandler } from './stubs.js';
 
@@ -455,6 +456,122 @@ export function executorConformanceChecks(
           assert(d.unit !== '', `dimension ${d.id} has no unit`);
         }
         return Promise.resolve();
+      },
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Secret providers
+// ---------------------------------------------------------------------------------------------
+
+export interface SecretProviderFixtures {
+  /** Settings for `create` (secret providers take no secret references themselves). */
+  settings: Settings;
+  /** Names the provider must list with these settings (the test seeds them first). */
+  expectNames?: string[];
+  /** Extra values that must never appear in the listing, besides every value `resolve` returns. */
+  secrets?: string[];
+  now?: () => Date;
+}
+
+const LISTING_KEYS = new Set(['name', 'description', 'updatedAt']);
+
+/** Every string anywhere in `value` (keys included), for the "no value leaks" check. */
+function stringsIn(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(stringsIn);
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value).flatMap(([k, v]) => [k, ...stringsIn(v)]);
+  }
+  return [];
+}
+
+/**
+ * Checks for a secret provider type. When the provider implements `list()`, the listing must be
+ * well formed (unique non-empty names, only `name` / `description` / `updatedAt`) and must not
+ * contain any secret value: every listed name is resolved and its value searched for in the
+ * whole listing. Values of 4+ characters are matched as substrings; shorter ones only as an
+ * exact field.
+ */
+export function secretProviderConformanceChecks(
+  type: SecretProviderType,
+  fixtures: SecretProviderFixtures,
+): ConformanceCheck[] {
+  const make = (): SecretProvider =>
+    type.create(fixtures.settings, createTestContext(fixtures.now ? { now: fixtures.now } : {}));
+  return [
+    {
+      name: 'manifest validates',
+      run: () => {
+        const errors = validatePlugin(
+          definePlugin({ id: 'conformance', displayName: 'Conformance', secretProviders: [type] }),
+        );
+        assert(errors.length === 0, errors.join('\n'));
+        return Promise.resolve();
+      },
+    },
+    {
+      name: 'health() resolves to a Health',
+      run: async () => {
+        const h = await make().health();
+        assert(['healthy', 'unhealthy', 'unknown'].includes(h.status), 'health status is invalid');
+      },
+    },
+    {
+      name: 'list() returns well-formed names',
+      run: async () => {
+        const provider = make();
+        if (typeof provider.list !== 'function') return;
+        const listing: unknown = await provider.list();
+        assert(Array.isArray(listing), 'list() must return an array');
+        const seen = new Set<string>();
+        for (const entry of listing as unknown[]) {
+          assert(
+            entry !== null && typeof entry === 'object' && !Array.isArray(entry),
+            'list() entries must be objects',
+          );
+          const e = entry as Record<string, unknown>;
+          for (const key of Object.keys(e)) {
+            assert(LISTING_KEYS.has(key), `list() entry has an unexpected field "${key}"`);
+          }
+          assert(typeof e.name === 'string' && e.name !== '', 'list() entry has no name');
+          assert(!seen.has(e.name), `list() returned "${e.name}" twice`);
+          seen.add(e.name);
+          if (e.description !== undefined)
+            assert(typeof e.description === 'string', `${e.name}: description must be a string`);
+          if (e.updatedAt !== undefined)
+            assert(
+              typeof e.updatedAt === 'string' && !Number.isNaN(Date.parse(e.updatedAt)),
+              `${e.name}: updatedAt is not ISO-8601`,
+            );
+        }
+        for (const name of fixtures.expectNames ?? []) {
+          assert(seen.has(name), `list() does not include the expected name "${name}"`);
+        }
+      },
+    },
+    {
+      name: 'list() never contains a secret value',
+      run: async () => {
+        const provider = make();
+        if (typeof provider.list !== 'function') return;
+        const listing = await provider.list();
+        const values = [...(fixtures.secrets ?? [])];
+        for (const entry of listing) {
+          try {
+            values.push(await provider.resolve(entry.name));
+          } catch {
+            // A listed name that does not resolve (for example an empty value) leaks nothing.
+          }
+        }
+        const fields = stringsIn(listing);
+        const text = JSON.stringify(listing);
+        for (const value of values) {
+          if (value === '') continue;
+          const leaked = value.length >= 4 ? text.includes(value) : fields.includes(value);
+          assert(!leaked, 'list() output contains a secret value');
+        }
       },
     },
   ];

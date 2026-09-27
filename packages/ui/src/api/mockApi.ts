@@ -77,6 +77,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'GET /auth/me': () => f.me,
     'POST /auth/login': () => f.me,
     'POST /auth/logout': () => mockStatus(204),
+    'POST /auth/password': () => ({ ...f.me, mustChangePassword: false }),
     'GET /auth/whoami': () => ({ actor: f.user.email }),
 
     'GET /status': () => f.status,
@@ -216,6 +217,19 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
 
     'GET /plugins': () => f.plugins,
     'GET /plugins/catalogue': () => f.catalogue,
+    'GET /plugins/search': (r) => {
+      const kind = r.query.get('kind');
+      const wanted = kind === 'secrets' ? 'secret_provider' : kind;
+      const q = (r.query.get('q') ?? '').trim().toLowerCase();
+      return {
+        registry: 'https://registry.npmjs.org',
+        results: f.pluginSearch.filter(
+          (p) =>
+            (!wanted || p.kind === wanted) &&
+            (!q || p.package.includes(q) || p.description.toLowerCase().includes(q)),
+        ),
+      };
+    },
     'POST /plugins/inspect': (r) => ({
       package: (r.body as { package?: string } | undefined)?.package ?? '',
       version: '1.2.0',
@@ -225,7 +239,38 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
       types: [{ kind: 'source', typeId: 'sentry', displayName: 'Sentry' }],
       integrity: 'sha512-fixture',
     }),
-    'POST /plugins': reasoned(() => ({ ...f.plugins[0], pendingRestart: true })),
+    'POST /plugins': reasoned((r) => {
+      // Installed and loaded at once: its type (named after the package) becomes available.
+      const pkg = (r.body as { package?: string } | undefined)?.package ?? 'plugin';
+      const m = /(source|executor|notifier|secrets)-([a-z0-9-]+)$/.exec(pkg);
+      const kind = m?.[1] === 'secrets' ? 'secret_provider' : (m?.[1] ?? 'source');
+      const typeId = m?.[2] ?? pkg;
+      const displayName = typeId.charAt(0).toUpperCase() + typeId.slice(1);
+      if (!f.pluginTypes.some((t) => t.typeId === typeId && t.kind === kind)) {
+        f.pluginTypes.push({
+          kind: kind as 'source',
+          typeId,
+          displayName,
+          plugin: pkg,
+          available: true,
+          settingsSchema: {
+            type: 'object',
+            required: ['token'],
+            properties: { token: { type: 'string', title: 'API token', 'x-secret': true } },
+          },
+          ...(kind === 'source' ? { mode: 'push' as const, eventTypes: [] } : {}),
+        });
+      }
+      return {
+        ...f.plugins[0],
+        name: pkg,
+        pluginId: typeId,
+        displayName,
+        origin: 'installed',
+        types: [{ kind, typeId, displayName, instanceCount: 0 }],
+        pendingRestart: false,
+      };
+    }),
     'DELETE /plugins/:name': reasoned(() => mockStatus(204)),
 
     'GET /notifiers': () => f.notifiers,
@@ -241,6 +286,8 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'POST /secret-providers/:id/enable': reasoned(() => f.secretProviders[0]),
     'POST /secret-providers/:id/reload': reasoned(() => f.secretProviders[0]),
     'DELETE /secret-providers/:id': reasoned(() => mockStatus(204)),
+    'GET /secret-providers/:id/secrets': (req) =>
+      f.providerSecrets[req.params.id ?? ''] ?? notFound('Secret provider'),
 
     'GET /settings': () => f.settings,
     'PUT /settings': reasoned(() => f.settings),
@@ -249,6 +296,14 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'PUT /users/:id': reasoned(() => f.users[1]),
     'DELETE /users/:id': reasoned(() => mockStatus(204)),
     'POST /users/:id/sessions/revoke': reasoned(() => mockStatus(204)),
+    'PUT /users/:id/password': reasoned((req) => {
+      const u = byId(f.users, req.params.id);
+      return u ? { ...u, hasPassword: true, mustChangePassword: true } : notFound('User');
+    }),
+    'DELETE /users/:id/password': reasoned((req) => {
+      const u = byId(f.users, req.params.id);
+      return u ? { ...u, hasPassword: false, mustChangePassword: false } : notFound('User');
+    }),
     'GET /tokens': () => f.tokens,
     'POST /tokens': reasoned((r) => {
       const body = r.body as { name?: string; role?: string } | undefined;

@@ -2,12 +2,7 @@ import type { SourceCapsDTO, SourceDetail } from '@ai-switchboard/core/contract'
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import {
-  useDeleteSource,
-  usePluginTypes,
-  useSecretProviders,
-  useUpdateSource,
-} from '../../api/index.js';
+import { useDeleteSource, useSecretProviders, useUpdateSource } from '../../api/index.js';
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
@@ -26,9 +21,7 @@ import { SourceCapsFields } from './SourceCapsFields.js';
  */
 export function SourceSettings({ source }: { source: SourceDetail }) {
   const navigate = useNavigate();
-  const types = usePluginTypes('source');
   const secretProviders = useSecretProviders();
-  const type = types.data?.find((t) => t.typeId === source.typeId);
   const [name, setName] = useState(source.name);
   const [settings, setSettings] = useState(source.settings);
   const [caps, setCaps] = useState<SourceCapsDTO>(source.caps);
@@ -124,7 +117,6 @@ export function SourceSettings({ source }: { source: SourceDetail }) {
         baseline={source.caps}
         eventTypes={source.eventTypes}
         mode={source.mode}
-        allowsUnauthenticated={type?.allowsUnauthenticated ?? source.unauthenticated}
       />
       {attempted && invalid && (
         <Banner tone="error" title="Some fields need attention">

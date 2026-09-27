@@ -12,10 +12,26 @@ declare module 'fastify' {
   }
 }
 
-/** Resolve the caller from the session cookie or a bearer API token on every `/api` request. */
+/**
+ * What a session that must change its password may still call: read who it is, change the
+ * password, sign out, or sign in again.
+ */
+export const PASSWORD_CHANGE_ALLOWED: ReadonlySet<string> = new Set([
+  'GET /api/v1/auth/me',
+  'POST /api/v1/auth/password',
+  'POST /api/v1/auth/logout',
+  'POST /api/v1/auth/login',
+  'GET /api/v1/auth/oidc/start',
+  'GET /api/v1/auth/oidc/callback',
+]);
+
+/**
+ * Resolve the caller from the session cookie or a bearer API token on every `/api` request, and
+ * hold a session that must change its password to `PASSWORD_CHANGE_ALLOWED`.
+ */
 export function registerAuth(app: FastifyInstance, db: Db, clock: Clock): void {
   app.decorateRequest('user', null);
-  app.addHook('onRequest', async (req) => {
+  app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/')) return;
     const header = req.headers.authorization;
     if (header?.startsWith('Bearer ')) {
@@ -24,6 +40,15 @@ export function registerAuth(app: FastifyInstance, db: Db, clock: Clock): void {
     }
     const cookie = req.cookies[SESSION_COOKIE];
     if (cookie) req.user = await userForSession(db, cookie, clock.now());
+    if (req.user?.passwordChangeRequired) {
+      const path = req.url.split('?')[0] ?? req.url;
+      if (!PASSWORD_CHANGE_ALLOWED.has(`${req.method} ${path}`)) {
+        return reply.code(403).send({
+          error: 'password_change_required',
+          message: 'Change your temporary password to continue.',
+        });
+      }
+    }
   });
 }
 

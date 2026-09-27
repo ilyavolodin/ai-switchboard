@@ -3,6 +3,7 @@ export const SETTINGS_TABS = [
   { id: 'general', label: 'General' },
   { id: 'sign-in', label: 'Sign-in' },
   { id: 'users', label: 'Users' },
+  { id: 'account', label: 'Account' },
   { id: 'tokens', label: 'API tokens' },
   { id: 'notifiers', label: 'Notifiers' },
   { id: 'secret-providers', label: 'Secret providers' },

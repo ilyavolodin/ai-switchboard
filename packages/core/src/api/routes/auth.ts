@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { verifyPassword } from '../../auth/crypto.js';
 import { actorOf, requireRole } from '../../auth/fastify.js';
 import { OIDC_FLOW_COOKIE, OidcError } from '../../auth/oidc.js';
+import { passwordProblem } from '../../auth/password-policy.js';
 import {
   createSession,
   revokeSession,
@@ -11,15 +12,19 @@ import {
   SESSION_TTL_MS,
 } from '../../auth/sessions.js';
 import { users } from '../../db/schema.js';
+import { storePassword } from '../../services/users.js';
 import type { ApiContext } from '../context.js';
-import type { LocalLoginRequest, MeResponse, UserDTO } from '../contract.js';
-import { HttpError } from '../errors.js';
+import type { ChangePasswordRequest, LocalLoginRequest, MeResponse, UserDTO } from '../contract.js';
+import { badRequest, conflict, HttpError } from '../errors.js';
 
 export function toUserDTO(row: typeof users.$inferSelect): UserDTO {
   return {
     id: row.id,
     email: row.email,
     role: row.role,
+    hasPassword: row.passwordHash !== null,
+    hasOidc: row.oidcSubject !== null,
+    mustChangePassword: row.mustChangePassword,
     lastLoginAt: row.lastLoginAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
@@ -35,19 +40,42 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
     maxAge: Math.floor(SESSION_TTL_MS / 1000),
   };
 
-  const me = async (userId: string | undefined): Promise<MeResponse> => {
+  const issuerHost = (): string | null => {
+    if (!ctx.oidc) return null;
+    try {
+      return new URL(ctx.oidc.issuer).host;
+    } catch {
+      return ctx.oidc.issuer;
+    }
+  };
+
+  const me = async (userId: string | undefined, restricted: boolean): Promise<MeResponse> => {
     const row = userId ? (await db.select().from(users).where(eq(users.id, userId)))[0] : undefined;
     return {
       user: row ? toUserDTO(row) : null,
       authMode: ctx.oidc ? 'oidc' : 'local',
       oidcConfigured: ctx.oidc !== undefined,
+      oidcIssuer: issuerHost(),
       evaluation: config.evaluation,
+      mustChangePassword: row !== undefined && restricted,
     };
   };
 
-  app.get('/api/v1/auth/me', async (req) => me(req.user?.id));
+  app.get('/api/v1/auth/me', async (req) =>
+    me(req.user?.id, req.user?.passwordChangeRequired ?? false),
+  );
 
+  // Per replica, in memory: a brute-force brake, not state that must survive a restart.
   const failures = new Map<string, { n: number; until: number }>();
+  const throttled = (key: string): void => {
+    const f = failures.get(key);
+    if (f && f.until > clock.now().getTime())
+      throw new HttpError(429, 'too_many_attempts', 'Too many attempts; wait a minute.');
+  };
+  const failed = (key: string): void => {
+    const n = (failures.get(key)?.n ?? 0) + 1;
+    failures.set(key, { n, until: n >= 5 ? clock.now().getTime() + 60_000 : 0 });
+  };
 
   app.post<{ Body: LocalLoginRequest }>(
     '/api/v1/auth/login',
@@ -61,17 +89,8 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       },
     },
     async (req, reply) => {
-      if (ctx.oidc)
-        throw new HttpError(
-          404,
-          'not_found',
-          'Local sign-in is disabled; this installation uses OIDC.',
-        );
       const key = req.ip;
-      const now = clock.now().getTime();
-      const f = failures.get(key);
-      if (f && f.until > now)
-        throw new HttpError(429, 'too_many_attempts', 'Too many attempts; wait a minute.');
+      throttled(key);
       const email = req.body.email.trim().toLowerCase();
       const [row] = await db
         .select()
@@ -81,14 +100,61 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
         ? await verifyPassword(req.body.password, row.passwordHash)
         : false;
       if (!row || !ok) {
-        const n = (f?.n ?? 0) + 1;
-        failures.set(key, { n, until: n >= 5 ? now + 60_000 : 0 });
+        failed(key);
         throw new HttpError(401, 'invalid_credentials', 'Email or password is incorrect.');
       }
       failures.delete(key);
-      const token = await createSession(db, row.id, clock.now());
+      const token = await createSession(db, row.id, 'password', clock.now());
       void reply.setCookie(SESSION_COOKIE, token, cookieOptions);
-      return me(row.id);
+      return me(row.id, row.mustChangePassword);
+    },
+  );
+
+  app.post<{ Body: ChangePasswordRequest }>(
+    '/api/v1/auth/password',
+    {
+      preHandler: requireRole('viewer'),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['currentPassword', 'newPassword'],
+          properties: {
+            currentPassword: { type: 'string' },
+            newPassword: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req) => {
+      const user = req.user;
+      const token = req.cookies[SESSION_COOKIE];
+      if (user?.via !== 'session' || !token)
+        throw new HttpError(403, 'forbidden', 'Change a password from a signed-in session.');
+      const key = `password:${user.id}`;
+      throttled(key);
+      const [row] = await db.select().from(users).where(eq(users.id, user.id));
+      if (!row?.passwordHash)
+        throw conflict('This account has no password; ask an admin to set one.');
+      if (!(await verifyPassword(req.body.currentPassword, row.passwordHash))) {
+        failed(key);
+        // 400, not 401: the session is fine, only the confirmation failed.
+        throw new HttpError(400, 'invalid_credentials', 'The current password is incorrect.');
+      }
+      failures.delete(key);
+      const problem = passwordProblem(req.body.newPassword, row.email);
+      if (problem) throw badRequest(problem);
+      if (req.body.newPassword === req.body.currentPassword)
+        throw badRequest('Choose a password different from the current one.');
+      const now = clock.now();
+      await db.transaction((tx) =>
+        storePassword(tx, row.id, req.body.newPassword, {
+          temporary: false,
+          keepToken: token,
+          field: 'password',
+          audit: { actor: actorOf(req), reason: 'changed own password', at: now },
+        }),
+      );
+      return me(row.id, false);
     },
   );
 
@@ -117,7 +183,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
         if (row.oidcSubject === null) {
           await db.update(users).set({ oidcSubject: identity.subject }).where(eq(users.id, row.id));
         }
-        const token = await createSession(db, row.id, clock.now());
+        const token = await createSession(db, row.id, 'oidc', clock.now());
         void reply.setCookie(SESSION_COOKIE, token, cookieOptions);
         target = '/';
       }

@@ -21,7 +21,13 @@ export {
   sourceConformanceChecks,
   executorConformanceChecks,
   pluginConformanceChecks,
+  secretProviderConformanceChecks,
   runConformance,
   ConformanceFailure,
 } from './conformance.js';
-export type { ConformanceCheck, SourceFixtures, ExecutorFixtures } from './conformance.js';
+export type {
+  ConformanceCheck,
+  SourceFixtures,
+  ExecutorFixtures,
+  SecretProviderFixtures,
+} from './conformance.js';

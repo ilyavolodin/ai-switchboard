@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { actorOf, requireRole } from '../../auth/fastify.js';
 import { executors, notifiers, secretProviders, sources } from '../../db/schema.js';
+import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import { instanceStatus } from '../../domain/labels.js';
 import { literalSecretFields } from '../../secrets/refs.js';
 import { recordAudit, recordAuditDiff } from '../../services/audit.js';
@@ -140,6 +141,13 @@ function validateCaps(schema: JSONSchema, caps: unknown): Record<string, unknown
   return copy;
 }
 
+/** Key-order independent comparison of two caps objects. */
+function canonicalCaps(caps: object): string {
+  return JSON.stringify(
+    Object.fromEntries(Object.entries(caps).sort(([a], [b]) => a.localeCompare(b))),
+  );
+}
+
 function nonEmptyName(name: unknown): string {
   if (typeof name !== 'string' || name.trim() === '') throw badRequest('A name is required.');
   return name.trim().slice(0, 120);
@@ -155,24 +163,32 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
   // Sources
   // ------------------------------------------------------------------------------------------
 
-  /** A push instance without verify is refused unless explicitly marked unauthenticated. */
-  const checkAuthentication = (id: string, typeId: string, unauthenticated: boolean): void => {
+  /**
+   * A push instance must verify deliveries. Only a type that allows it (the generic webhook) may
+   * build an instance without `verify` (its `verification: none`), and that instance is then
+   * unauthenticated: `caps.unauthenticated` is derived from the built instance, whatever the
+   * request said. Returns the caps to store.
+   */
+  const authenticationCaps = (
+    id: string,
+    typeId: string,
+    caps: object,
+    previous: boolean,
+  ): Record<string, unknown> => {
+    const rest: Record<string, unknown> = { ...caps };
+    delete rest.unauthenticated;
     const type = ctx.runtime.sourceType(typeId)?.type;
-    if (!type) return;
-    if (unauthenticated && type.allowsUnauthenticated !== true) {
-      throw unprocessable(`${type.displayName} sources cannot run unauthenticated.`);
-    }
     const live = ctx.runtime.source(id);
-    if (
-      type.mode !== 'pull' &&
-      live &&
-      typeof live.source.verify !== 'function' &&
-      !unauthenticated
-    ) {
-      throw unprocessable(
-        'This source would accept unauthenticated deliveries. Configure verification, or mark it "unauthenticated (evaluation)" explicitly.',
-      );
+    // Without the plugin or a built instance there is nothing to derive from: keep what was.
+    if (!type || !live) return previous ? { ...rest, unauthenticated: true } : rest;
+    if (type.mode !== 'pull' && typeof live.source.verify !== 'function') {
+      if (!acceptsUnauthenticated(type, live.source))
+        throw unprocessable(
+          `${type.displayName} sources must verify deliveries: configure verification in the settings.`,
+        );
+      return { ...rest, unauthenticated: true };
     }
+    return rest;
   };
 
   app.get('/api/v1/sources', viewer, async () => sourceSummaries(ctx));
@@ -189,7 +205,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       if (!typeEntry)
         throw unprocessable(`No installed plugin provides source type "${req.body.typeId}".`);
       const settings = validateSettings(typeEntry.type.settingsSchema, req.body.settings);
-      const caps = validateCaps(sourceCapsSchema, req.body.caps);
+      const requestedCaps = validateCaps(sourceCapsSchema, req.body.caps);
       const name = nonEmptyName(req.body.name);
       const now = clock.now();
       const [row] = await db
@@ -198,7 +214,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
           typeId: req.body.typeId,
           name,
           settings,
-          caps,
+          caps: requestedCaps,
           enabled: req.body.enabled ?? true,
           createdAt: now,
           updatedAt: now,
@@ -206,13 +222,16 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         .returning();
       if (!row) throw new HttpError(500, 'internal', 'insert failed');
       await ctx.host.reload('source', row.id);
+      let caps: Record<string, unknown>;
       try {
-        checkAuthentication(row.id, row.typeId, row.caps.unauthenticated === true);
+        caps = authenticationCaps(row.id, row.typeId, row.caps, false);
       } catch (err) {
         await db.delete(sources).where(eq(sources.id, row.id));
         await ctx.host.reload('source', row.id);
         throw err;
       }
+      if (canonicalCaps(caps) !== canonicalCaps(row.caps))
+        await db.update(sources).set({ caps }).where(eq(sources.id, row.id));
       await recordAudit(db, {
         actor: actorOf(req),
         scope: 'source',
@@ -237,20 +256,26 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       const settings = req.body.settings
         ? validateSettings(checkableSchema(typeEntry?.type), req.body.settings)
         : before.settings;
-      const caps = req.body.caps ? validateCaps(sourceCapsSchema, req.body.caps) : before.caps;
+      const requestedCaps = req.body.caps
+        ? validateCaps(sourceCapsSchema, req.body.caps)
+        : before.caps;
       const name = req.body.name !== undefined ? nonEmptyName(req.body.name) : before.name;
       const now = clock.now();
       await db
         .update(sources)
-        .set({ name, settings, caps, updatedAt: now })
+        .set({ name, settings, caps: requestedCaps, updatedAt: now })
         .where(eq(sources.id, before.id));
       await ctx.host.reload('source', before.id);
+      let caps: Record<string, unknown>;
       try {
-        checkAuthentication(
+        caps = authenticationCaps(
           before.id,
           before.typeId,
-          (caps as { unauthenticated?: boolean }).unauthenticated === true,
+          requestedCaps,
+          before.caps.unauthenticated === true,
         );
+        if (canonicalCaps(caps) !== canonicalCaps(requestedCaps))
+          await db.update(sources).set({ caps }).where(eq(sources.id, before.id));
       } catch (err) {
         await db
           .update(sources)

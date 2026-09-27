@@ -1,15 +1,9 @@
-import type { CatalogueEntry } from '@ai-switchboard/core/contract';
+import type { PluginSearchResult } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
 import { errorMessage } from '../../api/client.js';
-import {
-  useAbout,
-  useCatalogue,
-  useInspectPlugin,
-  useInstallPlugin,
-  usePlugins,
-} from '../../api/index.js';
+import { useAbout, useInspectPlugin, useInstallPlugin, usePlugins } from '../../api/index.js';
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { EmptyState } from '../../components/EmptyState.js';
@@ -19,18 +13,18 @@ import { RoutedTabs } from '../../components/RoutedTabs.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { AddPluginDialog } from './AddPluginDialog.js';
-import { Catalogue } from './Catalogue.js';
 import { InstalledPlugins } from './InstalledPlugins.js';
+import { NpmSearch } from './NpmSearch.js';
 
 /**
- * Plugins: the Installed tab (versions, types, capabilities, health), the Catalogue of reviewed
- * plugins, and the admin-only Add plugin flow that shows a manifest's capabilities and
- * compatibility before anything is installed.
+ * Plugins: the Installed tab (versions, types, capabilities, health), Browse npm (packages that
+ * follow the naming convention, with the reviewed badge), and the admin-only Add plugin flow that
+ * shows a manifest's capabilities and compatibility before anything is installed. An installed
+ * plugin is loaded at once; only upgrading or removing a loaded one waits for a restart.
  */
 export function Plugins() {
   const { tab } = useParams();
   const plugins = usePlugins();
-  const catalogue = useCatalogue();
   const about = useAbout();
   const inspect = useInspectPlugin();
   const [dialog, setDialog] = useState<{ spec: string; key: number } | null>(null);
@@ -40,17 +34,20 @@ export function Plugins() {
     (v: { package: string; range?: string }) => ({
       title: `Add ${v.package}${v.range ? `@${v.range}` : ''}?`,
       consequence:
-        'The package is installed and pinned in plugins.lock.json now; the next restart loads it. Its types can then be used for new instances.',
+        'The package is installed, pinned in plugins.lock.json and loaded now; every replica installs it within a minute. Its types can be used for new instances straight away.',
       confirmLabel: 'Add plugin',
     }),
-    { successMessage: 'Added · restart to apply' },
+    {
+      successMessage: (added) =>
+        added.pendingRestart ? 'Added · restart to apply' : 'Added · ready to use',
+    },
   );
 
-  const startAdd = (spec: string, entry?: CatalogueEntry) => {
+  const startAdd = (spec: string, result?: PluginSearchResult) => {
     inspect.reset();
     setDialog((d) => ({ spec, key: (d?.key ?? 0) + 1 }));
     setOpen(true);
-    if (entry) inspect.mutate({ package: entry.package, range: `^${entry.latestVersion}` });
+    if (result) inspect.mutate({ package: result.package, range: `^${result.version}` });
   };
 
   const header = (
@@ -77,11 +74,11 @@ export function Plugins() {
       label="Plugin sections"
       items={[
         { to: '/plugins', label: 'Installed', end: true, count: plugins.data?.length },
-        { to: '/plugins/catalogue', label: 'Catalogue', count: catalogue.data?.length },
+        { to: '/plugins/browse', label: 'Browse npm' },
       ]}
       extra={
         <span className="t-caption">
-          {about.data ? `SDK ${about.data.sdkVersion} · ` : ''}plugins load at start · admins only
+          {about.data ? `SDK ${about.data.sdkVersion} · ` : ''}installs load at once · admins only
         </span>
       }
     />
@@ -98,18 +95,11 @@ export function Plugins() {
     ) : (
       <InstalledPlugins plugins={plugins.data} />
     );
-  } else if (tab === 'catalogue') {
-    body = catalogue.isPending ? (
-      <Skeleton shape="card" height={320} label="Loading the catalogue" />
-    ) : catalogue.isError ? (
-      <Banner tone="error" title="The catalogue could not load">
-        {errorMessage(catalogue.error)}
-      </Banner>
-    ) : (
-      <Catalogue
-        entries={catalogue.data}
-        onAdd={(e) => {
-          startAdd(`${e.package}@^${e.latestVersion}`, e);
+  } else if (tab === 'browse' || tab === 'catalogue') {
+    body = (
+      <NpmSearch
+        onInstall={(r) => {
+          startAdd(`${r.package}@^${r.version}`, r);
         }}
       />
     );

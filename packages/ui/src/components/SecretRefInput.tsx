@@ -1,6 +1,7 @@
 import type { SecretRefDTO } from '@ai-switchboard/core/contract';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
+import { useSecretSuggestions } from '../api/hooks/secrets.js';
 import { useNow } from '../hooks/useNow.js';
 import { formatRelative, toMs } from '../lib/format.js';
 import { formatSecretRef, parseSecretRef } from '../lib/schema.js';
@@ -27,7 +28,9 @@ export interface SecretRefInputProps {
 
 /**
  * A secret-reference input: provider select + name, stored as `secret://<provider>/<name>`.
- * Secret values never touch the UI: a stored plain value is not shown, only flagged.
+ * Secret values never touch the UI: a stored plain value is not shown, only flagged. For admins
+ * the name offers the names the chosen provider lists (free typing still works) and flags a
+ * name the provider does not list.
  */
 export function SecretRefInput({
   value,
@@ -46,6 +49,9 @@ export function SecretRefInput({
   const provider = parsed?.provider ?? draftProvider;
   const name = parsed?.name ?? '';
   const hasPlainValue = value != null && value !== '' && parsed == null;
+  const suggestions = useSecretSuggestions(provider);
+  const listId = useId();
+  const notListed = suggestions.names != null && name !== '' && !suggestions.names.includes(name);
   const options = (providers.includes(provider) ? providers : [provider, ...providers]).map(
     (p) => ({
       value: p,
@@ -93,15 +99,27 @@ export function SecretRefInput({
           spellCheck={false}
           value={name}
           disabled={disabled}
+          list={suggestions.names?.length ? listId : undefined}
           onChange={(e) => {
             emit(provider, e.target.value);
           }}
         />
+        {suggestions.names && suggestions.names.length > 0 && (
+          <datalist id={listId}>
+            {suggestions.names.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+        )}
       </div>
       <span className={styles.caption}>
         {hasPlainValue ? (
           <span className={styles.warn}>
             A value is stored here directly (hidden). Replace it with a reference.
+          </span>
+        ) : notListed ? (
+          <span className={styles.warn}>
+            not found in {provider} · check the name or add the secret
           </span>
         ) : status && !status.ok ? (
           <span className={styles.err}>
