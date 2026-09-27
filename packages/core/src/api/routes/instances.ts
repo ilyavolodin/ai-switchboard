@@ -531,13 +531,21 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     '/api/v1/executors/:id/meters/read',
     { ...operator, schema: { body: reasoned } },
     async (req) => {
-      requireReason(req.body);
+      const reason = requireReason(req.body);
       const [row] = await db
         .select({ id: executors.id })
         .from(executors)
         .where(eq(executors.id, req.params.id));
       if (!row) throw notFound('Executor');
       await ctx.pipeline.readMetersNow(row.id);
+      await recordAudit(db, {
+        actor: actorOf(req),
+        scope: 'executor',
+        targetId: row.id,
+        field: 'meters_read',
+        reason,
+        at: clock.now(),
+      });
       return meterGauges(ctx, [row.id]);
     },
   );
@@ -770,6 +778,14 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       const reason = requireReason(req.body);
       const live = ctx.runtime.notifier(req.params.id);
       if (!live) throw notFound('Running notifier');
+      await recordAudit(db, {
+        actor: actorOf(req),
+        scope: 'notifier',
+        targetId: live.id,
+        field: 'test_sent',
+        reason,
+        at: clock.now(),
+      });
       try {
         await live.notifier.send({
           on: 'system',

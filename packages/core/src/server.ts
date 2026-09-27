@@ -45,7 +45,7 @@ export async function buildServer(
   // Fastify infers its logger generic from pino; the rest of the code uses the default instance type.
   const app = Fastify({
     loggerInstance: ctx.logger.child({ component: 'http' }),
-    trustProxy: true,
+    trustProxy: ctx.config.trustProxy,
     bodyLimit: 5 * 1024 * 1024,
     ajv: {
       customOptions: {

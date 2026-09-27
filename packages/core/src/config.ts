@@ -35,6 +35,8 @@ export interface CoreConfig {
   devSource: boolean;
   /** Run pipeline workers and the scheduler in this process (false for an API-only replica). */
   workers: boolean;
+  /** Trust X-Forwarded-* (behind an ingress or load balancer). */
+  trustProxy: boolean;
   /** Secure cookies (true unless publicUrl is plain http). */
   secureCookies: boolean;
 }
@@ -88,6 +90,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     pluginDirs: list(env.SWITCHBOARD_PLUGIN_DIRS),
     devSource: bool(env.SWITCHBOARD_DEV_SOURCE, false),
     workers: bool(env.SWITCHBOARD_WORKERS, true),
+    trustProxy: bool(env.SWITCHBOARD_TRUST_PROXY, false),
     secureCookies: bool(env.SWITCHBOARD_SECURE_COOKIES, publicUrl.startsWith('https://')),
   };
 }

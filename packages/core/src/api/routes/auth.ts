@@ -110,7 +110,11 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       if (!row) {
         target = `/no-access?email=${encodeURIComponent(identity.email)}`;
       } else {
-        if (row.oidcSubject !== identity.subject) {
+        if (row.oidcSubject !== null && row.oidcSubject !== identity.subject) {
+          // The email was bound to another subject at the issuer; never re-bind silently.
+          throw new OidcError('This account is linked to a different identity; ask an admin.');
+        }
+        if (row.oidcSubject === null) {
           await db.update(users).set({ oidcSubject: identity.subject }).where(eq(users.id, row.id));
         }
         const token = await createSession(db, row.id, clock.now());
