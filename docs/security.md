@@ -1,0 +1,121 @@
+# Security
+
+Switchboard holds credentials that can start work in other systems. The design keeps each
+credential narrow, keeps secret values out of the database and out of expressions, and makes the
+payload harmless: a forged event can waste budget but cannot direct work. This page is for the
+people who deploy and operate it.
+
+## Sign-in and roles
+
+- **OIDC** against any issuer (Google Workspace, Okta, Entra ID, Keycloak, GitHub through an OIDC
+  bridge): authorization-code flow with PKCE and ID-token validation. Configure
+  `SWITCHBOARD_OIDC_ISSUER`, `SWITCHBOARD_OIDC_CLIENT_ID`, `SWITCHBOARD_OIDC_CLIENT_SECRET` and
+  optionally `SWITCHBOARD_OIDC_ALLOWED_DOMAINS`. The redirect URI is
+  `<SWITCHBOARD_PUBLIC_URL>/api/v1/auth/oidc/callback`.
+- **A user row is required.** A valid token from the right issuer for an unknown email lands on
+  an "ask an admin" page. The first admin comes from `SWITCHBOARD_BOOTSTRAP_ADMIN`.
+- **Sessions** are HttpOnly, SameSite=Lax cookies (Secure when the public URL is https, or with
+  `SWITCHBOARD_SECURE_COOKIES=true`), backed by a `sessions` row so an admin can revoke them, with
+  a 12-hour sliding lifetime.
+- **Roles**, enforced by the API:
+
+  | Role       | Can                                                                         |
+  | ---------- | --------------------------------------------------------------------------- |
+  | `viewer`   | Read everything                                                             |
+  | `operator` | Also sources, executors, processes, approvals, manual runs, replays, export |
+  | `admin`    | Also plugins, users, secret providers, notifiers, settings, apply           |
+
+- **API tokens** (for the CLI and CI) are personal, scoped to a role no higher than their
+  owner's, shown once, and revocable. Use a dedicated admin token for CI that applies
+  configuration, so the audit log names it.
+- **Evaluation mode** (`SWITCHBOARD_EVALUATION=true`) creates a local admin password printed once
+  to the log, and the UI shows a persistent banner that OIDC is not configured. Don't run
+  evaluation mode on a network you don't control.
+
+## Unauthenticated surfaces
+
+Exactly these routes answer without a session or token:
+
+| Route                         | Authenticated by                                    |
+| ----------------------------- | --------------------------------------------------- |
+| `POST /hooks/:sourceId`       | The source's `verify` (signature or shared secret)  |
+| `POST /callbacks/:executorId` | The executor's `verifyCallback`                     |
+| `GET /healthz`, `GET /readyz` | Nothing; they return no configuration               |
+| `GET /metrics`                | Nothing, when Prometheus is enabled (see hardening) |
+
+Hooks and callbacks are rate-limited per instance at the HTTP layer, above each source's own
+event caps. A rejected request gets an empty 401 and is logged with the remote address. A source
+type without `verify` is refused, except a `webhook` instance explicitly marked
+_unauthenticated (evaluation)_, which the UI shows with a red chip.
+
+## Secrets
+
+- Settings store references: `secret://<provider>/<name>`. A secret-provider plugin resolves
+  them when an instance is built. Reference providers: `env` (environment variables) and `file`
+  (mounted files, the Kubernetes-secret pattern); community providers cover Vault, GCP Secret
+  Manager and AWS Secrets Manager.
+- Values live only in the built instance's memory. No API endpoint returns one; the UI shows
+  reference names and last-resolved times.
+- Expressions cannot read secret values. `$secretRef(name)` yields a reference the executor
+  bridge resolves after evaluation.
+- `switchboard export` writes instance settings as stored, which means references, never values.
+- Rotation is a change in the provider plus **Reload instance** ([runbook](runbook.md#credential-rotation)).
+
+## Payload safety
+
+An executor receives only what the process's input mapping produces from declared attributes and
+artifact references. The recommended mapping style is references plus a mode and a run id, so the
+started process re-reads real state instead of trusting the event. Executors that take free text
+(Claude Routines) receive it as untrusted data: the routine's prompt must treat it that way and
+opt in to acting on it.
+
+## Plugins are trusted code
+
+Plugins run in the core's process with its privileges, the same model as Grafana backend plugins
+and Backstage. There is no sandbox. The controls are at install time:
+
+- Only admins install (`switchboard plugins add`, or the Plugins page).
+- `plugins.lock.json` pins each plugin's exact version and integrity hash.
+- The manifest's `capabilities` (network hosts, secret names) are shown before the plugin is
+  loaded, and enforced for the SDK's `HttpClient` and secret resolution. A plugin that uses raw
+  `fetch` or sockets bypasses the network check; review the code of anything not in the catalogue.
+- npm install scripts run during `plugins add`. Install in a build stage (`SWITCHBOARD_PLUGINS`
+  build argument) rather than on a running production container.
+- The project publishes a catalogue of reviewed plugins. Anything else is at the installer's
+  discretion.
+- The core attributes exceptions and invalid events to the plugin that produced them and shows
+  the counts on the Plugins page, so a misbehaving plugin is visible.
+
+## Actions and audit
+
+Every action a step performs is recorded in `steps` with the run that caused it, so any label,
+comment or dispatch the system made traces back to a process, a trigger and a human-set rule.
+Every configuration change and manual action writes an `audit_log` row with actor, before, after
+and reason. Scope the credentials used for actions to what the actions need (the `github` source
+documents the App permissions per action).
+
+## Data
+
+Events and raw bodies can contain internal text (titles, alert messages). Retention is
+configurable and defaults to 90 days for events and 30 days for raw bodies. Nothing in the design
+requires end-user personal data, and source plugins map only documented attributes.
+
+## Hardening checklist
+
+- [ ] OIDC configured, `SWITCHBOARD_EVALUATION` unset, allowed domains set.
+- [ ] `SWITCHBOARD_PUBLIC_URL` is `https://…`, TLS terminated at the ingress, Secure cookies on.
+- [ ] `DATABASE_URL` and OIDC client secret come from a secret store (the Helm chart's
+      `database.existingSecret`), not plain values.
+- [ ] Postgres reachable only from the Switchboard pods, with its own backups.
+- [ ] Every `x-secret` field is a `secret://` reference; `switchboard doctor` passes.
+- [ ] Every push source verifies deliveries; no instance carries the unauthenticated chip.
+- [ ] `/metrics` is not exposed through the public ingress (scrape it inside the cluster), or
+      `SWITCHBOARD_PROMETHEUS=false` with OTLP instead.
+- [ ] Plugins baked into the image at build time from pinned versions; the lockfile is kept.
+- [ ] Credentials for sources and executors are scoped to the actions they perform.
+- [ ] A system notifier is configured, so breaker openings, plugin load failures and failed
+      callback verifications reach a person.
+- [ ] API tokens are per person or per CI pipeline, with the lowest role that works; unused ones
+      revoked.
+- [ ] The container runs as its non-root user with a read-only root filesystem where your
+      platform allows it (`$SWITCHBOARD_HOME` on a volume if you install plugins at run time).

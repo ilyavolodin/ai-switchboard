@@ -1,0 +1,137 @@
+# Autofix: a labeled pull request whose linked Linear issue is simple starts a Claude Routine.
+#
+# - GitHub PR labeled `auto:fix-candidate`, filtered on the linked Linear issue's labels
+#   (`$linked` finds the tracker reference in the PR body, `$resolve` reads its live state).
+# - Claude Routines executor with meter ceilings: event runs stop at 85 % of the five-hour
+#   window, the nightly sweep may go to 95 %; the daily run allowance is estimated.
+# - Quiet hours at night, an approval expression for PRs labeled auto:needs-approval, an
+#   `after` step that labels the PR, a Slack notification on errors and throttles, and a
+#   nightly sweep that finds what the events missed.
+#
+# Secrets are references to environment variables of the switchboard container.
+#
+# Plugins: @ai-switchboard/source-github, source-linear, executor-claude-routines,
+# notifier-slack, secrets-env (all baked into the image).
+apiVersion: switchboard/v1
+kind: Configuration
+
+settings:
+  timezone: Europe/London
+  meterStalenessMinutes: 30
+  systemNotifierId: Slack — ops # a notifier name
+
+secretProviders:
+  - { name: env, type: env, enabled: true, settings: {} }
+
+sources:
+  - name: GitHub — acme org
+    type: github
+    enabled: true
+    settings:
+      owner: acme
+      authMode: token
+      token: secret://env/GITHUB_TOKEN
+      webhookSecret: secret://env/GITHUB_WEBHOOK_SECRET
+    caps:
+      eventCapPerHour: 500
+
+  - name: Linear — acme
+    type: linear
+    enabled: true
+    settings:
+      apiKey: secret://env/LINEAR_API_KEY
+      webhookSecret: secret://env/LINEAR_WEBHOOK_SECRET
+    caps:
+      eventCapPerHour: 500
+
+executors:
+  - name: Claude Routines — automation seat
+    type: claude-routines
+    enabled: true
+    settings:
+      token: secret://env/ROUTINE_TOKEN
+      callbackSecret: secret://env/ROUTINE_CALLBACK_SECRET
+      usage:
+        oauthRefreshToken: secret://env/ROUTINE_OAUTH_REFRESH_TOKEN
+        dailyRunLimit: 22
+    caps:
+      runsPerDay: 22
+      meterPollSeconds: 300
+      estimatedLimits: { daily_runs: 22 }
+
+notifiers:
+  - name: Slack — ops
+    type: slack
+    enabled: true
+    settings:
+      mode: webhook
+      webhookUrl: secret://env/SLACK_WEBHOOK
+
+processes:
+  - name: Autofix
+    description: >-
+      Start the autofix routine for pull requests labeled auto:fix-candidate whose linked
+      Linear issue is tagged complexity:simple. A nightly sweep picks up anything missed.
+    enabled: true
+    triggers:
+      - id: pr-labeled
+        source: GitHub — acme org
+        eventTypes: [github.pr.labeled]
+        filter: >-
+          attributes.label = 'auto:fix-candidate' and
+          $count($linked(artifact)[$contains(kind, 'linear')][
+            'complexity:simple' in $resolve($).labels
+          ]) > 0
+        describe: PR labeled auto:fix-candidate where the linked issue is complexity:simple
+        enabled: true
+      - id: issue-simple
+        source: Linear — acme
+        eventTypes: [linear.issue.labeled]
+        filter: attributes.label = 'complexity:simple'
+        describe: Linear issue labeled complexity:simple
+        enabled: true
+    schedules:
+      - id: nightly
+        cron: '0 2 * * *'
+        timezone: Europe/London
+        catchUp: once
+        enabled: true
+    batching:
+      debounceSeconds: 120
+      maxSize: 10
+      maxAgeSeconds: 900
+      groupBy: artifact.id
+    gates:
+      quietHours: { start: '22:00', end: '07:00', timezone: Europe/London }
+      # A person looks first when a PR in the batch also carries auto:needs-approval.
+      approval: "'auto:needs-approval' in events.attributes.labels"
+      breaker: { threshold: 3, cooldownMinutes: 120 }
+    budgets:
+      runsPerHour: 4
+      runsPerDay: 20
+      usagePerDay: { output_tokens: 2000000 }
+      meterCeilings:
+        five_hour: { events: 85, sweeps: 95 }
+        seven_day: { events: 80, sweeps: 90 }
+        daily_runs: { events: 80, sweeps: 100 }
+    executor:
+      instance: Claude Routines — automation seat
+      target:
+        routineId: trig_autofix_0000000000
+    # References plus a mode and a run id: the routine re-reads real state itself.
+    input: |
+      {
+        "text": "switchboard run " & run.id & " mode=" & mode & " artifacts=" &
+                $join(events.artifact.(kind & ":" & id), ",")
+      }
+    before: []
+    after:
+      - provider: GitHub — acme org
+        action: addLabel
+        args: '{ "artifact": events[0].artifact, "label": "auto:fix-started" }'
+        when: "run.status = 'ok'"
+    notify:
+      - notifier: Slack — ops
+        template: "'Autofix run ' & run.id & ' ended ' & run.status"
+        on: [error, throttled]
+    trackingDeadlineMinutes: 180

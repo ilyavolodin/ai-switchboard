@@ -1,0 +1,21 @@
+# Keep the build context small and free of local state and secrets.
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/playwright-report
+**/test-results
+packages/core/public
+.git
+.github
+.claude
+.switchboard
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+.DS_Store
+deploy/helm
+deploy/grafana
+docs
+examples

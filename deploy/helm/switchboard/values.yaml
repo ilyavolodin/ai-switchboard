@@ -1,0 +1,148 @@
+# Default values for the AI Switchboard chart.
+# Postgres is supplied by the operator; the chart never runs a database.
+
+# Two replicas give zero-downtime rollouts; replicas coordinate through Postgres.
+replicaCount: 2
+
+image:
+  repository: ghcr.io/ai-switchboard/switchboard
+  # Defaults to the chart's appVersion.
+  tag: ''
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ''
+fullnameOverride: ''
+
+# Public base URL (webhook and callback URLs, OIDC redirects), e.g. https://switchboard.example.com
+publicUrl: ''
+
+database:
+  # Required: an existing Secret holding the Postgres connection string.
+  existingSecret: ''
+  existingSecretKey: DATABASE_URL
+
+oidc:
+  # Leave issuer empty only for evaluation installs (local admin password, printed to the log).
+  issuer: ''
+  clientId: ''
+  allowedDomains: []
+  clientSecret:
+    existingSecret: ''
+    key: SWITCHBOARD_OIDC_CLIENT_SECRET
+
+# Email of the first admin, who signs in through OIDC.
+bootstrapAdmin: ''
+
+# Evaluation mode: local admin password, unauthenticated webhooks allowed. Never in production.
+evaluation: false
+
+logLevel: info
+
+metrics:
+  # Serve /metrics in Prometheus exposition format.
+  prometheus: true
+  # OTLP/HTTP collector endpoint, e.g. http://otel-collector:4318
+  otlpEndpoint: ''
+
+# Extra plain environment variables (rendered into the ConfigMap), e.g. SWITCHBOARD_WORKERS: "true".
+env: {}
+
+# Raw EnvVar entries appended to the container, e.g. values for the `env` secret provider:
+#   - name: GITHUB_TOKEN
+#     valueFrom: { secretKeyRef: { name: switchboard-secrets, key: GITHUB_TOKEN } }
+extraEnv: []
+
+# Raw EnvFromSource entries, e.g. - secretRef: { name: switchboard-secrets }
+extraEnvFrom: []
+
+# Optional chart-managed Secret, exposed to the container with envFrom. Prefer an external
+# secret manager; this exists for small installs.
+secret:
+  create: false
+  data: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ''
+  annotations: {}
+  hosts:
+    - host: switchboard.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: switchboard-tls
+  #    hosts: [switchboard.example.com]
+
+serviceMonitor:
+  # Requires the Prometheus Operator CRDs.
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+serviceAccount:
+  create: true
+  name: ''
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  # $SWITCHBOARD_HOME (/opt/switchboard) is written by `switchboard plugins add`; keep the root
+  # filesystem writable, or set this to true and mount plugins.volume at /opt/switchboard.
+  readOnlyRootFilesystem: false
+
+plugins:
+  # Plugins are best baked into the image (SWITCHBOARD_PLUGINS build argument). Set a volume to
+  # mount a prepared $SWITCHBOARD_HOME (/opt/switchboard) instead; it replaces the image's copy,
+  # including plugins baked in with SWITCHBOARD_PLUGINS (the reference plugins are unaffected).
+  # e.g. { emptyDir: {} } or a PVC shared by all replicas:
+  #   volume: { persistentVolumeClaim: { claimName: switchboard-plugins } }
+  volume: {}
+
+# Extra volumes, e.g. for the `file` secrets provider:
+#   extraVolumes:
+#     - name: switchboard-secrets
+#       secret: { secretName: switchboard-secrets }
+#   extraVolumeMounts:
+#     - name: switchboard-secrets
+#       mountPath: /var/run/secrets/switchboard
+#       readOnly: true
+extraVolumes: []
+extraVolumeMounts: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+terminationGracePeriodSeconds: 30

@@ -1,0 +1,83 @@
+# Datadog triage: a triggered monitor starts a GitHub Actions workflow, one run per service.
+#
+# Alerts from the same service within a two-minute window join one batch (`groupBy` the
+# service tag), so a flapping monitor or a noisy deploy starts one triage run, not twenty.
+#
+# Plugins: @ai-switchboard/source-datadog, executor-github-actions, secrets-env (all baked into
+# the image).
+apiVersion: switchboard/v1
+kind: Configuration
+
+secretProviders:
+  - { name: env, type: env, enabled: true, settings: {} }
+
+sources:
+  - name: Datadog — prod
+    type: datadog
+    enabled: true
+    settings:
+      sharedSecretHeader: x-switchboard-secret
+      sharedSecret: secret://env/DATADOG_WEBHOOK_SECRET
+      site: datadoghq.eu
+      apiKey: secret://env/DATADOG_API_KEY
+      appKey: secret://env/DATADOG_APP_KEY
+    caps:
+      eventCapPerHour: 300
+      eventTypesEnabled: [datadog.monitor.triggered, datadog.monitor.recovered]
+
+executors:
+  - name: GitHub Actions — acme org
+    type: github-actions
+    enabled: true
+    settings:
+      auth: app
+      appId: '123456'
+      installationId: '7890123'
+      privateKey: secret://env/GITHUB_APP_PRIVATE_KEY
+    caps:
+      runsPerDay: 50
+
+processes:
+  - name: Datadog triage
+    description: A triggered production monitor starts the triage workflow for its service.
+    enabled: true
+    triggers:
+      - id: monitor-triggered
+        source: Datadog — prod
+        eventTypes: [datadog.monitor.triggered]
+        filter: "'env:prod' in attributes.tags and attributes.priority in ['P1', 'P2']"
+        describe: A P1 or P2 production monitor triggered
+        enabled: true
+    schedules: []
+    batching:
+      debounceSeconds: 120
+      maxSize: 25
+      maxAgeSeconds: 600
+      # One batch (and one run) per service tag.
+      groupBy: "$substringAfter(attributes.tags[$substringBefore($, ':') = 'service'][0], ':')"
+    gates:
+      approval: none
+      breaker: { threshold: 5, cooldownMinutes: 60 }
+    budgets:
+      runsPerHour: 10
+      runsPerDay: 40
+      usagePerDay: { billable_minutes: 300 }
+      meterCeilings:
+        api_rate_limit: { events: 90, sweeps: 95 }
+    executor:
+      instance: GitHub Actions — acme org
+      target:
+        owner: acme
+        repo: ops-automation
+        workflow: triage.yml
+        ref: main
+    input: |
+      {
+        "service": $substringAfter(events[0].attributes.tags[$substringBefore($, ':') = 'service'][0], ':'),
+        "monitors": $join(events.artifact.id, ","),
+        "mode": mode
+      }
+    before: []
+    after: []
+    notify: []
+    trackingDeadlineMinutes: 60

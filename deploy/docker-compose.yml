@@ -1,0 +1,67 @@
+# Evaluation profile: Switchboard + Postgres on one machine.
+#
+#   docker compose -f deploy/docker-compose.yml up -d                  # Switchboard + Postgres
+#   docker compose -f deploy/docker-compose.yml --profile stub up -d   # plus the test stub
+#   docker compose -f deploy/docker-compose.yml logs switchboard | grep -i password
+#
+# Open http://localhost:8080 and sign in with the local admin password printed once to the log.
+# Evaluation mode is for trying Switchboard out; production uses OIDC and the Helm chart.
+name: switchboard
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: switchboard
+      POSTGRES_PASSWORD: switchboard
+      POSTGRES_DB: switchboard
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U switchboard -d switchboard']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  switchboard:
+    image: ghcr.io/ai-switchboard/switchboard:1.0.0
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        # Space-separated npm specs baked into the image, e.g. "@acme/switchboard-source-jira@^1".
+        SWITCHBOARD_PLUGINS: ''
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SWITCHBOARD_EVALUATION: 'true'
+      DATABASE_URL: postgres://switchboard:switchboard@postgres:5432/switchboard
+      SWITCHBOARD_PUBLIC_URL: http://localhost:8080
+      LOG_LEVEL: info
+      # Values the `env` secret provider resolves, referenced from settings as
+      # secret://env/<NAME>. Change them before exposing this installation to anything.
+      WEBHOOK_SECRET: change-me-webhook-secret
+      STUB_CALLBACK_SECRET: change-me-callback-secret
+    ports:
+      - '8080:8080'
+    volumes:
+      - switchboard-home:/opt/switchboard
+
+  stub:
+    profiles: [stub]
+    image: ghcr.io/ai-switchboard/switchboard-stub:1.0.0
+    build:
+      context: ./stub
+    restart: unless-stopped
+    environment:
+      STUB_PORT: '9090'
+      STUB_CALLBACK_SECRET: change-me-callback-secret
+    ports:
+      - '9090:9090'
+
+volumes:
+  pgdata:
+  switchboard-home:

@@ -1,0 +1,28 @@
+AI Switchboard {{ .Chart.AppVersion }} is deploying as {{ include "switchboard.fullname" . }} ({{ .Values.replicaCount }} replicas).
+
+{{- if .Values.ingress.enabled }}
+Open:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/
+{{- end }}
+{{- else }}
+Reach it locally:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "switchboard.fullname" . }} 8080:{{ .Values.service.port }}
+  open http://localhost:8080
+{{- end }}
+
+{{- if not .Values.publicUrl }}
+
+WARNING: publicUrl is empty. Webhook and callback URLs and the OIDC redirect are built from it;
+set --set publicUrl=https://switchboard.example.com.
+{{- end }}
+{{- if not .Values.oidc.issuer }}
+
+WARNING: no OIDC issuer is configured. Set oidc.issuer, oidc.clientId and
+oidc.clientSecret.existingSecret for sign-in. Without it only an evaluation install works.
+{{- end }}
+
+Check the installation from inside a pod:
+  kubectl --namespace {{ .Release.Namespace }} exec deploy/{{ include "switchboard.fullname" . }} -- switchboard doctor
+
+Health: /healthz (liveness), /readyz (Postgres reachable, plugins loaded){{ if .Values.metrics.prometheus }}, /metrics (Prometheus){{ end }}.
