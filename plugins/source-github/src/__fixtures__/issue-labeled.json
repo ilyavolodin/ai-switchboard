@@ -1,0 +1,100 @@
+{
+  "event": "issues",
+  "delivery": "c41f2e00-7c70-11ef-9d3c-4b5a6c7d8e9f",
+  "body": {
+    "action": "labeled",
+    "issue": {
+      "url": "https://api.github.com/repos/acme/api/issues/12",
+      "id": 1822334455,
+      "node_id": "I_kwDOIMpVxM5sngn3",
+      "number": 12,
+      "title": "Webhook retries hammer the queue",
+      "user": {
+        "login": "hubot",
+        "id": 2001,
+        "node_id": "U_kgDO2001",
+        "type": "User",
+        "site_admin": false,
+        "html_url": "https://github.com/hubot"
+      },
+      "labels": [
+        {
+          "id": 4403,
+          "node_id": "LA_kwDO4403",
+          "url": "https://api.github.com/repos/acme/api/labels/bug",
+          "name": "bug",
+          "color": "d73a4a",
+          "default": false,
+          "description": null
+        },
+        {
+          "id": 4404,
+          "node_id": "LA_kwDO4404",
+          "url": "https://api.github.com/repos/acme/api/labels/triage",
+          "name": "triage",
+          "color": "c5def5",
+          "default": false,
+          "description": null
+        }
+      ],
+      "state": "open",
+      "locked": false,
+      "assignee": null,
+      "assignees": [],
+      "comments": 2,
+      "created_at": "2026-09-20T08:00:00Z",
+      "updated_at": "2026-09-27T09:12:00Z",
+      "closed_at": null,
+      "author_association": "MEMBER",
+      "body": "When the queue is down, retries pile up.",
+      "html_url": "https://github.com/acme/api/issues/12"
+    },
+    "label": {
+      "id": 4404,
+      "node_id": "LA_kwDO4404",
+      "url": "https://api.github.com/repos/acme/api/labels/triage",
+      "name": "triage",
+      "color": "c5def5",
+      "default": false,
+      "description": null
+    },
+    "repository": {
+      "id": 550137284,
+      "node_id": "R_kgDOIMpVxA",
+      "name": "api",
+      "full_name": "acme/api",
+      "private": true,
+      "owner": {
+        "login": "acme",
+        "id": 9919,
+        "type": "Organization",
+        "site_admin": false
+      },
+      "html_url": "https://github.com/acme/api",
+      "description": "Public API",
+      "fork": false,
+      "url": "https://api.github.com/repos/acme/api",
+      "created_at": "2022-10-12T09:11:02Z",
+      "updated_at": "2026-09-20T14:02:11Z",
+      "pushed_at": "2026-09-27T10:12:44Z",
+      "default_branch": "main",
+      "visibility": "private"
+    },
+    "organization": {
+      "login": "acme",
+      "id": 9919,
+      "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+      "url": "https://api.github.com/orgs/acme",
+      "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+      "description": "Acme Corp"
+    },
+    "sender": {
+      "login": "octocat",
+      "id": 583231,
+      "node_id": "U_kgDO583231",
+      "type": "User",
+      "site_admin": false,
+      "html_url": "https://github.com/octocat"
+    }
+  }
+}

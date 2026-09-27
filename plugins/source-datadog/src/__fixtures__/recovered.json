@@ -1,0 +1,20 @@
+{
+  "id": "7716548234011311111",
+  "alertId": "148275309",
+  "alertCycleKey": "7716548234011230001",
+  "transition": "Recovered",
+  "alertType": "success",
+  "alertStatus": "Recovered",
+  "priority": "P1",
+  "title": "[Recovered on {env:prod,service:api}] [P1] API 5xx rate above 2%",
+  "tags": "env:prod,monitor,service:api,team:payments",
+  "link": "https://app.datadoghq.com/monitors/148275309?group=env%3Aprod%2Cservice%3Aapi&from_ts=1790503500000&to_ts=1790504700000&event_id=7716548234011234567",
+  "date": "1790506500000",
+  "lastUpdated": "1790506500000",
+  "orgId": "421337",
+  "hostname": "$HOSTNAME",
+  "metric": "trace.http.request.errors",
+  "scope": "env:prod,service:api",
+  "eventType": "query_alert_monitor",
+  "body": "%%%\n5xx rate is 3.4% (threshold 2%). @slack-oncall-payments\n\nRunbook: https://wiki.example.com/runbooks/api-5xx\n%%%"
+}

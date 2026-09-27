@@ -1,0 +1,84 @@
+{
+  "event": "check_suite",
+  "delivery": "e8a1b2c3-7c82-11ef-8e7f-5a6b7c8d9e0f",
+  "body": {
+    "action": "completed",
+    "check_suite": {
+      "id": 27744188321,
+      "node_id": "CS_kwDOIMpVxM8AAAAGdbhDoQ",
+      "head_branch": "feat/retry-backoff",
+      "head_sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://api.github.com/repos/acme/api/check-suites/27744188321",
+      "before": "9049f1265b7d61be4a8904a9a27120d2064dab3b",
+      "after": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+      "pull_requests": [
+        {
+          "url": "https://api.github.com/repos/acme/api/pulls/482",
+          "id": 2031457788,
+          "number": 482,
+          "head": {
+            "ref": "feat/retry-backoff",
+            "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+          },
+          "base": {
+            "ref": "main",
+            "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+          }
+        }
+      ],
+      "app": {
+        "id": 15368,
+        "slug": "github-actions",
+        "name": "GitHub Actions"
+      },
+      "created_at": "2026-09-27T10:02:20Z",
+      "updated_at": "2026-09-27T10:09:47Z",
+      "latest_check_runs_count": 4,
+      "head_commit": {
+        "id": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+        "message": "Retry with backoff",
+        "timestamp": "2026-09-27T10:02:10Z"
+      }
+    },
+    "repository": {
+      "id": 550137284,
+      "node_id": "R_kgDOIMpVxA",
+      "name": "api",
+      "full_name": "acme/api",
+      "private": true,
+      "owner": {
+        "login": "acme",
+        "id": 9919,
+        "type": "Organization",
+        "site_admin": false
+      },
+      "html_url": "https://github.com/acme/api",
+      "description": "Public API",
+      "fork": false,
+      "url": "https://api.github.com/repos/acme/api",
+      "created_at": "2022-10-12T09:11:02Z",
+      "updated_at": "2026-09-20T14:02:11Z",
+      "pushed_at": "2026-09-27T10:12:44Z",
+      "default_branch": "main",
+      "visibility": "private"
+    },
+    "organization": {
+      "login": "acme",
+      "id": 9919,
+      "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+      "url": "https://api.github.com/orgs/acme",
+      "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+      "description": "Acme Corp"
+    },
+    "sender": {
+      "login": "github-actions[bot]",
+      "id": 41898282,
+      "node_id": "U_kgDO41898282",
+      "type": "Bot",
+      "site_admin": false,
+      "html_url": "https://github.com/github-actions[bot]"
+    }
+  }
+}

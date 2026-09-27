@@ -1,0 +1,28 @@
+{
+  "id": 148275309,
+  "org_id": 421337,
+  "type": "query alert",
+  "name": "API 5xx rate above 2%",
+  "message": "5xx rate is {{value}}. @slack-oncall-payments",
+  "tags": ["env:prod", "service:api", "team:payments"],
+  "query": "sum(last_5m):sum:trace.http.request.errors{env:prod,service:api}.as_count() / sum:trace.http.request.hits{env:prod,service:api}.as_count() > 0.02",
+  "options": {
+    "thresholds": {
+      "critical": 0.02,
+      "warning": 0.01
+    },
+    "notify_no_data": true,
+    "renotify_interval": 30
+  },
+  "multi": true,
+  "created": "2025-03-11T08:21:40.000000+00:00",
+  "modified": "2026-09-01T12:00:00.000000+00:00",
+  "overall_state": "Alert",
+  "overall_state_modified": "2026-09-27T10:15:00+00:00",
+  "priority": 1,
+  "restricted_roles": null,
+  "creator": {
+    "name": "Ilya Volodin",
+    "handle": "ilya@example.com"
+  }
+}

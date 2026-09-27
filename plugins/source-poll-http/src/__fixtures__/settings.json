@@ -1,0 +1,37 @@
+{
+  "url": "https://status.example.com/api/v2/incidents",
+  "method": "GET",
+  "token": "fixture-token",
+  "cursorParam": "updated_since",
+  "itemsExpression": "data.incidents",
+  "mapping": "{\n  'type': item.status = 'resolved' ? 'poll-http.incident.resolved' : 'poll-http.incident.updated',\n  'artifact': { 'kind': 'incident', 'id': item.id, 'url': item.html_url, 'version': item.updated_at },\n  'attributes': {\n    'title': item.name,\n    'impact': item.impact,\n    'status': item.status,\n    'components': item.components.name,\n    'body': item.incident_updates[0].body\n  },\n  'occurredAt': item.updated_at\n}",
+  "eventTypes": [
+    {
+      "type": "poll-http.incident.updated",
+      "title": "Incident updated",
+      "description": "An incident was opened or changed and is not resolved.",
+      "attributes": [
+        { "name": "title", "type": "string" },
+        { "name": "impact", "type": "string", "description": "none, minor, major or critical" },
+        { "name": "status", "type": "string" },
+        { "name": "components", "type": "string[]" }
+      ],
+      "example": {
+        "title": "Elevated API error rate",
+        "impact": "major",
+        "status": "investigating",
+        "components": ["API"]
+      }
+    },
+    {
+      "type": "poll-http.incident.resolved",
+      "title": "Incident resolved",
+      "attributes": [
+        { "name": "title", "type": "string" },
+        { "name": "impact", "type": "string" },
+        { "name": "status", "type": "string" },
+        { "name": "components", "type": "string[]" }
+      ]
+    }
+  ]
+}

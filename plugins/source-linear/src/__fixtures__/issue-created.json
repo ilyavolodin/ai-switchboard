@@ -1,0 +1,66 @@
+{
+  "delivery": "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
+  "body": {
+    "action": "create",
+    "actor": {
+      "id": "5e4d3c2b-1a09-4f8e-8d7c-6b5a49382716",
+      "name": "Ilya Volodin",
+      "email": "ilya@example.com",
+      "url": "https://linear.app/lola/profiles/ilya",
+      "type": "user"
+    },
+    "createdAt": "2026-09-27T09:40:12.500Z",
+    "data": {
+      "id": "f1e2d3c4-b5a6-4978-8a6b-5c4d3e2f1a0b",
+      "createdAt": "2026-09-27T09:40:12.331Z",
+      "updatedAt": "2026-09-27T09:40:12.331Z",
+      "number": 1712,
+      "title": "Retry webhook deliveries with backoff",
+      "description": "Customers see duplicate deliveries when the queue stalls. Internal: see incident notes.",
+      "priority": 2,
+      "priorityLabel": "High",
+      "estimate": 3,
+      "sortOrder": -1204.33,
+      "boardOrder": 0,
+      "prioritySortOrder": -1204.33,
+      "identifier": "LOL-1712",
+      "url": "https://linear.app/lola/issue/LOL-1712/retry-webhook-deliveries-with-backoff",
+      "teamId": "8c2f1d0e-3b4a-4c5d-9e6f-7a8b9c0d1e2f",
+      "team": {
+        "id": "8c2f1d0e-3b4a-4c5d-9e6f-7a8b9c0d1e2f",
+        "key": "LOL",
+        "name": "Lola Platform"
+      },
+      "stateId": "6a1e2b3c-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+      "state": {
+        "id": "6a1e2b3c-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+        "name": "Todo",
+        "color": "#e2e2e2",
+        "type": "unstarted"
+      },
+      "assigneeId": "5e4d3c2b-1a09-4f8e-8d7c-6b5a49382716",
+      "assignee": {
+        "id": "5e4d3c2b-1a09-4f8e-8d7c-6b5a49382716",
+        "name": "Ilya Volodin"
+      },
+      "creatorId": "5e4d3c2b-1a09-4f8e-8d7c-6b5a49382716",
+      "labelIds": ["a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"],
+      "labels": [
+        {
+          "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+          "name": "backend",
+          "color": "#26b5ce",
+          "parentId": null
+        }
+      ],
+      "subscriberIds": ["5e4d3c2b-1a09-4f8e-8d7c-6b5a49382716"],
+      "previousIdentifiers": [],
+      "botActor": null
+    },
+    "url": "https://linear.app/lola/issue/LOL-1712/retry-webhook-deliveries-with-backoff",
+    "type": "Issue",
+    "organizationId": "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
+    "webhookTimestamp": 1790504099120,
+    "webhookId": "d7c6b5a4-9382-4716-a5b4-c3d2e1f0a9b8"
+  }
+}

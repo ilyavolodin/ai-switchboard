@@ -1,0 +1,18 @@
+{
+  "headers": {
+    "content-type": "application/json",
+    "user-agent": "DeployBot-Hookshot/2.4",
+    "x-delivery-id": "0c2d6e7a-91f3-4b1e-a6d2-3f5b8c9e0a12"
+  },
+  "body": {
+    "service": "api",
+    "environment": "production",
+    "status": "started",
+    "started_at": "2026-09-27T10:11:02Z",
+    "deployment": {
+      "id": "dep_48213",
+      "url": "https://deploys.example.com/api/dep_48213",
+      "updated_at": "2026-09-27T10:11:02Z"
+    }
+  }
+}

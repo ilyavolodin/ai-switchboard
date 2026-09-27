@@ -1,0 +1,86 @@
+{
+  "event": "push",
+  "delivery": "1a2b3c4d-7c86-11ef-9f8e-7d6c5b4a3f2e",
+  "body": {
+    "ref": "refs/heads/main",
+    "before": "9049f1265b7d61be4a8904a9a27120d2064dab3b",
+    "after": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+    "repository": {
+      "id": 550137284,
+      "node_id": "R_kgDOIMpVxA",
+      "name": "api",
+      "full_name": "acme/api",
+      "private": true,
+      "owner": {
+        "login": "acme",
+        "id": 9919,
+        "type": "Organization",
+        "site_admin": false
+      },
+      "html_url": "https://github.com/acme/api",
+      "description": "Public API",
+      "fork": false,
+      "url": "https://api.github.com/repos/acme/api",
+      "created_at": "2022-10-12T09:11:02Z",
+      "updated_at": "2026-09-20T14:02:11Z",
+      "pushed_at": 1790509202,
+      "default_branch": "main",
+      "visibility": "private"
+    },
+    "pusher": {
+      "name": "monalisa",
+      "email": "monalisa@users.noreply.github.com"
+    },
+    "organization": {
+      "login": "acme",
+      "id": 9919,
+      "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+      "url": "https://api.github.com/orgs/acme",
+      "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+      "description": "Acme Corp"
+    },
+    "sender": {
+      "login": "monalisa",
+      "id": 1000001,
+      "node_id": "U_kgDO1000001",
+      "type": "User",
+      "site_admin": false,
+      "html_url": "https://github.com/monalisa"
+    },
+    "created": false,
+    "deleted": false,
+    "forced": false,
+    "base_ref": null,
+    "compare": "https://github.com/acme/api/compare/9049f1265b7d...0d1a26e67d8f",
+    "commits": [
+      {
+        "id": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+        "tree_id": "f9d2a07e9488b91af2641b26b9407fe22a451433",
+        "distinct": true,
+        "message": "Merge pull request #482 from acme/feat/retry-backoff",
+        "timestamp": "2026-09-27T11:40:01Z",
+        "url": "https://github.com/acme/api/commit/0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+        "author": {
+          "name": "monalisa",
+          "email": "monalisa@users.noreply.github.com",
+          "username": "monalisa"
+        },
+        "added": [],
+        "removed": [],
+        "modified": ["src/retry.ts"]
+      }
+    ],
+    "head_commit": {
+      "id": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+      "tree_id": "f9d2a07e9488b91af2641b26b9407fe22a451433",
+      "distinct": true,
+      "message": "Merge pull request #482 from acme/feat/retry-backoff",
+      "timestamp": "2026-09-27T11:40:01Z",
+      "author": {
+        "name": "monalisa",
+        "email": "monalisa@users.noreply.github.com",
+        "username": "monalisa"
+      }
+    }
+  }
+}

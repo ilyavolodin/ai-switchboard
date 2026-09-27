@@ -1,0 +1,29 @@
+{
+  "verification": "hmac",
+  "secret": "fixture-secret",
+  "eventTypes": [
+    {
+      "type": "webhook.deploy.finished",
+      "title": "Deploy finished",
+      "description": "A deploy pipeline reached a terminal state.",
+      "attributes": [
+        { "name": "service", "type": "string", "description": "Service name" },
+        { "name": "environment", "type": "string" },
+        { "name": "status", "type": "string" },
+        { "name": "durationSeconds", "type": "number" },
+        { "name": "tags", "type": "string[]" },
+        { "name": "rollback", "type": "boolean" }
+      ],
+      "example": { "service": "api", "environment": "production", "status": "success" }
+    },
+    {
+      "type": "webhook.deploy.started",
+      "title": "Deploy started",
+      "attributes": [
+        { "name": "service", "type": "string" },
+        { "name": "environment", "type": "string" }
+      ]
+    }
+  ],
+  "mapping": "(\n  $d := body;\n  $kind := $d.status in ['success', 'failure'] ? 'webhook.deploy.finished' : ($d.status = 'started' ? 'webhook.deploy.started' : 'webhook.deploy.unknown');\n  {\n    'type': $kind,\n    'artifact': { 'kind': 'deploy', 'id': $d.deployment.id, 'url': $d.deployment.url, 'version': $d.deployment.updated_at },\n    'attributes': {\n      'service': $d.service,\n      'environment': $d.environment,\n      'status': $d.status,\n      'durationSeconds': $d.duration_seconds,\n      'tags': $d.tags,\n      'rollback': $d.rollback,\n      'internalNote': $d.note\n    },\n    'occurredAt': $d.finished_at ? $d.finished_at : $d.started_at\n  }\n)"
+}

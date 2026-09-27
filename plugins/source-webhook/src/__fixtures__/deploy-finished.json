@@ -1,0 +1,23 @@
+{
+  "headers": {
+    "content-type": "application/json",
+    "user-agent": "DeployBot-Hookshot/2.4",
+    "x-delivery-id": "7f3a9c1e-2b44-4d0a-9d4f-8e1b2a6c5d01"
+  },
+  "body": {
+    "service": "api",
+    "environment": "production",
+    "status": "success",
+    "duration_seconds": 184,
+    "tags": ["team:payments", "region:us-east-1"],
+    "rollback": false,
+    "note": "Deployed by the release train; see the internal runbook for rollback steps.",
+    "started_at": "2026-09-27T10:11:02Z",
+    "finished_at": "2026-09-27T10:14:06Z",
+    "deployment": {
+      "id": "dep_48213",
+      "url": "https://deploys.example.com/api/dep_48213",
+      "updated_at": "2026-09-27T10:14:06Z"
+    }
+  }
+}
