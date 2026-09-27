@@ -45,6 +45,7 @@
     "@ai-switchboard/executor-claude-routines": "workspace:*",
     "@ai-switchboard/executor-github-actions": "workspace:*",
     "@ai-switchboard/executor-http": "workspace:*",
+    "@ai-switchboard/executor-log": "workspace:*",
     "@ai-switchboard/notifier-slack": "workspace:*",
     "@ai-switchboard/notifier-webhook": "workspace:*",
     "@ai-switchboard/sdk": "workspace:*",

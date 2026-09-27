@@ -81,6 +81,9 @@ importers:
       '@ai-switchboard/executor-http':
         specifier: workspace:*
         version: link:../../plugins/executor-http
+      '@ai-switchboard/executor-log':
+        specifier: workspace:*
+        version: link:../../plugins/executor-log
       '@ai-switchboard/notifier-slack':
         specifier: workspace:*
         version: link:../../plugins/notifier-slack
@@ -305,6 +308,12 @@ importers:
       jsonata:
         specifier: ^2.2.2
         version: 2.2.2
+    devDependencies:
+      '@ai-switchboard/sdk':
+        specifier: workspace:^
+        version: link:../../packages/sdk
+
+  plugins/executor-log:
     devDependencies:
       '@ai-switchboard/sdk':
         specifier: workspace:^

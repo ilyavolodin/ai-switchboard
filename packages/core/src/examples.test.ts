@@ -17,6 +17,7 @@ const PLUGINS = [
   'executor-http',
   'executor-claude-routines',
   'executor-github-actions',
+  'executor-log',
   'notifier-slack',
   'notifier-webhook',
   'secrets-env',
