@@ -50,11 +50,13 @@ export function formatDuration(ms: number, compact = false): string {
 
 /** Seconds as a duration ("9 m 12 s" for longer runs keeps seconds). */
 export function formatSeconds(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)} s`;
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
+  // Round once, up front, so 119.7 s reads "2 m" rather than "1 m 60 s".
+  const total = Math.round(seconds);
+  if (total < 60) return `${total} s`;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
   if (m < 60) return s > 0 ? `${m} m ${s} s` : `${m} m`;
-  return formatDuration(seconds * 1000);
+  return formatDuration(total * 1000);
 }
 
 const absoluteFormat = new Intl.DateTimeFormat(undefined, {
@@ -98,8 +100,9 @@ export function formatWhen(ms: number, nowMs: number): string {
 /** 48213 → "48.2k", 1_200_000 → "1.2M". */
 export function formatCount(n: number): string {
   const abs = Math.abs(n);
-  if (abs < 1000) return String(Math.round(n));
-  if (abs < 1_000_000) return `${trim(n / 1000)}k`;
+  // Pick the unit after rounding, so 999.6 is "1k" and 999 999 is "1M" (not "1000", "1000k").
+  if (Math.round(abs) < 1000) return String(Math.round(n));
+  if (Number(trim(abs / 1000)) < 1000) return `${trim(n / 1000)}k`;
   return `${trim(n / 1_000_000)}M`;
 }
 
@@ -110,12 +113,7 @@ export function formatAmount(n: number): string {
 }
 
 function trim(v: number): string {
-  return v >= 100 ? String(Math.round(v)) : v.toFixed(1).replace(/\.0$/, '');
-}
-
-/** 0.62 → "62%". Values are fractions 0–1. */
-export function formatPercent(fraction: number): string {
-  return `${Math.round(fraction * 100)}%`;
+  return Math.abs(v) >= 100 ? String(Math.round(v)) : v.toFixed(1).replace(/\.0$/, '');
 }
 
 /** Value with its unit as executors declare it: tokens, seconds, usd, count. */

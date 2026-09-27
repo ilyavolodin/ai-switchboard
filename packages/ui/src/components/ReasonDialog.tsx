@@ -85,7 +85,7 @@ export function ReasonDialog({
             />
           )}
         </Field>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 2 }}>
+        <div className={styles.actions}>
           <Button variant="outline" onClick={cancel}>
             Cancel
           </Button>

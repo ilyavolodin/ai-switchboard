@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../client.js';
 import { POLL, qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
+import { useIdQuery } from '../query.js';
 
 const fleet = [qk.executors.all, qk.board, qk.status, qk.processes.all];
 
@@ -29,38 +30,29 @@ export function useExecutors() {
 
 /** GET /executors/:id */
 export function useExecutor(id: string | undefined) {
-  return useQuery({
-    queryKey: qk.executors.detail(id ?? ''),
-    queryFn: ({ signal }) => apiFetch<ExecutorDetail>(`/executors/${seg(id ?? '')}`, { signal }),
-    enabled: Boolean(id),
+  return useIdQuery<ExecutorDetail>(id, qk.executors.detail, (i) => `/executors/${seg(i)}`, {
     refetchInterval: POLL.lists,
   });
 }
 
 /** GET /executors/:id/meters?window= — meter history with run markers. */
 export function useExecutorMeters(id: string | undefined, window: StatsWindow = '7d') {
-  return useQuery({
-    queryKey: qk.executors.meters(id ?? '', window),
-    queryFn: ({ signal }) =>
-      apiFetch<MeterHistoryResponse>(`/executors/${seg(id ?? '')}/meters`, {
-        query: { window },
-        signal,
-      }),
-    enabled: Boolean(id),
-  });
+  return useIdQuery<MeterHistoryResponse>(
+    id,
+    (i) => qk.executors.meters(i, window),
+    (i) => `/executors/${seg(i)}/meters`,
+    { query: { window } },
+  );
 }
 
 /** GET /executors/:id/usage?window= — usage per day per dimension, runs by status. */
 export function useExecutorUsage(id: string | undefined, window: StatsWindow = '7d') {
-  return useQuery({
-    queryKey: qk.executors.usage(id ?? '', window),
-    queryFn: ({ signal }) =>
-      apiFetch<UsageHistoryResponse>(`/executors/${seg(id ?? '')}/usage`, {
-        query: { window },
-        signal,
-      }),
-    enabled: Boolean(id),
-  });
+  return useIdQuery<UsageHistoryResponse>(
+    id,
+    (i) => qk.executors.usage(i, window),
+    (i) => `/executors/${seg(i)}/usage`,
+    { query: { window } },
+  );
 }
 
 /** POST /executors */

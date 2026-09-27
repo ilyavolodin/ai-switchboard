@@ -24,6 +24,7 @@ import {
   DEFAULT_RANGE,
   type FilterKey,
   hasFilters,
+  idFilterOptions,
   RANGES,
   readFilters,
   STAGE_OPTIONS,
@@ -98,7 +99,7 @@ export function Activity() {
           aria-label="Source"
           value={filters.source ?? ''}
           placeholder="All sources"
-          options={(sources.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
+          options={idFilterOptions(sources.data, filters.source)}
           onChange={(e) => {
             setFilter('source', e.target.value);
           }}
@@ -108,7 +109,7 @@ export function Activity() {
           aria-label="Process"
           value={filters.process ?? ''}
           placeholder="All processes"
-          options={(processes.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
+          options={idFilterOptions(processes.data, filters.process)}
           onChange={(e) => {
             setFilter('process', e.target.value);
           }}
@@ -118,7 +119,7 @@ export function Activity() {
           aria-label="Executor"
           value={filters.executor ?? ''}
           placeholder="All executors"
-          options={(executors.data ?? []).map((x) => ({ value: x.id, label: x.name }))}
+          options={idFilterOptions(executors.data, filters.executor)}
           onChange={(e) => {
             setFilter('executor', e.target.value);
           }}

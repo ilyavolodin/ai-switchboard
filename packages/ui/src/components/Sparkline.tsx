@@ -1,3 +1,5 @@
+import { chartValue } from '../lib/chart.js';
+
 export interface SparklineProps {
   values: number[];
   width?: number;
@@ -15,9 +17,12 @@ export function Sparkline({
   label = 'Trend',
   color = 'var(--primary)',
 }: SparklineProps) {
-  const max = Math.max(1, ...values);
-  const step = values.length > 1 ? width / (values.length - 1) : 0;
-  const points = values
+  const clean = values.map(chartValue);
+  // A lone value is drawn flat across the width (a one-point polyline is invisible).
+  const drawn = clean.length === 1 ? [clean[0] ?? 0, clean[0] ?? 0] : clean;
+  const max = Math.max(1, ...drawn);
+  const step = drawn.length > 1 ? width / (drawn.length - 1) : 0;
+  const points = drawn
     .map((v, i) => `${(i * step).toFixed(1)},${(height - 2 - (v / max) * (height - 4)).toFixed(1)}`)
     .join(' ');
   return (

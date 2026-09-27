@@ -15,6 +15,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../client.js';
 import { POLL, qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
+import { cursorPaging, useIdQuery } from '../query.js';
 
 const fleet = [qk.sources.all, qk.board, qk.status, qk.processes.all];
 
@@ -29,25 +30,19 @@ export function useSources() {
 
 /** GET /sources/:id */
 export function useSource(id: string | undefined) {
-  return useQuery({
-    queryKey: qk.sources.detail(id ?? ''),
-    queryFn: ({ signal }) => apiFetch<SourceDetail>(`/sources/${seg(id ?? '')}`, { signal }),
-    enabled: Boolean(id),
+  return useIdQuery<SourceDetail>(id, qk.sources.detail, (i) => `/sources/${seg(i)}`, {
     refetchInterval: POLL.lists,
   });
 }
 
 /** GET /sources/:id/stats?window= */
 export function useSourceStats(id: string | undefined, window: StatsWindow = '24h') {
-  return useQuery({
-    queryKey: qk.sources.stats(id ?? '', window),
-    queryFn: ({ signal }) =>
-      apiFetch<SourceStatsResponse>(`/sources/${seg(id ?? '')}/stats`, {
-        query: { window },
-        signal,
-      }),
-    enabled: Boolean(id),
-  });
+  return useIdQuery<SourceStatsResponse>(
+    id,
+    (i) => qk.sources.stats(i, window),
+    (i) => `/sources/${seg(i)}/stats`,
+    { query: { window } },
+  );
 }
 
 /** GET /sources/:id/events?cursor=&type= (paged) */
@@ -59,8 +54,7 @@ export function useSourceEvents(id: string | undefined, type?: string) {
         query: { type, cursor: pageParam },
         signal,
       }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    ...cursorPaging,
     enabled: Boolean(id),
   });
 }

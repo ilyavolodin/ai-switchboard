@@ -27,6 +27,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-qu
 import { apiFetch } from '../client.js';
 import { POLL, qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
+import { cursorPaging, useIdQuery } from '../query.js';
 
 const fleet = [qk.processes.all, qk.board, qk.status, qk.approvals.all];
 
@@ -41,45 +42,38 @@ export function useProcesses() {
 
 /** GET /processes/:id */
 export function useProcess(id: string | undefined) {
-  return useQuery({
-    queryKey: qk.processes.detail(id ?? ''),
-    queryFn: ({ signal }) => apiFetch<ProcessDetail>(`/processes/${seg(id ?? '')}`, { signal }),
-    enabled: Boolean(id),
+  return useIdQuery<ProcessDetail>(id, qk.processes.detail, (i) => `/processes/${seg(i)}`, {
     refetchInterval: POLL.lists,
   });
 }
 
 /** GET /processes/:id/funnel?window= */
 export function useProcessFunnel(id: string | undefined, window: StatsWindow = '7d') {
-  return useQuery({
-    queryKey: qk.processes.funnel(id ?? '', window),
-    queryFn: ({ signal }) =>
-      apiFetch<FunnelResponse>(`/processes/${seg(id ?? '')}/funnel`, { query: { window }, signal }),
-    enabled: Boolean(id),
-  });
+  return useIdQuery<FunnelResponse>(
+    id,
+    (i) => qk.processes.funnel(i, window),
+    (i) => `/processes/${seg(i)}/funnel`,
+    { query: { window } },
+  );
 }
 
 /** GET /processes/:id/stats?window= */
 export function useProcessStats(id: string | undefined, window: StatsWindow = '7d') {
-  return useQuery({
-    queryKey: qk.processes.stats(id ?? '', window),
-    queryFn: ({ signal }) =>
-      apiFetch<ProcessStatsResponse>(`/processes/${seg(id ?? '')}/stats`, {
-        query: { window },
-        signal,
-      }),
-    enabled: Boolean(id),
-  });
+  return useIdQuery<ProcessStatsResponse>(
+    id,
+    (i) => qk.processes.stats(i, window),
+    (i) => `/processes/${seg(i)}/stats`,
+    { query: { window } },
+  );
 }
 
 /** GET /processes/:id/versions */
 export function useProcessVersions(id: string | undefined) {
-  return useQuery({
-    queryKey: qk.processes.versions(id ?? ''),
-    queryFn: ({ signal }) =>
-      apiFetch<ProcessVersionSummary[]>(`/processes/${seg(id ?? '')}/versions`, { signal }),
-    enabled: Boolean(id),
-  });
+  return useIdQuery<ProcessVersionSummary[]>(
+    id,
+    qk.processes.versions,
+    (i) => `/processes/${seg(i)}/versions`,
+  );
 }
 
 /** GET /processes/:id/versions/:version */
@@ -96,15 +90,12 @@ export function useProcessVersion(id: string | undefined, version: number | unde
 
 /** GET /processes/:id/batches?limit= — recent batches, e.g. to pick one for a test run. */
 export function useProcessBatches(id: string | undefined, limit = 20) {
-  return useQuery({
-    queryKey: qk.processes.batches(id ?? '', limit),
-    queryFn: ({ signal }) =>
-      apiFetch<RecentBatchDTO[]>(`/processes/${seg(id ?? '')}/batches`, {
-        query: { limit },
-        signal,
-      }),
-    enabled: Boolean(id),
-  });
+  return useIdQuery<RecentBatchDTO[]>(
+    id,
+    (i) => qk.processes.batches(i, limit),
+    (i) => `/processes/${seg(i)}/batches`,
+    { query: { limit } },
+  );
 }
 
 /** GET /processes/:id/activity?cursor= (paged) */
@@ -116,8 +107,7 @@ export function useProcessActivity(id: string | undefined) {
         query: { cursor: pageParam },
         signal,
       }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    ...cursorPaging,
     enabled: Boolean(id),
     refetchInterval: POLL.activity,
   });

@@ -1,5 +1,5 @@
 import type { UpdateProcessRequest } from '@ai-switchboard/core/contract';
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { mockStatus } from '../../api/mockApi.js';
@@ -244,6 +244,39 @@ describe('ProcessEditor', () => {
     });
   });
 
+  it('asks before leaving with unsaved changes, and lets a clean editor go', async () => {
+    const { user, router } = renderWithProviders(<ProcessEditor />, editAutofix);
+    await loaded();
+    await user.type(screen.getByRole('textbox', { name: /^Name/ }), '!');
+
+    await act(() => router.navigate('/processes'));
+    const dialog = await screen.findByRole('dialog', { name: 'Leave without saving?' });
+    expect(within(dialog).getByText(/1 unsaved change/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+    expect(router.state.location.pathname).toBe('/processes/p-autofix/edit');
+    expect(screen.getByRole('textbox', { name: /^Name/ })).toHaveValue('Autofix!');
+
+    await act(() => router.navigate('/processes'));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Leave without saving',
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe('/processes');
+    });
+  });
+
+  it('leaves without asking once the changes are discarded', async () => {
+    const { user, router } = renderWithProviders(<ProcessEditor />, editAutofix);
+    await loaded();
+    await user.type(screen.getByRole('textbox', { name: /^Name/ }), '!');
+    await user.click(screen.getByRole('button', { name: 'Discard' }));
+    await act(() => router.navigate('/processes'));
+    expect(router.state.location.pathname).toBe('/processes');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('keeps Save and Test run visible but disabled for viewers', async () => {
     renderWithProviders(<ProcessEditor />, { ...editAutofix, role: 'viewer' });
     await loaded();
@@ -253,5 +286,13 @@ describe('ProcessEditor', () => {
       'true',
     );
     expect(screen.getByText('Read only')).toBeInTheDocument();
+  });
+
+  it('says so when the process to edit does not exist', async () => {
+    renderWithProviders(<ProcessEditor />, {
+      path: '/processes/nope/edit',
+      routePath: '/processes/:id/edit',
+    });
+    expect(await screen.findByText('This process does not exist')).toBeInTheDocument();
   });
 });

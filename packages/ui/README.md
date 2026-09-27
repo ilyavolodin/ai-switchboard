@@ -25,12 +25,12 @@ src/main.tsx                       fonts, tokens, theme, optional mock API, <App
 src/styles/tokens.css              every Zest token (light :root, dark [data-theme="dark"]) + mockup aliases
 src/styles/global.css              base, focus ring, .t-* type classes, .mono, .visually-hidden
 src/app/
-  routes.tsx                       THE route table (every IA path; placeholders are <ComingSoon>)
+  routes.tsx                       THE route table (every IA path)
   App.tsx, AppProviders.tsx        router + QueryClient + toasts + reason prompt
   AppShell.tsx                     session (useMe → /login), Rail, TopBar, evaluation banner, <Outlet/>
   Rail.tsx, TopBar.tsx, CapacityStrip.tsx, nav.ts
   session.ts                       SessionContext, useSession, useCan(role), roleRequiredMessage
-  shortcuts.ts                     the only place for key bindings (/, g b, g p, g a)
+  shortcuts.ts                     the only place for key bindings (/, g b, g p, g a; off while a modal is open)
   theme.ts                         useTheme / setTheme (localStorage, try/catch, light default)
   search.ts                        top-bar search → /activity/trace/:query
   queryClient.ts                   retry policy; any 401 re-checks /auth/me
@@ -38,12 +38,13 @@ src/api/
   client.ts                        apiFetch, ApiRequestError, isApiRequestError, errorMessage
   keys.ts                          query-key factories (qk.*) and POLL intervals
   mutation.ts                      useApiMutation (typed route + invalidation)
+  query.ts                         useIdQuery (GET under a maybe-unknown id), cursorPaging (paged lists)
   hooks/*.ts                       one hook per endpoint in docs/api.md (re-exported by index.ts)
   fixtures.ts                      buildFixtures(now): DTOs mirroring the mockups
   mockApi.ts                       createMockApi(): a fetch backed by a handler map, records calls
-src/components/                    the component library (index.ts re-exports all)
-src/hooks/                         useNow, useDebounced, useReducedMotion, reason.ts, toast.ts
-src/lib/                           pure helpers (format, gauge, meter, funnel, schema, cron, tone, …)
+src/components/                    the component library (import each from its own file)
+src/hooks/                         useNow, useDebounced, useReducedMotion, useModal, reason.ts, toast.ts
+src/lib/                           pure helpers (format, chart, gauge, meter, funnel, schema, cron, tone, …)
 src/screens/Board/                 the Board (flagship screen)
 src/screens/Login, NoAccess        sign-in and "ask an admin"
 src/test/                          setup.ts, render.tsx (renderWithProviders, renderApp), constants.ts
@@ -52,8 +53,8 @@ src/test/                          setup.ts, render.tsx (renderWithProviders, re
 ## Adding a screen
 
 1. Create `src/screens/<Area>/<Screen>.tsx` (+ `.module.css`, + `.test.tsx`).
-2. In `src/app/routes.tsx` replace the route's `<ComingSoon screen="…"/>` element with it. Keep the
-   path and the parent's `handle.title` (the top bar shows it). Paths already exist for:
+2. In `src/app/routes.tsx` add (or point) the route's `element` at it, with a `handle.title` (the
+   top bar shows it). Paths exist for:
    `/`, `/processes`, `/processes/new`, `/processes/:id`, `/processes/:id/edit`, `/processes/:id/:tab`,
    `/sources`, `/sources/:id`, `/sources/:id/:tab`, `/executors`, `/executors/:id`,
    `/executors/:id/:tab`, `/activity`, `/activity/trace/:query`, `/approvals`, `/plugins`,
@@ -96,7 +97,7 @@ src/test/                          setup.ts, render.tsx (renderWithProviders, re
 
 ### Hooks (one per endpoint)
 
-Auth `useMe`, `useLogin`, `useLogout`, `useWhoami`, `OIDC_START_URL` · Board `useStatus`,
+Auth `useMe`, `useLogin`, `useLogout`, `useChangePassword`, `useWhoami`, `OIDC_START_URL` · Board `useStatus`,
 `useBoard`, `usePluginTypes` · Sources `useSources`, `useSource`, `useSourceStats`,
 `useSourceEvents`, `useCreateSource`, `useUpdateSource`, `useDeleteSource`, `useEnableSource`,
 `useProvisionSource`, `useSendTestEvent`, `useReloadSource` · Executors `useExecutors`,
@@ -110,11 +111,12 @@ Auth `useMe`, `useLogin`, `useLogout`, `useWhoami`, `OIDC_START_URL` · Board `u
 `useEvents`, `useEvent`, `useEventTrace`, `useTrace`, `useReplayEvent` · Runs `useRuns`, `useRun`,
 `useCloseRun` · Approvals `useApprovals`, `useApprovalHistory`, `useApprovalRules`, `useApprove`,
 `useReject` · Plugins `usePlugins`, `useCatalogue`, `useInspectPlugin`, `useInstallPlugin`,
-`useRemovePlugin` · Notifiers / secret providers `useInstances(route)`, `useNotifiers`,
+`useRemovePlugin`, `usePluginSearch` · Notifiers / secret providers `useInstances(route)`, `useNotifiers`,
 `useSecretProviders`, `useCreateInstance`, `useUpdateInstance`, `useEnableInstance`,
-`useReloadInstance`, `useDeleteInstance`, `useTestNotifier` · Settings `useSettings`,
+`useReloadInstance`, `useDeleteInstance`, `useTestNotifier`, `useProviderSecrets`,
+`useSecretSuggestions` · Settings `useSettings`,
 `useUpdateSettings`, `useUsers`, `useCreateUser`, `useUpdateUser`, `useDeleteUser`,
-`useRevokeUserSessions`, `useTokens`, `useCreateToken`, `useDeleteToken`, `useAudit`,
+`useRevokeUserSessions`, `useSetUserPassword`, `useRemoveUserPassword`, `useTokens`, `useCreateToken`, `useDeleteToken`, `useAudit`,
 `useExportYaml`, `useApply`, `useAbout`.
 
 ## Components (`src/components`)
@@ -125,19 +127,19 @@ Auth `useMe`, `useLogin`, `useLogout`, `useWhoami`, `OIDC_START_URL` · Board `u
 | `Button` / `LinkButton` / `IconButton`                                    | primary (gradient + glow), secondary, outline, soft, ghost, danger, danger-outline · `variant size loading icon requires` (role-gated: aria-disabled + tooltip)           |
 | `Icon`, `Logo`, `Spinner`                                                 | Stroke icon set from the mockups (`name`) · the "Cg" mark (`gapColor`)                                                                                                    |
 | `Card`, `PageHeader`                                                      | Surface card with title/meta/actions · screen header with back/meta/actions                                                                                               |
-| `Tabs`, `RoutedTabs`, `SegmentedControl`, `FilterChips`                   | Local tabs · URL tabs · single-choice (incl. `variant="window"` 24 h/7 d/30 d) · toggle chips                                                                             |
+| `RoutedTabs`, `SegmentedControl`, `FilterChips`                           | URL tabs · single-choice (incl. `variant="window"` 24 h/7 d/30 d) · toggle chips                                                                                          |
 | `Field`, `TextField`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Toggle` | Form controls; `Field` is a render prop giving `{ id, describedBy, invalid }`; `changed` = tangerine dot                                                                  |
 | `SearchInput`, `Tooltip`, `Time`, `Countdown`                             | `/`-hinted search · hover/focus tip (aria-describedby) · relative time + absolute on hover · "resets in 2 h 10 m"                                                         |
 | `MeterGauge`                                                              | Arc of used fraction, ceiling ticks, coral above ceiling, grey + "last read …" when stale, estimated · `meter size(sm                                                     | node | md  | lg) processId label` |
 | `MeterBand`                                                               | Meter history bands with ceiling and run ticks · `meters runs processId`                                                                                                  |
 | `PipelineDots`, `PipelineFunnel`, `StageIndicator`                        | Five dots (last hour) · funnel sized ∝ counts, sweeps as own stream · event stage stops                                                                                   |
 | `Sparkline`, `BarChart`, `CapacityBar`                                    | Tiny line · grouped/stacked SVG bars with hidden data table · used/limit bar with ticks                                                                                   |
-| `ArtifactChip`, `KeyValueList`, `CodeBlock`, `Mono`                       | Kind icon + id linking out (new tab) · collapsible attributes · pretty JSON (copy)                                                                                        |
+| `ArtifactChip`, `KeyValueList`, `CodeBlock`                               | Kind icon + id linking out (new tab) · collapsible attributes · pretty JSON (copy)                                                                                        |
 | `ExpressionEditor`                                                        | JSONata textarea + insert chips + live evaluation rows (true/false/error) · `value onChange rows insertions`                                                              |
 | `SchemaForm`                                                              | JSON Schema 2020-12 form (groups, x-order, x-secret refs, x-widget, defaults, Ajv messages) · `schema value onChange showAllErrors secretProviders secretStatus baseline` |
 | `SecretRefInput`, `StringListInput`                                       | `secret://<provider>/<name>` input (never shows values) · editable string list                                                                                            |
 | `CronField`, `QuietHoursBar`                                              | cron + cronstrue + next three from the API + timezone · 24-hour bar, editable                                                                                             |
-| `Dialog`, `ReasonDialog`, `ConfirmDialog`, `Drawer`                       | Modal (focus trap, Escape) · reason required · consequence sentence required · side panel / bottom sheet                                                                  |
+| `Dialog`, `ReasonDialog`, `ConfirmDialog`, `Drawer`                       | Modal (focus trap; Escape closes the top one only) · reason required · consequence sentence required · side panel / bottom sheet (modal too)                              |
 | `ReasonProvider`, `ToastProvider`                                         | App-level hosts behind `useReasonedMutation` and `useToast`                                                                                                               |
 | `Banner`, `BreakerBanner`, `EmptyState`, `Skeleton`, `LoadMore`, `Table`  | error/warn/info/neutral strip · red breaker banner with failed runs + Reset slot · teaching empty state (ghost nodes) · loading · pagination · runs/audit tables          |
 | `TraceTimeline`                                                           | Vertical timeline of `TraceEntry` with tone dots, expandable data, links, "Copy as text"                                                                                  |

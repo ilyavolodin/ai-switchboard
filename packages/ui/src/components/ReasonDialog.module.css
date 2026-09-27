@@ -11,7 +11,9 @@
   color: var(--foreground);
 }
 
-.audit {
-  font-size: 11px;
-  color: var(--muted-foreground);
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
 }

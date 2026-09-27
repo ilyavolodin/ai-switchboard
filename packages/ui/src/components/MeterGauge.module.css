@@ -6,11 +6,6 @@
   min-width: 0;
 }
 
-.row {
-  flex-direction: row;
-  gap: 8px;
-}
-
 .svg {
   display: block;
   flex-shrink: 0;

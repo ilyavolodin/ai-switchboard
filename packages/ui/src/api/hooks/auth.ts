@@ -62,7 +62,7 @@ export function useLogout() {
 /** GET /auth/whoami — the audit identity of the caller (`{ actor }`). */
 export function useWhoami() {
   return useQuery({
-    queryKey: [...qk.me, 'whoami'],
+    queryKey: qk.whoami,
     queryFn: ({ signal }) => apiFetch<{ actor: string }>('/auth/whoami', { signal }),
     staleTime: 5 * 60_000,
   });

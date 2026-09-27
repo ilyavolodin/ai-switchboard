@@ -23,6 +23,12 @@
   box-shadow: var(--shadow-float);
 }
 
+/* The dialog itself only takes focus when nothing inside can; keep its own look then. */
+.dialog:focus-visible {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+}
+
 .wide {
   width: 560px;
 }

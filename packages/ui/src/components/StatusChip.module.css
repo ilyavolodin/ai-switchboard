@@ -10,6 +10,10 @@
   line-height: 1;
   white-space: nowrap;
   width: fit-content;
+  /* A long label (a Postgres version string) is clipped to its container, never overflows it;
+     pass the full text as `title`. */
+  max-width: 100%;
+  overflow: hidden;
   background: var(--chip-bg);
   color: var(--chip-fg);
 }

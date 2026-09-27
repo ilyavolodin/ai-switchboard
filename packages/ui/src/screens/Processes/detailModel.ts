@@ -23,8 +23,8 @@ export function asDetailTab(tab: string | undefined): DetailTab | null {
   return (DETAIL_TABS as readonly string[]).includes(tab) ? (tab as DetailTab) : null;
 }
 
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
+function plural(n: number, word: string, many = `${word}s`): string {
+  return `${n} ${n === 1 ? word : many}`;
 }
 
 /** The sentence the enable/disable confirm names: what stops (or starts) when it flips. */
@@ -37,7 +37,9 @@ export function enableConsequence(p: ProcessDetail, enable: boolean): string {
   }
   return `Disabling ${p.name} stops its ${what}: no new runs start${
     p.awaitingApproval > 0
-      ? `, and ${plural(p.awaitingApproval, 'batch')} awaiting approval stay parked`
+      ? `, and ${plural(p.awaitingApproval, 'batch', 'batches')} awaiting approval ${
+          p.awaitingApproval === 1 ? 'stays' : 'stay'
+        } parked`
       : ''
   }. Open batches are dropped; runs already started keep going.`;
 }

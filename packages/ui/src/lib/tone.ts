@@ -9,14 +9,6 @@ export function toneVars(tone: StatusTone): { fill: string; bg: string; fg: stri
   return { fill: `var(--st-${key})`, bg: `var(--st-${key}-bg)`, fg: `var(--st-${key}-fg)` };
 }
 
-/** Default word for a tone when an API label is missing. */
-export const TONE_WORD: Record<StatusTone, string> = {
-  ok: 'ok',
-  warn: 'attention',
-  error: 'error',
-  off: 'off',
-};
-
 /** Tone and label for a run status, matching the status vocabulary. */
 export function runStatusTone(status: RunStatusValue): StatusTone {
   switch (status) {

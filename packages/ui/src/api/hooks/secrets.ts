@@ -1,40 +1,29 @@
-import type { InstanceSummary, ProviderSecretsResponse } from '@ai-switchboard/core/contract';
-import { QueryClient, QueryClientContext, useQuery } from '@tanstack/react-query';
+import type { ProviderSecretsResponse } from '@ai-switchboard/core/contract';
+import { QueryClient, QueryClientContext, queryOptions, useQuery } from '@tanstack/react-query';
 import { useContext } from 'react';
 
 import { useCan } from '../../app/session.js';
+import { instanceForProvider } from '../../lib/instances.js';
 import { apiFetch } from '../client.js';
 import { qk } from '../keys.js';
 import { seg } from '../mutation.js';
+import { instancesQuery } from './instances.js';
 
-/**
- * Under the secret-providers key, so saving, reloading or deleting a provider (which invalidates
- * `qk.instances('secret-providers')`) refreshes its listing too.
- */
-const secretsKey = (id: string) => [...qk.instances('secret-providers'), 'secrets', id] as const;
+/** The query for GET /secret-providers/:id/secrets (shared with `useSecretSuggestions`). */
+const providerSecretsQuery = (id: string) =>
+  queryOptions({
+    queryKey: qk.providerSecrets(id),
+    queryFn: ({ signal }) =>
+      apiFetch<ProviderSecretsResponse>(`/secret-providers/${seg(id)}/secrets`, { signal }),
+    staleTime: 30_000,
+  });
 
 /** GET /secret-providers/:id/secrets — names only, never values (admin). */
 export function useProviderSecrets(id: string | undefined, options: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: secretsKey(id ?? ''),
-    queryFn: ({ signal }) =>
-      apiFetch<ProviderSecretsResponse>(`/secret-providers/${seg(id ?? '')}/secrets`, { signal }),
-    enabled: id != null && (options.enabled ?? true),
-    staleTime: 30_000,
+    ...providerSecretsQuery(id ?? ''),
+    enabled: Boolean(id) && (options.enabled ?? true),
   });
-}
-
-const SEGMENT = /^[A-Za-z0-9_.-]+$/;
-
-/** The instance a `secret://<provider>/…` segment names (by name, or by type for odd names). */
-function instanceFor(
-  provider: string,
-  instances: InstanceSummary[] | undefined,
-): InstanceSummary | undefined {
-  return (
-    instances?.find((i) => i.name === provider) ??
-    instances?.find((i) => !SEGMENT.test(i.name) && i.typeId === provider)
-  );
 }
 
 /** Never fetches: stands in when a component renders outside a QueryClientProvider. */
@@ -55,24 +44,12 @@ export function useSecretSuggestions(provider: string): SecretSuggestions {
   const admin = useCan('admin');
   const enabled = client != null && admin;
   const instances = useQuery(
-    {
-      queryKey: qk.instances('secret-providers'),
-      queryFn: ({ signal }) => apiFetch<InstanceSummary[]>('/secret-providers', { signal }),
-      enabled,
-    },
+    { ...instancesQuery('secret-providers'), enabled },
     client ?? inertClient,
   );
-  const id = instanceFor(provider, instances.data)?.id;
+  const id = instanceForProvider(provider, instances.data)?.id;
   const listing = useQuery(
-    {
-      queryKey: secretsKey(id ?? ''),
-      queryFn: ({ signal }) =>
-        apiFetch<ProviderSecretsResponse>(`/secret-providers/${seg(id ?? '')}/secrets`, {
-          signal,
-        }),
-      enabled: enabled && id != null,
-      staleTime: 30_000,
-    },
+    { ...providerSecretsQuery(id ?? ''), enabled: enabled && id != null },
     client ?? inertClient,
   );
   const data = listing.data;

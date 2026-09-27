@@ -185,4 +185,16 @@ describe('ProcessDetail', () => {
       });
     });
   });
+
+  it('says so when the process does not exist', async () => {
+    renderWithProviders(<ProcessDetail />, {
+      path: '/processes/nope',
+      routePath: '/processes/:id',
+    });
+    expect(await screen.findByText('This process does not exist')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'All processes' })).toHaveAttribute(
+      'href',
+      '/processes',
+    );
+  });
 });

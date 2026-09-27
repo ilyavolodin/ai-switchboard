@@ -15,6 +15,7 @@ export interface StatusChipProps {
   /** `sm` (20 px) in tables and the top bar; `md` (22 px) in headers. */
   size?: 'sm' | 'md';
   className?: string;
+  /** Hover text; pass the full label when it may be clipped (the chip never outgrows its box). */
   title?: string;
 }
 

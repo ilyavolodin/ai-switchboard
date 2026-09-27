@@ -2,15 +2,13 @@ import type { PluginTypeDTO, SourceCapsDTO } from '@ai-switchboard/core/contract
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import { useCreateSource, usePluginTypes, useSources } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { PageHeader } from '../../components/PageHeader.js';
-import { Skeleton } from '../../components/Skeleton.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { withoutUndefined } from '../../lib/instances.js';
+import { InstanceGrid } from '../shared/InstanceGrid.js';
 import { AddInstanceDialog } from './AddInstanceDialog.js';
 import styles from './instanceCard.module.css';
 import { SourceCapsFields } from './SourceCapsFields.js';
@@ -49,6 +47,18 @@ export function Sources() {
 
   const list = sources.data ?? [];
   const enabled = list.filter((s) => s.enabled).length;
+  const addButton = (
+    <Button
+      variant="primary"
+      icon="plus"
+      requires="operator"
+      onClick={() => {
+        setAdding(true);
+      }}
+    >
+      Add source
+    </Button>
+  );
 
   return (
     <>
@@ -73,77 +83,23 @@ export function Sources() {
                 source-throttled
               </span>
             </span>
-            <Button
-              variant="primary"
-              icon="plus"
-              requires="operator"
-              onClick={() => {
-                setAdding(true);
-              }}
-            >
-              Add source
-            </Button>
+            {addButton}
           </>
         }
       />
 
-      {sources.isPending ? (
-        <div className={styles.grid}>
-          <Skeleton shape="card" height={220} label="Loading sources" />
-          <Skeleton shape="card" height={220} />
-          <Skeleton shape="card" height={220} />
-        </div>
-      ) : sources.isError ? (
-        <Banner
-          tone="error"
-          title="Sources could not load"
-          actions={
-            <Button size="sm" variant="outline" onClick={() => void sources.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {errorMessage(sources.error)}
-        </Banner>
-      ) : list.length === 0 ? (
-        <EmptyState
-          title="No sources yet"
-          illustration="ghost"
-          actions={
-            <Button
-              variant="primary"
-              icon="plus"
-              requires="operator"
-              onClick={() => {
-                setAdding(true);
-              }}
-            >
-              Add source
-            </Button>
-          }
-        >
-          A source turns deliveries from a system you already run (GitHub, Linear, Datadog, any
-          webhook) into events. Add one, then give a process a trigger on it.
-        </EmptyState>
-      ) : (
-        <>
-          {list.some((s) => !s.pluginAvailable) && (
-            <Banner tone="warn" title="A plugin is unavailable">
-              {list
-                .filter((s) => !s.pluginAvailable)
-                .map((s) => s.name)
-                .join(', ')}{' '}
-              stay configured, but their plugin did not load at start; the processes they feed are
-              held until it is back. See Plugins.
-            </Banner>
-          )}
-          <div className={styles.grid}>
-            {list.map((s) => (
-              <SourceCard key={s.id} source={s} />
-            ))}
-          </div>
-        </>
-      )}
+      <InstanceGrid
+        query={sources}
+        title="Sources"
+        heldNote="the processes they feed are held until it is back. See Plugins."
+        renderCard={(s) => <SourceCard key={s.id} source={s} />}
+        empty={
+          <EmptyState title="No sources yet" illustration="ghost" actions={addButton}>
+            A source turns deliveries from a system you already run (GitHub, Linear, Datadog, any
+            webhook) into events. Add one, then give a process a trigger on it.
+          </EmptyState>
+        }
+      />
 
       <AddInstanceDialog<SourceCapsDTO>
         open={adding}

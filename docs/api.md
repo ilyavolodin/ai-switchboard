@@ -6,8 +6,8 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 - Auth: a session cookie (`sb_session`) from sign-in, or `Authorization: Bearer <api token>`.
 - Roles: `viewer` reads; `operator` also changes sources, executors, processes, approvals, manual runs and replays; `admin` also manages plugins, users, secret providers, notifiers and settings.
 - Every state-changing body carries `reason` (non-empty). Every change writes `audit_log` rows.
-- Errors: `{ error, message, details? }` with 400 (validation), 401, 403, 404, 409 (version conflict), 422 (semantic), 503.
-- Lists: `?cursor=&limit=` → `Page<T>` (`{ items, nextCursor }`).
+- Errors: `{ error, message, details? }` with 400 (validation, including a malformed time or cursor), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, or a name already taken), 422 (semantic), 429 (too many sign-in attempts), 503.
+- Lists: `?cursor=&limit=` → `Page<T>` (`{ items, nextCursor }`). Filters apply before paging, and a cursor is keyed by time and id, so rows that share a timestamp are neither skipped nor repeated.
 
 ## Unauthenticated surfaces
 
@@ -120,13 +120,13 @@ before `@`), not one of the most common passwords.
 
 ## Activity, events, trace
 
-| Method | Path                                                                    | Body → Response                                       | Role     |
-| ------ | ----------------------------------------------------------------------- | ----------------------------------------------------- | -------- |
-| GET    | `/events?source=&process=&executor=&stage=&artifact=&from=&to=&cursor=` | → `Page<ActivityRow>`                                 | viewer   |
-| GET    | `/events/:id`                                                           | → `EventDetail`                                       | viewer   |
-| POST   | `/events/:id/replay`                                                    | `Reasoned` → `{ eventIds }`                           | operator |
-| GET    | `/trace?artifact=`                                                      | → `TraceResponse` (artifact id, `kind:id`, or `#482`) | viewer   |
-| GET    | `/events/:id/trace`                                                     | → `TraceResponse`                                     | viewer   |
+| Method | Path                                                                          | Body → Response                                       | Role     |
+| ------ | ----------------------------------------------------------------------------- | ----------------------------------------------------- | -------- |
+| GET    | `/events?source=&process=&executor=&stage=&type=&artifact=&from=&to=&cursor=` | → `Page<ActivityRow>`                                 | viewer   |
+| GET    | `/events/:id`                                                                 | → `EventDetail`                                       | viewer   |
+| POST   | `/events/:id/replay`                                                          | `Reasoned` → `{ eventIds }`                           | operator |
+| GET    | `/trace?artifact=`                                                            | → `TraceResponse` (artifact id, `kind:id`, or `#482`) | viewer   |
+| GET    | `/events/:id/trace`                                                           | → `TraceResponse`                                     | viewer   |
 
 ## Runs
 

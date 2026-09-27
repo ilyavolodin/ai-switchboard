@@ -63,7 +63,7 @@ export function useInstallPlugin() {
   return useApiMutation<InstallPluginRequest, PluginSummary>({
     method: 'POST',
     path: () => '/plugins',
-    invalidate: [qk.plugins.all, ['plugin-types']],
+    invalidate: [qk.plugins.all, qk.pluginTypesAll],
   });
 }
 

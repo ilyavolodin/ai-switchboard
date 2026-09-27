@@ -31,4 +31,29 @@ describe('MeterBand', () => {
     const band = svg.querySelector('[data-part="band"]');
     expect(band?.getAttribute('points')?.split(' ').length).toBeGreaterThanOrEqual(2);
   });
+
+  it('ignores a reading with an unreadable time when sizing the window', () => {
+    render(
+      <MeterBand
+        meters={[
+          {
+            id: 'window',
+            title: '5-hour window',
+            estimated: false,
+            readings: [
+              { t: iso(0), utilization: 20, resetsAt: null },
+              { t: 'not a time', utilization: 25, resetsAt: null },
+              { t: iso(60_000), utilization: 40, resetsAt: null },
+            ],
+            ceilings: [],
+          },
+        ]}
+      />,
+    );
+    const band = screen.getByRole('img').querySelector('[data-part="band"]');
+    const xs = (band?.getAttribute('points') ?? '').split(' ').map((p) => Number(p.split(',')[0]));
+    // Epoch 0 must not become the window start (every real point would sit at the right edge).
+    expect(xs[0]).toBe(0);
+    expect(xs.some(Number.isNaN)).toBe(false);
+  });
 });

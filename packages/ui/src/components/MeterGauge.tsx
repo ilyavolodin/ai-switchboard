@@ -2,7 +2,6 @@ import type { MeterGaugeDTO } from '@ai-switchboard/core/contract';
 
 import { useNow } from '../hooks/useNow.js';
 import { cx } from '../lib/cx.js';
-import { formatDuration, formatRelative, toMs } from '../lib/format.js';
 import {
   GAUGE_CENTER,
   GAUGE_RADIUS,
@@ -11,7 +10,7 @@ import {
   ceilingMark,
   meterFraction,
 } from '../lib/gauge.js';
-import { isAboveCeiling, meterValueText, shortMeterLabel } from '../lib/meter.js';
+import { isAboveCeiling, meterTimes, meterValueText, shortMeterLabel } from '../lib/meter.js';
 import styles from './MeterGauge.module.css';
 
 /** The fields the gauge needs (a `MeterGaugeDTO` fits). */
@@ -77,11 +76,7 @@ export function MeterGauge({
     : [];
   const above = isAboveCeiling({ ...meter, ceilings });
   const color = meter.stale ? 'var(--line-strong)' : above ? 'var(--st-err)' : 'var(--primary)';
-  const observed = toMs(meter.observedAt);
-  const resets = toMs(meter.resetsAt);
-  const lastRead = observed != null ? `last read ${formatRelative(observed, nowMs)}` : 'never read';
-  const resetText =
-    resets != null && resets > nowMs ? `resets in ${formatDuration(resets - nowMs)}` : null;
+  const { lastRead, resets: resetText } = meterTimes(meter, nowMs);
 
   const ariaParts = [
     `${meter.title} ${value}${meter.kind === 'allowance' && meter.used != null ? ` ${meter.unit}` : ' used'}`,

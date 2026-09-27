@@ -153,4 +153,23 @@ describe('ExecutorDetail', () => {
       'true',
     );
   });
+
+  it('shows the settings form and caps disabled for viewers', async () => {
+    renderExecutor('/executors/ex-routines/settings', { role: 'viewer' });
+    expect(await screen.findByLabelText('Input tokens per day')).toBeDisabled();
+    expect(screen.getByLabelText('Meter staleness')).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Name/ })).toBeDisabled();
+  });
+
+  it('deletes with a reason and goes back to the list without a leave prompt', async () => {
+    const { user, api, router } = renderExecutor('/executors/ex-routines/settings');
+    await user.type(await screen.findByLabelText('Input tokens per day'), '5');
+    await user.click(screen.getByRole('button', { name: 'Delete executor' }));
+    await reasonAndConfirm(user, 'retired seat', 'Delete executor');
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe('/executors');
+    });
+    expect(api.callsTo('DELETE /executors/ex-routines')).toHaveLength(1);
+    expect(screen.queryByRole('dialog', { name: 'Leave without saving?' })).toBeNull();
+  });
 });

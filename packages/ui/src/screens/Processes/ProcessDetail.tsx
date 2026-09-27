@@ -39,6 +39,7 @@ import {
   WINDOWS,
   windowLabel,
 } from './detailModel.js';
+import { LoadFailure } from '../shared/LoadFailure.js';
 import { HistoryTab } from './HistoryTab.js';
 import styles from './ProcessDetail.module.css';
 import { RunsTab } from './RunsTab.js';
@@ -64,17 +65,12 @@ export function ProcessDetail() {
   }
   if (process.isError) {
     return (
-      <Banner
-        tone="error"
-        title="Could not load the process"
-        actions={
-          <LinkButton to="/processes" size="sm" variant="outline">
-            All processes
-          </LinkButton>
-        }
-      >
-        {errorMessage(process.error)}
-      </Banner>
+      <LoadFailure
+        error={process.error}
+        noun="process"
+        listTo="/processes"
+        listLabel="All processes"
+      />
     );
   }
   return <Detail process={process.data} tab={current} />;

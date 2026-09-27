@@ -11,12 +11,16 @@ import type {
 
 /**
  * Query keys, one factory per area. The first element is the area, so invalidating `['sources']`
- * refreshes every sources query. Mutations invalidate by area prefix (see `invalidates.ts`).
+ * refreshes every sources query. Mutations invalidate by area prefix (the `invalidate` list of
+ * each `useApiMutation` in `hooks/`).
  */
 export const qk = {
   me: ['me'] as const,
+  whoami: ['me', 'whoami'] as const,
   status: ['status'] as const,
   board: ['board'] as const,
+  /** Prefix of every `pluginTypes(kind)` key (installing a plugin refreshes them all). */
+  pluginTypesAll: ['plugin-types'] as const,
   pluginTypes: (kind?: PluginKind) => ['plugin-types', kind ?? 'all'] as const,
 
   sources: {
@@ -82,6 +86,11 @@ export const qk = {
   },
 
   instances: (kind: 'notifiers' | 'secret-providers') => [kind] as const,
+  /**
+   * Under the secret-providers key, so saving, reloading or deleting a provider (which
+   * invalidates `instances('secret-providers')`) refreshes its listing too.
+   */
+  providerSecrets: (id: string) => ['secret-providers', 'secrets', id] as const,
 
   settings: ['settings'] as const,
   users: ['users'] as const,

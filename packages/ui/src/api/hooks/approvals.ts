@@ -11,6 +11,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../client.js';
 import { POLL, qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
+import { cursorPaging } from '../query.js';
 
 const affected = [qk.approvals.all, qk.board, qk.status, qk.processes.all, qk.runs.all];
 
@@ -32,8 +33,7 @@ export function useApprovalHistory() {
         query: { cursor: pageParam },
         signal,
       }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    ...cursorPaging,
   });
 }
 

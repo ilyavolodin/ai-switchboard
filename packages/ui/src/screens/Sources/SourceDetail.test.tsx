@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { RenderOptions } from '../../test/render.js';
@@ -168,6 +168,27 @@ describe('SourceDetail', () => {
       'aria-disabled',
       'true',
     );
+  });
+
+  it('shows the settings form disabled for viewers', async () => {
+    renderSource('/sources/src-linear/settings', { role: 'viewer' });
+    expect(await screen.findByLabelText(/Team key/)).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Name/ })).toBeDisabled();
+    expect(screen.getByLabelText('Events per hour')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete source' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('asks before leaving the settings tab with unsaved changes', async () => {
+    const { user, router } = renderSource('/sources/src-linear/settings');
+    await user.type(await screen.findByLabelText(/Team key/), 'X');
+    await act(() => router.navigate('/sources/src-linear'));
+    const dialog = await screen.findByRole('dialog', { name: 'Leave without saving?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+    expect(router.state.location.pathname).toBe('/sources/src-linear/settings');
+    expect(screen.getByLabelText(/Team key/)).toHaveValue('LOLX');
   });
 
   it('says so when the source does not exist', async () => {

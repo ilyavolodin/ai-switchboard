@@ -10,6 +10,7 @@ import {
   useInstances,
   usePluginTypes,
   useReloadInstance,
+  useSecretProviders,
   useTestNotifier,
   useUpdateInstance,
 } from '../../api/index.js';
@@ -26,7 +27,9 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { TextField } from '../../components/TextField.js';
 import { Toggle } from '../../components/Toggle.js';
+import { useCan } from '../../app/session.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { asRecord, secretProviderIds } from '../../lib/instances.js';
 import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
 import { ProviderSecrets } from './ProviderSecrets.js';
 import styles from './Settings.module.css';
@@ -247,6 +250,8 @@ function InstanceEditor({
 }) {
   const copy = COPY[route];
   const types = usePluginTypes(copy.kind);
+  const secretProviders = useSecretProviders();
+  const isAdmin = useCan('admin');
   const existing = editing.mode === 'edit' ? editing.instance : null;
   const [typeId, setTypeId] = useState(existing?.typeId ?? '');
   const [name, setName] = useState(existing?.name ?? '');
@@ -330,12 +335,7 @@ function InstanceEditor({
                 onChange={(e) => {
                   const next = types.data?.find((t) => t.typeId === e.target.value);
                   setTypeId(e.target.value);
-                  const defaults = next ? schemaDefaults(next.settingsSchema) : {};
-                  setSettings(
-                    typeof defaults === 'object' && defaults !== null && !Array.isArray(defaults)
-                      ? (defaults as Record<string, unknown>)
-                      : {},
-                  );
+                  setSettings(next ? asRecord(schemaDefaults(next.settingsSchema)) : {});
                 }}
               />
             )}
@@ -348,6 +348,7 @@ function InstanceEditor({
               aria-describedby={describedBy}
               invalid={bad}
               value={name}
+              disabled={!isAdmin}
               placeholder={route === 'notifiers' ? 'Slack — #loops' : 'vault'}
               onChange={(e) => {
                 setName(e.target.value);
@@ -362,6 +363,8 @@ function InstanceEditor({
             onChange={setSettings}
             showAllErrors={tried}
             baseline={existing?.settings}
+            secretProviders={secretProviderIds(secretProviders.data)}
+            disabled={!isAdmin}
           />
         )}
       </div>

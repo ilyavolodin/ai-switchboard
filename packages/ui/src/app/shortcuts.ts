@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 
+import { isModalOpen } from '../hooks/useModal.js';
+
 /**
  * The single place for keyboard bindings. `/` focuses search; `g` then a letter navigates.
- * Bindings are ignored while typing in a field.
+ * Bindings are ignored while typing in a field and while a dialog or drawer is open (it is modal).
  */
 export const SHORTCUTS = [
   { keys: '/', label: 'search', action: 'search' },
@@ -40,6 +42,7 @@ export function useGlobalShortcuts(handlers: {
     let pendingG = 0;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+      if (isModalOpen()) return;
       if (e.key === '/') {
         e.preventDefault();
         ref.current.onSearch();

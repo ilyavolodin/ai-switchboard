@@ -60,6 +60,19 @@ describe('app shell', () => {
     expect(router.state.location.pathname).toBe('/');
   });
 
+  it('ignores shortcuts while a dialog is open', async () => {
+    const { router, user } = renderApp('/');
+    const [action] = await screen.findAllByRole('button', { name: /^Reset/ });
+    if (!action) throw new Error('no reason-prompted action on the Board');
+    await user.click(action);
+    await screen.findByRole('dialog');
+    fireEvent.keyDown(document, { key: 'g' });
+    fireEvent.keyDown(document, { key: 'p' });
+    expect(router.state.location.pathname).toBe('/');
+    fireEvent.keyDown(document, { key: '/' });
+    expect(screen.getByRole('searchbox', { name: 'Search by artifact id' })).not.toHaveFocus();
+  });
+
   it('routes an artifact search to the Activity trace', async () => {
     const { router, user } = renderApp('/');
     const search = await screen.findByRole('searchbox', { name: 'Search by artifact id' });

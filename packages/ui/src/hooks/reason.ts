@@ -1,5 +1,13 @@
 import type { UseMutationResult } from '@tanstack/react-query';
-import { createContext, type ReactNode, useCallback, useContext, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { errorMessage } from '../api/client.js';
 import { useToast } from './toast.js';
@@ -47,18 +55,22 @@ export function useReasonedMutation<TData, TVars extends { reason: string }>(
   const toast = useToast();
   const [pending, setPending] = useState(false);
   const { mutateAsync } = mutation;
+  // Callers pass the prompt and options inline; reading them through a ref keeps `run` stable.
+  const latest = useRef({ prompt, options });
+  useEffect(() => {
+    latest.current = { prompt, options };
+  });
 
   const run = useCallback(
     async (vars: Omit<TVars, 'reason'>): Promise<TData | null> => {
-      const reason = await ask(typeof prompt === 'function' ? prompt(vars) : prompt);
+      const { prompt: p, options: o } = latest.current;
+      const reason = await ask(typeof p === 'function' ? p(vars) : p);
       if (reason == null) return null;
       setPending(true);
       try {
         const data = await mutateAsync({ ...vars, reason } as TVars);
         const msg =
-          typeof options.successMessage === 'function'
-            ? options.successMessage(data)
-            : options.successMessage;
+          typeof o.successMessage === 'function' ? o.successMessage(data) : o.successMessage;
         if (msg) toast({ tone: 'ok', title: msg });
         return data;
       } catch (e) {
@@ -68,7 +80,7 @@ export function useReasonedMutation<TData, TVars extends { reason: string }>(
         setPending(false);
       }
     },
-    [ask, prompt, mutateAsync, options, toast],
+    [ask, mutateAsync, toast],
   );
 
   return { run, pending: pending || mutation.isPending, mutation };

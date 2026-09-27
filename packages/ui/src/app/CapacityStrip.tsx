@@ -5,9 +5,9 @@ import { Countdown } from '../components/Countdown.js';
 import { MeterGauge } from '../components/MeterGauge.js';
 import { useNow } from '../hooks/useNow.js';
 import { cx } from '../lib/cx.js';
-import { formatDuration, formatRelative, toMs } from '../lib/format.js';
 import {
   lowestEventCeiling,
+  meterTimes,
   meterValueText,
   primaryMeters,
   shortMeterLabel,
@@ -25,13 +25,9 @@ function tooltip(m: MeterGaugeDTO, nowMs: number): string {
   const c = lowestEventCeiling(m);
   if (c != null) parts.push(`ceiling ${Math.round(c)}%`);
   if (m.estimated) parts.push('estimated');
-  const reset = toMs(m.resetsAt);
-  if (reset != null && reset > nowMs) parts.push(`resets in ${formatDuration(reset - nowMs)}`);
-  const observed = toMs(m.observedAt);
-  if (m.stale)
-    parts.push(
-      observed != null ? `stale · last read ${formatRelative(observed, nowMs)}` : 'never read',
-    );
+  const { lastRead, resets } = meterTimes(m, nowMs);
+  if (resets) parts.push(resets);
+  if (m.stale) parts.push(m.observedAt != null ? `stale · ${lastRead}` : lastRead);
   return parts.join(' · ');
 }
 

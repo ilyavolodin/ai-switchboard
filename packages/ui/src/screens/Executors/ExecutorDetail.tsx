@@ -1,7 +1,6 @@
 import type { ExecutorDetail as ExecutorDetailDTO } from '@ai-switchboard/core/contract';
 import { useParams } from 'react-router';
 
-import { errorMessage, isApiRequestError } from '../../api/client.js';
 import {
   useClearSoftHold,
   useEnableExecutor,
@@ -12,15 +11,16 @@ import {
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Countdown } from '../../components/Countdown.js';
-import { EmptyState } from '../../components/EmptyState.js';
 import { Icon } from '../../components/Icon.js';
-import { LinkButton } from '../../components/LinkButton.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { RoutedTabs } from '../../components/RoutedTabs.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { InstanceStateBanners } from '../shared/InstanceStateBanners.js';
+import { LoadFailure } from '../shared/LoadFailure.js';
+import { UnknownTab } from '../shared/UnknownTab.js';
 import { CopyButton } from '../Sources/CopyButton.js';
 import styles from '../Sources/detail.module.css';
 import { SecretRefsFact } from '../Sources/SecretRefsFact.js';
@@ -41,18 +41,13 @@ export function ExecutorDetail() {
     return <Skeleton shape="card" height={320} label="Loading the executor" />;
   }
   if (executor.isError) {
-    const missing = isApiRequestError(executor.error) && executor.error.status === 404;
     return (
-      <EmptyState
-        title={missing ? 'This executor does not exist' : 'The executor could not load'}
-        actions={
-          <LinkButton to="/executors" variant="outline">
-            All executors
-          </LinkButton>
-        }
-      >
-        {missing ? 'It may have been deleted.' : errorMessage(executor.error)}
-      </EmptyState>
+      <LoadFailure
+        error={executor.error}
+        noun="executor"
+        listTo="/executors"
+        listLabel="All executors"
+      />
     );
   }
   return <ExecutorView executor={executor.data} tab={tab} />;
@@ -178,30 +173,14 @@ function ExecutorView({ executor, tab }: { executor: ExecutorDetailDTO; tab: str
           start until it lifts <Countdown until={executor.softHoldUntil} prefix="in" />.
         </Banner>
       )}
-      {!executor.pluginAvailable && (
-        <Banner tone="warn" title="Plugin unavailable">
-          The {executor.typeName} plugin did not load at start. This executor stays configured, but
-          the processes bound to it are held until the plugin is back.
-        </Banner>
-      )}
-      {executor.instanceError && (
-        <Banner
-          tone="error"
-          title="The executor is not running"
-          actions={
-            <Button
-              size="sm"
-              variant="outline"
-              requires="operator"
-              onClick={() => void reload.run(vars)}
-            >
-              Reload
-            </Button>
-          }
-        >
-          {executor.instanceError}
-        </Banner>
-      )}
+      <InstanceStateBanners
+        noun="executor"
+        typeName={executor.typeName}
+        pluginAvailable={executor.pluginAvailable}
+        instanceError={executor.instanceError}
+        heldProcesses="the processes bound to it are held"
+        onReload={() => void reload.run(vars)}
+      />
 
       <RoutedTabs
         label="Executor sections"
@@ -219,15 +198,7 @@ function ExecutorView({ executor, tab }: { executor: ExecutorDetailDTO; tab: str
       ) : tab === 'runs' ? (
         <ExecutorRuns executor={executor} />
       ) : (
-        <EmptyState
-          title="No such tab"
-          compact
-          actions={
-            <LinkButton to={base} variant="outline">
-              Overview
-            </LinkButton>
-          }
-        />
+        <UnknownTab overview={base} />
       )}
     </>
   );

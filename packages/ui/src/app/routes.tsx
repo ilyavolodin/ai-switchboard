@@ -1,7 +1,6 @@
 /**
- * THE route table. Every screen in the IA has a path here; screens that are not built yet render
- * `<ComingSoon>`. To add a screen, replace its `element` (keep the path and `handle.title`, which
- * the top bar shows). Detail tabs are URL segments (`/processes/:id/:tab`) so they deep-link.
+ * THE route table. Every screen in the IA has a path here (`handle.title` is what the top bar
+ * shows). Detail tabs are URL segments (`/processes/:id/:tab`) so they deep-link.
  */
 import type { RouteObject } from 'react-router';
 

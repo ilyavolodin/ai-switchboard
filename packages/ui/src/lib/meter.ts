@@ -1,5 +1,6 @@
 import type { MeterGaugeDTO } from '@ai-switchboard/core/contract';
 
+import { formatDuration, formatRelative, toMs } from './format.js';
 import { meterFraction } from './gauge.js';
 
 /**
@@ -64,4 +65,20 @@ export function primaryMeters(meters: MeterGaugeDTO[]): MeterGaugeDTO[] {
     if (primary) out.push(primary);
   }
   return out;
+}
+
+/**
+ * The time words about a meter reading: `lastRead` ("last read 42 min ago", or "never read") and
+ * `resets` ("resets in 2 h 10 m" while the reset is still ahead, else `null`).
+ */
+export function meterTimes(
+  m: Pick<MeterGaugeDTO, 'observedAt' | 'resetsAt'>,
+  nowMs: number,
+): { lastRead: string; resets: string | null } {
+  const observed = toMs(m.observedAt);
+  const reset = toMs(m.resetsAt);
+  return {
+    lastRead: observed != null ? `last read ${formatRelative(observed, nowMs)}` : 'never read',
+    resets: reset != null && reset > nowMs ? `resets in ${formatDuration(reset - nowMs)}` : null,
+  };
 }

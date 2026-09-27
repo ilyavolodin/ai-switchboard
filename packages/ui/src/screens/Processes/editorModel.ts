@@ -333,3 +333,60 @@ export function checkDocument(doc: ProcessDocument): Record<string, string> {
   });
   return out;
 }
+
+/** Client checks and placed server details, merged for the form. */
+export interface EditorErrors {
+  /** Pointer → message; a client check wins over a server detail on the same pointer. */
+  byPointer: Record<string, string>;
+  /** The messages each collapsible section lists in its header. */
+  bySection: Partial<Record<SectionId, string[]>>;
+  /** Server details that belong to no section. */
+  general: PlacedError[];
+}
+
+/** Merges the client checks and the server's placed details into what each part shows. */
+export function collectErrors(client: Record<string, string>, server: PlacedError[]): EditorErrors {
+  const byPointer: Record<string, string> = { ...client };
+  for (const e of server) if (e.pointer && !byPointer[e.pointer]) byPointer[e.pointer] = e.message;
+  const bySection: Partial<Record<SectionId, string[]>> = {};
+  const add = (section: SectionId | null, message: string) => {
+    if (section == null) return;
+    (bySection[section] ??= []).push(message);
+  };
+  for (const [pointer, message] of Object.entries(client)) {
+    add(sectionForKey(pointer.split('/')[1]), message);
+  }
+  for (const e of server) add(e.section, `${e.pointer} ${e.message}`.trim());
+  return { byPointer, bySection, general: server.filter((e) => e.section == null) };
+}
+
+/** The errors under `prefix` (e.g. `/triggers/2`), with the prefix cut off. */
+export function errorsUnder(
+  errors: Record<string, string>,
+  prefix: string,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(errors)
+      .filter(([p]) => p.startsWith(`${prefix}/`))
+      .map(([p, m]) => [p.slice(prefix.length), m]),
+  );
+}
+
+/** The reason prompt's consequence sentence for Create / Save. */
+export function saveConsequence(opts: {
+  isNew: boolean;
+  enabled: boolean;
+  changes: string[];
+  baseVersion: number;
+}): string {
+  if (opts.isNew) {
+    return `The process is created ${
+      opts.enabled
+        ? 'enabled: its triggers and sweeps start runs right away'
+        : 'disabled; enable it when you are ready'
+    }.`;
+  }
+  const n = opts.changes.length;
+  const listed = opts.changes.slice(0, 3).join('; ') + (n > 3 ? '; …' : '');
+  return `${n} change${n === 1 ? '' : 's'}: ${listed}. Saving writes version ${opts.baseVersion + 1}.`;
+}

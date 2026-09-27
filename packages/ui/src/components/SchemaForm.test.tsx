@@ -214,4 +214,46 @@ describe('SchemaForm', () => {
       }),
     ).toEqual({});
   });
+
+  it('stores an array of integers as numbers', async () => {
+    const user = userEvent.setup();
+    const schema: JSONSchema = {
+      type: 'object',
+      properties: { ports: { type: 'array', items: { type: 'integer' }, title: 'Ports' } },
+    };
+    render(<Harness schema={schema} />);
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.type(screen.getByRole('textbox', { name: 'Ports 1' }), '8080');
+    expect(latest).toEqual({ ports: [8080] });
+    expect(validateAgainstSchema(schema, latest)).toEqual({});
+  });
+
+  it('shows the default of an unset boolean', () => {
+    const schema: JSONSchema = {
+      type: 'object',
+      properties: { verifyTls: { type: 'boolean', default: true, title: 'Verify TLS' } },
+    };
+    render(<Harness schema={schema} />);
+    expect(screen.getByRole('switch', { name: 'Verify TLS' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+  });
+
+  it('reads a nullable anyOf as its non-null type', async () => {
+    const user = userEvent.setup();
+    const schema: JSONSchema = {
+      type: 'object',
+      properties: {
+        timeoutSeconds: {
+          anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }],
+          title: 'Timeout seconds',
+        },
+      },
+    };
+    render(<Harness schema={schema} />);
+    const input = screen.getByRole('spinbutton', { name: 'Timeout seconds' });
+    await user.type(input, '30');
+    expect(latest).toEqual({ timeoutSeconds: 30 });
+  });
 });

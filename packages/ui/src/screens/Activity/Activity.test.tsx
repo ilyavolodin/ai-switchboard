@@ -116,4 +116,16 @@ describe('Activity', () => {
     await user.click(within(row).getByRole('link', { name: /LOL-1712/ }));
     expect(await screen.findByRole('list', { name: 'Trace timeline' })).toBeVisible();
   });
+
+  it('keeps a filter on a deleted source visible instead of showing "All sources"', async () => {
+    renderWithProviders(<Activity />, { path: '/activity?source=src-gone' });
+    const select = await screen.findByRole('combobox', { name: 'Source' });
+    await vi.waitFor(() => {
+      expect(within(select).getByRole('option', { name: 'Linear — lola' })).toBeInTheDocument();
+    });
+    expect(select).toHaveValue('src-gone');
+    expect(
+      within(select).getByRole('option', { name: 'src-gone (not found)' }),
+    ).toBeInTheDocument();
+  });
 });

@@ -5,7 +5,7 @@ import type {
   Reasoned,
   UpdateInstanceRequest,
 } from '@ai-switchboard/core/contract';
-import { useQuery } from '@tanstack/react-query';
+import { queryOptions, useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '../client.js';
 import { qk } from '../keys.js';
@@ -14,12 +14,16 @@ import { seg, useApiMutation } from '../mutation.js';
 /** The two routes that share the instance shape. */
 export type InstanceRoute = 'notifiers' | 'secret-providers';
 
-/** GET /notifiers or /secret-providers */
-export function useInstances(route: InstanceRoute) {
-  return useQuery({
+/** The query for GET /notifiers or /secret-providers (shared with `useSecretSuggestions`). */
+export const instancesQuery = (route: InstanceRoute) =>
+  queryOptions({
     queryKey: qk.instances(route),
     queryFn: ({ signal }) => apiFetch<InstanceSummary[]>(`/${route}`, { signal }),
   });
+
+/** GET /notifiers or /secret-providers */
+export function useInstances(route: InstanceRoute) {
+  return useQuery(instancesQuery(route));
 }
 
 /** GET /notifiers */

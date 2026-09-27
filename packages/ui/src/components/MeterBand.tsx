@@ -1,5 +1,6 @@
 import type { MeterHistoryResponse } from '@ai-switchboard/core/contract';
 
+import { chartValue } from '../lib/chart.js';
 import { toMs } from '../lib/format.js';
 import { runStatusTone, toneVars } from '../lib/tone.js';
 import styles from './MeterBand.module.css';
@@ -22,11 +23,12 @@ const BOTTOM = 120;
 const COLORS = ['var(--primary)', 'var(--sky)', 'var(--teal)', 'var(--berry)'];
 const DASH = [undefined, '4 3', '2 3', '6 3'];
 
-const yFor = (pct: number) => BOTTOM - (Math.min(100, Math.max(0, pct)) / 100) * (BOTTOM - TOP);
+const yFor = (pct: number) => BOTTOM - (Math.min(100, chartValue(pct)) / 100) * (BOTTOM - TOP);
 
 /**
  * The band's points. A reading holds until the next one, so a lone reading is drawn flat to the
- * end of the extent (a one-point polyline would be invisible).
+ * end of the extent (a one-point polyline would be invisible). Readings without a readable time
+ * are skipped.
  */
 function bandPoints(
   readings: MeterBandProps['meters'][number]['readings'],
@@ -34,7 +36,10 @@ function bandPoints(
   start: number,
   end: number,
 ): string {
-  const points = readings.map((r) => ({ t: toMs(r.t) ?? start, u: r.utilization }));
+  const points = readings.flatMap((r) => {
+    const t = toMs(r.t);
+    return t == null ? [] : [{ t, u: r.utilization }];
+  });
   const only = points.length === 1 ? points[0] : undefined;
   if (only) points.push({ t: Math.max(end, only.t + 1), u: only.u });
   return points.map((p) => `${x(p.t).toFixed(1)},${yFor(p.u).toFixed(1)}`).join(' ');
@@ -47,11 +52,11 @@ function bandPoints(
 export function MeterBand({ meters, runs = [], processId, from, to, ariaLabel }: MeterBandProps) {
   // The extent covers runs too: runs usually land after the latest reading.
   const times = [
-    ...meters.flatMap((m) => m.readings.map((r) => toMs(r.t) ?? 0)),
-    ...runs.map((r) => toMs(r.t)).filter((t): t is number => t != null),
-  ];
+    ...meters.flatMap((m) => m.readings.map((r) => toMs(r.t))),
+    ...runs.map((r) => toMs(r.t)),
+  ].filter((t): t is number => t != null);
   const start = from ?? (times.length ? Math.min(...times) : 0);
-  const end = to ?? (times.length ? Math.max(...times) : 1);
+  const end = to ?? (times.length ? Math.max(...times) : start + 1);
   const span = Math.max(1, end - start);
   const x = (t: number) => ((t - start) / span) * W;
   const first = meters[0];

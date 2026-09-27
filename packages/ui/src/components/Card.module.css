@@ -61,15 +61,3 @@
   gap: 8px;
   flex-shrink: 0;
 }
-
-.interactive {
-  border: 1.5px solid transparent;
-  text-decoration: none;
-  color: var(--foreground);
-  transition: border-color 120ms ease;
-}
-
-.interactive:hover {
-  border-color: var(--line-strong);
-  color: var(--foreground);
-}

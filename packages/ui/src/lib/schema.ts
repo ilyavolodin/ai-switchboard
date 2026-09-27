@@ -40,6 +40,54 @@ export function fieldKind(s: JSONSchema): FieldKind {
 }
 
 /**
+ * The schema a field is drawn from. A nullable `anyOf` / `oneOf` (`[{ type: 'integer' }, { type:
+ * 'null' }]`, as zod and pydantic emit) reads as its one non-null option, with the outer title,
+ * description and default kept; anything else is returned as is. Validation still uses the full
+ * schema.
+ */
+export function fieldSchema(s: JSONSchema): JSONSchema {
+  if (s.type !== undefined || s.enum !== undefined) return s;
+  for (const key of ['anyOf', 'oneOf'] as const) {
+    const raw = s[key];
+    if (!Array.isArray(raw)) continue;
+    const options = (raw as unknown[]).map(asSchema);
+    if (options.some((o) => o == null)) return s;
+    const nonNull = options.filter((o): o is JSONSchema => o != null && o.type !== 'null');
+    const only = nonNull[0];
+    if (nonNull.length !== 1 || !only) return s;
+    const { [key]: _options, ...outer } = s;
+    return { ...only, ...outer };
+  }
+  return s;
+}
+
+/**
+ * One typed entry of a list field: numbers for `number` / `integer` items (text that is not a
+ * number stays text, so validation names the problem), the text itself otherwise.
+ */
+export function listItemValue(items: JSONSchema, text: string): string | number {
+  const kind = fieldKind(items);
+  if (kind !== 'number' && kind !== 'integer') return text;
+  const n = Number(text);
+  return text.trim() !== '' && Number.isFinite(n) ? n : text;
+}
+
+/** A default or enum option as text: lists joined, objects as JSON. */
+export function formatDefault(v: unknown): string {
+  if (Array.isArray(v)) return v.length ? v.map(String).join(', ') : 'none';
+  if (typeof v === 'object' && v !== null) return JSON.stringify(v);
+  return String(v);
+}
+
+/** The `<input type>` for a text field from `x-widget` and `format`. */
+export function textInputType(s: JSONSchema): 'password' | 'email' | 'url' | 'text' {
+  if (s['x-widget'] === 'password') return 'password';
+  if (s.format === 'email') return 'email';
+  if (s.format === 'uri') return 'url';
+  return 'text';
+}
+
+/**
  * A readable label for an enum option from `x-enumLabels` (`{ "<value>": "<label>" }`), or null
  * to fall back to the raw value.
  */

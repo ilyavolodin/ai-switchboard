@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { NavLink } from 'react-router';
 
 import { cx } from '../lib/cx.js';
-import styles from './Tabs.module.css';
+import styles from './RoutedTabs.module.css';
 
 /** One routed tab: a link to its URL. */
 export interface RoutedTabItem {

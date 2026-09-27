@@ -2,6 +2,7 @@ import type { FilterPreviewResponse } from '@ai-switchboard/core/contract';
 import { type ReactNode, useRef, useState } from 'react';
 
 import { cx } from '../lib/cx.js';
+import { evaluationCounts } from '../lib/expression.js';
 import { formatClock, toMs } from '../lib/format.js';
 import { ArtifactChip } from './ArtifactChip.js';
 import styles from './ExpressionEditor.module.css';
@@ -73,7 +74,6 @@ export function ExpressionEditor({
   disabled,
 }: ExpressionEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const [showAll, setShowAll] = useState(false);
 
   const insert = (snippet: string) => {
     const el = ref.current;
@@ -86,15 +86,6 @@ export function ExpressionEditor({
       el?.setSelectionRange(start + snippet.length, start + snippet.length);
     });
   };
-
-  const counts = rows
-    ? {
-        true: rows.filter((r) => !r.error && r.result).length,
-        false: rows.filter((r) => !r.error && !r.result).length,
-        errors: rows.filter((r) => r.error).length,
-      }
-    : null;
-  const shown = rows ? (showAll ? rows : rows.slice(0, visibleRows)) : [];
 
   return (
     <div className={styles.wrap}>
@@ -133,73 +124,104 @@ export function ExpressionEditor({
         </div>
       )}
       {(rows != null || evaluating === true || previewError != null) && (
-        <section className={styles.panel} aria-label="Live evaluation">
-          <div className={styles.summary} aria-live="polite">
-            {previewError ? (
-              <span className={styles.errorCount}>Preview unavailable — {previewError}</span>
-            ) : counts ? (
-              <span>
-                {scope} · <span className={styles.trueCount}>{counts.true} true</span> ·{' '}
-                {counts.false} false ·{' '}
-                <span className={counts.errors > 0 ? styles.errorCount : undefined}>
-                  {counts.errors} error{counts.errors === 1 ? '' : 's'}
-                </span>
-              </span>
-            ) : (
-              <span>Evaluating…</span>
-            )}
-          </div>
-          {evaluating && !rows && <Skeleton lines={3} height={18} label="Evaluating" />}
-          {rows?.length === 0 && (
-            <div className={styles.summary}>No recent events of these types yet.</div>
-          )}
-          {shown.length > 0 && (
-            <ul className={styles.rows}>
-              {shown.map((row) => {
-                const state = row.error ? 'error' : row.result ? 'true' : 'false';
-                return (
-                  <li
-                    key={row.eventId}
-                    className={cx(styles.row, state === 'false' && styles.false)}
-                    data-result={state}
-                  >
-                    <span className={styles.time}>{formatClock(toMs(row.occurredAt) ?? 0)}</span>
-                    <ArtifactChip artifact={row.artifact} showIcon={false} />
-                    <span className={styles.text}>{summarize(row)}</span>
-                    <span className={styles.result}>
-                      <span
-                        className={styles.resultDot}
-                        aria-hidden="true"
-                        style={{
-                          background:
-                            state === 'error'
-                              ? 'var(--st-err)'
-                              : state === 'true'
-                                ? 'var(--st-ok)'
-                                : 'var(--line-strong)',
-                        }}
-                      />
-                      {state}
-                    </span>
-                    {row.error && <span className={styles.rowError}>{row.error}</span>}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {rows && rows.length > visibleRows && (
-            <button
-              type="button"
-              className={styles.more}
-              onClick={() => {
-                setShowAll((v) => !v);
-              }}
-            >
-              {showAll ? 'show fewer' : `show all ${rows.length}`}
-            </button>
-          )}
-        </section>
+        <EvaluationPanel
+          rows={rows}
+          evaluating={evaluating}
+          previewError={previewError}
+          summarize={summarize}
+          visibleRows={visibleRows}
+          scope={scope}
+        />
       )}
     </div>
+  );
+}
+
+/** The live evaluation: a true / false / error summary and one row per recent event. */
+function EvaluationPanel({
+  rows,
+  evaluating,
+  previewError,
+  summarize,
+  visibleRows,
+  scope,
+}: {
+  rows: EvaluationRow[] | undefined;
+  evaluating: boolean | undefined;
+  previewError: string | null | undefined;
+  summarize: (row: EvaluationRow) => ReactNode;
+  visibleRows: number;
+  scope: string;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const counts = rows ? evaluationCounts(rows) : null;
+  const shown = rows ? (showAll ? rows : rows.slice(0, visibleRows)) : [];
+  return (
+    <section className={styles.panel} aria-label="Live evaluation">
+      <div className={styles.summary} aria-live="polite">
+        {previewError ? (
+          <span className={styles.errorCount}>Preview unavailable — {previewError}</span>
+        ) : counts ? (
+          <span>
+            {scope} · <span className={styles.trueCount}>{counts.true} true</span> · {counts.false}{' '}
+            false ·{' '}
+            <span className={counts.errors > 0 ? styles.errorCount : undefined}>
+              {counts.errors} error{counts.errors === 1 ? '' : 's'}
+            </span>
+          </span>
+        ) : (
+          <span>Evaluating…</span>
+        )}
+      </div>
+      {evaluating && !rows && <Skeleton lines={3} height={18} label="Evaluating" />}
+      {rows?.length === 0 && (
+        <div className={styles.summary}>No recent events of these types yet.</div>
+      )}
+      {shown.length > 0 && (
+        <ul className={styles.rows}>
+          {shown.map((row) => {
+            const state = row.error ? 'error' : row.result ? 'true' : 'false';
+            return (
+              <li
+                key={row.eventId}
+                className={cx(styles.row, state === 'false' && styles.false)}
+                data-result={state}
+              >
+                <span className={styles.time}>{formatClock(toMs(row.occurredAt) ?? 0)}</span>
+                <ArtifactChip artifact={row.artifact} showIcon={false} />
+                <span className={styles.text}>{summarize(row)}</span>
+                <span className={styles.result}>
+                  <span
+                    className={styles.resultDot}
+                    aria-hidden="true"
+                    style={{
+                      background:
+                        state === 'error'
+                          ? 'var(--st-err)'
+                          : state === 'true'
+                            ? 'var(--st-ok)'
+                            : 'var(--line-strong)',
+                    }}
+                  />
+                  {state}
+                </span>
+                {row.error && <span className={styles.rowError}>{row.error}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {rows && rows.length > visibleRows && (
+        <button
+          type="button"
+          className={styles.more}
+          onClick={() => {
+            setShowAll((v) => !v);
+          }}
+        >
+          {showAll ? 'show fewer' : `show all ${rows.length}`}
+        </button>
+      )}
+    </section>
   );
 }

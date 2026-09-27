@@ -34,6 +34,7 @@ export function AboutTab() {
                 size="sm"
                 tone={a.database.ok ? 'ok' : 'error'}
                 label={`${a.database.ok ? 'ok' : 'unreachable'}${a.database.version ? ` · postgres ${a.database.version}` : ''}`}
+                title={a.database.version ? `postgres ${a.database.version}` : undefined}
               />,
             ],
             ['plugins', String(a.plugins)],

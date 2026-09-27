@@ -2,7 +2,9 @@ import type { Role } from '@ai-switchboard/core/contract';
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { buildFixtures } from '../../api/fixtures.js';
 import type { MockHandlers } from '../../api/mockApi.js';
+import { TEST_NOW } from '../../test/constants.js';
 import { renderApp, renderWithProviders } from '../../test/render.js';
 import { Settings } from './Settings.js';
 
@@ -220,6 +222,24 @@ describe('Settings', () => {
           enabled: true,
           reason: 'kubernetes secrets',
         });
+      });
+    });
+
+    it('offers the configured secret providers in a notifier’s secret fields', async () => {
+      const { secretProviders } = buildFixtures(TEST_NOW);
+      const env = secretProviders[0];
+      if (!env) throw new Error('fixture env provider missing');
+      const { user } = open('notifiers', 'admin', {
+        'GET /secret-providers': () => [
+          ...secretProviders,
+          { ...env, id: 'sp-vault', typeId: 'vault', name: 'vault' },
+        ],
+      });
+      await user.click(await screen.findByRole('button', { name: 'Edit Slack — #loops' }));
+      const drawer = screen.getByRole('dialog', { name: 'Edit Slack — #loops' });
+      const provider = within(drawer).getByRole('combobox', { name: /provider/ });
+      await vi.waitFor(() => {
+        expect(within(provider).getByRole('option', { name: 'vault' })).toBeInTheDocument();
       });
     });
 

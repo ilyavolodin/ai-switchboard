@@ -83,3 +83,19 @@ export function toneCounts(rows: ActivityRow[]): Record<StatusTone, number> {
 export function hasFilters(filters: ActivityFilters): boolean {
   return FILTER_KEYS.some((k) => k !== 'range' && filters[k] != null);
 }
+
+/**
+ * Select options for an id filter. When the URL names an id the list does not have (deleted, or
+ * a typo in a shared link) it is kept as an extra "(not found)" option, so the select shows the
+ * filter that is really applied rather than "All …".
+ */
+export function idFilterOptions(
+  items: { id: string; name: string }[] | undefined,
+  current: string | undefined,
+): { value: string; label: string }[] {
+  const options = (items ?? []).map((x) => ({ value: x.id, label: x.name }));
+  if (current && items && !items.some((x) => x.id === current)) {
+    options.push({ value: current, label: `${current} (not found)` });
+  }
+  return options;
+}

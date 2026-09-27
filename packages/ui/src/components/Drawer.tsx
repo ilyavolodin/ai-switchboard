@@ -1,6 +1,7 @@
-import { type ReactNode, useEffect, useId, useRef } from 'react';
+import { type ReactNode, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useModal } from '../hooks/useModal.js';
 import { cx } from '../lib/cx.js';
 import styles from './Drawer.module.css';
 import { IconButton } from './IconButton.js';
@@ -16,7 +17,10 @@ export interface DrawerProps {
   width?: number;
 }
 
-/** A side panel / bottom sheet (event detail, run detail). Escape and the backdrop close it. */
+/**
+ * A side panel / bottom sheet (event detail, run detail). Modal like `Dialog`: focus is kept
+ * inside, Escape and the backdrop close it.
+ */
 export function Drawer({
   open,
   onClose,
@@ -28,23 +32,7 @@ export function Drawer({
 }: DrawerProps) {
   const titleId = useId();
   const ref = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
-  useEffect(() => {
-    if (!open) return;
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCloseRef.current();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      opener?.focus();
-    };
-  }, [open]);
+  useModal(ref, open, onClose, 'container');
 
   if (!open) return null;
   return createPortal(

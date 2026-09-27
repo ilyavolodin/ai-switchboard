@@ -21,6 +21,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { apiFetch } from '../client.js';
 import { qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
+import { cursorPaging } from '../query.js';
 
 /** GET /settings */
 export function useSettings() {
@@ -136,8 +137,7 @@ export function useAudit(query: Omit<AuditQuery, 'cursor'> = {}) {
     queryKey: qk.audit(query),
     queryFn: ({ pageParam, signal }) =>
       apiFetch<Page<AuditEntry>>('/audit', { query: { ...query, cursor: pageParam }, signal }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    ...cursorPaging,
   });
 }
 

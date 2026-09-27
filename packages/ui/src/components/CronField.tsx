@@ -37,12 +37,11 @@ export function CronField({
   disabled,
 }: CronFieldProps) {
   const described = describeCron(value.cron);
-  const debounced = useDebounced(value, 400);
-  const preview = usePreviewCron(
-    describeCron(debounced.cron).ok
-      ? { cron: debounced.cron.trim(), timezone: debounced.timezone }
-      : null,
-  );
+  // Debounce the strings, not `value`: callers often pass a fresh object every render, which
+  // would restart the timer on each one.
+  const cron = useDebounced(value.cron, 400);
+  const timezone = useDebounced(value.timezone, 400);
+  const preview = usePreviewCron(describeCron(cron).ok ? { cron: cron.trim(), timezone } : null);
   const zones = useMemo(() => timezones(), []);
   const zoneOptions = useMemo(() => {
     const list =

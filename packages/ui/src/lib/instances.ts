@@ -23,6 +23,20 @@ export function secretProviderIds(instances: InstanceSummary[] | undefined): str
   return unique.length > 0 ? unique : undefined;
 }
 
+/**
+ * The instance a `secret://<provider>/…` segment names: by name, or by type for an instance whose
+ * name is not a plain id (the inverse of `secretProviderIds`).
+ */
+export function instanceForProvider(
+  provider: string,
+  instances: InstanceSummary[] | undefined,
+): InstanceSummary | undefined {
+  return (
+    instances?.find((i) => i.name === provider) ??
+    instances?.find((i) => !SEGMENT.test(i.name) && i.typeId === provider)
+  );
+}
+
 const TYPE_ICONS: Record<string, IconName> = {
   github: 'pr',
   linear: 'issue',

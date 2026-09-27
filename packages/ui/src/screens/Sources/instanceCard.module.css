@@ -1,15 +1,4 @@
 /* Instance cards on the Sources and Executors lists (the canvas "cards, not rows"). */
-.header {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.headerSpacer {
-  flex-grow: 1;
-}
-
 .legendKeys {
   display: flex;
   gap: 14px;
@@ -252,11 +241,6 @@
 
 .footer .mono {
   color: var(--foreground);
-}
-
-.warnNote {
-  font-size: 12px;
-  color: var(--st-warn-fg);
 }
 
 .errNote {

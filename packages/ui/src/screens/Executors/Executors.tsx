@@ -2,17 +2,14 @@ import type { ExecutorCapsDTO } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import { useCreateExecutor, useExecutors, usePluginTypes } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { PageHeader } from '../../components/PageHeader.js';
-import { Skeleton } from '../../components/Skeleton.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { withoutUndefined } from '../../lib/instances.js';
+import { InstanceGrid } from '../shared/InstanceGrid.js';
 import { AddInstanceDialog } from '../Sources/AddInstanceDialog.js';
-import styles from '../Sources/instanceCard.module.css';
 import { ExecutorCapsFields } from './ExecutorCapsFields.js';
 import { ExecutorCard } from './ExecutorCard.js';
 import { describeExecutorType, estimatedMeters } from './executorModel.js';
@@ -72,49 +69,19 @@ export function Executors() {
         }
         actions={addButton}
       />
-      {executors.isPending ? (
-        <div className={styles.grid}>
-          <Skeleton shape="card" height={220} label="Loading executors" />
-          <Skeleton shape="card" height={220} />
-          <Skeleton shape="card" height={220} />
-        </div>
-      ) : executors.isError ? (
-        <Banner
-          tone="error"
-          title="Executors could not load"
-          actions={
-            <Button size="sm" variant="outline" onClick={() => void executors.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {errorMessage(executors.error)}
-        </Banner>
-      ) : list.length === 0 ? (
-        <EmptyState title="No executors yet" illustration="ghost" actions={addButton}>
-          An executor starts the automations you already have: a Claude Routine, an HTTP endpoint, a
-          GitHub Actions workflow. Add one, then bind a process to it.
-        </EmptyState>
-      ) : (
-        <>
-          {list.some((x) => !x.pluginAvailable) && (
-            <Banner tone="warn" title="A plugin is unavailable">
-              {list
-                .filter((x) => !x.pluginAvailable)
-                .map((x) => x.name)
-                .join(', ')}{' '}
-              stay configured, but their plugin did not load at start; the processes bound to them
-              are held until it is back.
-            </Banner>
-          )}
-          <div className={styles.grid}>
-            {list.map((x) => (
-              <ExecutorCard key={x.id} executor={x} />
-            ))}
-          </div>
-          {tick}
-        </>
-      )}
+      <InstanceGrid
+        query={executors}
+        title="Executors"
+        heldNote="the processes bound to them are held until it is back."
+        renderCard={(x) => <ExecutorCard key={x.id} executor={x} />}
+        footer={tick}
+        empty={
+          <EmptyState title="No executors yet" illustration="ghost" actions={addButton}>
+            An executor starts the automations you already have: a Claude Routine, an HTTP endpoint,
+            a GitHub Actions workflow. Add one, then bind a process to it.
+          </EmptyState>
+        }
+      />
 
       <AddInstanceDialog<ExecutorCapsDTO>
         open={adding}

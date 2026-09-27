@@ -83,12 +83,6 @@
   color: var(--muted-foreground);
 }
 
-.bigNumber {
-  font-family: var(--font-mono);
-  font-size: 22px;
-  color: var(--foreground-strong);
-}
-
 .gauges {
   display: flex;
   flex-wrap: wrap;

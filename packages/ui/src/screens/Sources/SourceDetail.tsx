@@ -1,7 +1,6 @@
 import type { SourceDetail as SourceDetailDTO } from '@ai-switchboard/core/contract';
 import { useParams } from 'react-router';
 
-import { errorMessage, isApiRequestError } from '../../api/client.js';
 import {
   useEnableSource,
   useProvisionSource,
@@ -9,11 +8,8 @@ import {
   useSendTestEvent,
   useSource,
 } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
-import { EmptyState } from '../../components/EmptyState.js';
 import { Icon } from '../../components/Icon.js';
-import { LinkButton } from '../../components/LinkButton.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { RoutedTabs } from '../../components/RoutedTabs.js';
 import { Skeleton } from '../../components/Skeleton.js';
@@ -22,6 +18,9 @@ import { Time } from '../../components/Time.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { formatInterval } from '../../lib/instances.js';
+import { InstanceStateBanners } from '../shared/InstanceStateBanners.js';
+import { LoadFailure } from '../shared/LoadFailure.js';
+import { UnknownTab } from '../shared/UnknownTab.js';
 import { CopyButton } from './CopyButton.js';
 import styles from './detail.module.css';
 import { SecretRefsFact } from './SecretRefsFact.js';
@@ -42,18 +41,8 @@ export function SourceDetail() {
     return <Skeleton shape="card" height={320} label="Loading the source" />;
   }
   if (source.isError) {
-    const missing = isApiRequestError(source.error) && source.error.status === 404;
     return (
-      <EmptyState
-        title={missing ? 'This source does not exist' : 'The source could not load'}
-        actions={
-          <LinkButton to="/sources" variant="outline">
-            All sources
-          </LinkButton>
-        }
-      >
-        {missing ? 'It may have been deleted.' : errorMessage(source.error)}
-      </EmptyState>
+      <LoadFailure error={source.error} noun="source" listTo="/sources" listLabel="All sources" />
     );
   }
   return <SourceView source={source.data} tab={tab} />;
@@ -185,30 +174,14 @@ function SourceView({ source, tab }: { source: SourceDetailDTO; tab: string | un
         <SecretRefsFact refs={source.secretRefs} />
       </div>
 
-      {!source.pluginAvailable && (
-        <Banner tone="warn" title="Plugin unavailable">
-          The {source.typeName} plugin did not load at start. This source stays configured, but its
-          processes are held until the plugin is back.
-        </Banner>
-      )}
-      {source.instanceError && (
-        <Banner
-          tone="error"
-          title="The source is not running"
-          actions={
-            <Button
-              size="sm"
-              variant="outline"
-              requires="operator"
-              onClick={() => void reload.run(vars)}
-            >
-              Reload
-            </Button>
-          }
-        >
-          {source.instanceError}
-        </Banner>
-      )}
+      <InstanceStateBanners
+        noun="source"
+        typeName={source.typeName}
+        pluginAvailable={source.pluginAvailable}
+        instanceError={source.instanceError}
+        heldProcesses="its processes are held"
+        onReload={() => void reload.run(vars)}
+      />
 
       <RoutedTabs
         label="Source sections"
@@ -226,15 +199,7 @@ function SourceView({ source, tab }: { source: SourceDetailDTO; tab: string | un
       ) : tab === 'events' ? (
         <SourceEventsTab source={source} />
       ) : (
-        <EmptyState
-          title="No such tab"
-          compact
-          actions={
-            <LinkButton to={base} variant="outline">
-              Overview
-            </LinkButton>
-          }
-        />
+        <UnknownTab overview={base} />
       )}
     </>
   );

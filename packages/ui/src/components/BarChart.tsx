@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { chartValue } from '../lib/chart.js';
 import styles from './BarChart.module.css';
 
 /** One series: a colour token and a value per label. */
@@ -37,7 +38,7 @@ const W = 340;
  */
 export function BarChart({
   labels,
-  series,
+  series: given,
   stacked = false,
   ariaLabel,
   height = 132,
@@ -46,6 +47,11 @@ export function BarChart({
   formatValue = (v) => String(Math.round(v)),
   labelEvery = 1,
 }: BarChartProps) {
+  // One value per label for every series, each drawable (see `chartValue`).
+  const series = given.map((s) => ({
+    ...s,
+    values: labels.map((_, i) => chartValue(s.values[i])),
+  }));
   const plotTop = 10;
   const plotBottom = height - 22;
   const plotH = plotBottom - plotTop;
