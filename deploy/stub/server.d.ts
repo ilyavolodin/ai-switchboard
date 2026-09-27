@@ -9,6 +9,9 @@ export interface StubConfig {
   retryAfterSeconds: number;
   fiveHour: number;
   sevenDay: number;
+  /** `GET /meter` reading for the `http` executor's `meterEndpoint`. */
+  meterUsed: number;
+  meterLimit: number;
 }
 
 export interface StubServerOptions extends Partial<StubConfig> {

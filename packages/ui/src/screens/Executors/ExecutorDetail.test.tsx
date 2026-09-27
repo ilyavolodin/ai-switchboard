@@ -77,6 +77,17 @@ describe('ExecutorDetail', () => {
     });
   });
 
+  it("states the core's default meter poll interval when none is set", async () => {
+    const f = buildFixtures(TEST_NOW);
+    const base = f.executorDetail(at(f.executors, 0));
+    const detail = { ...base, caps: { ...base.caps, meterPollSeconds: undefined } };
+    renderExecutor('/executors/ex-routines', {
+      overrides: { 'GET /executors/:id': () => detail },
+    });
+    const meters = await screen.findByText(/read every/);
+    expect(meters).toHaveTextContent(/read every 300 s/);
+  });
+
   it('shows a soft hold and clears it with a reason', async () => {
     const f = buildFixtures(TEST_NOW);
     const held = {

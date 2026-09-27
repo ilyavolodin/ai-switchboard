@@ -103,6 +103,12 @@ export function formatCount(n: number): string {
   return `${trim(n / 1_000_000)}M`;
 }
 
+/** A usage amount without a known unit: like `formatCount`, but fractions keep 3 significant digits. */
+export function formatAmount(n: number): string {
+  if (Number.isInteger(n) || Math.abs(n) >= 1000) return formatCount(n);
+  return String(Number(n.toPrecision(3)));
+}
+
 function trim(v: number): string {
   return v >= 100 ? String(Math.round(v)) : v.toFixed(1).replace(/\.0$/, '');
 }

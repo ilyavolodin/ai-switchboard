@@ -3,6 +3,7 @@ import type { ExecutorCapsDTO, MeterSpec, UsageDimension } from '@ai-switchboard
 import { sameValue } from '../../lib/instances.js';
 import { CapField } from '../Sources/CapField.js';
 import styles from '../Sources/forms.module.css';
+import { DEFAULT_METER_POLL_SECONDS, MIN_METER_POLL_SECONDS } from './executorModel.js';
 
 export interface ExecutorCapsFieldsProps {
   value: ExecutorCapsDTO;
@@ -85,8 +86,8 @@ export function ExecutorCapsFields({
           <CapField
             label="Meter poll interval"
             suffix="seconds"
-            min={10}
-            placeholder="60"
+            min={MIN_METER_POLL_SECONDS}
+            placeholder={String(DEFAULT_METER_POLL_SECONDS)}
             help="How often Switchboard reads this executor's meters."
             value={value.meterPollSeconds}
             changed={changed(value.meterPollSeconds, baseline?.meterPollSeconds)}

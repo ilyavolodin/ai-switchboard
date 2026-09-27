@@ -5,12 +5,14 @@
 //   (b) a webhook sender                 POST /send, POST /burst
 //   (c) a fake Claude Routines API       POST /v1/claude_code/routines/:id/fire,
 //                                        GET /api/oauth/usage, POST /v1/oauth/token
+//   (e) an `http` executor meter         GET /meter ({ used, limit, resetsAt } for `meterEndpoint`)
 //   (d) a request recorder               GET /requests, DELETE /requests
 // plus GET /healthz and POST /stub/config (change the Routines behaviour at runtime).
 //
 // Environment: STUB_PORT (9090), STUB_CALLBACK_SECRET, STUB_ROUTINES_429=1 (always 429),
 // STUB_ROUTINES_429_EVERY=N (every Nth fire is a 429), STUB_RETRY_AFTER (seconds, 60),
-// STUB_FIVE_HOUR / STUB_SEVEN_DAY (utilization %, 42 / 17).
+// STUB_FIVE_HOUR / STUB_SEVEN_DAY (utilization %, 42 / 17), STUB_METER_USED / STUB_METER_LIMIT
+// (the /meter reading, 30 of 100, resetting in two hours).
 
 import { createHmac, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -71,6 +73,8 @@ export function createStubServer(options = {}) {
     retryAfterSeconds: options.retryAfterSeconds ?? num(env.STUB_RETRY_AFTER, 60),
     fiveHour: options.fiveHour ?? num(env.STUB_FIVE_HOUR, 42),
     sevenDay: options.sevenDay ?? num(env.STUB_SEVEN_DAY, 17),
+    meterUsed: options.meterUsed ?? num(env.STUB_METER_USED, 30),
+    meterLimit: options.meterLimit ?? num(env.STUB_METER_LIMIT, 100),
   };
   const doFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   const now = options.now ?? (() => new Date());
@@ -234,6 +238,14 @@ export function createStubServer(options = {}) {
           utilization: config.sevenDay,
           resets_at: new Date(t + 3 * 86_400_000).toISOString(),
         },
+      });
+    },
+
+    async 'GET /meter'(_req, res) {
+      send(res, 200, {
+        used: config.meterUsed,
+        limit: config.meterLimit,
+        resetsAt: new Date(now().getTime() + 2 * 3_600_000).toISOString(),
       });
     },
 

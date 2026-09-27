@@ -490,7 +490,9 @@ export interface FunnelResponse {
   window: StatsWindow;
   event: {
     received: number;
+    /** Dispatches (event × process) that matched a trigger, whatever happened next. */
     matched: number;
+    /** Of those, dropped as duplicates (the funnel's "after dedupe" is `matched - deduped`). */
     deduped: number;
     batched: number;
     batches: number;

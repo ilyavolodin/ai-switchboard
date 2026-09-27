@@ -45,6 +45,8 @@ export function funnelModel(f: FunnelResponse): FunnelModel {
   const ok = f.event.ok + f.sweep.ok;
   const error = f.event.error + f.event.failed + f.sweep.error;
   const outcome = ok + error + f.event.unknown + f.event.running;
+  // `event.deduped` counts the dispatches dropped as duplicates; the stage shows what remains.
+  const afterDedupe = Math.max(0, f.event.matched - f.event.deduped);
   const raw: Omit<FunnelStage, 'size'>[] = [
     {
       id: 'matched',
@@ -57,9 +59,9 @@ export function funnelModel(f: FunnelResponse): FunnelModel {
     {
       id: 'deduped',
       label: 'after dedupe',
-      count: f.event.deduped,
+      count: afterDedupe,
       segments: segments([
-        { id: 'deduped', label: 'after dedupe', count: f.event.deduped, color: 'var(--primary)' },
+        { id: 'deduped', label: 'after dedupe', count: afterDedupe, color: 'var(--primary)' },
       ]),
     },
     {

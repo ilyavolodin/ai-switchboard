@@ -12,6 +12,10 @@ import type { BarSeries } from '../../components/BarChart.js';
 import type { ReasonPromptOptions } from '../../hooks/reason.js';
 import { toMs } from '../../lib/format.js';
 
+/** The core reads meters every 300 s unless the executor's caps say otherwise (minimum 30 s). */
+export const DEFAULT_METER_POLL_SECONDS = 300;
+export const MIN_METER_POLL_SECONDS = 30;
+
 /** One line under a type in the "Add executor" picker. */
 export function describeExecutorType(t: PluginTypeDTO): string {
   const meters = t.meters?.length ?? 0;

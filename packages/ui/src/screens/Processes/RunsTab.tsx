@@ -16,7 +16,7 @@ import { StatusChip } from '../../components/StatusChip.js';
 import { Table, type TableColumn } from '../../components/Table.js';
 import { Time } from '../../components/Time.js';
 import { traceHref } from '../../lib/artifact.js';
-import { formatCount, formatSeconds } from '../../lib/format.js';
+import { formatAmount, formatSeconds } from '../../lib/format.js';
 import { runStatusTone } from '../../lib/tone.js';
 import styles from './ProcessDetail.module.css';
 
@@ -195,7 +195,7 @@ export function RunsTab({ processId }: { processId: string }) {
         const first = r.usage ? Object.entries(r.usage)[0] : undefined;
         return first ? (
           <span className="t-caption">
-            <span className="mono">{formatCount(first[1])}</span> {first[0]}
+            <span className="mono">{formatAmount(first[1])}</span> {first[0]}
           </span>
         ) : (
           '—'

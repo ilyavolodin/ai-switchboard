@@ -182,6 +182,18 @@ describe('stub server: fake Claude Routines', () => {
   });
 });
 
+describe('stub server: http executor meter', () => {
+  it('reports { used, limit, resetsAt } for a meterEndpoint', async () => {
+    const reading = (await (await fetch(`${base}/meter`)).json()) as {
+      used: number;
+      limit: number;
+      resetsAt: string;
+    };
+    expect(reading).toMatchObject({ used: 30, limit: 100 });
+    expect(Date.parse(reading.resetsAt)).toBeGreaterThan(Date.now());
+  });
+});
+
 describe('stub server: request recorder', () => {
   it('records requests and resets on DELETE', async () => {
     await fetch(`${base}/exec`, { method: 'POST', body: '{"a":1}' });

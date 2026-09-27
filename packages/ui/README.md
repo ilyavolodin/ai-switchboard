@@ -181,8 +181,40 @@ client, toasts, reason prompt, a session of `role` (`null` = signed out) and a m
 body), `user` (user-event) and `router`. `renderApp(path)` renders the whole route table. Query by
 role and accessible name. React Flow works in jsdom thanks to the stubs in `test/setup.ts`.
 
-## Not built yet
+## End-to-end tests (Playwright, real stack)
 
-Processes list, process editor/detail/runs/history, sources, executors, activity + trace,
-approvals, plugins, settings/audit — all routed to `<ComingSoon>`; every component and hook they
-need exists. No Playwright e2e config yet (`test:e2e` is wired in package.json).
+`e2e/` runs the built UI against the real core, Postgres and the stub server — no mock API. It
+answers the four questions the UI exists for (see a breaker on the Board and reset it, find an
+artifact's trace by id with `/`, read a meter on the executor and in the top bar, edit a process
+and find the change in the audit log), signs in and out, smoke-tests every route (no error state,
+no uncaught or console error, no failed `/api` call, no `undefined`/`NaN`/`[object Object]` in the
+page), and compares the Board at 1440 and 1024 px in light mode against
+`e2e/__screenshots__/` (times and countdowns masked).
+
+```bash
+pnpm --filter @ai-switchboard/ui exec playwright install chromium   # once
+pnpm --filter @ai-switchboard/ui test:e2e       # pnpm build, then playwright test (needs Docker)
+pnpm --filter @ai-switchboard/ui test:e2e:only  # skip the build (after your own pnpm build)
+pnpm --filter @ai-switchboard/ui test:e2e:only --update-snapshots   # refresh the Board baselines
+```
+
+- `e2e/global-setup.ts` starts `postgres:17-alpine` with `docker run` on a free port,
+  `deploy/stub/server.js`, and `packages/core/dist/main.js` (evaluation mode, local admin
+  password, `SWITCHBOARD_HOME` in a temp dir, `WEBHOOK_SECRET` / `STUB_CALLBACK_SECRET` for the
+  `env` secret provider), and removes them all on teardown. Their logs are in
+  `test-results/e2e-stack/`.
+- `e2e/seed.ts` applies one YAML through `POST /api/v1/apply`: a webhook source, an `http`
+  executor on the stub with the stub's `GET /meter` as its meter, and three processes routed by
+  the alert's `route` attribute — _Breaker demo_ (the stub's error callback, breaker threshold 1),
+  _Healthy alerts_ (sync `ok`) and _Approval demo_ (`approval: always`). It sends one signed alert
+  each through the stub's `/send` and polls the API until the run is ok, the breaker is open and
+  the approval is pending. The ids reach the tests as `process.env.E2E_STATE`.
+- The `visual` project runs first (its baselines are of the seeded state); `flows` depends on it.
+  Tests share one database, so there is one worker. The breaker test re-opens the breaker it
+  resets, so the suite can run again against the same stack: set `E2E_STATE` to a seeded stack's
+  state JSON and global setup reuses it instead of starting one.
+- Baselines are per platform (`board-1440-darwin.png`); a Linux CI needs its own
+  (`--update-snapshots` once in the CI image).
+- `E2E_SHOTS=<dir>` makes the smoke tests save a full-page screenshot of every route.
+- Fixtures (`e2e/fixtures.ts`): `page` is signed in (`test.use({ signedIn: false })` to opt out);
+  `api` is an admin API client; `allowedApiErrors` lists expected 4xx/5xx as regexes.

@@ -10,11 +10,16 @@ export interface KeyValueListProps {
   label?: string;
 }
 
-function render(v: unknown): ReactNode {
-  if (v == null) return '—';
-  if (Array.isArray(v)) return v.map(String).join(', ');
+function scalar(v: unknown): string {
   if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
   return JSON.stringify(v);
+}
+
+function render(v: unknown): ReactNode {
+  if (v == null) return '—';
+  // Lists can hold objects (a trace's budget `checks`): each element is shown as JSON.
+  if (Array.isArray(v)) return v.map(scalar).join(', ');
+  return scalar(v);
 }
 
 /** Attributes as a key/value list in mono, collapsible after `initialRows`. */

@@ -70,7 +70,9 @@ export function registerErrorHandler(app: FastifyInstance): void {
         .send({ error: fe.code || 'bad_request', message: fe.message } satisfies ApiError);
     }
     // A malformed id in the path (Postgres invalid_text_representation) is simply not found.
-    const pgCode = (err as { code?: unknown; cause?: { code?: unknown } }).cause?.code ?? (err as { code?: unknown }).code;
+    const pgCode =
+      (err as { code?: unknown; cause?: { code?: unknown } }).cause?.code ??
+      (err as { code?: unknown }).code;
     if (pgCode === '22P02') {
       return reply.code(404).send({ error: 'not_found', message: 'Not found.' } satisfies ApiError);
     }

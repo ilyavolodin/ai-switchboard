@@ -62,6 +62,7 @@ pnpm format               # prettier --write
 pnpm test                 # unit tests (no Docker)
 pnpm test:integration     # needs Docker (Testcontainers) or DATABASE_URL
 pnpm vitest run --project ui
+pnpm test:e2e             # Playwright vs the real stack: builds, then Docker Postgres + stub + core (packages/ui/README.md)
 pnpm build                # all packages, UI last
 pnpm dev                  # core with tsx watch (needs DATABASE_URL); pnpm dev:ui for Vite
 pnpm db:generate          # after editing packages/core/src/db/schema.ts

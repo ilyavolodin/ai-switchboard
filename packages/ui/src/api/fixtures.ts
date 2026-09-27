@@ -1028,7 +1028,8 @@ export function buildFixtures(now: number) {
     event: {
       received: 212,
       matched: 184,
-      deduped: 131,
+      // Dropped as duplicates: 131 remain after dedupe.
+      deduped: 53,
       batched: 62,
       batches: 62,
       held: 9,

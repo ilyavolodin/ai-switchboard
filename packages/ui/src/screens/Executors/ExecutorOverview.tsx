@@ -16,7 +16,12 @@ import { formatCount, formatUsage, toMs } from '../../lib/format.js';
 import { seriesColor } from '../../lib/instances.js';
 import styles from '../Sources/detail.module.css';
 import { WINDOW_LABEL, WINDOW_OPTIONS } from '../Sources/sourceModel.js';
-import { dayLabel, runProcesses, runStatusSeries } from './executorModel.js';
+import {
+  DEFAULT_METER_POLL_SECONDS,
+  dayLabel,
+  runProcesses,
+  runStatusSeries,
+} from './executorModel.js';
 
 /**
  * The executor's Overview tab: its meters now (large arcs), meter history as bands with run
@@ -54,8 +59,11 @@ export function ExecutorOverview({ executor }: { executor: ExecutorDetail }) {
           title="Meters"
           meta={
             <span className="t-caption">
-              read every <span className="mono">{executor.caps.meterPollSeconds ?? 60}</span> s ·
-              last <Time value={lastRead ?? null} fallback="never" />
+              read every{' '}
+              <span className="mono">
+                {executor.caps.meterPollSeconds ?? DEFAULT_METER_POLL_SECONDS}
+              </span>{' '}
+              s · last <Time value={lastRead ?? null} fallback="never" />
             </span>
           }
         >
