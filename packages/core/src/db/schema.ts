@@ -6,6 +6,7 @@ import {
   doublePrecision,
   index,
   integer,
+  json,
   jsonb,
   pgTable,
   primaryKey,
@@ -100,8 +101,11 @@ export const pluginTypes = pgTable(
     kind: text('kind').$type<PluginKindColumn>().notNull(),
     typeId: text('type_id').notNull(),
     displayName: text('display_name').notNull(),
-    /** Serializable manifest: schemas, event types, actions, usage, meters, tracking. */
-    manifest: jsonb('manifest').$type<Record<string, unknown>>().notNull(),
+    /**
+     * Serializable manifest: schemas, event types, actions, usage, meters, tracking. `json`, not
+     * `jsonb`: jsonb reorders object keys, and a settings form must keep the declared field order.
+     */
+    manifest: json('manifest').$type<Record<string, unknown>>().notNull(),
     available: boolean('available').notNull().default(true),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },

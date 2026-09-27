@@ -34,6 +34,12 @@ export const settingsSchema: JSONSchema = {
       description:
         'How deliveries are authenticated: an HMAC signature over the body, a shared-secret header, or none (evaluation only; the instance is marked unauthenticated).',
       'x-group': GROUP_VERIFY,
+      'x-widget': 'radio',
+      'x-enumLabels': {
+        hmac: 'HMAC signature over the body',
+        shared_secret: 'Shared-secret header',
+        none: 'None — accept unauthenticated deliveries (evaluation only)',
+      },
       'x-warning': {
         when: { const: 'none' },
         message: 'Anyone who knows the URL can send events — evaluation only.',

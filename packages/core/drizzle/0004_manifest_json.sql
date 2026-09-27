@@ -1,0 +1,1 @@
+ALTER TABLE "plugin_types" ALTER COLUMN "manifest" SET DATA TYPE json;

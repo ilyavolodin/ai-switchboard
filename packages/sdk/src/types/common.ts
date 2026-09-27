@@ -4,7 +4,8 @@
 
 /**
  * A JSON Schema (draft 2020-12) document. UI annotations: `x-secret`, `x-widget`, `x-group`,
- * `x-order`, `x-placeholder`, `x-help` and `x-warning` (`{ when: <schema>, message }`: a red
+ * `x-order`, `x-placeholder`, `x-help`, `x-enumLabels` (`{ "<value>": "<label>" }`) and
+ * `x-warning` (`{ when: <schema>, message }`: a red
  * warning under the field while its value matches `when`). See the plugin author guide.
  */
 export type JSONSchema = Record<string, unknown>;

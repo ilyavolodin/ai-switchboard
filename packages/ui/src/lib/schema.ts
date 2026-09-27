@@ -39,6 +39,17 @@ export function fieldKind(s: JSONSchema): FieldKind {
   }
 }
 
+/**
+ * A readable label for an enum option from `x-enumLabels` (`{ "<value>": "<label>" }`), or null
+ * to fall back to the raw value.
+ */
+export function enumLabel(s: JSONSchema, option: unknown): string | null {
+  const labels = asSchema(s['x-enumLabels']);
+  if (!labels) return null;
+  const label = labels[String(option)];
+  return typeof label === 'string' ? label : null;
+}
+
 /** `properties` as an ordered list: `x-order` first, then declaration order. */
 export function orderedProperties(s: JSONSchema): [string, JSONSchema][] {
   const props = asSchema(s.properties) ?? {};
@@ -308,10 +319,19 @@ export function resolveConditionals(s: JSONSchema, value: unknown): ResolvedObje
   const required = new Set(base);
   const conditional = new Set<string>();
   const active = new Set<string>();
-  const obj =
+  const given =
     value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {};
+  // Branches are decided on the value the plugin will actually get: unset fields take their
+  // defaults (an `if` on a missing property would otherwise match every branch).
+  const defaults = schemaDefaults(s);
+  const obj = {
+    ...(defaults !== null && typeof defaults === 'object'
+      ? (defaults as Record<string, unknown>)
+      : {}),
+    ...Object.fromEntries(Object.entries(given).filter(([, v]) => v !== undefined)),
+  };
   for (const c of conditionalsOf(s)) {
     for (const k of [...mentioned(c.then), ...mentioned(c.else)]) conditional.add(k);
     const branch = matches(c.if, obj) ? c.then : c.else;

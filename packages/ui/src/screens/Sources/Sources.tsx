@@ -159,7 +159,9 @@ export function Sources() {
           <SourceCapsFields
             value={caps}
             onChange={onChange}
-            eventTypes={t.eventTypes ?? []}
+            // A dynamic type (webhook) declares its event types in this very form; the mute
+            // list appears in Settings once the instance exists.
+            eventTypes={t.dynamicEventTypes ? [] : (t.eventTypes ?? [])}
             mode={t.mode}
           />
         )}

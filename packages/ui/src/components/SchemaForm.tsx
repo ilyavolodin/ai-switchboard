@@ -3,6 +3,7 @@ import { type ReactNode, useMemo, useState } from 'react';
 
 import {
   asSchema,
+  enumLabel,
   fieldKind,
   fieldTitle,
   getIn,
@@ -24,6 +25,7 @@ import { ExpressionEditor } from './ExpressionEditor.js';
 import { Field } from './Field.js';
 import styles from './SchemaForm.module.css';
 import { SecretRefInput } from './SecretRefInput.js';
+import { Radio } from './Radio.js';
 import { Select } from './Select.js';
 import { StringListInput } from './StringListInput.js';
 import { Textarea } from './Textarea.js';
@@ -347,6 +349,36 @@ function PropertyField({
             Array.isArray(schema.enum) ? schema.enum : (schema.examples as unknown[])
           ) as unknown[];
           const index = raw.findIndex((o) => JSON.stringify(o) === JSON.stringify(value));
+          const labelOf = (o: unknown): string => enumLabel(schema, o) ?? formatDefault(o);
+          if (widget === 'radio') {
+            // An unset value shows the default the plugin will apply.
+            const shown =
+              index === -1 && value === undefined && 'default' in schema
+                ? raw.findIndex((o) => JSON.stringify(o) === JSON.stringify(schema.default))
+                : index;
+            return (
+              <div
+                id={id}
+                role="radiogroup"
+                aria-label={title}
+                aria-describedby={describedBy}
+                className={styles.radioGroup}
+              >
+                {raw.map((o, i) => (
+                  <Radio
+                    key={JSON.stringify(o)}
+                    name={id}
+                    label={labelOf(o)}
+                    checked={i === shown}
+                    disabled={ctx.disabled}
+                    onChange={() => {
+                      ctx.set(path, raw[i]);
+                    }}
+                  />
+                ))}
+              </div>
+            );
+          }
           return (
             <Select
               id={id}
@@ -354,7 +386,7 @@ function PropertyField({
               invalid={invalid}
               disabled={ctx.disabled}
               placeholder={required && index !== -1 ? undefined : 'Choose…'}
-              options={raw.map((o, i) => ({ value: String(i), label: formatDefault(o) }))}
+              options={raw.map((o, i) => ({ value: String(i), label: labelOf(o) }))}
               value={index === -1 ? '' : String(index)}
               onChange={(e) => {
                 ctx.set(path, e.target.value === '' ? undefined : raw[Number(e.target.value)]);

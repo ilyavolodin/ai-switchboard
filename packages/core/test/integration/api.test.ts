@@ -128,6 +128,19 @@ describe('auth', () => {
   });
 });
 
+describe('plugin types', () => {
+  it('serves settings schemas with their declared field order', async () => {
+    // jsonb would reorder keys (shortest first: org, secret); the form must keep secret first.
+    const res = await h.request('GET', '/api/v1/plugin-types?kind=source', {
+      cookie: h.adminCookie,
+    });
+    const type = res
+      .json<{ typeId: string; settingsSchema: { properties: Record<string, unknown> } }[]>()
+      .find((t) => t.typeId === 'test-source');
+    expect(Object.keys(type?.settingsSchema.properties ?? {})).toEqual(['secret', 'org']);
+  });
+});
+
 describe('sources and executors', () => {
   it('requires a reason for every change', async () => {
     const res = await h.request('POST', '/api/v1/sources', {
