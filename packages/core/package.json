@@ -1,0 +1,85 @@
+{
+  "name": "@ai-switchboard/core",
+  "version": "1.0.0",
+  "description": "AI Switchboard server: plugin host, dispatch pipeline, scheduler, REST API.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "files": [
+    "dist",
+    "drizzle",
+    "public"
+  ],
+  "exports": {
+    ".": {
+      "@ai-switchboard/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./contract": {
+      "@ai-switchboard/source": "./src/api/contract.ts",
+      "types": "./dist/api/contract.d.ts",
+      "default": "./dist/api/contract.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "dev": "tsx watch --conditions=@ai-switchboard/source src/main.ts",
+    "start": "node dist/main.js",
+    "db:generate": "drizzle-kit generate",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^12.1.0",
+    "@types/luxon": "^3.7.5",
+    "@types/pg": "^8.23.1",
+    "@types/semver": "^7.8.0",
+    "drizzle-kit": "^0.31.11",
+    "pino-pretty": "^13.1.3",
+    "testcontainers": "^12.1.0"
+  },
+  "dependencies": {
+    "@ai-switchboard/executor-claude-routines": "workspace:*",
+    "@ai-switchboard/executor-github-actions": "workspace:*",
+    "@ai-switchboard/executor-http": "workspace:*",
+    "@ai-switchboard/notifier-slack": "workspace:*",
+    "@ai-switchboard/notifier-webhook": "workspace:*",
+    "@ai-switchboard/sdk": "workspace:*",
+    "@ai-switchboard/secrets-env": "workspace:*",
+    "@ai-switchboard/secrets-file": "workspace:*",
+    "@ai-switchboard/source-datadog": "workspace:*",
+    "@ai-switchboard/source-github": "workspace:*",
+    "@ai-switchboard/source-linear": "workspace:*",
+    "@ai-switchboard/source-poll-http": "workspace:*",
+    "@ai-switchboard/source-webhook": "workspace:*",
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/formbody": "^9.0.0",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/static": "^10.1.5",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
+    "@opentelemetry/exporter-prometheus": "^0.222.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/sdk-trace-base": "^2.11.0",
+    "@opentelemetry/sdk-trace-node": "^2.11.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
+    "@sinclair/typebox": "^0.34.52",
+    "cron-parser": "^5.10.1",
+    "cronstrue": "^3.27.0",
+    "drizzle-orm": "^0.45.3",
+    "fastify": "^5.12.5",
+    "jsonata": "^2.2.2",
+    "luxon": "^3.7.2",
+    "openid-client": "^6.8.8",
+    "pg": "^8.23.0",
+    "pg-boss": "^12.35.0",
+    "pino": "^10.3.1",
+    "semver": "^7.8.5",
+    "yaml": "^2.9.1"
+  }
+}

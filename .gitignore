@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.switchboard/
+playwright-report/
+test-results/
+.DS_Store
+*.log
+packages/core/public/

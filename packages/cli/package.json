@@ -1,0 +1,39 @@
+{
+  "name": "@ai-switchboard/cli",
+  "version": "1.0.0",
+  "description": "The switchboard command: plugins add/remove/list, export/apply, doctor.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "switchboard": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "@ai-switchboard/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "dev": "tsx --conditions=@ai-switchboard/source src/main.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@ai-switchboard/core": "workspace:*",
+    "@ai-switchboard/sdk": "workspace:*",
+    "commander": "^15.0.0",
+    "semver": "^7.8.5",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/semver": "^7.8.0"
+  }
+}

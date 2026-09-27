@@ -1,0 +1,39 @@
+{
+  "name": "@ai-switchboard/secrets-file",
+  "version": "1.0.0",
+  "description": "Secret provider that reads mounted files (the Kubernetes-secret pattern).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "keywords": [
+    "switchboard-plugin"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "switchboard": {
+    "entry": "./dist/plugin.js",
+    "source": "./src/plugin.ts",
+    "sdk": "^1.0.0"
+  },
+  "exports": {
+    ".": {
+      "@ai-switchboard/source": "./src/plugin.ts",
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@ai-switchboard/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@ai-switchboard/sdk": "workspace:^"
+  }
+}
