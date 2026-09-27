@@ -66,7 +66,13 @@ export interface PluginRuntime {
   notifierType(typeId: string): { type: NotifierType; pluginName: string } | undefined;
   secretProviderType(typeId: string): { type: SecretProviderType; pluginName: string } | undefined;
 
-  /** Undefined when the instance is missing, disabled, failed to build, or its plugin is unavailable. */
+  /**
+   * The live object for an instance, or undefined when the instance is missing, failed to build
+   * (secret error, create threw) or its plugin is unavailable. DISABLED instances still have a live
+   * object (a disabled push source must keep parsing so its events are stored with
+   * `stage=source_disabled`); check the row's `enabled` column (or `instanceError(id) ===
+   * 'disabled'`) for gating.
+   */
   source(id: string): LiveSource | undefined;
   executor(id: string): LiveExecutor | undefined;
   notifier(id: string): LiveNotifier | undefined;

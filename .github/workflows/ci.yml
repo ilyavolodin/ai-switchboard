@@ -52,6 +52,8 @@ jobs:
       - name: Enable corepack (setup-node toolchain)
         run: corepack enable
       - run: pnpm install --frozen-lockfile
+      # The plugin-host test loads plugins the way an install does: through the SDK's dist.
+      - run: pnpm --filter @ai-switchboard/sdk build
       # Docker is available on ubuntu runners; Testcontainers starts Postgres.
       - run: pnpm test:integration
 

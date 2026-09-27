@@ -1,0 +1,834 @@
+import { access } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import {
+  createHttpClient,
+  isInvokeError,
+  isPluginDefinition,
+  isTransportError,
+  SDK_MAJOR,
+  SDK_VERSION,
+  validatePlugin,
+  type ExecutorType,
+  type Health,
+  type NotifierType,
+  type PluginContext,
+  type PluginDefinition,
+  type SecretProviderType,
+  type Settings,
+  type SourceType,
+} from '@ai-switchboard/sdk';
+import { and, eq, sql } from 'drizzle-orm';
+import semver from 'semver';
+
+import type { Clock } from '../clock.js';
+import type { CoreConfig } from '../config.js';
+import type { Db } from '../db/client.js';
+import {
+  executors,
+  instanceState,
+  notifiers,
+  plugins,
+  pluginTypes,
+  secretProviders,
+  sources,
+} from '../db/schema.js';
+import { toPluginLogger, type CoreLogger } from '../logger.js';
+import { parseSecretRef, resolveSecretRefs } from '../secrets/refs.js';
+import type { Telemetry } from '../telemetry/telemetry.js';
+import { discoverPlugins, type DiscoveredPackage } from './discovery.js';
+import type {
+  LiveExecutor,
+  LiveNotifier,
+  LiveSecretProvider,
+  LiveSource,
+  PluginRuntime,
+} from './runtime.js';
+
+export type InstanceKind = 'source' | 'executor' | 'notifier' | 'secret_provider';
+
+export interface LoadedPlugin {
+  name: string;
+  version: string;
+  origin: 'baked' | 'installed';
+  status: 'loaded' | 'failed' | 'incompatible';
+  message?: string;
+  definition?: PluginDefinition;
+}
+
+export interface PluginHostOptions {
+  db: Db;
+  clock: Clock;
+  logger: CoreLogger;
+  telemetry: Telemetry;
+  config: CoreConfig;
+  /** Plugin definitions registered without discovery (tests, embedded use). */
+  builtin?: { name: string; version: string; definition: PluginDefinition }[];
+  /** Replace the default scan directories. */
+  scanDirs?: { path: string; origin: 'baked' | 'installed' }[];
+}
+
+interface TypeEntry<T> {
+  type: T;
+  pluginName: string;
+}
+
+/** Errors a plugin raises on purpose to describe a backend outcome; not counted as plugin bugs. */
+function isExpectedError(err: unknown): boolean {
+  return isTransportError(err) || isInvokeError(err);
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The serializable part of a type, stored in `plugin_types.manifest` and served to the UI. */
+export function serializeType(
+  kind: InstanceKind,
+  type: SourceType | ExecutorType | NotifierType | SecretProviderType,
+): Record<string, unknown> {
+  const base = {
+    displayName: type.displayName,
+    description: type.description,
+    settingsSchema: type.settingsSchema,
+  };
+  if (kind === 'source') {
+    const t = type as SourceType;
+    return {
+      ...base,
+      mode: t.mode,
+      eventTypes: t.eventTypes,
+      actions: t.actions ?? [],
+      dynamicEventTypes: t.dynamicEventTypes ?? false,
+      allowsUnauthenticated: t.allowsUnauthenticated ?? false,
+    };
+  }
+  if (kind === 'executor') {
+    const t = type as ExecutorType;
+    return {
+      ...base,
+      targetSchema: t.targetSchema,
+      inputSchema: t.inputSchema,
+      tracking: t.tracking,
+      idempotentInvoke: t.idempotentInvoke,
+      usage: t.usage,
+      meters: t.meters ?? [],
+      actions: t.actions ?? [],
+      examples: t.examples ?? [],
+    };
+  }
+  return base;
+}
+
+/**
+ * Wrap every method of a plugin object so an unexpected exception is attributed to its plugin
+ * before it propagates. Sync methods stay sync.
+ */
+function attribute<T extends object>(
+  target: T,
+  onError: (err: unknown, method: string) => void,
+): T {
+  return new Proxy(target, {
+    get(obj, prop, receiver) {
+      const value: unknown = Reflect.get(obj, prop, receiver);
+      if (typeof value !== 'function') return value;
+      const fn = value as (...args: unknown[]) => unknown;
+      return (...args: unknown[]) => {
+        try {
+          const out = fn.apply(obj, args);
+          if (out instanceof Promise) {
+            return out.catch((err: unknown) => {
+              if (!isExpectedError(err)) onError(err, String(prop));
+              throw err;
+            });
+          }
+          return out;
+        } catch (err) {
+          if (!isExpectedError(err)) onError(err, String(prop));
+          throw err;
+        }
+      };
+    },
+  });
+}
+
+export class PluginHost implements PluginRuntime {
+  readonly loaded: LoadedPlugin[] = [];
+  private readonly types = {
+    source: new Map<string, TypeEntry<SourceType>>(),
+    executor: new Map<string, TypeEntry<ExecutorType>>(),
+    notifier: new Map<string, TypeEntry<NotifierType>>(),
+    secret_provider: new Map<string, TypeEntry<SecretProviderType>>(),
+  };
+  private readonly liveSources = new Map<string, LiveSource>();
+  private readonly liveExecutors = new Map<string, LiveExecutor>();
+  private readonly liveNotifiers = new Map<string, LiveNotifier>();
+  private readonly liveProviders = new Map<string, LiveSecretProvider>();
+  private readonly providersByName = new Map<string, LiveSecretProvider>();
+  private readonly errors = new Map<string, string>();
+  private readonly pluginErrorQueue = new Map<
+    string,
+    { exception: number; invalid_event: number; invalid_usage: number }
+  >();
+  private flushTimer: NodeJS.Timeout | undefined;
+
+  constructor(private readonly opts: PluginHostOptions) {}
+
+  // ------------------------------------------------------------------------------------------
+  // Boot
+  // ------------------------------------------------------------------------------------------
+
+  /** Discover, load and register plugins, then build every configured instance. */
+  async boot(): Promise<void> {
+    await this.loadPlugins();
+    await this.ensureDefaultSecretProviders();
+    await this.instantiateAll();
+  }
+
+  defaultScanDirs(): { path: string; origin: 'baked' | 'installed' }[] {
+    const coreNodeModules = fileURLToPath(new URL('../../node_modules', import.meta.url));
+    return [
+      { path: join(this.opts.config.home, 'plugins', 'node_modules'), origin: 'installed' },
+      ...this.opts.config.pluginDirs.map((path) => ({ path, origin: 'installed' as const })),
+      { path: coreNodeModules, origin: 'baked' },
+      { path: join(process.cwd(), 'node_modules'), origin: 'baked' },
+    ];
+  }
+
+  private async importDefinition(pkg: DiscoveredPackage): Promise<unknown> {
+    const entry = join(pkg.dir, pkg.switchboard.entry);
+    const source = pkg.switchboard.source ? join(pkg.dir, pkg.switchboard.source) : undefined;
+    const useSource =
+      source !== undefined && (this.opts.config.devSource || !(await exists(entry)));
+    const file = useSource ? source : entry;
+    const mod = (await import(pathToFileURL(file).href)) as { default?: unknown };
+    return mod.default;
+  }
+
+  async loadPlugins(): Promise<void> {
+    const { db, clock, logger } = this.opts;
+    const discovered = await discoverPlugins(this.opts.scanDirs ?? this.defaultScanDirs());
+    const candidates: {
+      pkg: Pick<DiscoveredPackage, 'name' | 'version' | 'origin'> & { sdk: string };
+      load: () => Promise<unknown>;
+    }[] = [
+      ...(this.opts.builtin ?? []).map((b) => ({
+        pkg: {
+          name: b.name,
+          version: b.version,
+          origin: 'baked' as const,
+          sdk: `^${SDK_MAJOR}.0.0`,
+        },
+        load: () => Promise.resolve(b.definition as unknown),
+      })),
+      ...discovered.map((pkg) => ({
+        pkg: { name: pkg.name, version: pkg.version, origin: pkg.origin, sdk: pkg.switchboard.sdk },
+        load: () => this.importDefinition(pkg),
+      })),
+    ];
+
+    this.loaded.length = 0;
+    for (const { pkg, load } of candidates) {
+      const record: LoadedPlugin = {
+        name: pkg.name,
+        version: pkg.version,
+        origin: pkg.origin,
+        status: 'loaded',
+      };
+      try {
+        if (!semver.satisfies(SDK_VERSION, pkg.sdk, { includePrerelease: true })) {
+          record.status = 'incompatible';
+          record.message = `declares sdk ${pkg.sdk}; running SDK is ${SDK_VERSION}`;
+        } else {
+          const def = await load();
+          if (!isPluginDefinition(def)) {
+            record.status = 'failed';
+            record.message = 'default export is not a definePlugin() result';
+          } else if (def.switchboardSdk.major !== SDK_MAJOR) {
+            record.status = 'incompatible';
+            record.message = `built against SDK major ${def.switchboardSdk.major}`;
+          } else {
+            const problems = validatePlugin(def);
+            const clash = this.findClash(def);
+            if (problems.length > 0) {
+              record.status = 'failed';
+              record.message = problems.slice(0, 5).join('; ');
+            } else if (clash) {
+              record.status = 'failed';
+              record.message = clash;
+            } else {
+              record.definition = def;
+              this.registerTypes(pkg.name, def);
+            }
+          }
+        }
+      } catch (err) {
+        record.status = 'failed';
+        record.message = err instanceof Error ? err.message : String(err);
+      }
+      if (record.status !== 'loaded')
+        logger.warn(
+          { plugin: pkg.name, status: record.status, reason: record.message },
+          'plugin not loaded',
+        );
+      this.loaded.push(record);
+    }
+
+    const now = clock.now();
+    await db.transaction(async (tx) => {
+      const present = new Set<string>();
+      for (const p of this.loaded) {
+        present.add(p.name);
+        const def = p.definition;
+        const values = {
+          name: p.name,
+          pluginId: def?.id ?? p.name,
+          displayName: def?.displayName ?? p.name,
+          version: p.version,
+          sdkRange: candidates.find((c) => c.pkg.name === p.name)?.pkg.sdk ?? '',
+          capabilities: def?.capabilities ?? {},
+          status: p.status,
+          statusMessage: p.message ?? null,
+          origin: p.origin,
+          loadedAt: p.status === 'loaded' ? now : null,
+          updatedAt: now,
+        };
+        await tx
+          .insert(plugins)
+          .values(values)
+          .onConflictDoUpdate({ target: plugins.name, set: values });
+      }
+      // Plugins seen before but missing now are unavailable; their types too.
+      const rows = await tx.select({ name: plugins.name }).from(plugins);
+      for (const row of rows) {
+        if (!present.has(row.name)) {
+          await tx
+            .update(plugins)
+            .set({
+              status: 'unavailable',
+              statusMessage: 'package not found at boot',
+              updatedAt: now,
+            })
+            .where(eq(plugins.name, row.name));
+        }
+      }
+      await tx.update(pluginTypes).set({ available: false, updatedAt: now });
+      for (const kind of ['source', 'executor', 'notifier', 'secret_provider'] as const) {
+        for (const [typeId, entry] of this.types[kind]) {
+          const values = {
+            plugin: entry.pluginName,
+            kind: kind,
+            typeId,
+            displayName: entry.type.displayName,
+            manifest: serializeType(kind, entry.type),
+            available: true,
+            updatedAt: now,
+          };
+          await tx
+            .insert(pluginTypes)
+            .values(values)
+            .onConflictDoUpdate({ target: [pluginTypes.kind, pluginTypes.typeId], set: values });
+        }
+      }
+    });
+  }
+
+  private findClash(def: PluginDefinition): string | undefined {
+    const pairs: [InstanceKind, { id: string }[]][] = [
+      ['source', def.sources],
+      ['executor', def.executors],
+      ['notifier', def.notifiers],
+      ['secret_provider', def.secretProviders],
+    ];
+    for (const [kind, list] of pairs) {
+      for (const t of list) {
+        const existing = this.types[kind].get(t.id);
+        if (existing) return `${kind} type "${t.id}" is already provided by ${existing.pluginName}`;
+      }
+    }
+    return undefined;
+  }
+
+  private registerTypes(pluginName: string, def: PluginDefinition): void {
+    for (const t of def.sources) this.types.source.set(t.id, { type: t, pluginName });
+    for (const t of def.executors) this.types.executor.set(t.id, { type: t, pluginName });
+    for (const t of def.notifiers) this.types.notifier.set(t.id, { type: t, pluginName });
+    for (const t of def.secretProviders)
+      this.types.secret_provider.set(t.id, { type: t, pluginName });
+  }
+
+  /** First boot: create `env` and `file` provider instances when their types exist and none are configured. */
+  private async ensureDefaultSecretProviders(): Promise<void> {
+    const { db, clock } = this.opts;
+    const existing = await db.select({ id: secretProviders.id }).from(secretProviders).limit(1);
+    if (existing.length > 0) return;
+    for (const typeId of ['env', 'file']) {
+      if (!this.types.secret_provider.has(typeId)) continue;
+      await db
+        .insert(secretProviders)
+        .values({
+          typeId,
+          name: typeId,
+          settings: {},
+          enabled: true,
+          createdAt: clock.now(),
+          updatedAt: clock.now(),
+        })
+        .onConflictDoNothing();
+    }
+  }
+
+  async instantiateAll(): Promise<void> {
+    const { db } = this.opts;
+    for (const row of await db.select().from(secretProviders)) this.buildSecretProvider(row);
+    for (const row of await db.select().from(sources)) await this.buildSource(row);
+    for (const row of await db.select().from(executors)) await this.buildExecutor(row);
+    for (const row of await db.select().from(notifiers)) await this.buildNotifier(row);
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Instances
+  // ------------------------------------------------------------------------------------------
+
+  private context(
+    instanceId: string,
+    instanceName: string,
+    pluginName: string,
+    network: string[] | undefined,
+  ): PluginContext {
+    const { logger, clock, config, telemetry, db } = this.opts;
+    const pluginLogger = toPluginLogger(
+      logger.child({ plugin: pluginName, instance_id: instanceId }),
+    );
+    return {
+      instanceId,
+      instanceName,
+      logger: pluginLogger,
+      http: createHttpClient({
+        ...(network ? { allowedHosts: network } : {}),
+        logger: pluginLogger,
+        injectHeaders: () => telemetry.traceHeaders(),
+      }),
+      now: () => clock.now(),
+      publicUrl: config.publicUrl,
+      state: {
+        get: async <T>(key: string) => {
+          const rows = await db
+            .select({ value: instanceState.value })
+            .from(instanceState)
+            .where(and(eq(instanceState.instanceId, instanceId), eq(instanceState.key, key)));
+          return rows[0]?.value as T | undefined;
+        },
+        set: async (key: string, value: unknown) => {
+          await db
+            .insert(instanceState)
+            .values({ instanceId, key, value: value, updatedAt: clock.now() })
+            .onConflictDoUpdate({
+              target: [instanceState.instanceId, instanceState.key],
+              set: { value: value, updatedAt: clock.now() },
+            });
+        },
+      },
+    };
+  }
+
+  private pluginCapabilities(pluginName: string): string[] | undefined {
+    return this.loaded.find((p) => p.name === pluginName)?.definition?.capabilities.network;
+  }
+
+  /** Resolve `secret://<provider>/<name>` through the provider instance named `<provider>`. */
+  async resolveSecret(ref: string): Promise<string> {
+    const parsed = parseSecretRef(ref);
+    if (!parsed) throw new Error(`malformed secret reference ${ref}`);
+    const provider = this.providersByName.get(parsed.provider);
+    if (!provider)
+      throw new Error(`secret provider "${parsed.provider}" is not configured or not running`);
+    return provider.provider.resolve(parsed.name);
+  }
+
+  private async resolveSettings(
+    settings: Record<string, unknown>,
+  ): Promise<{ settings: Settings; secrets: string[] }> {
+    const { value, secrets } = await resolveSecretRefs(settings, (ref) => this.resolveSecret(ref));
+    return { settings: value as Settings, secrets };
+  }
+
+  private attributeFor(pluginName: string, instanceId: string) {
+    return (err: unknown, method: string): void => {
+      this.opts.logger.error(
+        { err, plugin: pluginName, instance_id: instanceId, method },
+        'plugin exception',
+      );
+      this.recordPluginError(
+        pluginName,
+        'exception',
+        `${method}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    };
+  }
+
+  private clearInstance(id: string): void {
+    this.liveSources.delete(id);
+    this.liveExecutors.delete(id);
+    this.liveNotifiers.delete(id);
+    const provider = this.liveProviders.get(id);
+    if (provider) this.providersByName.delete(provider.name);
+    this.liveProviders.delete(id);
+    this.errors.delete(id);
+  }
+
+  private async markResolved(kind: 'source' | 'executor', id: string): Promise<void> {
+    const table = kind === 'source' ? sources : executors;
+    await this.opts.db
+      .update(table)
+      .set({ secretsResolvedAt: this.opts.clock.now() })
+      .where(eq(table.id, id));
+  }
+
+  private buildSecretProvider(row: typeof secretProviders.$inferSelect): void {
+    this.clearInstance(row.id);
+    const entry = this.types.secret_provider.get(row.typeId);
+    if (!entry) return void this.errors.set(row.id, 'plugin_unavailable');
+    if (!row.enabled) return void this.errors.set(row.id, 'disabled');
+    try {
+      const ctx = this.context(
+        row.id,
+        row.name,
+        entry.pluginName,
+        this.pluginCapabilities(entry.pluginName),
+      );
+      const provider = attribute(
+        entry.type.create(row.settings, ctx),
+        this.attributeFor(entry.pluginName, row.id),
+      );
+      const live: LiveSecretProvider = {
+        id: row.id,
+        name: row.name,
+        typeId: row.typeId,
+        type: entry.type,
+        provider,
+      };
+      this.liveProviders.set(row.id, live);
+      this.providersByName.set(row.name, live);
+    } catch (err) {
+      this.errors.set(row.id, `create_failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async buildSource(row: typeof sources.$inferSelect): Promise<void> {
+    this.clearInstance(row.id);
+    const entry = this.types.source.get(row.typeId);
+    if (!entry) return void this.errors.set(row.id, 'plugin_unavailable');
+    let resolved: { settings: Settings; secrets: string[] };
+    try {
+      resolved = await this.resolveSettings(row.settings);
+    } catch (err) {
+      return void this.errors.set(
+        row.id,
+        `secret_error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    try {
+      const ctx = this.context(
+        row.id,
+        row.name,
+        entry.pluginName,
+        this.pluginCapabilities(entry.pluginName),
+      );
+      const source = attribute(
+        entry.type.create(resolved.settings, ctx),
+        this.attributeFor(entry.pluginName, row.id),
+      );
+      const eventTypes =
+        entry.type.dynamicEventTypes && entry.type.instanceEventTypes
+          ? entry.type.instanceEventTypes(resolved.settings)
+          : entry.type.eventTypes;
+      this.liveSources.set(row.id, {
+        id: row.id,
+        name: row.name,
+        typeId: row.typeId,
+        pluginName: entry.pluginName,
+        type: entry.type,
+        source,
+        eventTypes,
+        secretValues: resolved.secrets,
+      });
+      if (!row.enabled) this.errors.set(row.id, 'disabled');
+      await this.markResolved('source', row.id);
+    } catch (err) {
+      this.recordPluginError(
+        entry.pluginName,
+        'exception',
+        `create: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.errors.set(row.id, `create_failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async buildExecutor(row: typeof executors.$inferSelect): Promise<void> {
+    this.clearInstance(row.id);
+    const entry = this.types.executor.get(row.typeId);
+    if (!entry) return void this.errors.set(row.id, 'plugin_unavailable');
+    let resolved: { settings: Settings; secrets: string[] };
+    try {
+      resolved = await this.resolveSettings(row.settings);
+    } catch (err) {
+      return void this.errors.set(
+        row.id,
+        `secret_error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    try {
+      const type = entry.type;
+      const ctx = this.context(
+        row.id,
+        row.name,
+        entry.pluginName,
+        this.pluginCapabilities(entry.pluginName),
+      );
+      const executor = attribute(
+        type.create(resolved.settings, ctx),
+        this.attributeFor(entry.pluginName, row.id),
+      );
+      this.liveExecutors.set(row.id, {
+        id: row.id,
+        name: row.name,
+        typeId: row.typeId,
+        pluginName: entry.pluginName,
+        type,
+        executor,
+        usage: type.usageFor ? type.usageFor(resolved.settings) : type.usage,
+        meters: type.metersFor ? type.metersFor(resolved.settings) : (type.meters ?? []),
+        trackingFor: (target) => (type.trackingFor ? type.trackingFor(target) : type.tracking),
+        idempotentFor: (target) =>
+          type.idempotentFor ? type.idempotentFor(target) : type.idempotentInvoke,
+      });
+      if (!row.enabled) this.errors.set(row.id, 'disabled');
+      await this.markResolved('executor', row.id);
+    } catch (err) {
+      this.recordPluginError(
+        entry.pluginName,
+        'exception',
+        `create: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.errors.set(row.id, `create_failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async buildNotifier(row: typeof notifiers.$inferSelect): Promise<void> {
+    this.clearInstance(row.id);
+    const entry = this.types.notifier.get(row.typeId);
+    if (!entry) return void this.errors.set(row.id, 'plugin_unavailable');
+    try {
+      const { settings } = await this.resolveSettings(row.settings);
+      const ctx = this.context(
+        row.id,
+        row.name,
+        entry.pluginName,
+        this.pluginCapabilities(entry.pluginName),
+      );
+      const notifier = attribute(
+        entry.type.create(settings, ctx),
+        this.attributeFor(entry.pluginName, row.id),
+      );
+      this.liveNotifiers.set(row.id, {
+        id: row.id,
+        name: row.name,
+        typeId: row.typeId,
+        type: entry.type,
+        notifier,
+      });
+      if (!row.enabled) this.errors.set(row.id, 'disabled');
+    } catch (err) {
+      this.errors.set(row.id, `create_failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // PluginRuntime
+  // ------------------------------------------------------------------------------------------
+
+  sourceType(typeId: string): TypeEntry<SourceType> | undefined {
+    return this.types.source.get(typeId);
+  }
+  executorType(typeId: string): TypeEntry<ExecutorType> | undefined {
+    return this.types.executor.get(typeId);
+  }
+  notifierType(typeId: string): TypeEntry<NotifierType> | undefined {
+    return this.types.notifier.get(typeId);
+  }
+  secretProviderType(typeId: string): TypeEntry<SecretProviderType> | undefined {
+    return this.types.secret_provider.get(typeId);
+  }
+
+  typesOf(
+    kind: InstanceKind,
+  ): {
+    typeId: string;
+    pluginName: string;
+    type: SourceType | ExecutorType | NotifierType | SecretProviderType;
+  }[] {
+    return [...this.types[kind].entries()].map(([typeId, e]) => ({
+      typeId,
+      pluginName: e.pluginName,
+      type: e.type,
+    }));
+  }
+
+  source(id: string): LiveSource | undefined {
+    return this.liveSources.get(id);
+  }
+  executor(id: string): LiveExecutor | undefined {
+    return this.liveExecutors.get(id);
+  }
+  notifier(id: string): LiveNotifier | undefined {
+    return this.liveNotifiers.get(id);
+  }
+  secretProvider(id: string): LiveSecretProvider | undefined {
+    return this.liveProviders.get(id);
+  }
+
+  instanceError(id: string): string | undefined {
+    return this.errors.get(id);
+  }
+
+  async reload(kind: InstanceKind, id: string): Promise<void> {
+    const { db } = this.opts;
+    switch (kind) {
+      case 'source': {
+        const [row] = await db.select().from(sources).where(eq(sources.id, id));
+        if (row) await this.buildSource(row);
+        else this.clearInstance(id);
+        return;
+      }
+      case 'executor': {
+        const [row] = await db.select().from(executors).where(eq(executors.id, id));
+        if (row) await this.buildExecutor(row);
+        else this.clearInstance(id);
+        return;
+      }
+      case 'notifier': {
+        const [row] = await db.select().from(notifiers).where(eq(notifiers.id, id));
+        if (row) await this.buildNotifier(row);
+        else this.clearInstance(id);
+        return;
+      }
+      case 'secret_provider': {
+        const [row] = await db.select().from(secretProviders).where(eq(secretProviders.id, id));
+        if (row) this.buildSecretProvider(row);
+        else this.clearInstance(id);
+        return;
+      }
+    }
+  }
+
+  recordPluginError(
+    pluginName: string,
+    kind: 'exception' | 'invalid_event' | 'invalid_usage',
+    detail?: string,
+  ): void {
+    this.opts.telemetry.counter('switchboard.plugin.errors', { plugin: pluginName, kind });
+    if (detail) this.opts.logger.warn({ plugin: pluginName, kind, detail }, 'plugin error');
+    const counts = this.pluginErrorQueue.get(pluginName) ?? {
+      exception: 0,
+      invalid_event: 0,
+      invalid_usage: 0,
+    };
+    counts[kind]++;
+    this.pluginErrorQueue.set(pluginName, counts);
+    this.flushTimer ??= setTimeout(() => {
+      this.flushTimer = undefined;
+      void this.flushPluginErrors();
+    }, 250);
+  }
+
+  /** Persist buffered plugin error counts. */
+  async flushPluginErrors(): Promise<void> {
+    const pending = [...this.pluginErrorQueue.entries()];
+    this.pluginErrorQueue.clear();
+    for (const [name, c] of pending) {
+      try {
+        await this.opts.db
+          .update(plugins)
+          .set({
+            errorCount: sql`${plugins.errorCount} + ${c.exception + c.invalid_usage}`,
+            invalidEventCount: sql`${plugins.invalidEventCount} + ${c.invalid_event}`,
+          })
+          .where(eq(plugins.name, name));
+      } catch (err) {
+        this.opts.logger.error({ err, plugin: name }, 'could not record plugin errors');
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Health
+  // ------------------------------------------------------------------------------------------
+
+  private async probe(fn: () => Promise<Health>): Promise<Health> {
+    const now = this.opts.clock.now().toISOString();
+    try {
+      return await Promise.race([
+        fn(),
+        new Promise<Health>((resolve) =>
+          setTimeout(
+            () =>
+              resolve({ status: 'unhealthy', message: 'health check timed out', checkedAt: now }),
+            10_000,
+          ).unref(),
+        ),
+      ]);
+    } catch (err) {
+      return {
+        status: 'unhealthy',
+        message: err instanceof Error ? err.message : String(err),
+        checkedAt: now,
+      };
+    }
+  }
+
+  /** Call every live instance's `health()` and store the result on its row. */
+  async checkHealth(): Promise<void> {
+    const { db, telemetry } = this.opts;
+    for (const live of this.liveSources.values()) {
+      const health = await this.probe(() => live.source.health());
+      await db.update(sources).set({ health }).where(eq(sources.id, live.id));
+      telemetry.gauge('switchboard.source.health', health.status === 'healthy' ? 1 : 0, {
+        instance: live.name,
+      });
+    }
+    for (const live of this.liveExecutors.values()) {
+      const [row] = await db
+        .select({ health: executors.health })
+        .from(executors)
+        .where(eq(executors.id, live.id));
+      const health = await this.probe(() => live.executor.health());
+      // An executor marked unhealthy by the pipeline (401/403) stays so until a reload or a healthy probe.
+      if (row?.health?.status === 'unhealthy' && health.status === 'unknown') continue;
+      await db.update(executors).set({ health }).where(eq(executors.id, live.id));
+      telemetry.gauge('switchboard.executor.health', health.status === 'healthy' ? 1 : 0, {
+        instance: live.name,
+      });
+    }
+    for (const live of this.liveNotifiers.values()) {
+      const health = await this.probe(() => live.notifier.health());
+      await db.update(notifiers).set({ health }).where(eq(notifiers.id, live.id));
+    }
+    for (const live of this.liveProviders.values()) {
+      const health = await this.probe(() => live.provider.health());
+      await db.update(secretProviders).set({ health }).where(eq(secretProviders.id, live.id));
+    }
+  }
+
+  async stop(): Promise<void> {
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = undefined;
+    await this.flushPluginErrors();
+  }
+}

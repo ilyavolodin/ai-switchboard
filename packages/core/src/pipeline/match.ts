@@ -1,0 +1,98 @@
+import type { ProcessDocument } from '../domain/process.js';
+
+/**
+ * Stage 2, match: which enabled processes and triggers want an event. Filters are evaluated by
+ * the caller (they may call `$resolve`); this stage only picks candidates and folds the filter
+ * results into one decision per process.
+ */
+
+export interface MatchableProcess {
+  id: string;
+  enabled: boolean;
+  document: ProcessDocument;
+}
+
+export interface TriggerCandidate {
+  processId: string;
+  triggerId: string;
+  filter?: string;
+}
+
+/** `github.pr.labeled` matches itself, `github.pr.*` and `*`. */
+export function eventTypeMatches(pattern: string, type: string): boolean {
+  if (pattern === '*' || pattern === type) return true;
+  if (pattern.endsWith('*')) return type.startsWith(pattern.slice(0, -1));
+  return false;
+}
+
+/** Enabled triggers of enabled processes whose source and event types match, in document order. */
+export function candidateTriggers(
+  event: { sourceId: string; type: string },
+  processes: readonly MatchableProcess[],
+): TriggerCandidate[] {
+  const out: TriggerCandidate[] = [];
+  for (const p of processes) {
+    // The `processes.enabled` column is authoritative (the document's flag mirrors it).
+    if (!p.enabled) continue;
+    for (const t of p.document.triggers) {
+      if (!t.enabled || t.sourceId !== event.sourceId) continue;
+      if (!t.eventTypes.some((pattern) => eventTypeMatches(pattern, event.type))) continue;
+      out.push({
+        processId: p.id,
+        triggerId: t.id,
+        ...(t.filter !== undefined ? { filter: t.filter } : {}),
+      });
+    }
+  }
+  return out;
+}
+
+export interface FilterEvaluation extends TriggerCandidate {
+  result: boolean;
+  error?: string;
+}
+
+export type ProcessMatchOutcome = 'matched' | 'filter_error' | 'filtered';
+
+export interface ProcessMatch {
+  processId: string;
+  /** The first trigger that matched (or errored, for `filter_error`). */
+  triggerId: string;
+  outcome: ProcessMatchOutcome;
+  filter?: string;
+  error?: string;
+}
+
+/**
+ * One decision per process. Any true filter matches (overlapping triggers converge on one
+ * dispatch); otherwise an erroring filter is `filter_error` (recorded, evaluates false); otherwise
+ * `filtered`.
+ */
+export function decideMatches(evaluations: readonly FilterEvaluation[]): ProcessMatch[] {
+  const byProcess = new Map<string, FilterEvaluation[]>();
+  for (const e of evaluations) {
+    const list = byProcess.get(e.processId) ?? [];
+    list.push(e);
+    byProcess.set(e.processId, list);
+  }
+  const out: ProcessMatch[] = [];
+  for (const [processId, list] of byProcess) {
+    const hit = list.find((e) => e.result);
+    const errored = list.find((e) => e.error !== undefined);
+    const chosen = hit ?? errored ?? list[0];
+    if (!chosen) continue;
+    out.push({
+      processId,
+      triggerId: chosen.triggerId,
+      outcome: hit ? 'matched' : errored ? 'filter_error' : 'filtered',
+      ...(chosen.filter !== undefined ? { filter: chosen.filter } : {}),
+      ...(!hit && errored?.error !== undefined ? { error: errored.error } : {}),
+    });
+  }
+  return out;
+}
+
+/** The event's stage after matching: `matched` when any process wants it. */
+export function eventStageAfterMatch(matches: readonly ProcessMatch[]): 'matched' | 'unmatched' {
+  return matches.some((m) => m.outcome === 'matched') ? 'matched' : 'unmatched';
+}

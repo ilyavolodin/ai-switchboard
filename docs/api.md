@@ -28,6 +28,7 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 | GET    | `/auth/oidc/start`    | redirect to issuer                 | —                               |
 | GET    | `/auth/oidc/callback` | redirect to `/` (or `/no-access`)  | —                               |
 | POST   | `/auth/logout`        | → 204                              | any                             |
+| GET    | `/auth/whoami`        | → `{ actor }` (the audit identity) | viewer                          |
 
 ## Board and status
 
@@ -149,6 +150,7 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 | POST   | `/users`                               | `CreateUserRequest` → `UserDTO`                    | admin                |
 | PUT    | `/users/:id`                           | `UpdateUserRequest` → `UserDTO`                    | admin                |
 | DELETE | `/users/:id`                           | `Reasoned` → 204                                   | admin                |
+| POST   | `/users/:id/sessions/revoke`           | `Reasoned` → 204 (signs the user out everywhere)   | admin                |
 | GET    | `/tokens`                              | → `ApiTokenDTO[]` (own)                            | viewer               |
 | POST   | `/tokens`                              | `CreateApiTokenRequest` → `CreateApiTokenResponse` | viewer (role ≤ own)  |
 | DELETE | `/tokens/:id`                          | `Reasoned` → 204                                   | viewer (own) / admin |

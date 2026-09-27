@@ -116,6 +116,10 @@ export const sources = pgTable('sources', {
   health: jsonb('health').$type<Health>(),
   lastEventAt: ts('last_event_at'),
   lastVerifyFailureAt: ts('last_verify_failure_at'),
+  /** Pull sources: when the poller last claimed this instance. */
+  lastPolledAt: ts('last_polled_at'),
+  /** When the silence alert was last sent for this instance (cleared by the next event). */
+  silenceAlertedAt: ts('silence_alerted_at'),
   secretsResolvedAt: ts('secrets_resolved_at'),
   provisionedAt: ts('provisioned_at'),
   createdAt: createdAt(),
@@ -206,6 +210,8 @@ export const processes = pgTable('processes', {
   /** `closed` | `open` */
   breakerState: text('breaker_state').$type<'closed' | 'open'>().notNull().default('closed'),
   breakerOpenedAt: ts('breaker_opened_at'),
+  /** Runs finished before this are ignored by the breaker (set on reset by hand or cooldown). */
+  breakerResetAt: ts('breaker_reset_at'),
   version: integer('version').notNull().default(1),
   createdAt: createdAt(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
@@ -261,12 +267,17 @@ export const events = pgTable(
     stage: text('stage').$type<EventStage>().notNull(),
     stageReason: text('stage_reason'),
     replayOf: uuid('replay_of'),
+    /** Every trigger filter evaluated for this event (true, false or error), for the trace. */
+    matchDecisions: jsonb('match_decisions').$type<MatchDecisionRecord[]>().notNull().default([]),
   },
   (t) => [
     index('events_received').on(t.receivedAt.desc()),
     index('events_source_received').on(t.sourceId, t.receivedAt.desc()),
     index('events_artifact').on(t.artifactKey),
     index('events_artifact_id').on(sql`(${t.artifact}->>'id')`),
+    index('events_pending_match')
+      .on(t.receivedAt)
+      .where(sql`${t.stage} = 'received'`),
     uniqueIndex('events_delivery')
       .on(t.sourceId, t.deliveryId, t.type, t.artifactKey)
       .where(sql`${t.deliveryId} IS NOT NULL AND ${t.replayOf} IS NULL`),
@@ -281,7 +292,7 @@ export const eventRaw = pgTable(
     body: bytea('body').notNull(),
     headers: jsonb('headers').$type<Record<string, string | undefined>>().notNull(),
     receivedAt: ts('received_at').notNull(),
-    /** `ok` | `rejected:<reason>` */
+    /** `ok` | `rejected:<reason>` | `unverified:source_disabled` (body not kept) */
     verify: text('verify').notNull().default('ok'),
   },
   (t) => [index('event_raw_received').on(t.receivedAt)],
@@ -311,6 +322,10 @@ export const batches = pgTable(
     /** Manual runs: requested dry run. */
     dryRun: boolean('dry_run').notNull().default(false),
     requestedBy: text('requested_by'),
+    /** Manual test runs: the batch whose events this run replays. */
+    eventsFrom: uuid('events_from'),
+    /** Sweeps: the cron tick that fired it (for `switchboard.schedule.lag`). */
+    tickAt: ts('tick_at'),
     /** Gate and budget checks at decision time, for the trace. */
     decisions: jsonb('decisions').$type<GateDecisionRecord[]>().notNull().default([]),
   },
@@ -325,8 +340,21 @@ export const batches = pgTable(
   ],
 );
 
+/** One trigger filter evaluation, stored on the event for the trace ("why did nothing happen"). */
+export interface MatchDecisionRecord {
+  processId: string;
+  triggerId: string;
+  expr?: string;
+  result: boolean;
+  error?: string;
+  /** The batch key the group-by expression produced (when it matched). */
+  batchKey?: string;
+  at: string;
+}
+
 export interface GateDecisionRecord {
-  stage: 'gate' | 'budget';
+  /** `batch` records open/close, `approval` the decision, `gate`/`budget` the checks. */
+  stage: 'gate' | 'budget' | 'batch' | 'approval';
   check: string;
   pass: boolean;
   detail?: string;
@@ -382,6 +410,8 @@ export const runs = pgTable(
     deadlineAt: ts('deadline_at'),
     nextPollAt: ts('next_poll_at'),
     pollCount: integer('poll_count').notNull().default(0),
+    /** Set while an invoke attempt is in flight; cleared while a retry waits. */
+    invokeStartedAt: ts('invoke_started_at'),
     /** Earliest event occurredAt in the batch, for latency. */
     firstEventAt: ts('first_event_at'),
     createdAt: createdAt(),
@@ -524,6 +554,37 @@ export const statsHourly = pgTable(
   },
   (t) => [primaryKey({ columns: [t.dimension, t.key, t.hour] })],
 );
+
+/** Every notification the pipeline sent (or failed to send), for the trace. */
+export const notificationLog = pgTable(
+  'notification_log',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    notifierId: text('notifier_id').notNull(),
+    /** `ok` | `error` | `held` | `throttled` | `system` */
+    on: text('on').notNull(),
+    processId: uuid('process_id'),
+    batchId: uuid('batch_id'),
+    runId: uuid('run_id'),
+    title: text('title').notNull(),
+    text: text('text').notNull(),
+    status: text('status').$type<'sent' | 'error'>().notNull(),
+    error: text('error'),
+    at: ts('at').notNull(),
+  },
+  (t) => [
+    index('notification_log_batch').on(t.batchId),
+    index('notification_log_run').on(t.runId),
+    index('notification_log_at').on(t.at),
+  ],
+);
+
+/** Rate-limit state for system alerts, keyed by what the alert is about. */
+export const systemAlerts = pgTable('system_alerts', {
+  key: text('key').primaryKey(),
+  lastSentAt: ts('last_sent_at').notNull(),
+  count: integer('count').notNull().default(1),
+});
 
 /** Live replicas (heartbeat), for Settings › About. */
 export const replicas = pgTable('replicas', {

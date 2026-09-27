@@ -59,7 +59,8 @@ export interface ProcessDocument {
   batching: { debounceSeconds: number; maxSize: number; maxAgeSeconds: number; groupBy?: Expr };
   gates: {
     quietHours?: QuietWindow;
-    approval: 'none' | 'always' | Expr;
+    /** `'none'`, `'always'`, or a JSONata expression over the batch. */
+    approval: 'none' | 'always' | (Expr & {});
     breaker: { threshold: number; cooldownMinutes: number };
   };
   budgets: {
