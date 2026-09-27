@@ -1088,6 +1088,18 @@ export function buildFixtures(now: number) {
     },
   ];
 
+  /** The stored document of each version: 12 is current, 11 had 4 runs/h, 10 no quiet hours. */
+  const versionDocument = (version: number): ProcessDocument => {
+    if (version >= 12) return autofixDocument;
+    const v11: ProcessDocument = {
+      ...autofixDocument,
+      budgets: { ...autofixDocument.budgets, runsPerHour: 4 },
+    };
+    if (version === 11) return v11;
+    const { quietHours: _none, ...gates } = v11.gates;
+    return { ...v11, gates };
+  };
+
   const batches: RecentBatchDTO[] = [
     {
       id: 'b-autofix-0736',
@@ -1341,6 +1353,12 @@ export function buildFixtures(now: number) {
         detail: 'enabled · breaker closed · quiet hours off · approval none',
         processId: P.autofix,
         processName: 'Autofix',
+        data: {
+          enabled: 'pass',
+          breaker: 'closed · pass',
+          quietHours: 'off · pass',
+          approval: 'none · pass',
+        },
       },
       {
         at: iso(-22 * MIN + 500),
@@ -1348,7 +1366,12 @@ export function buildFixtures(now: number) {
         tone: 'ok',
         title: 'Budget ok',
         detail: 'process day cap 3 / 4',
-        data: { runsToday: 3, runsPerDay: 4, 'meter five_hour': '62% (ceiling 85%)' },
+        data: {
+          binding: 'process day cap',
+          runsToday: 3,
+          runsPerDay: 4,
+          'meter five_hour': '62% (ceiling 85%)',
+        },
       },
       {
         at: iso(-22 * MIN + 900),
@@ -1740,6 +1763,26 @@ export function buildFixtures(now: number) {
       available: true,
       settingsSchema: slackSettingsSchema,
     },
+    {
+      kind: 'secret_provider',
+      typeId: 'env',
+      displayName: 'Environment',
+      plugin: '@ai-switchboard/core',
+      available: true,
+      settingsSchema: { type: 'object', properties: {} },
+    },
+    {
+      kind: 'secret_provider',
+      typeId: 'file',
+      displayName: 'File',
+      plugin: '@ai-switchboard/core',
+      available: true,
+      settingsSchema: {
+        type: 'object',
+        required: ['directory'],
+        properties: { directory: { type: 'string', title: 'Directory' } },
+      },
+    },
   ];
 
   const plugin = (
@@ -2044,6 +2087,7 @@ export function buildFixtures(now: number) {
     funnel,
     processStats,
     versions,
+    versionDocument,
     batches,
     activity,
     eventDetail,

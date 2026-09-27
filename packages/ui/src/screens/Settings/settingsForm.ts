@@ -1,0 +1,70 @@
+/** Pure helpers for the Settings forms. */
+import type { GlobalSettings, Role } from '@ai-switchboard/core/contract';
+
+import { ROLE_RANK } from '../../app/session.js';
+
+/** IANA timezones the browser knows (for the timezone suggestions); a short list otherwise. */
+export function timezones(): string[] {
+  const intl = Intl as { supportedValuesOf?: (key: string) => string[] };
+  try {
+    const list = intl.supportedValuesOf?.('timeZone');
+    if (list && list.length > 0) return list;
+  } catch {
+    // Older engines: fall through to the short list.
+  }
+  return ['UTC', 'America/New_York', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin'];
+}
+
+/** The General tab's editable part of the settings. */
+export type GeneralDraft = Pick<
+  GlobalSettings,
+  | 'timezone'
+  | 'defaultQuietHours'
+  | 'meterStalenessMinutes'
+  | 'sourceSilenceMinutes'
+  | 'systemNotifierId'
+>;
+
+export function generalDraft(s: GlobalSettings): GeneralDraft {
+  return {
+    timezone: s.timezone,
+    defaultQuietHours: s.defaultQuietHours,
+    meterStalenessMinutes: s.meterStalenessMinutes,
+    sourceSilenceMinutes: s.sourceSilenceMinutes,
+    systemNotifierId: s.systemNotifierId,
+  };
+}
+
+/** The fields of `draft` that differ from `saved` (what a save sends). */
+export function changedFields<T extends object>(saved: T, draft: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const key of Object.keys(draft) as (keyof T)[]) {
+    if (JSON.stringify(saved[key]) !== JSON.stringify(draft[key])) out[key] = draft[key];
+  }
+  return out;
+}
+
+/** A positive whole number from an input, or `null` when it is not one. */
+export function parsePositiveInt(text: string): number | null {
+  if (!/^\d+$/.test(text.trim())) return null;
+  const n = Number(text);
+  return n > 0 ? n : null;
+}
+
+/** Roles a user may give a token: their own or lower. */
+export function grantableRoles(own: Role): Role[] {
+  return (['viewer', 'operator', 'admin'] as const).filter((r) => ROLE_RANK[r] <= ROLE_RANK[own]);
+}
+
+/** "IL" for ilya@lola.com. */
+export function initials(email: string): string {
+  return email.slice(0, 2).toUpperCase();
+}
+
+/** Allowed domains typed as "lola.com, acme.io" → ["lola.com", "acme.io"]. */
+export function parseDomains(text: string): string[] {
+  return text
+    .split(/[\s,]+/)
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+}

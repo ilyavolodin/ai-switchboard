@@ -1,4 +1,4 @@
-import type { TraceEntry } from '@ai-switchboard/core/contract';
+import type { TraceEntry, TraceEntryKind } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 import { Link } from 'react-router';
 
@@ -17,6 +17,8 @@ export interface TraceTimelineProps {
   text?: string;
   /** Hide the copy button. */
   hideCopy?: boolean;
+  /** Entries of these kinds start with their details open (filter, gate, budget on a trace). */
+  expandKinds?: readonly TraceEntryKind[];
 }
 
 const TONE_WORD = { ok: 'passed', warn: 'stopped', error: 'failed', off: 'info' } as const;
@@ -36,8 +38,15 @@ function toText(entries: TraceEntry[]): string {
  * batch open/close, gate and budget checks, invoke (external link), steps, tracking, terminal
  * state. A dot per entry in its tone; `data` expands as key/values; copyable as text.
  */
-export function TraceTimeline({ entries, text, hideCopy }: TraceTimelineProps) {
-  const [open, setOpen] = useState<Set<number>>(() => new Set());
+export function TraceTimeline({ entries, text, hideCopy, expandKinds }: TraceTimelineProps) {
+  const [open, setOpen] = useState<Set<number>>(
+    () =>
+      new Set(
+        expandKinds
+          ? entries.flatMap((e, i) => (expandKinds.includes(e.kind) && e.data ? [i] : []))
+          : [],
+      ),
+  );
   const toast = useToast();
   const toggle = (i: number) => {
     setOpen((prev) => {

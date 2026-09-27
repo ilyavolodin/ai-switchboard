@@ -218,6 +218,8 @@ export function useRunProcess() {
   >({
     method: 'POST',
     path: (v) => `/processes/${seg(v.id)}/run`,
+    // `batchId` is a body field here (the test-run batch), not a path parameter.
+    body: ({ id: _id, ...body }) => body,
     invalidate: [...fleet, qk.runs.all, qk.events.all],
   });
 }

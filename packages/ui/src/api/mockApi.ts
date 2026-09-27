@@ -107,7 +107,10 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
       const s = byId(f.sources, r.params.id);
       return s ? f.sourceDetail(s) : notFound('source');
     }),
-    'GET /sources/:id/stats': () => f.sourceStats,
+    'GET /sources/:id/stats': (r) => ({
+      ...f.sourceStats,
+      window: r.query.get('window') ?? f.sourceStats.window,
+    }),
     'GET /sources/:id/events': (r) => page(f.activity.filter((a) => a.sourceId === r.params.id)),
 
     'GET /executors': () => f.executors,
@@ -136,8 +139,14 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
       const x = byId(f.executors, r.params.id);
       return x ? f.executorDetail(x) : notFound('executor');
     }),
-    'GET /executors/:id/meters': () => f.meterHistory,
-    'GET /executors/:id/usage': () => f.usageHistory,
+    'GET /executors/:id/meters': (r) => ({
+      ...f.meterHistory,
+      window: r.query.get('window') ?? f.meterHistory.window,
+    }),
+    'GET /executors/:id/usage': (r) => ({
+      ...f.usageHistory,
+      window: r.query.get('window') ?? f.usageHistory.window,
+    }),
 
     'GET /processes': () => f.processes,
     'POST /processes': reasoned(() => f.processDetail(at(f.processes, 2))),
@@ -176,7 +185,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'GET /processes/:id/versions': () => f.versions,
     'GET /processes/:id/versions/:version': (r) => {
       const v = f.versions.find((x) => String(x.version) === r.params.version);
-      return v ? { ...v, document: f.autofixDocument } : notFound('version');
+      return v ? { ...v, document: f.versionDocument(v.version) } : notFound('version');
     },
     'POST /processes/:id/versions/:version/restore': reasoned((r) => {
       const p = byId(f.processes, r.params.id);
@@ -241,7 +250,13 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'DELETE /users/:id': reasoned(() => mockStatus(204)),
     'POST /users/:id/sessions/revoke': reasoned(() => mockStatus(204)),
     'GET /tokens': () => f.tokens,
-    'POST /tokens': reasoned(() => ({ token: f.tokens[0], secret: 'sb_fixture-secret' })),
+    'POST /tokens': reasoned((r) => {
+      const body = r.body as { name?: string; role?: string } | undefined;
+      return {
+        token: { ...at(f.tokens, 0), id: 'tok-new', name: body?.name, role: body?.role },
+        secret: 'sb_fixture-secret',
+      };
+    }),
     'DELETE /tokens/:id': reasoned(() => mockStatus(204)),
     'GET /audit': () => page(f.audit),
     'GET /export': () => 'processes: []\n',

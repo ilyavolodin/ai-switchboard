@@ -1,0 +1,392 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.grow {
+  flex-grow: 1;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.twoCol {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+/* ---- diagram ---------------------------------------------------------------------------- */
+
+.diagramCard {
+  overflow-x: auto;
+}
+
+.diagram {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 16px 20px;
+  min-width: max-content;
+}
+
+.diagramColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.connector {
+  width: 48px;
+  height: 12px;
+  flex-shrink: 0;
+  margin: 0 6px;
+}
+
+.dimmed {
+  opacity: 0.5;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.basics {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---- sections --------------------------------------------------------------------------- */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+
+.sectionHeading {
+  margin: 0;
+  font: inherit;
+}
+
+.sectionToggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-body);
+  color: inherit;
+  min-width: 0;
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  transition: transform 120ms ease;
+}
+
+.chevronClosed {
+  transform: rotate(-90deg);
+}
+
+.sectionTitle {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--foreground-strong);
+  flex-shrink: 0;
+}
+
+.sectionSummary {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.sectionErrorCount {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--st-err-fg);
+  white-space: nowrap;
+}
+
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.changedDot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tangerine);
+}
+
+.errorList {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+/* ---- list items (triggers, schedules, steps, notifications) ------------------------------ */
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  min-width: 0;
+}
+
+.itemHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.itemSummary {
+  flex-grow: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.examples {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.examples summary {
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+/* ---- batching animation ----------------------------------------------------------------- */
+
+.coalesce {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.coalesceSvg {
+  width: 100%;
+  height: auto;
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animated .eventDot {
+  animation: drop 360ms ease-out both;
+}
+
+.animated .batchMark {
+  animation: appear 300ms ease-out both;
+}
+
+/* ---- budgets ---------------------------------------------------------------------------- */
+
+.meters {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meterRow {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.meterTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground-strong);
+}
+
+.ceilingInputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.pct {
+  width: 72px;
+}
+
+/* ---- executor preview ------------------------------------------------------------------- */
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.previewHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.valid {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--st-ok-fg);
+}
+
+/* ---- sticky footer ---------------------------------------------------------------------- */
+
+.footer {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-float);
+  border: 1px solid var(--border-1);
+}
+
+.footerChanges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.footerCount {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground-strong);
+  white-space: nowrap;
+}
+
+.footerFirst {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 420px;
+}
+
+.testRun {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  .twoCol {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .meterRow {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .ceilingInputs {
+    grid-column: 1 / -1;
+  }
+}

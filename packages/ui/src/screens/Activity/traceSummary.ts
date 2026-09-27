@@ -1,0 +1,110 @@
+/** Summaries of a `TraceResponse` for the trace screen's header and side panel. */
+import type {
+  StageIndicator,
+  StatusTone,
+  TraceEntry,
+  TraceEntryKind,
+} from '@ai-switchboard/core/contract';
+
+/** The entries whose details (expression + result, gate checks, meter readings) start open. */
+export const EXPANDED_KINDS: readonly TraceEntryKind[] = ['filter', 'gate', 'budget', 'approval'];
+
+/** Query forms the trace understands, for the not-found state. */
+export const QUERY_FORMS = [
+  { example: 'LOL-1712', help: 'an artifact id as the system shows it' },
+  { example: '#482', help: 'a GitHub pull request or issue number' },
+  { example: 'linear.issue:LOL-1712', help: 'kind:id, when the same id exists in two systems' },
+];
+
+/** How a process's part in the trace ended, for its chip. */
+export const TOUCH_WORD: Record<StatusTone, string> = {
+  ok: 'run ok',
+  warn: 'held or throttled',
+  error: 'run error',
+  off: 'no run',
+};
+
+export interface TraceSummary {
+  events: number;
+  processes: { id: string; name: string; tone: StatusTone }[];
+  runs: number;
+  ok: number;
+  errors: number;
+}
+
+/** Counts for the header: events, processes, runs, and how the runs ended. */
+export function summarizeTrace(entries: TraceEntry[]): TraceSummary {
+  const events = new Set<string>();
+  const runs = new Set<string>();
+  const processes = new Map<string, { id: string; name: string; tone: StatusTone }>();
+  // Runs remember their process so a terminal entry (which may carry only a run id) colours it.
+  const runProcess = new Map<string, string>();
+  let lastProcess: string | null = null;
+  let ok = 0;
+  let errors = 0;
+  for (const e of entries) {
+    if (e.eventId && (e.kind === 'event' || e.kind === 'batch_join')) events.add(e.eventId);
+    if (e.processId) {
+      lastProcess = e.processId;
+      const known = processes.get(e.processId);
+      processes.set(e.processId, {
+        id: e.processId,
+        name: e.processName ?? known?.name ?? e.processId,
+        tone: known?.tone ?? 'off',
+      });
+    }
+    if (e.runId) {
+      runs.add(e.runId);
+      if (e.processId) runProcess.set(e.runId, e.processId);
+      else if (lastProcess && !runProcess.has(e.runId)) runProcess.set(e.runId, lastProcess);
+    }
+    if (e.kind === 'terminal') {
+      if (e.tone === 'ok') ok += 1;
+      if (e.tone === 'error') errors += 1;
+      const pid = (e.runId && runProcess.get(e.runId)) ?? e.processId ?? lastProcess;
+      const p = pid ? processes.get(pid) : undefined;
+      if (p) p.tone = e.tone;
+    } else if (e.processId && (e.tone === 'warn' || e.tone === 'error')) {
+      const p = processes.get(e.processId);
+      if (p) p.tone = e.tone;
+    }
+  }
+  return { events: events.size, processes: [...processes.values()], runs: runs.size, ok, errors };
+}
+
+const REACHED: Partial<Record<TraceEntryKind, 1 | 2 | 3 | 4 | 5>> = {
+  event: 1,
+  filter: 2,
+  dedupe: 2,
+  batch_open: 3,
+  batch_join: 3,
+  batch_close: 3,
+  gate: 4,
+  budget: 4,
+  approval: 4,
+  invoke: 5,
+  step: 5,
+  tracking: 5,
+  terminal: 5,
+};
+
+const STOPS = [0, 1, 2, 3, 4, 5] as const;
+
+/** "Where it stands": the furthest stop reached, in the tone of the latest entry. */
+export function traceStage(entries: TraceEntry[]): StageIndicator {
+  let reached: StageIndicator['reached'] = 0;
+  for (const e of entries) {
+    const r = REACHED[e.kind];
+    if (r == null) continue;
+    // A check that stopped the batch leaves it at the stop before the one it guards.
+    const stopped = (e.tone === 'warn' || e.tone === 'error') && r < 5;
+    const stop = STOPS[stopped ? r - 1 : r] ?? 0;
+    if (stop > reached) reached = stop;
+  }
+  const last = entries[entries.length - 1];
+  return {
+    reached,
+    tone: last?.tone ?? 'off',
+    label: last ? last.title.toLowerCase() : 'nothing recorded',
+  };
+}

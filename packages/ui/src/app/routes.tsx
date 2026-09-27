@@ -5,11 +5,22 @@
  */
 import type { RouteObject } from 'react-router';
 
+import { Activity } from '../screens/Activity/Activity.js';
+import { Trace } from '../screens/Activity/Trace.js';
+import { Approvals } from '../screens/Approvals/Approvals.js';
 import { Board } from '../screens/Board/Board.js';
+import { ExecutorDetail } from '../screens/Executors/ExecutorDetail.js';
+import { Executors } from '../screens/Executors/Executors.js';
 import { Login } from '../screens/Login/Login.js';
 import { NoAccess } from '../screens/NoAccess/NoAccess.js';
+import { Plugins } from '../screens/Plugins/Plugins.js';
+import { ProcessDetail } from '../screens/Processes/ProcessDetail.js';
+import { ProcessEditor } from '../screens/Processes/ProcessEditor.js';
+import { Processes } from '../screens/Processes/Processes.js';
+import { Settings } from '../screens/Settings/Settings.js';
+import { SourceDetail } from '../screens/Sources/SourceDetail.js';
+import { Sources } from '../screens/Sources/Sources.js';
 import { AppShell } from './AppShell.js';
-import { ComingSoon } from './ComingSoon.js';
 import type { RouteHandle } from './nav.js';
 import { NotFound } from './NotFound.js';
 import { RouteError } from './RouteError.js';
@@ -29,54 +40,54 @@ export const routes: RouteObject[] = [
         path: 'processes',
         handle: h('Processes'),
         children: [
-          { index: true, element: <ComingSoon screen="Processes" /> },
-          { path: 'new', element: <ComingSoon screen="New process" /> },
-          { path: ':id', element: <ComingSoon screen="Process" /> },
-          { path: ':id/edit', element: <ComingSoon screen="Process editor" /> },
-          { path: ':id/:tab', element: <ComingSoon screen="Process" /> },
+          { index: true, element: <Processes /> },
+          { path: 'new', element: <ProcessEditor /> },
+          { path: ':id', element: <ProcessDetail /> },
+          { path: ':id/edit', element: <ProcessEditor /> },
+          { path: ':id/:tab', element: <ProcessDetail /> },
         ],
       },
       {
         path: 'sources',
         handle: h('Sources'),
         children: [
-          { index: true, element: <ComingSoon screen="Sources" /> },
-          { path: ':id', element: <ComingSoon screen="Source" /> },
-          { path: ':id/:tab', element: <ComingSoon screen="Source" /> },
+          { index: true, element: <Sources /> },
+          { path: ':id', element: <SourceDetail /> },
+          { path: ':id/:tab', element: <SourceDetail /> },
         ],
       },
       {
         path: 'executors',
         handle: h('Executors'),
         children: [
-          { index: true, element: <ComingSoon screen="Executors" /> },
-          { path: ':id', element: <ComingSoon screen="Executor" /> },
-          { path: ':id/:tab', element: <ComingSoon screen="Executor" /> },
+          { index: true, element: <Executors /> },
+          { path: ':id', element: <ExecutorDetail /> },
+          { path: ':id/:tab', element: <ExecutorDetail /> },
         ],
       },
       {
         path: 'activity',
         handle: h('Activity'),
         children: [
-          { index: true, element: <ComingSoon screen="Activity" /> },
-          { path: 'trace/:query', element: <ComingSoon screen="Trace" /> },
+          { index: true, element: <Activity /> },
+          { path: 'trace/:query', element: <Trace /> },
         ],
       },
-      { path: 'approvals', element: <ComingSoon screen="Approvals" />, handle: h('Approvals') },
+      { path: 'approvals', element: <Approvals />, handle: h('Approvals') },
       {
         path: 'plugins',
         handle: h('Plugins'),
         children: [
-          { index: true, element: <ComingSoon screen="Plugins" /> },
-          { path: ':tab', element: <ComingSoon screen="Plugins" /> },
+          { index: true, element: <Plugins /> },
+          { path: ':tab', element: <Plugins /> },
         ],
       },
       {
         path: 'settings',
         handle: h('Settings'),
         children: [
-          { index: true, element: <ComingSoon screen="Settings" /> },
-          { path: ':tab', element: <ComingSoon screen="Settings" /> },
+          { index: true, element: <Settings /> },
+          { path: ':tab', element: <Settings /> },
         ],
       },
       { path: '*', element: <NotFound />, handle: h('Not found') },

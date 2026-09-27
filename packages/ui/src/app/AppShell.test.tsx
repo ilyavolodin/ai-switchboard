@@ -116,9 +116,9 @@ describe('app shell', () => {
     );
   });
 
-  it('renders placeholders for screens not built yet', async () => {
+  it('routes detail tabs as URL segments', async () => {
     renderApp('/sources/src-linear/settings');
-    expect(await screen.findByText('Source is coming soon')).toBeInTheDocument();
-    expect(screen.getByText('id: src-linear · tab: settings')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Linear — lola', level: 1 })).toBeVisible();
+    expect(await screen.findByLabelText(/Team key/)).toHaveValue('LOL');
   });
 });

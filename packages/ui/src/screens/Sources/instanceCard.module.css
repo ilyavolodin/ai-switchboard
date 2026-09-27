@@ -1,0 +1,283 @@
+/* Instance cards on the Sources and Executors lists (the canvas "cards, not rows"). */
+.header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.headerSpacer {
+  flex-grow: 1;
+}
+
+.legendKeys {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.legendKey {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legendSwatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  color: var(--foreground);
+  min-width: 0;
+  transition: box-shadow 120ms ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+.card[data-tone='error'] {
+  border-color: var(--st-err);
+}
+
+.card[data-tone='warn'] {
+  border-color: var(--st-warn);
+}
+
+.card[data-tone='off'] {
+  border-style: dashed;
+  border-color: var(--border);
+  box-shadow: none;
+  color: var(--disabled-foreground);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.iconTile {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--accent-0);
+  color: var(--foreground-strong);
+}
+
+.card[data-tone='off'] .iconTile {
+  color: var(--disabled-foreground);
+}
+
+.titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex-grow: 1;
+}
+
+/* The name is the card's link; its ::after covers the card so the whole card opens the detail. */
+.name {
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--foreground-strong);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card[data-tone='off'] .name {
+  color: var(--disabled-foreground);
+}
+
+.name::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.name:focus-visible {
+  outline: none;
+}
+
+.name:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.meta {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+/* Controls sit above the stretched link. */
+.above {
+  position: relative;
+  z-index: 1;
+}
+
+.statusLine {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.muted {
+  color: var(--muted-foreground);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 36px;
+}
+
+.histogramEmpty {
+  border-bottom: 1px dashed var(--border);
+}
+
+.bar {
+  flex: 1 1 0;
+  min-height: 1px;
+  border-radius: 1px;
+}
+
+.split {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+}
+
+.segment {
+  min-width: 3px;
+}
+
+.segment:first-child {
+  border-radius: 3px 0 0 3px;
+}
+
+.segment:last-child {
+  border-radius: 0 3px 3px 0;
+}
+
+.segment:only-child {
+  border-radius: 3px;
+}
+
+.splitEmpty {
+  width: 100%;
+  border-radius: 3px;
+  background: var(--accent-3);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+}
+
+.meters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: flex-start;
+  min-height: 96px;
+}
+
+.noMeters {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.footer .mono {
+  color: var(--foreground);
+}
+
+.warnNote {
+  font-size: 12px;
+  color: var(--st-warn-fg);
+}
+
+.errNote {
+  font-size: 12px;
+  color: var(--st-err-fg);
+}
+
+.foot {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 1100px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
