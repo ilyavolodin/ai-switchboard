@@ -21,10 +21,11 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/main.js",
     "typecheck": "tsc -p tsconfig.json",
     "dev": "tsx --conditions=@ai-switchboard/source src/main.ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "vitest run --root ../.. packages/cli"
   },
   "dependencies": {
     "@ai-switchboard/core": "workspace:*",
