@@ -52,6 +52,16 @@ const NOT_SENT_CODES = new Set([
 ]);
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+/** Request headers that carry no credential and may follow a redirect to another origin. */
+const CROSS_ORIGIN_SAFE_HEADERS = new Set([
+  'accept',
+  'accept-encoding',
+  'accept-language',
+  'content-type',
+  'user-agent',
+  'traceparent',
+  'tracestate',
+]);
 const MAX_REDIRECTS = 5;
 
 /** `*.atlassian.net` matches `acme.atlassian.net` (not `atlassian.net`); `*` matches all. */
@@ -118,16 +128,32 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
       }
     };
     checkHost(url);
-    let headers: Record<string, string> = { ...options.injectHeaders?.(), ...req.headers };
+    const injected = options.injectHeaders?.() ?? {};
+    const injectedKeys = new Set(Object.keys(injected));
+    let headers: Record<string, string> = { ...injected, ...req.headers };
     let body: string | Uint8Array | undefined = req.body;
     if (req.json !== undefined) {
       body = JSON.stringify(req.json);
-      headers['content-type'] ??= 'application/json';
+      if (!Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) {
+        headers['content-type'] = 'application/json';
+      }
     }
     let method = (req.method ?? (body === undefined ? 'GET' : 'POST')).toUpperCase();
     const started = Date.now();
     const signal = AbortSignal.timeout(req.timeoutMs ?? defaultTimeout);
     let res: Response;
+    const transportError = (cause: unknown, sent: boolean): TransportError => {
+      const code = errorCode(cause) ?? (cause instanceof Error ? cause.name : undefined);
+      options.logger?.warn('http request failed', { method, host: url.hostname, code, sent });
+      return new TransportError(
+        `${method} ${url.hostname}${url.pathname} failed: ${code ?? 'error'}`,
+        {
+          sent,
+          ...(code !== undefined ? { code } : {}),
+          cause,
+        },
+      );
+    };
     // Redirects are followed by hand so every hop is checked against the declared capability
     // (an allowed host must not be able to bounce a request to an undeclared one).
     for (let hop = 0; ; hop++) {
@@ -142,16 +168,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
       } catch (cause) {
         const code = errorCode(cause) ?? (cause instanceof Error ? cause.name : undefined);
         // After the first hop the request has reached a backend already.
-        const sent = hop > 0 || !(code !== undefined && NOT_SENT_CODES.has(code));
-        options.logger?.warn('http request failed', { method, host: url.hostname, code, sent });
-        throw new TransportError(
-          `${method} ${url.hostname}${url.pathname} failed: ${code ?? 'error'}`,
-          {
-            sent,
-            ...(code !== undefined ? { code } : {}),
-            cause,
-          },
-        );
+        throw transportError(cause, hop > 0 || !(code !== undefined && NOT_SENT_CODES.has(code)));
       }
       const location = REDIRECT_STATUSES.has(res.status) ? res.headers.get('location') : null;
       if (location === null || hop >= MAX_REDIRECTS) break;
@@ -170,17 +187,25 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         );
       }
       if (next.origin !== url.origin) {
-        // Never forward credentials to another origin.
+        // Never forward credentials to another origin. A plugin may carry one in any header
+        // (`x-api-key`, `dd-api-key`, a poll source's configured token header), so only headers
+        // known to be harmless, and the core's trace headers, follow the redirect.
         headers = Object.fromEntries(
           Object.entries(headers).filter(
-            ([k]) => !['authorization', 'cookie', 'proxy-authorization'].includes(k.toLowerCase()),
+            ([k]) => CROSS_ORIGIN_SAFE_HEADERS.has(k.toLowerCase()) || injectedKeys.has(k),
           ),
         );
       }
       await res.arrayBuffer().catch(() => undefined);
       url = next;
     }
-    const buf = Buffer.from(await res.arrayBuffer());
+    let buf: Buffer;
+    try {
+      buf = Buffer.from(await res.arrayBuffer());
+    } catch (cause) {
+      // The status line arrived, so the backend has the request; the body was cut off or timed out.
+      throw transportError(cause, true);
+    }
     const resHeaders: Record<string, string> = {};
     res.headers.forEach((value, key) => {
       resHeaders[key] = value;

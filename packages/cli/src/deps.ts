@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
+import { constants } from 'node:os';
 
 import type * as CoreModule from '@ai-switchboard/core';
 import type {
@@ -48,6 +49,13 @@ export interface CliDeps {
 
 const core = (): Promise<typeof CoreModule> => import('@ai-switchboard/core');
 
+/** A child's exit status as a shell reports it: its code, or 128 + the signal number. */
+export function childExitCode(code: number | null, signal: NodeJS.Signals | null): number {
+  if (code !== null) return code;
+  if (signal !== null) return 128 + constants.signals[signal];
+  return 1;
+}
+
 function spawnNode(entry: string, env: NodeJS.ProcessEnv): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [entry], { stdio: 'inherit', env });
@@ -60,7 +68,7 @@ function spawnNode(entry: string, env: NodeJS.ProcessEnv): Promise<number> {
     child.on('exit', (code, signal) => {
       process.off('SIGINT', forward);
       process.off('SIGTERM', forward);
-      resolve(code ?? (signal !== null ? 128 : 1));
+      resolve(childExitCode(code, signal));
     });
   });
 }

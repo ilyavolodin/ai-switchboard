@@ -1,7 +1,6 @@
-import type { JSONSchema, RunStatus, UsageReport } from '@ai-switchboard/sdk';
+import { tryParse, type JSONSchema, type RunStatus, type UsageReport } from '@ai-switchboard/sdk';
 
 import { OS_KEYS, osDimension } from './settings.js';
-import { tryParse } from './validate.js';
 
 /** The fields of a GitHub workflow run the executor reads. */
 export interface WorkflowRun {

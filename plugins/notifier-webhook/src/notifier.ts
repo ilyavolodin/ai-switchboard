@@ -7,9 +7,8 @@ import {
   type NotifierType,
   type PluginContext,
   type Settings,
+  parseWith,
 } from '@ai-switchboard/sdk';
-
-import { parseWith } from './validate.js';
 
 /** Instance settings of the `webhook` notifier, after secrets are resolved. */
 export interface WebhookNotifierSettings {

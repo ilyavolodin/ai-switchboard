@@ -1,5 +1,7 @@
 import {
+  compileEventTypes,
   dedupeKey,
+  narrowMapped,
   type EventDraft,
   type EventTypeSpec,
   type Health,
@@ -12,9 +14,8 @@ import {
   type SourceType,
 } from '@ai-switchboard/sdk';
 
-import { compileEventTypes, narrowMapped } from './event-types.js';
 import { asList, compileExpression } from './mapping.js';
-import { readSettings, settingsSchema, type PollHttpSettings } from './settings.js';
+import { readSettings, settingsSchema, SOURCE_ID, type PollHttpSettings } from './settings.js';
 import { decodeWatermark, encodeWatermark, selectNew } from './watermark.js';
 
 /** Thrown by `poll` when the endpoint refuses or answers with something that is not JSON. */
@@ -58,7 +59,7 @@ function readJson(res: HttpResponse, host: string): unknown {
 
 function createPollSource(settings: Settings, ctx: PluginContext): Source {
   const s = readSettings(settings);
-  const types = compileEventTypes(s.eventTypes);
+  const types = compileEventTypes(SOURCE_ID, s.eventTypes);
   const itemsExpr = compileExpression(s.itemsExpression, 'items expression');
   const mapping = compileExpression(s.mapping, 'mapping');
   const cursorExpr =
@@ -133,14 +134,16 @@ function createPollSource(settings: Settings, ctx: PluginContext): Source {
 /** The instance's event types, compiled from its settings. Invalid settings yield none. */
 export function instanceEventTypes(settings: Settings): EventTypeSpec[] {
   try {
-    return [...compileEventTypes(readSettings(settings).eventTypes).values()].map((t) => t.spec);
+    return [...compileEventTypes(SOURCE_ID, readSettings(settings).eventTypes).values()].map(
+      (t) => t.spec,
+    );
   } catch {
     return [];
   }
 }
 
 export const pollHttpSource: SourceType = {
-  id: 'poll-http',
+  id: SOURCE_ID,
   displayName: 'HTTP poll',
   description:
     'Poll any JSON endpoint on a schedule with a cursor parameter and map its items to events with JSONata.',

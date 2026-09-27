@@ -1,7 +1,13 @@
-import { InvokeError, type JSONSchema, type TrackingMode } from '@ai-switchboard/sdk';
+import {
+  InvokeError,
+  type JSONSchema,
+  type TrackingMode,
+  SchemaMismatchError,
+  parseWith,
+  tryParse,
+} from '@ai-switchboard/sdk';
 
 import { headersSchema } from './settings.js';
-import { SchemaMismatchError, parseWith, tryParse } from './validate.js';
 
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];

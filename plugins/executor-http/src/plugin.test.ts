@@ -199,6 +199,17 @@ describe('http executor: invoke', () => {
     expect(ctx.logs.some((l) => l.level === 'warn' && l.message.includes('usageFrom'))).toBe(true);
   });
 
+  it('a usageFrom that never ends is cut off by the time limit', async () => {
+    const { executor, ctx } = setup(() => ({ json: { cost: 1 } }));
+    const result = await executor.invoke(
+      { url: '/x', usageFrom: '($loop := function($n) { $loop($n + 1) }; $loop(0))' },
+      {},
+      runHandle(),
+    );
+    expect(result.status).toBe('completed');
+    expect(ctx.logs.some((l) => l.level === 'warn' && l.message.includes('usageFrom'))).toBe(true);
+  }, 10_000);
+
   it('callback tracking returns started with the external id', async () => {
     const { executor } = setup(() => ({ status: 202, json: { requestId: 'req-9' } }));
     const result = await executor.invoke({ url: '/x', tracking: 'callback' }, {}, runHandle());

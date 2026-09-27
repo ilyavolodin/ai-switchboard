@@ -152,8 +152,16 @@ the plugin's own setting is the one switch. Flag that setting with `x-warning`. 
 `allowsUnauthenticated` are refused when they build a push instance without `verify`.
 
 `create(settings, ctx)` receives the settings with every `secret://` reference already resolved
-to its value. Validate them (`compileSchema` / `validateAgainst` from the SDK) and throw a named
-error when they are unusable. The instance then shows the error and is not built.
+to its value. Validate them and throw a named error when they are unusable; the instance then
+shows the error and is not built. `parseWith(schema, settings, 'acme settings', { error:
+AcmeSettingsError })` does this on a copy (so schema defaults are applied without mutating the
+core's object) and throws `Invalid acme settings: …`. `tryParse(schema, value)` returns `null`
+instead of throwing, for paths that must never throw. Both come from the SDK (1.2+).
+
+A source whose event types are defined by the person configuring it (a generic webhook or poller)
+can reuse the SDK's custom event type helpers: `eventTypeDefinitionSchema(sourceId, example)` for
+the settings form, `compileEventTypes(sourceId, definitions)` for `eventTypesFor`, and
+`narrowMapped(item, types)` to turn a mapping's output into a declared event.
 
 ## Event types
 
@@ -439,8 +447,10 @@ established, and a 503. Tell the core which one happened:
   Let it propagate.
 - Throw `InvokeError` for a backend answer: `{ status: 503 }` may be retried,
   `{ definitive: true }` (a 4xx the backend will repeat, such as a bad target) fails the run, and
-  anything else is `uncertain` when not idempotent. `retryAfterSeconds` on a 429 opens the
-  soft-hold.
+  anything else is `uncertain` when not idempotent. `invokeErrorForStatus(status, message)` builds
+  the right one from an HTTP status.
+- Return `{ status: 'failed', retryAfterSeconds }` for a 429: the request was refused, nothing
+  ran, and `retryAfterSeconds` opens the soft-hold.
 
 Guards `isTransportError` and `isInvokeError` are duck-typed, so they work across duplicate SDK
 copies.
@@ -449,7 +459,7 @@ copies.
 
 ```typescript
 import {
-  InvokeError,
+  invokeErrorForStatus,
   parseRetryAfter,
   verifyHmac,
   type CallbackResult,
@@ -483,14 +493,11 @@ function createJobsExecutor(raw: Settings, ctx: PluginContext) {
       });
       if (res.status === 429) {
         const retryAfterSeconds = parseRetryAfter(res.headers['retry-after'], ctx.now()) ?? 60;
-        // Refused, not started: definitive, and the soft-hold keeps the next batches away.
-        throw new InvokeError('rate limited', { status: 429, definitive: true, retryAfterSeconds });
+        // Refused, not started: the run fails and the soft-hold keeps the next batches away.
+        return { status: 'failed' as const, retryAfterSeconds, errors: ['rate limited'] };
       }
-      if (res.status === 503) throw new InvokeError('backend unavailable', { status: 503 });
-      if (res.status >= 400 && res.status < 500) {
-        throw new InvokeError(`rejected: ${res.text()}`, { status: res.status, definitive: true });
-      }
-      if (!res.ok) throw new InvokeError(`backend error ${res.status}`, { status: res.status });
+      // 503 may be retried, another 4xx is definitive, anything else is uncertain.
+      if (!res.ok) throw invokeErrorForStatus(res.status, `jobs answered ${res.status}`);
       const body = res.json<{ id: string; url: string }>();
       return { status: 'started' as const, externalId: body.id, externalUrl: body.url };
     },
@@ -626,7 +633,12 @@ needs.
   is sent.
 - It propagates the trace context, so your outbound call appears in the event's trace.
 - It throws `TransportError` with an accurate `sent` flag, which the idempotency rule depends on.
-- It has a 30-second default timeout (`timeoutMs` per request).
+- It has a 30-second default timeout (`timeoutMs` per request) covering every redirect hop and
+  the response body.
+- It follows redirects itself (at most five) and checks every hop against the declared hosts. On a
+  redirect to another origin it forwards only harmless headers (`accept*`, `content-type`,
+  `user-agent`, trace context), so a credential in any header, not just `authorization`, stays
+  with the origin it was meant for.
 
 `capabilities.secrets` lists the secret names your settings expect, for documentation. Both lists
 are shown to the admin at install time. A plugin that calls raw `fetch` or opens sockets bypasses
@@ -851,7 +863,10 @@ with a real token.
 - `@ai-switchboard/sdk` follows semver strictly. Additive fields are minor releases; any change
   to an interface method is a major.
 - The host loads any plugin whose `switchboard.sdk` range includes the running SDK major. Declare
-  `^1.0.0` and you will load on every 1.x host.
+  `^1.0.0` and you will load on every 1.x host. The host checks the full range, so if you use an
+  export added in a later minor (`parseWith`, `invokeErrorForStatus` and the custom event type
+  helpers arrived in 1.2.0), declare that minor (`^1.2.0`) in both `switchboard.sdk` and
+  `peerDependencies`.
 - Your plugin's own version is yours, but treat event type ids, attribute names and action ids as
   public API: people's filters and processes depend on them. Removing or renaming one is a major.
 - SDK majors are announced through the `switchboard-plugin` topic on the repository.

@@ -1,4 +1,4 @@
-import { createHttpClient, makeResponse, type HttpClient } from '../http.js';
+import { createHttpClient, type HttpClient } from '../http.js';
 import { createMemoryLogger, type MemoryLogEntry } from '../logger.js';
 import type { RawRequest } from '../types/common.js';
 import type { InstanceState, PluginContext } from '../types/context.js';
@@ -159,5 +159,3 @@ export function runHandle(overrides: Partial<RunHandle> = {}): RunHandle {
     ...overrides,
   };
 }
-
-export { makeResponse };

@@ -88,9 +88,13 @@ export function applyCommand(deps: CliDeps): Command {
         reason: opts.reason,
         ...(opts.dryRun === true ? { dryRun: true } : {}),
       };
-      const body: unknown = JSON.parse(
-        await apiRequest(deps, server, 'POST', '/apply', { json: request }),
-      );
+      const answer = await apiRequest(deps, server, 'POST', '/apply', { json: request });
+      let body: unknown;
+      try {
+        body = JSON.parse(answer);
+      } catch {
+        throw new Error(`${server.url} returned a non-JSON answer to POST /apply; is --url right?`);
+      }
       if (!isApplyResponse(body)) throw new Error('the server returned an unexpected response');
 
       const { io } = deps;

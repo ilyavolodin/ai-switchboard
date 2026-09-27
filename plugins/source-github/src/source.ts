@@ -16,7 +16,7 @@ import {
   type VerifyResult,
 } from '@ai-switchboard/sdk';
 
-import { createApi, createAuth, errorMessage, type GitHubApi } from './api.js';
+import { createApi, createAuth, errorMessage, jsonOf, type GitHubApi } from './api.js';
 import { WEBHOOK_EVENTS, eventTypes } from './events.js';
 import { arr, bool, num, obj, str, type Json } from './json.js';
 import { extractLinks } from './links.js';
@@ -206,7 +206,7 @@ function createGitHubSource(settings: Settings, ctx: PluginContext): Source {
           ? {
               ok: true,
               message: `Added label ${a.label ?? ''} to ${a.artifact.id}`,
-              data: { labels: labelNames(res.json()) },
+              data: { labels: labelNames(jsonOf(res)) },
             }
           : refusal('addLabel', res, errorMessage(res));
       }
@@ -224,7 +224,7 @@ function createGitHubSource(settings: Settings, ctx: PluginContext): Source {
       case 'comment': {
         const res = await api.request('POST', `${issuePath}/comments`, { body: a.body });
         if (!res.ok) return refusal('comment', res, errorMessage(res));
-        const comment = obj(res.json());
+        const comment = obj(jsonOf(res));
         return {
           ok: true,
           message: `Commented on ${a.artifact.id}`,
@@ -237,7 +237,7 @@ function createGitHubSource(settings: Settings, ctx: PluginContext): Source {
         if (bool(pr.draft) !== true)
           return { ok: true, message: `${a.artifact.id} is already ready for review` };
         const res = await api.graphql(MARK_READY, { id: str(pr.node_id) ?? '' });
-        const body = res.ok ? obj(res.json()) : undefined;
+        const body = res.ok ? obj(jsonOf(res)) : undefined;
         const errors = arr(body?.errors);
         if (!res.ok || errors.length > 0) {
           const message = str(obj(errors[0])?.message) ?? errorMessage(res);
@@ -273,7 +273,7 @@ function createGitHubSource(settings: Settings, ctx: PluginContext): Source {
           }`,
         };
       }
-      created.push(`${target.slice(1)}/${num(obj(res.json())?.id) ?? ''}`);
+      created.push(`${target.slice(1)}/${num(obj(jsonOf(res))?.id) ?? ''}`);
     }
     return { ok: true, externalId: created.join(','), message: `Created ${created.join(', ')}` };
   }
@@ -288,7 +288,7 @@ function createGitHubSource(settings: Settings, ctx: PluginContext): Source {
           message: `GitHub answered ${res.status} (${errorMessage(res)})`,
           checkedAt,
         };
-      const remaining = num(obj(obj(res.json())?.rate)?.remaining);
+      const remaining = num(obj(obj(jsonOf(res))?.rate)?.remaining);
       return {
         status: 'healthy',
         ...(remaining !== undefined ? { message: `${remaining} API requests left this hour` } : {}),

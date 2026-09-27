@@ -5,10 +5,10 @@ import {
   type RawRequest,
   type RunStatus,
   type UsageReport,
+  tryParse,
 } from '@ai-switchboard/sdk';
 
 import { USAGE_DIMENSIONS } from './settings.js';
-import { tryParse } from './validate.js';
 
 export const SIGNATURE_HEADER = 'x-switchboard-signature';
 export const SIGNATURE_PREFIX = 'sha256=';

@@ -218,6 +218,72 @@ describe('installPlugin', () => {
   });
 });
 
+describe('installPlugin edge cases', () => {
+  it('refuses a spec that npm would read as an option', async () => {
+    const runNpm = fakeNpm({});
+    for (const spec of ['--registry=https://evil.example', '-g']) {
+      const err: unknown = await installPlugin({ home, spec, runNpm }).catch((e: unknown) => e);
+      expect(isPluginInstallError(err)).toBe(true);
+    }
+    await expect(inspectPlugin({ spec: '--foo', runNpm, tmpRoot: home })).rejects.toThrow(
+      /not a package spec/,
+    );
+    expect(runNpm.calls).toEqual([]);
+  });
+
+  it('names a corrupt lockfile and does not run npm', async () => {
+    await writeFile(join(home, 'plugins.lock.json'), '{ not json');
+    const runNpm = fakeNpm({ jira });
+    const err: unknown = await installPlugin({ home, spec: 'jira', runNpm }).catch(
+      (e: unknown) => e,
+    );
+    expect(isPluginInstallError(err)).toBe(true);
+    expect((err as Error).message).toMatch(/plugins\.lock\.json is not valid JSON/);
+    expect(runNpm.calls).toEqual([]);
+    await expect(listInstalled(home)).rejects.toThrow(/plugins\.lock\.json is not valid JSON/);
+  });
+
+  it('restores the pinned version when an upgrade is not a plugin', async () => {
+    const notPlugin: FakePackage = { name: jira.name, version: '2.0.0' };
+    const runNpm = fakeNpm({ jira, 'jira-next': notPlugin, [`${jira.name}@1.2.0`]: jira });
+    await installPlugin({ home, spec: 'jira', runNpm, now });
+
+    const err: unknown = await installPlugin({ home, spec: 'jira-next', runNpm }).catch(
+      (e: unknown) => e,
+    );
+    expect((err as Error).message).toMatch(/not a Switchboard plugin.*1\.2\.0 was restored/);
+    expect(runNpm.calls.at(-1)?.slice(0, 2)).toEqual(['install', `${jira.name}@1.2.0`]);
+    const pkg = await readJson(join(home, 'plugins', 'node_modules', jira.name, 'package.json'));
+    expect(pkg.version).toBe('1.2.0');
+    expect((await listInstalled(home)).map((p) => [p.name, p.version])).toEqual([
+      [jira.name, '1.2.0'],
+    ]);
+  });
+
+  it('never runs two npm commands in one home at once', async () => {
+    const other: FakePackage = { ...jira, name: '@acme/switchboard-source-other' };
+    const inner = fakeNpm({ jira, other });
+    let running = 0;
+    let most = 0;
+    const runNpm: RunNpm = async (args, cwd) => {
+      running++;
+      most = Math.max(most, running);
+      await new Promise((r) => setTimeout(r, 5));
+      try {
+        return await inner(args, cwd);
+      } finally {
+        running--;
+      }
+    };
+    await Promise.all([
+      installPlugin({ home, spec: 'jira', runNpm, now }),
+      installPlugin({ home, spec: 'other', runNpm, now }),
+    ]);
+    expect(most).toBe(1);
+    expect((await listInstalled(home)).map((p) => p.name)).toEqual([jira.name, other.name]);
+  });
+});
+
 describe('removePlugin and listInstalled', () => {
   it('uninstalls and drops the lockfile entry', async () => {
     const runNpm = fakeNpm({ jira });

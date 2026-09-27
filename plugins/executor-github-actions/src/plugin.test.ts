@@ -168,6 +168,22 @@ describe('github-actions: invoke', () => {
     expect(list?.url.searchParams.get('created')).toBe('>=2026-09-27T09:58:00Z');
   });
 
+  it('keeps paging the run list when the dispatched run is not on the first page', async () => {
+    const others = Array.from({ length: 50 }, (_, i) =>
+      workflowRun({ id: 1_000 + i, name: `other ${i}`, display_title: `other ${i}` }),
+    );
+    const { executor, calls } = setup(
+      github({
+        list: (req) => ({
+          json: runList(req.url.searchParams.get('page') === '2' ? [workflowRun()] : others),
+        }),
+      }),
+    );
+    const result = await executor.invoke(target, {}, run());
+    expect(result).toMatchObject({ status: 'started', externalId: `acme/api/${RUN_ID}` });
+    expect(calls.filter((c) => c.url.pathname.endsWith('/runs')).length).toBe(2);
+  });
+
   it('matches on display_title too', async () => {
     const { executor } = setup(
       github({

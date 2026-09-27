@@ -1,4 +1,4 @@
-import { compileSchema, formatErrors, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
+import { parseWith, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
 
 /** Settings after validation, with defaults applied. */
 export interface LinearSettings {
@@ -47,12 +47,7 @@ export class LinearSettingsError extends Error {
 
 /** Validate settings against the schema (on a copy, so defaults do not leak back) and narrow. */
 export function readSettings(settings: Settings): LinearSettings {
-  const copy = structuredClone(settings);
-  const validate = compileSchema(settingsSchema);
-  if (!validate(copy)) {
-    throw new LinearSettingsError(
-      `Invalid linear settings: ${formatErrors(validate.errors).join('; ')}`,
-    );
-  }
-  return copy as unknown as LinearSettings;
+  return parseWith<LinearSettings>(settingsSchema, settings, 'linear settings', {
+    error: LinearSettingsError,
+  });
 }

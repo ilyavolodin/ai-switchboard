@@ -40,8 +40,11 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 COPY . .
 RUN pnpm build
 
-# Self-contained production trees (workspace siblings copied in, not symlinked).
-RUN pnpm --filter @ai-switchboard/core deploy --prod --legacy /out/core \
+# Self-contained production trees (workspace siblings copied in, not symlinked). `deploy` installs
+# from the store, so it mounts the same cache as the install step (otherwise it re-downloads
+# every production dependency on each build).
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm --filter @ai-switchboard/core deploy --prod --legacy /out/core \
  && pnpm --filter @ai-switchboard/cli deploy --prod --legacy /out/cli
 
 # Optional extra plugins into $SWITCHBOARD_HOME/plugins, pinned in plugins.lock.json.

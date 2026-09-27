@@ -2,17 +2,16 @@ import { constants } from 'node:fs';
 import { access, readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type {
-  Health,
-  JSONSchema,
-  PluginContext,
-  SecretListing,
-  SecretProvider,
-  SecretProviderType,
-  Settings,
+import {
+  parseWith,
+  type Health,
+  type JSONSchema,
+  type PluginContext,
+  type SecretListing,
+  type SecretProvider,
+  type SecretProviderType,
+  type Settings,
 } from '@ai-switchboard/sdk';
-
-import { parseWith } from './validate.js';
 
 /** Settings of the `file` secret provider. */
 export interface FileSecretSettings {

@@ -1,5 +1,6 @@
 import {
   InvokeError,
+  invokeErrorForStatus,
   isTransportError,
   parseRetryAfter,
   type Executor,
@@ -13,6 +14,7 @@ import {
   type RunHandle,
   type RunStatus,
   type UsageReport,
+  tryParse,
 } from '@ai-switchboard/sdk';
 
 import { GITHUB_HEADERS, GithubAuthError, createAuth } from './auth.js';
@@ -45,11 +47,13 @@ import {
   targetSchema,
   type WorkflowTarget,
 } from './target.js';
-import { tryParse } from './validate.js';
 
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
 /** Look this far back from the dispatch when listing runs, for clock skew between us and GitHub. */
 const CORRELATION_SKEW_MS = 2 * 60_000;
+/** Runs listed per page, and how many pages a correlation reads before giving up. */
+const CORRELATION_PAGE_SIZE = 50;
+const CORRELATION_MAX_PAGES = 5;
 
 /** Kept in instance state when a dispatch could not be correlated yet, so `poll` can find it. */
 export interface PendingDispatch {
@@ -103,13 +107,9 @@ export function refusal(res: HttpResponse, now: Date): InvokeResult {
   if (retryAfterSeconds !== undefined) {
     return { status: 'failed', retryAfterSeconds, errors: [message] };
   }
-  if (res.status === 503) throw new InvokeError(message, { status: 503 });
   // 404 (no such workflow or no access), 422 (no workflow_dispatch trigger, unknown input,
-  // bad ref) and the other 4xx repeat on retry.
-  if (res.status >= 400 && res.status < 500) {
-    throw new InvokeError(message, { status: res.status, definitive: true });
-  }
-  throw new InvokeError(message, { status: res.status });
+  // bad ref) and the other 4xx repeat on retry, so they are definitive.
+  throw invokeErrorForStatus(res.status, message);
 }
 
 function createGithubActionsExecutor(
@@ -164,18 +164,24 @@ function createGithubActionsExecutor(
   ): Promise<WorkflowRun | undefined> {
     try {
       const since = new Date(dispatchedAt.getTime() - CORRELATION_SKEW_MS);
-      const res = await api({
-        method: 'GET',
-        url: `${repoPath(owner, repo)}/actions/workflows/${encodeURIComponent(workflow)}/runs`,
-        query: {
-          event: 'workflow_dispatch',
-          created: `>=${since.toISOString().replace(/\.\d{3}Z$/, 'Z')}`,
-          per_page: 50,
-        },
-      });
-      if (!res.ok) return undefined;
-      const list = tryParse<{ workflow_runs: WorkflowRun[] }>(runListSchema, jsonBody(res));
-      return list?.workflow_runs.find((r) => matchesRun(r, runId));
+      // Newest first: a busy workflow can push our run past the first page before we look.
+      for (let page = 1; page <= CORRELATION_MAX_PAGES; page++) {
+        const res = await api({
+          method: 'GET',
+          url: `${repoPath(owner, repo)}/actions/workflows/${encodeURIComponent(workflow)}/runs`,
+          query: {
+            event: 'workflow_dispatch',
+            created: `>=${since.toISOString().replace(/\.\d{3}Z$/, 'Z')}`,
+            per_page: CORRELATION_PAGE_SIZE,
+            ...(page > 1 ? { page } : {}),
+          },
+        });
+        if (!res.ok) return undefined;
+        const list = tryParse<{ workflow_runs: WorkflowRun[] }>(runListSchema, jsonBody(res));
+        const found = list?.workflow_runs.find((r) => matchesRun(r, runId));
+        if (found || !list || list.workflow_runs.length < CORRELATION_PAGE_SIZE) return found;
+      }
+      return undefined;
     } catch (err) {
       ctx.logger.warn('workflow run correlation failed', {
         error: err instanceof Error ? err.message : String(err),

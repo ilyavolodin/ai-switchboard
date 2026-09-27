@@ -727,6 +727,21 @@ describe('github provision', () => {
     });
   });
 
+  it('does not throw after a side effect when GitHub answers 2xx without JSON', async () => {
+    const { source } = make(tokenSettings, (req) =>
+      req.url.pathname.endsWith('/hooks') || req.url.pathname.endsWith('/comments')
+        ? { status: 201, body: '<html>proxy says ok</html>' }
+        : undefined,
+    );
+    const hooked = await source.provision!('https://switchboard.example.com/hooks/src_1');
+    expect(hooked.ok).toBe(true);
+    const commented = await source.act!('comment', {
+      artifact: { kind: 'github.pr', id: 'acme/api#7' },
+      body: 'hello',
+    });
+    expect(commented).toMatchObject({ ok: true, message: 'Commented on acme/api#7' });
+  });
+
   it('creates repository hooks for an allowlist and reports a partial failure', async () => {
     const s = { ...tokenSettings, repositories: ['api', 'acme/web', 'mobile'] };
     const { source, calls } = make(s, (req) => {

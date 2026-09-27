@@ -24,6 +24,7 @@ export {
   InvokeError,
   isTransportError,
   isInvokeError,
+  invokeErrorForStatus,
 } from './errors.js';
 
 export {
@@ -34,7 +35,28 @@ export {
   formatErrors,
   secretPaths,
   UI_KEYWORDS,
+  parseWith,
+  tryParse,
+  SchemaMismatchError,
 } from './schema.js';
-export type { SchemaCheck } from './schema.js';
+export type { SchemaCheck, ParseWithOptions } from './schema.js';
+
+export {
+  ATTRIBUTE_KINDS,
+  ATTRIBUTE_NAME_PATTERN,
+  customEventTypePattern,
+  eventTypeDefinitionSchema,
+  compileEventTypes,
+  coerceAttribute,
+  toIsoTime,
+  narrowMapped,
+} from './custom-events.js';
+export type {
+  AttributeKind,
+  AttributeDefinition,
+  EventTypeDefinition,
+  CompiledEventType,
+  MappedEvent,
+} from './custom-events.js';
 
 export { SDK_VERSION, SDK_MAJOR } from './version.js';

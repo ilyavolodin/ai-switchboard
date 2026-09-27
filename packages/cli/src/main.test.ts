@@ -312,6 +312,16 @@ describe('switchboard apply', () => {
     expect(cap.exitCode).toBe(1);
   });
 
+  it('names the server when a 200 answer is not JSON (a proxy page, the wrong URL)', async () => {
+    const fetch = stubFetch(() => ({ status: 200, body: '<html>login</html>', type: 'text/html' }));
+    const { run } = harness({ fetch, readFile });
+    const cap = await run('apply', '-f', 'sb.yaml', '--reason', 'r');
+    expect(cap.exitCode).toBe(1);
+    expect(cap.err.join('\n')).toContain(
+      'error: http://localhost:8080 returned a non-JSON answer to POST /apply',
+    );
+  });
+
   it('requires --reason', async () => {
     const fetch = stubFetch(() => ({ status: 200, body: '{}' }));
     const { run } = harness({ fetch, readFile });

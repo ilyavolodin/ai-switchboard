@@ -161,6 +161,10 @@ async function readJsonIfExists(path: string): Promise<unknown> {
     return await readJson(path);
   } catch (err) {
     if (isRecord(err) && err.code === 'ENOENT') return undefined;
+    // A hand-edited or truncated file: say which one instead of a bare JSON parse error.
+    if (err instanceof SyntaxError) {
+      throw new PluginInstallError(`${path} is not valid JSON; fix or delete it`);
+    }
     throw err;
   }
 }
@@ -179,6 +183,35 @@ function dependenciesOf(pkg: unknown): Record<string, string> {
   if (isRecord(deps))
     for (const [k, v] of Object.entries(deps)) if (typeof v === 'string') out[k] = v;
   return out;
+}
+
+/** npm would read a spec starting with `-` as an option (`--registry=...`), not a package. */
+function checkSpec(spec: string): string {
+  const trimmed = spec.trim();
+  if (trimmed === '') throw new PluginInstallError('a package spec is required');
+  if (trimmed.startsWith('-')) throw new PluginInstallError(`"${trimmed}" is not a package spec`);
+  return trimmed;
+}
+
+/**
+ * npm commands in one plugins directory run one at a time: concurrent installs (an API request
+ * and a replica catching up) would race on `package.json`, `node_modules` and the lockfile.
+ */
+const homeQueues = new Map<string, Promise<unknown>>();
+
+function serialized<T>(home: string, task: () => Promise<T>): Promise<T> {
+  const key = resolve(home);
+  const previous = homeQueues.get(key) ?? Promise.resolve();
+  const next = previous.then(task, task);
+  const settled = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  homeQueues.set(key, settled);
+  void settled.then(() => {
+    if (homeQueues.get(key) === settled) homeQueues.delete(key);
+  });
+  return next;
 }
 
 /** The package name in a registry spec (`@scope/name@^1` → `@scope/name`), if it has one. */
@@ -363,11 +396,16 @@ async function lockedIntegrity(dir: string, name: string): Promise<string | null
  * if not), and pin its exact version and integrity in `$home/plugins.lock.json`.
  */
 export async function installPlugin(options: InstallOptions): Promise<InstallResult> {
+  const spec = checkSpec(options.spec);
+  return serialized(options.home, () => install(options, spec));
+}
+
+async function install(options: InstallOptions, spec: string): Promise<InstallResult> {
   const runNpm = options.runNpm ?? defaultRunNpm;
   const now = options.now ?? (() => new Date());
-  const spec = options.spec.trim();
-  if (spec === '') throw new PluginInstallError('a package spec is required');
   const dir = pluginsDir(options.home);
+  // Read the lockfile first: a corrupt one must stop us before npm changes anything.
+  const lock = await readLockfile(options.home);
   await ensurePluginsPackage(dir);
 
   const before = dependenciesOf(await readJsonIfExists(join(dir, 'package.json')));
@@ -386,7 +424,6 @@ export async function installPlugin(options: InstallOptions): Promise<InstallRes
     dir,
   );
   const after = dependenciesOf(await readJsonIfExists(join(dir, 'package.json')));
-  const lock = await readLockfile(options.home);
   const name = installedName(spec, before, after, lock);
 
   const packageDir = join(dir, 'node_modules', name);
@@ -394,10 +431,27 @@ export async function installPlugin(options: InstallOptions): Promise<InstallRes
   const pkg = await readJsonIfExists(manifestPath);
   const field = switchboardField(pkg);
   if (!isRecord(pkg) || field === undefined) {
-    await runNpm(['uninstall', name, '--save', '--no-audit', '--no-fund'], dir);
-    throw new PluginInstallError(
-      `${name} is not a Switchboard plugin: its package.json has no "switchboard" field. It was removed again.`,
+    const notPlugin = `${name} is not a Switchboard plugin: its package.json has no "switchboard" field.`;
+    const pinned = lock.plugins[name];
+    if (pinned === undefined) {
+      await runNpm(['uninstall', name, '--save', '--no-audit', '--no-fund'], dir);
+      throw new PluginInstallError(`${notPlugin} It was removed again.`);
+    }
+    // An upgrade replaced a working plugin: put the pinned version back rather than leave the
+    // lockfile naming a package that is gone.
+    await runNpm(
+      [
+        'install',
+        `${name}@${pinned.version}`,
+        '--save',
+        '--install-links',
+        '--ignore-scripts=false',
+        '--no-audit',
+        '--no-fund',
+      ],
+      dir,
     );
+    throw new PluginInstallError(`${notPlugin} The installed ${pinned.version} was restored.`);
   }
 
   const version = str(pkg.version) ?? after[name] ?? '0.0.0';
@@ -445,6 +499,10 @@ export async function installPlugin(options: InstallOptions): Promise<InstallRes
 
 /** `npm uninstall <name>` from `$home/plugins` and drop it from the lockfile. */
 export async function removePlugin(options: RemoveOptions): Promise<void> {
+  return serialized(options.home, () => remove(options));
+}
+
+async function remove(options: RemoveOptions): Promise<void> {
   const runNpm = options.runNpm ?? defaultRunNpm;
   const dir = pluginsDir(options.home);
   const lock = await readLockfile(options.home);
@@ -529,8 +587,7 @@ async function linkSdk(tmp: string): Promise<void> {
  */
 export async function inspectPlugin(options: InspectOptions): Promise<InspectResult> {
   const runNpm = options.runNpm ?? defaultRunNpm;
-  const spec = options.spec.trim();
-  if (spec === '') throw new PluginInstallError('a package spec is required');
+  const spec = checkSpec(options.spec);
   const tmp = await mkdtemp(join(options.tmpRoot ?? tmpdir(), 'switchboard-inspect-'));
   try {
     const { stdout } = await runNpm(['pack', spec, '--json', '--pack-destination', tmp], tmp);

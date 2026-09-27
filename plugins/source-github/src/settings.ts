@@ -1,4 +1,4 @@
-import { compileSchema, formatErrors, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
+import { parseWith, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
 
 /** Settings after validation, with defaults applied. */
 export interface GitHubSettings {
@@ -98,12 +98,7 @@ export class GitHubSettingsError extends Error {
 
 /** Validate settings against the schema (on a copy, so defaults do not leak back) and narrow. */
 export function readSettings(settings: Settings): GitHubSettings {
-  const copy = structuredClone(settings);
-  const validate = compileSchema(settingsSchema);
-  if (!validate(copy)) {
-    throw new GitHubSettingsError(
-      `Invalid github settings: ${formatErrors(validate.errors).join('; ')}`,
-    );
-  }
-  return copy as unknown as GitHubSettings;
+  return parseWith<GitHubSettings>(settingsSchema, settings, 'github settings', {
+    error: GitHubSettingsError,
+  });
 }

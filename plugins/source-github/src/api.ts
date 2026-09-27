@@ -112,13 +112,18 @@ export function createAuth(s: GitHubSettings, ctx: PluginContext): GitHubAuth {
   };
 }
 
+/** The JSON body, or `undefined` when there is none (a proxy page, an empty 201). */
+export function jsonOf(res: HttpResponse): unknown {
+  try {
+    return res.json();
+  } catch {
+    return undefined;
+  }
+}
+
 /** GitHub's `message` from an error body, or the status text. */
 export function errorMessage(res: HttpResponse): string {
-  try {
-    return str(obj(res.json())?.message) ?? `HTTP ${res.status}`;
-  } catch {
-    return `HTTP ${res.status}`;
-  }
+  return str(obj(jsonOf(res))?.message) ?? `HTTP ${res.status}`;
 }
 
 /** A thin REST/GraphQL client over the SDK's `HttpClient`. */

@@ -1,14 +1,13 @@
-import type {
-  Health,
-  JSONSchema,
-  PluginContext,
-  SecretListing,
-  SecretProvider,
-  SecretProviderType,
-  Settings,
+import {
+  parseWith,
+  type Health,
+  type JSONSchema,
+  type PluginContext,
+  type SecretListing,
+  type SecretProvider,
+  type SecretProviderType,
+  type Settings,
 } from '@ai-switchboard/sdk';
-
-import { parseWith } from './validate.js';
 
 /** Settings of the `env` secret provider. */
 export interface EnvSecretSettings {

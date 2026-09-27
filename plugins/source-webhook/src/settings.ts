@@ -1,6 +1,13 @@
-import { formatErrors, compileSchema, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
+import {
+  eventTypeDefinitionSchema,
+  parseWith,
+  type EventTypeDefinition,
+  type JSONSchema,
+  type Settings,
+} from '@ai-switchboard/sdk';
 
-import { eventTypeDefinitionSchema, type EventTypeDefinition } from './event-types.js';
+/** The source id, which is also the namespace of every event type an instance defines. */
+export const SOURCE_ID = 'webhook';
 
 export const VERIFICATION_MODES = ['hmac', 'shared_secret', 'none'] as const;
 export type VerificationMode = (typeof VERIFICATION_MODES)[number];
@@ -102,7 +109,7 @@ export const settingsSchema: JSONSchema = {
     eventTypes: {
       type: 'array',
       minItems: 1,
-      items: eventTypeDefinitionSchema,
+      items: eventTypeDefinitionSchema(SOURCE_ID, 'webhook.deploy.finished'),
       title: 'Event types',
       description: 'The event types this instance produces, each with its flat attributes.',
       'x-group': 'Event types',
@@ -150,12 +157,7 @@ export class WebhookSettingsError extends Error {
 
 /** Validate settings against the schema (on a copy, so defaults do not leak back) and narrow. */
 export function readSettings(settings: Settings): WebhookSettings {
-  const copy = structuredClone(settings);
-  const validate = compileSchema(settingsSchema);
-  if (!validate(copy)) {
-    throw new WebhookSettingsError(
-      `Invalid webhook settings: ${formatErrors(validate.errors).join('; ')}`,
-    );
-  }
-  return copy as unknown as WebhookSettings;
+  return parseWith<WebhookSettings>(settingsSchema, settings, 'webhook settings', {
+    error: WebhookSettingsError,
+  });
 }

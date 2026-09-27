@@ -1,6 +1,10 @@
-import type { JSONSchema, MeterSpec, Settings, UsageDimension } from '@ai-switchboard/sdk';
-
-import { parseWith } from './validate.js';
+import {
+  parseWith,
+  type JSONSchema,
+  type MeterSpec,
+  type Settings,
+  type UsageDimension,
+} from '@ai-switchboard/sdk';
 
 /** Instance settings of the `github-actions` executor, after secrets are resolved. */
 export interface GithubActionsSettings {

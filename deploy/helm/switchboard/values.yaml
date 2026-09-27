@@ -39,6 +39,11 @@ evaluation: false
 
 logLevel: info
 
+# Trust X-Forwarded-* headers (client IP for rate limits and audit, https detection). Right behind
+# an ingress or load balancer that sets them; set false when clients reach the Service directly
+# (service.type LoadBalancer/NodePort without a proxy), or they can spoof their address.
+trustProxy: true
+
 metrics:
   # Serve /metrics in Prometheus exposition format.
   prometheus: true
@@ -70,6 +75,7 @@ resources:
     memory: 1Gi
 
 podDisruptionBudget:
+  # Rendered only when replicaCount > 1 (a PDB on one replica blocks node drains).
   enabled: true
   minAvailable: 1
 

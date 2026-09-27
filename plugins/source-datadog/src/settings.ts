@@ -1,4 +1,4 @@
-import { compileSchema, formatErrors, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
+import { parseWith, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
 
 export const SITES = [
   'datadoghq.com',
@@ -82,12 +82,7 @@ export class DatadogSettingsError extends Error {
 
 /** Validate settings against the schema (on a copy, so defaults do not leak back) and narrow. */
 export function readSettings(settings: Settings): DatadogSettings {
-  const copy = structuredClone(settings);
-  const validate = compileSchema(settingsSchema);
-  if (!validate(copy)) {
-    throw new DatadogSettingsError(
-      `Invalid datadog settings: ${formatErrors(validate.errors).join('; ')}`,
-    );
-  }
-  return copy as unknown as DatadogSettings;
+  return parseWith<DatadogSettings>(settingsSchema, settings, 'datadog settings', {
+    error: DatadogSettingsError,
+  });
 }

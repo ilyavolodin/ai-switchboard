@@ -26,6 +26,9 @@ export function verifyHmac(
   const given = signature.slice(prefix.length);
   const expected = signHmac(options);
   const encoding = options.encoding ?? 'hex';
+  // Buffer.from stops decoding hex at the first bad character, so `<valid>zz` would decode to the
+  // valid bytes; insist on the whole string being hex.
+  if (encoding === 'hex' && !/^(?:[0-9a-fA-F]{2})+$/.test(given)) return false;
   const a = Buffer.from(given, encoding);
   const b = Buffer.from(expected, encoding);
   if (a.length !== b.length || a.length === 0) return false;

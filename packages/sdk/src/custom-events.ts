@@ -1,13 +1,19 @@
-import type { ArtifactRef, Attributes, EventTypeSpec, JSONSchema } from '@ai-switchboard/sdk';
+/**
+ * Event types a person defines in a source's settings (the generic webhook and poll-http sources
+ * do this): the settings-form schema for a definition, compiling definitions into `EventTypeSpec`s,
+ * and narrowing a mapping's output to a declared event.
+ */
+import type { JSONSchema } from './types/common.js';
+import type { ArtifactRef, Attributes, EventTypeSpec } from './types/events.js';
 
 /** The attribute value kinds a person can declare for a custom event type. */
 export const ATTRIBUTE_KINDS = ['string', 'number', 'boolean', 'string[]'] as const;
 export type AttributeKind = (typeof ATTRIBUTE_KINDS)[number];
 
-/** Custom event types must live under the source's namespace: `webhook.<object>.<verb>`. */
-export const EVENT_TYPE_PATTERN = '^webhook\\.[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_-]*$';
+/** Attribute names are identifiers, so filters can write `attributes.<name>`. */
 export const ATTRIBUTE_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
 
+/** One attribute of a person-defined event type. */
 export interface AttributeDefinition {
   name: string;
   type: AttributeKind;
@@ -23,58 +29,69 @@ export interface EventTypeDefinition {
   example?: Record<string, unknown>;
 }
 
-/** JSON Schema for one `EventTypeDefinition` inside the settings form. */
-export const eventTypeDefinitionSchema: JSONSchema = {
-  type: 'object',
-  required: ['type', 'title', 'attributes'],
-  properties: {
-    type: {
-      type: 'string',
-      pattern: EVENT_TYPE_PATTERN,
-      title: 'Event type',
-      description: 'Must look like `webhook.<object>.<verb>`, e.g. `webhook.deploy.finished`.',
-    },
-    title: { type: 'string', minLength: 1, title: 'Title', description: 'Shown in the UI.' },
-    description: {
-      type: 'string',
-      title: 'Description',
-      description: 'What this event means, for the people writing filters.',
-    },
-    attributes: {
-      type: 'array',
-      title: 'Attributes',
-      description: 'The flat facts the mapping produces for this event type.',
-      items: {
-        type: 'object',
-        required: ['name', 'type'],
-        properties: {
-          name: {
-            type: 'string',
-            pattern: ATTRIBUTE_NAME_PATTERN,
-            title: 'Name',
-            description: 'Attribute key, e.g. `environment`.',
-          },
-          type: {
-            type: 'string',
-            enum: [...ATTRIBUTE_KINDS],
-            title: 'Type',
-            description: 'Value type of the attribute.',
-          },
-          description: {
-            type: 'string',
-            title: 'Description',
-            description: 'What the attribute holds.',
+/** The regex (as a string) a custom event type id must match: `<sourceId>.<object>.<verb>`. */
+export function customEventTypePattern(sourceId: string): string {
+  const escaped = sourceId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return `^${escaped}\\.[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_-]*$`;
+}
+
+/**
+ * JSON Schema for one `EventTypeDefinition` inside a source's settings form. `exampleType` is
+ * shown in the field description, e.g. `webhook.deploy.finished`.
+ */
+export function eventTypeDefinitionSchema(sourceId: string, exampleType: string): JSONSchema {
+  return {
+    type: 'object',
+    required: ['type', 'title', 'attributes'],
+    properties: {
+      type: {
+        type: 'string',
+        pattern: customEventTypePattern(sourceId),
+        title: 'Event type',
+        description: `Must look like \`${sourceId}.<object>.<verb>\`, e.g. \`${exampleType}\`.`,
+      },
+      title: { type: 'string', minLength: 1, title: 'Title', description: 'Shown in the UI.' },
+      description: {
+        type: 'string',
+        title: 'Description',
+        description: 'What this event means, for the people writing filters.',
+      },
+      attributes: {
+        type: 'array',
+        title: 'Attributes',
+        description: 'The flat facts the mapping produces for this event type.',
+        items: {
+          type: 'object',
+          required: ['name', 'type'],
+          properties: {
+            name: {
+              type: 'string',
+              pattern: ATTRIBUTE_NAME_PATTERN,
+              title: 'Name',
+              description: 'Attribute key, e.g. `environment`.',
+            },
+            type: {
+              type: 'string',
+              enum: [...ATTRIBUTE_KINDS],
+              title: 'Type',
+              description: 'Value type of the attribute.',
+            },
+            description: {
+              type: 'string',
+              title: 'Description',
+              description: 'What the attribute holds.',
+            },
           },
         },
       },
+      example: {
+        type: 'object',
+        title: 'Example attributes',
+        description: 'An example attribute object shown in the filter editor.',
+      },
     },
-    example: {
-      type: 'object',
-      title: 'Example attributes',
-      description: 'An example attribute object shown in the filter editor.',
-    },
-  },
-};
+  };
+}
 
 const PLACEHOLDER: Record<AttributeKind, string | number | boolean | string[]> = {
   string: 'example',
@@ -106,12 +123,16 @@ function exampleFor(def: EventTypeDefinition, kinds: Map<string, AttributeKind>)
 }
 
 /**
- * Build the instance's event types from its definitions. Duplicate type ids keep the first
- * definition; duplicate attribute names keep the first declaration.
+ * Build the instance's event types from its definitions. Definitions whose type is outside
+ * `sourceId`'s namespace are skipped; duplicate type ids keep the first definition; duplicate
+ * attribute names keep the first declaration.
  */
-export function compileEventTypes(defs: EventTypeDefinition[]): Map<string, CompiledEventType> {
+export function compileEventTypes(
+  sourceId: string,
+  defs: EventTypeDefinition[],
+): Map<string, CompiledEventType> {
   const out = new Map<string, CompiledEventType>();
-  const pattern = new RegExp(EVENT_TYPE_PATTERN);
+  const pattern = new RegExp(customEventTypePattern(sourceId));
   for (const def of defs) {
     if (!pattern.test(def.type) || out.has(def.type)) continue;
     const kinds = new Map<string, AttributeKind>();

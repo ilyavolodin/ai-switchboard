@@ -1,6 +1,13 @@
-import { compileSchema, formatErrors, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
+import {
+  eventTypeDefinitionSchema,
+  parseWith,
+  type EventTypeDefinition,
+  type JSONSchema,
+  type Settings,
+} from '@ai-switchboard/sdk';
 
-import { eventTypeDefinitionSchema, type EventTypeDefinition } from './event-types.js';
+/** The source id, which is also the namespace of every event type an instance defines. */
+export const SOURCE_ID = 'poll-http';
 
 /** Settings after validation, with defaults applied. */
 export interface PollHttpSettings {
@@ -136,7 +143,7 @@ export const settingsSchema: JSONSchema = {
     eventTypes: {
       type: 'array',
       minItems: 1,
-      items: eventTypeDefinitionSchema,
+      items: eventTypeDefinitionSchema(SOURCE_ID, 'poll-http.incident.opened'),
       title: 'Event types',
       description: 'The event types this instance produces, each with its flat attributes.',
       'x-group': 'Event types',
@@ -160,12 +167,7 @@ export class PollHttpSettingsError extends Error {
 
 /** Validate settings against the schema (on a copy, so defaults do not leak back) and narrow. */
 export function readSettings(settings: Settings): PollHttpSettings {
-  const copy = structuredClone(settings);
-  const validate = compileSchema(settingsSchema);
-  if (!validate(copy)) {
-    throw new PollHttpSettingsError(
-      `Invalid poll-http settings: ${formatErrors(validate.errors).join('; ')}`,
-    );
-  }
-  return copy as unknown as PollHttpSettings;
+  return parseWith<PollHttpSettings>(settingsSchema, settings, 'poll-http settings', {
+    error: PollHttpSettingsError,
+  });
 }

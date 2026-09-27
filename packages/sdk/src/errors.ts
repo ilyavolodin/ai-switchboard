@@ -59,3 +59,30 @@ export function isTransportError(err: unknown): err is TransportError {
 export function isInvokeError(err: unknown): err is InvokeError {
   return err instanceof Error && err.name === 'InvokeError' && 'definitive' in err;
 }
+
+/**
+ * The `InvokeError` for a refused HTTP response, following the core's retry rules: a 503 may be
+ * retried (carrying `retryAfterSeconds` when given), any other 4xx is definitive, and anything
+ * else leaves a non-idempotent run `uncertain`. Handle 429 (return `retryAfterSeconds` in the
+ * `InvokeResult`) and backend-specific states such as "paused" before calling this.
+ */
+export function invokeErrorForStatus(
+  status: number,
+  message: string,
+  options: { retryAfterSeconds?: number; cause?: unknown } = {},
+): InvokeError {
+  const cause = options.cause !== undefined ? { cause: options.cause } : {};
+  if (status === 503) {
+    return new InvokeError(message, {
+      status,
+      ...(options.retryAfterSeconds !== undefined
+        ? { retryAfterSeconds: options.retryAfterSeconds }
+        : {}),
+      ...cause,
+    });
+  }
+  if (status >= 400 && status < 500) {
+    return new InvokeError(message, { status, definitive: true, ...cause });
+  }
+  return new InvokeError(message, { status, ...cause });
+}

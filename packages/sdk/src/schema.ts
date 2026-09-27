@@ -88,3 +88,45 @@ export function secretPaths(schema: JSONSchema, prefix = ''): string[] {
   }
   return out;
 }
+
+/** A settings, target or input value that does not match its schema. */
+export class SchemaMismatchError extends Error {
+  override readonly name = 'SchemaMismatchError';
+}
+
+/** Options for `parseWith`. */
+export interface ParseWithOptions {
+  /** The error class to throw on a mismatch. Defaults to `SchemaMismatchError`. */
+  error?: new (message: string) => Error;
+}
+
+function validatedCopy(schema: JSONSchema, value: unknown): { copy: unknown; check: SchemaCheck } {
+  const copy: unknown = value === undefined ? undefined : structuredClone(value);
+  return { copy, check: validateAgainst(schema, copy) };
+}
+
+/**
+ * Validate a copy of `value` against `schema` and return the copy, with the schema's defaults
+ * applied, typed as `T`. Working on a copy keeps Ajv's `useDefaults` from mutating the caller's
+ * object. Throws `Invalid <what>: <errors>` (a `SchemaMismatchError` unless `options.error` names
+ * another class). Use it for settings in `create()` and for targets and inputs in `invoke()`.
+ */
+export function parseWith<T>(
+  schema: JSONSchema,
+  value: unknown,
+  what: string,
+  options: ParseWithOptions = {},
+): T {
+  const { copy, check } = validatedCopy(schema, value);
+  if (!check.valid) {
+    const ErrorClass = options.error ?? SchemaMismatchError;
+    throw new ErrorClass(`Invalid ${what}: ${check.errors.join('; ')}`);
+  }
+  return copy as T;
+}
+
+/** Like `parseWith`, but returns `null` instead of throwing (for paths that must never throw). */
+export function tryParse<T>(schema: JSONSchema, value: unknown): T | null {
+  const { copy, check } = validatedCopy(schema, value);
+  return check.valid ? (copy as T) : null;
+}

@@ -1,6 +1,11 @@
-import type { JSONSchema, MeterSpec, Settings, UsageDimension } from '@ai-switchboard/sdk';
-
-import { parseWith, tryParse } from './validate.js';
+import {
+  parseWith,
+  tryParse,
+  type JSONSchema,
+  type MeterSpec,
+  type Settings,
+  type UsageDimension,
+} from '@ai-switchboard/sdk';
 
 /** Instance settings of the `http` executor, after `secret://` references are resolved. */
 export interface HttpSettings {

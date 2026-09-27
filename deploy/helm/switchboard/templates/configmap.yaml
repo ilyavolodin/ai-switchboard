@@ -8,7 +8,7 @@ data:
   PORT: "8080"
   HOST: "0.0.0.0"
   SWITCHBOARD_HOME: "/opt/switchboard"
-  SWITCHBOARD_TRUST_PROXY: "true"
+  SWITCHBOARD_TRUST_PROXY: {{ .Values.trustProxy | quote }}
   LOG_LEVEL: {{ .Values.logLevel | quote }}
   SWITCHBOARD_EVALUATION: {{ .Values.evaluation | quote }}
   SWITCHBOARD_PROMETHEUS: {{ .Values.metrics.prometheus | quote }}

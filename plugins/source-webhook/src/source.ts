@@ -1,5 +1,7 @@
 import {
+  compileEventTypes,
   dedupeKey,
+  narrowMapped,
   safeEqual,
   verifyHmac,
   type EventDraft,
@@ -12,9 +14,8 @@ import {
   type VerifyResult,
 } from '@ai-switchboard/sdk';
 
-import { compileEventTypes, narrowMapped } from './event-types.js';
 import { asList, compileExpression } from './mapping.js';
-import { readSettings, settingsSchema, type WebhookSettings } from './settings.js';
+import { readSettings, settingsSchema, SOURCE_ID, type WebhookSettings } from './settings.js';
 
 /** Headers never handed to the mapping, so a mapping cannot copy a credential into attributes. */
 const ALWAYS_HIDDEN = ['authorization', 'cookie', 'proxy-authorization'];
@@ -77,7 +78,7 @@ function makeVerify(s: WebhookSettings): ((req: RawRequest) => VerifyResult) | u
 
 function createWebhookSource(settings: Settings, ctx: PluginContext): Source {
   const s = readSettings(settings);
-  const types = compileEventTypes(s.eventTypes);
+  const types = compileEventTypes(SOURCE_ID, s.eventTypes);
   const mapping = compileExpression(s.mapping, 'mapping');
   const hidden = hiddenHeaders(s);
   const deliveryHeader = s.deliveryIdHeader.toLowerCase();
@@ -129,14 +130,16 @@ function createWebhookSource(settings: Settings, ctx: PluginContext): Source {
 /** The instance's event types, compiled from its settings. Invalid settings yield none. */
 export function instanceEventTypes(settings: Settings): EventTypeSpec[] {
   try {
-    return [...compileEventTypes(readSettings(settings).eventTypes).values()].map((t) => t.spec);
+    return [...compileEventTypes(SOURCE_ID, readSettings(settings).eventTypes).values()].map(
+      (t) => t.spec,
+    );
   } catch {
     return [];
   }
 }
 
 export const webhookSource: SourceType = {
-  id: 'webhook',
+  id: SOURCE_ID,
   displayName: 'Webhook',
   description:
     'Receive any JSON (or form-encoded) webhook. You name the event types and write a JSONata mapping from the delivery to type, artifact and attributes.',

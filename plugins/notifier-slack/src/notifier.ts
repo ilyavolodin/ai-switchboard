@@ -1,14 +1,13 @@
-import type {
-  Health,
-  JSONSchema,
-  NotificationMessage,
-  Notifier,
-  NotifierType,
-  PluginContext,
-  Settings,
+import {
+  parseWith,
+  type Health,
+  type JSONSchema,
+  type NotificationMessage,
+  type Notifier,
+  type NotifierType,
+  type PluginContext,
+  type Settings,
 } from '@ai-switchboard/sdk';
-
-import { parseWith } from './validate.js';
 
 /** Instance settings of the `slack` notifier, after secrets are resolved. */
 export interface SlackSettings {

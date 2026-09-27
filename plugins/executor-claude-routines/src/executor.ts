@@ -1,5 +1,5 @@
 import {
-  InvokeError,
+  invokeErrorForStatus,
   parseRetryAfter,
   type Executor,
   type ExecutorType,
@@ -97,13 +97,13 @@ export function refusal(res: HttpResponse, now: Date): InvokeResult {
   const text = `Routines API answered ${status}: ${message}`;
   // 529 is Anthropic's "overloaded": the request was not processed, so it is as safe to retry as a 503.
   if (status === 503 || status === 529) {
-    throw new InvokeError(text, {
-      status: 503,
-      ...(retryAfter !== undefined ? { retryAfterSeconds: retryAfter } : {}),
-    });
+    throw invokeErrorForStatus(
+      503,
+      text,
+      retryAfter !== undefined ? { retryAfterSeconds: retryAfter } : {},
+    );
   }
-  if (status >= 400 && status < 500) throw new InvokeError(text, { status, definitive: true });
-  throw new InvokeError(text, { status });
+  throw invokeErrorForStatus(status, text);
 }
 
 function createRoutinesExecutor(settings: RoutinesSettings, ctx: PluginContext): Executor {

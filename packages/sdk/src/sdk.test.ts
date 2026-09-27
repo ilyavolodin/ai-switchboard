@@ -7,13 +7,17 @@ import {
   definePlugin,
   hostMatches,
   InvokeError,
+  invokeErrorForStatus,
   isInvokeError,
   isTransportError,
   parseRetryAfter,
+  parseWith,
   safeEqual,
+  SchemaMismatchError,
   secretPaths,
   signHmac,
   TransportError,
+  tryParse,
   validateAgainst,
   validatePlugin,
   verifyHmac,
@@ -76,6 +80,19 @@ describe('hmac', () => {
     expect(verifyHmac({ secret: '', payload, signature: signHmac({ secret: '', payload }) })).toBe(
       false,
     );
+  });
+  it('rejects a hex signature with trailing or embedded garbage', () => {
+    const hex = signHmac({ secret, payload });
+    expect(verifyHmac({ secret, payload, signature: `${hex}zz` })).toBe(false);
+    expect(verifyHmac({ secret, payload, signature: `${hex}0` })).toBe(false);
+    expect(verifyHmac({ secret, payload, signature: hex.toUpperCase() })).toBe(true);
+  });
+  it('signs a unicode body and secret as UTF-8, the same as the raw bytes', () => {
+    const body = '{"title":"café ✓"}';
+    const sig = signHmac({ secret: 'sëcret', payload: body });
+    expect(
+      verifyHmac({ secret: 'sëcret', payload: Buffer.from(body, 'utf8'), signature: sig }),
+    ).toBe(true);
   });
   it('compares shared secrets in constant time', () => {
     expect(safeEqual('abc', 'abc')).toBe(true);
@@ -165,6 +182,63 @@ describe('HttpClient', () => {
     expect(isTransportError(err2) && err2.sent).toBe(true);
   });
 
+  it('reports a response body that fails mid-read as a sent TransportError', async () => {
+    const client = createHttpClient({
+      fetch: () => {
+        const body = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.error(Object.assign(new TypeError('terminated'), { code: 'ECONNRESET' }));
+          },
+        });
+        return Promise.resolve(new Response(body, { status: 200 }));
+      },
+    });
+    const err = await client.get('https://x.test/slow').catch((e: unknown) => e);
+    expect(isTransportError(err)).toBe(true);
+    expect(isTransportError(err) && err.sent).toBe(true);
+    expect(isTransportError(err) && err.code).toBe('ECONNRESET');
+  });
+
+  it('does not add a second content type when the caller set one in another case', async () => {
+    const stub = createStubHttp(() => ({ json: {} }));
+    await stub.client.post('https://x.test/p', {
+      json: { a: 1 },
+      headers: { 'Content-Type': 'application/merge-patch+json' },
+    });
+    expect(stub.calls[0]?.headers['content-type']).toBe('application/merge-patch+json');
+  });
+
+  it('keeps only safe headers on a cross-origin redirect and turns a 303 into a bodiless GET', async () => {
+    const seen: { method: string; url: string; headers: Headers; body: unknown }[] = [];
+    const client = createHttpClient({
+      allowedHosts: ['a.test', 'b.test'],
+      fetch: (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        seen.push({
+          method: init?.method ?? 'GET',
+          url: url.href,
+          headers: new Headers(init?.headers),
+          body: init?.body,
+        });
+        return Promise.resolve(
+          url.host === 'a.test'
+            ? new Response(null, { status: 303, headers: { location: 'https://b.test/done' } })
+            : new Response('{}'),
+        );
+      },
+    });
+    await client.post('https://a.test/start', {
+      json: { a: 1 },
+      headers: { Authorization: 'Bearer x', 'X-Api-Key': 'k', accept: 'application/json' },
+    });
+    expect(seen[1]).toMatchObject({ method: 'GET', url: 'https://b.test/done', body: undefined });
+    expect(seen[1]?.headers.get('authorization')).toBeNull();
+    expect(seen[1]?.headers.get('content-type')).toBeNull();
+    // A custom credential header (poll-http's `tokenHeader`) must not follow either.
+    expect(seen[1]?.headers.get('x-api-key')).toBeNull();
+    expect(seen[1]?.headers.get('accept')).toBe('application/json');
+  });
+
   it('parses Retry-After as seconds or a date', () => {
     const now = new Date('2026-01-01T00:00:00Z');
     expect(parseRetryAfter('120', now)).toBe(120);
@@ -179,6 +253,43 @@ describe('errors', () => {
     expect(isTransportError(new TransportError('x', { sent: false }))).toBe(true);
     expect(isInvokeError(new InvokeError('x', { status: 503 }))).toBe(true);
     expect(isInvokeError(new Error('x'))).toBe(false);
+  });
+});
+
+describe('invokeErrorForStatus', () => {
+  it('follows the retry rules: 503 retryable, other 4xx definitive, 5xx uncertain', () => {
+    const unavailable = invokeErrorForStatus(503, 'busy', { retryAfterSeconds: 30 });
+    expect(unavailable).toMatchObject({ status: 503, definitive: false, retryAfterSeconds: 30 });
+    expect(invokeErrorForStatus(422, 'bad')).toMatchObject({ status: 422, definitive: true });
+    const broken = invokeErrorForStatus(500, 'oops', { retryAfterSeconds: 30 });
+    expect(broken).toMatchObject({ status: 500, definitive: false, retryAfterSeconds: undefined });
+    expect(isInvokeError(broken)).toBe(true);
+  });
+});
+
+describe('parseWith / tryParse', () => {
+  const schema = {
+    type: 'object',
+    required: ['url'],
+    properties: { url: { type: 'string' }, retries: { type: 'integer', default: 3 } },
+  };
+
+  it('returns a copy with defaults applied and leaves the input untouched', () => {
+    const input = { url: 'https://x.test' };
+    expect(parseWith(schema, input, 'demo settings')).toEqual({
+      url: 'https://x.test',
+      retries: 3,
+    });
+    expect(input).toEqual({ url: 'https://x.test' });
+    expect(tryParse(schema, input)).toEqual({ url: 'https://x.test', retries: 3 });
+  });
+
+  it('throws Invalid <what> as SchemaMismatchError or the given class', () => {
+    expect(() => parseWith(schema, {}, 'demo settings')).toThrow(SchemaMismatchError);
+    expect(() => parseWith(schema, {}, 'demo settings')).toThrow(/^Invalid demo settings: /);
+    class DemoError extends Error {}
+    expect(() => parseWith(schema, {}, 'demo settings', { error: DemoError })).toThrow(DemoError);
+    expect(tryParse(schema, {})).toBeNull();
   });
 });
 

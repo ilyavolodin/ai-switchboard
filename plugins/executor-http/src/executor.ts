@@ -2,6 +2,7 @@ import jsonata from 'jsonata';
 
 import {
   InvokeError,
+  invokeErrorForStatus,
   isTransportError,
   parseRetryAfter,
   type Executor,
@@ -14,6 +15,7 @@ import {
   type PluginContext,
   type RunHandle,
   type UsageReport,
+  tryParse,
 } from '@ai-switchboard/sdk';
 
 import { declaredUsage, verifySignedCallback } from './callback.js';
@@ -34,13 +36,13 @@ import {
   trackingFor,
   type HttpTarget,
 } from './target.js';
-import { tryParse } from './validate.js';
 
 /** Backend says "paused on my side": answer 423 Locked. */
 const PAUSED_STATUS = 423;
 /** When a 429 carries no Retry-After. */
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
 const USAGE_EXPRESSION_TIMEOUT_MS = 2_000;
+const USAGE_EXPRESSION_MAX_DEPTH = 500;
 const ERROR_SNIPPET_CHARS = 200;
 
 /** Append a relative path to a base URL; absolute URLs pass through. */
@@ -100,14 +102,11 @@ export function refusal(res: HttpResponse, now: Date, what: string): InvokeResul
   }
   if (status === PAUSED_STATUS) return { status: 'held', reason: 'paused' };
   const message = `${what} answered ${status}${snippet(res)}`;
-  if (status === 503) {
-    throw new InvokeError(message, {
-      status,
-      ...(retryAfter !== undefined ? { retryAfterSeconds: retryAfter } : {}),
-    });
-  }
-  if (status >= 400 && status < 500) throw new InvokeError(message, { status, definitive: true });
-  throw new InvokeError(message, { status });
+  throw invokeErrorForStatus(
+    status,
+    message,
+    retryAfter !== undefined ? { retryAfterSeconds: retryAfter } : {},
+  );
 }
 
 function externalIdOf(body: unknown): string | undefined {
@@ -121,29 +120,20 @@ function externalIdOf(body: unknown): string | undefined {
   return undefined;
 }
 
-const compiled = new Map<string, jsonata.Expression>();
-
-async function evaluateUsage(expr: string, data: unknown): Promise<Record<string, unknown>> {
-  let expression = compiled.get(expr);
-  if (!expression) {
-    expression = jsonata(expr);
-    compiled.set(expr, expression);
+/**
+ * Evaluate a `usageFrom` expression. JSONata's own `timeout` and `stack` limits are checked on
+ * every step; a timer racing the evaluation cannot fire while JSONata keeps the microtask queue
+ * busy, so an endless expression would block the event loop.
+ */
+async function evaluateUsage(
+  expression: jsonata.Expression,
+  data: unknown,
+): Promise<Record<string, unknown>> {
+  const value: unknown = await expression.evaluate(data);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('usageFrom must return an object of dimension id → number');
   }
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`usageFrom took longer than ${USAGE_EXPRESSION_TIMEOUT_MS} ms`));
-    }, USAGE_EXPRESSION_TIMEOUT_MS);
-  });
-  try {
-    const value: unknown = await Promise.race([expression.evaluate(data), timeout]);
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-      throw new Error('usageFrom must return an object of dimension id → number');
-    }
-    return value as Record<string, unknown>;
-  } finally {
-    clearTimeout(timer);
-  }
+  return value as Record<string, unknown>;
 }
 
 interface MeterBody {
@@ -165,6 +155,20 @@ const meterBodySchema: JSONSchema = {
 function createHttpExecutor(settings: HttpSettings, ctx: PluginContext): Executor {
   const declared = new Set(settings.usageDimensions.map((d) => d.id));
 
+  // Compiled per instance: the set of expressions is bounded by this instance's targets.
+  const compiled = new Map<string, jsonata.Expression>();
+  function usageExpression(source: string): jsonata.Expression {
+    let expression = compiled.get(source);
+    if (!expression) {
+      expression = jsonata(source, {
+        timeout: USAGE_EXPRESSION_TIMEOUT_MS,
+        stack: USAGE_EXPRESSION_MAX_DEPTH,
+      });
+      compiled.set(source, expression);
+    }
+    return expression;
+  }
+
   async function syncUsage(
     target: HttpTarget,
     res: HttpResponse,
@@ -177,7 +181,7 @@ function createHttpExecutor(settings: HttpSettings, ctx: PluginContext): Executo
     };
     if (target.usageFrom !== undefined) {
       try {
-        const fromExpr = await evaluateUsage(target.usageFrom, {
+        const fromExpr = await evaluateUsage(usageExpression(target.usageFrom), {
           response: { status: res.status, headers: res.headers, body },
           durationSeconds,
         });

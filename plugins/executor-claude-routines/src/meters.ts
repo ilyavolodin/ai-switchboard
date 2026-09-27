@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 
-import type { JSONSchema, MeterReading, PluginContext } from '@ai-switchboard/sdk';
+import {
+  tryParse,
+  type JSONSchema,
+  type MeterReading,
+  type PluginContext,
+} from '@ai-switchboard/sdk';
 
 import { FIVE_HOUR, SEVEN_DAY, type RoutinesUsageSettings } from './settings.js';
-import { tryParse } from './validate.js';
 
 /** The OAuth beta the usage endpoint requires. */
 export const OAUTH_BETA = 'oauth-2025-04-20';
