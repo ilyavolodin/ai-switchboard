@@ -63,11 +63,9 @@ export function registerErrorHandler(app: FastifyInstance): void {
         .send({ error: fe.code || 'bad_request', message: fe.message } satisfies ApiError);
     }
     req.log.error({ err }, 'unhandled error');
-    return reply
-      .code(500)
-      .send({
-        error: 'internal',
-        message: 'Something went wrong; the error is logged.',
-      } satisfies ApiError);
+    return reply.code(500).send({
+      error: 'internal',
+      message: 'Something went wrong; the error is logged.',
+    } satisfies ApiError);
   });
 }

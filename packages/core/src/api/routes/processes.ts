@@ -113,14 +113,17 @@ export async function validateProcessDocument(
         );
     }
     const live = ctx.runtime.executor(ex.id);
-    const budgetable = new Set(
-      (live?.usage ?? type?.usage ?? []).filter((d) => d.budgetable).map((d) => d.id),
-    );
+    // An executor created in the same apply has no live object yet: ask the type about this
+    // instance's settings (usage and meters may be declared per instance, as http does).
+    const usage = live?.usage ?? (type ? (type.usageFor?.(ex.settings) ?? type.usage) : []);
+    const meterSpecs =
+      live?.meters ?? (type ? (type.metersFor?.(ex.settings) ?? type.meters ?? []) : []);
+    const budgetable = new Set(usage.filter((d) => d.budgetable).map((d) => d.id));
     for (const dim of Object.keys(doc.budgets.usagePerDay ?? {})) {
       if (!budgetable.has(dim))
         problems.push(`budgets.usagePerDay.${dim}: not a budgetable usage dimension of ${ex.name}`);
     }
-    const meters = new Set((live?.meters ?? type?.meters ?? []).map((m) => m.id));
+    const meters = new Set(meterSpecs.map((m) => m.id));
     for (const m of Object.keys(doc.budgets.meterCeilings)) {
       if (!meters.has(m))
         problems.push(`budgets.meterCeilings.${m}: ${ex.name} has no meter "${m}"`);
@@ -199,16 +202,14 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
           })
           .returning({ id: processes.id });
         if (!row) throw new HttpError(500, 'internal', 'insert failed');
-        await tx
-          .insert(processVersions)
-          .values({
-            processId: row.id,
-            version: 1,
-            document: doc,
-            savedBy: actor,
-            savedAt: now,
-            reason,
-          });
+        await tx.insert(processVersions).values({
+          processId: row.id,
+          version: 1,
+          document: doc,
+          savedBy: actor,
+          savedAt: now,
+          reason,
+        });
         await recordAudit(tx, {
           actor,
           scope: 'process',
@@ -249,16 +250,14 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
           .update(processes)
           .set({ name: doc.name, document: doc, enabled: doc.enabled, version, updatedAt: now })
           .where(eq(processes.id, before.id));
-        await tx
-          .insert(processVersions)
-          .values({
-            processId: before.id,
-            version,
-            document: doc,
-            savedBy: actor,
-            savedAt: now,
-            reason,
-          });
+        await tx.insert(processVersions).values({
+          processId: before.id,
+          version,
+          document: doc,
+          savedBy: actor,
+          savedAt: now,
+          reason,
+        });
         await recordAuditDiff(
           tx,
           { actor, scope: 'process', targetId: before.id, reason, at: now },
@@ -290,16 +289,14 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
           .update(processes)
           .set({ enabled: req.body.enabled, document: doc, version, updatedAt: now })
           .where(eq(processes.id, before.id));
-        await tx
-          .insert(processVersions)
-          .values({
-            processId: before.id,
-            version,
-            document: doc,
-            savedBy: actor,
-            savedAt: now,
-            reason,
-          });
+        await tx.insert(processVersions).values({
+          processId: before.id,
+          version,
+          document: doc,
+          savedBy: actor,
+          savedAt: now,
+          reason,
+        });
         await recordAudit(tx, {
           actor,
           scope: 'process',
@@ -440,16 +437,14 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
           .update(processes)
           .set({ name: doc.name, document: doc, enabled: doc.enabled, version, updatedAt: now })
           .where(eq(processes.id, before.id));
-        await tx
-          .insert(processVersions)
-          .values({
-            processId: before.id,
-            version,
-            document: doc,
-            savedBy: actor,
-            savedAt: now,
-            reason: `restore v${old.version}: ${reason}`,
-          });
+        await tx.insert(processVersions).values({
+          processId: before.id,
+          version,
+          document: doc,
+          savedBy: actor,
+          savedAt: now,
+          reason: `restore v${old.version}: ${reason}`,
+        });
         await recordAudit(tx, {
           actor,
           scope: 'process',

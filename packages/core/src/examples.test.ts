@@ -56,7 +56,12 @@ async function loadTypes(): Promise<Map<string, AnyType>> {
   for (const name of PLUGINS) {
     const mod = (await import(`@ai-switchboard/${name}`)) as { default: PluginDefinition };
     const def = mod.default;
-    const lists = { sources: def.sources, executors: def.executors, notifiers: def.notifiers, secretProviders: def.secretProviders };
+    const lists = {
+      sources: def.sources,
+      executors: def.executors,
+      notifiers: def.notifiers,
+      secretProviders: def.secretProviders,
+    };
     for (const [kind, list] of Object.entries(lists)) {
       for (const t of list as AnyType[]) types.set(`${kind}:${t.id}`, t);
     }
@@ -78,7 +83,10 @@ describe('examples/*.yaml', async () => {
           problems.push(`${kind} ${inst.name}: unknown type ${inst.type}`);
           continue;
         }
-        const check = validateAgainst(referenceTolerantSchema(t.settingsSchema), structuredClone(inst.settings ?? {}));
+        const check = validateAgainst(
+          referenceTolerantSchema(t.settingsSchema),
+          structuredClone(inst.settings ?? {}),
+        );
         if (!check.valid) problems.push(`${kind} ${inst.name}: ${check.errors.join('; ')}`);
       }
     }
@@ -89,13 +97,15 @@ describe('examples/*.yaml', async () => {
         if (!t) problems.push(`process ${p.name}: trigger source ${tr.source} not in the file`);
         else if (!t.dynamicEventTypes) {
           for (const et of tr.eventTypes) {
-            if (!t.eventTypes?.some((e) => e.type === et)) problems.push(`process ${p.name}: ${tr.source} has no event type ${et}`);
+            if (!t.eventTypes?.some((e) => e.type === et))
+              problems.push(`process ${p.name}: ${tr.source} has no event type ${et}`);
           }
         }
       }
       const ex = doc.executors?.find((e) => e.name === p.executor?.instance);
       const t = ex ? types.get(`executors:${ex.type}`) : undefined;
-      if (!t?.targetSchema) problems.push(`process ${p.name}: executor ${p.executor?.instance ?? '?'} not in the file`);
+      if (!t?.targetSchema)
+        problems.push(`process ${p.name}: executor ${p.executor?.instance ?? '?'} not in the file`);
       else {
         const c = validateAgainst(t.targetSchema, structuredClone(p.executor?.target));
         if (!c.valid) problems.push(`process ${p.name} target: ${c.errors.join('; ')}`);
@@ -105,7 +115,9 @@ describe('examples/*.yaml', async () => {
         ...p,
         triggers: (p.triggers ?? []).map(({ source, ...rest }) => ({ ...rest, sourceId: source })),
         executor: { instanceId: p.executor?.instance ?? '', target: p.executor?.target ?? {} },
-        notify: ((p as { notify?: { notifier: string }[] }).notify ?? []).map(({ notifier, ...n }) => ({ ...n, notifierId: notifier })),
+        notify: ((p as { notify?: { notifier: string }[] }).notify ?? []).map(
+          ({ notifier, ...n }) => ({ ...n, notifierId: notifier }),
+        ),
       });
       if (!structural.valid) problems.push(`process ${p.name}: ${structural.errors.join('; ')}`);
     }

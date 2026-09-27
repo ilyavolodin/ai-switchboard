@@ -370,6 +370,8 @@ export class PluginHost implements PluginRuntime {
     if (existing.length > 0) return;
     for (const typeId of ['env', 'file']) {
       if (!this.types.secret_provider.has(typeId)) continue;
+      // The file provider reads mounted secrets; only default it on where the mount exists.
+      if (typeId === 'file' && !(await exists('/run/secrets'))) continue;
       await db
         .insert(secretProviders)
         .values({
@@ -667,9 +669,7 @@ export class PluginHost implements PluginRuntime {
     return this.types.secret_provider.get(typeId);
   }
 
-  typesOf(
-    kind: InstanceKind,
-  ): {
+  typesOf(kind: InstanceKind): {
     typeId: string;
     pluginName: string;
     type: SourceType | ExecutorType | NotifierType | SecretProviderType;

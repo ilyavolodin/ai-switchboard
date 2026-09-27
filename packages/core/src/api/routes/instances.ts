@@ -322,12 +322,10 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       if (typeof live.source.provision !== 'function')
         throw unprocessable(`${live.type.displayName} cannot register webhooks itself.`);
       const url = `${ctx.config.publicUrl}/hooks/${live.id}`;
-      const result = await live.source
-        .provision(url)
-        .catch((err: unknown) => ({
-          ok: false,
-          message: err instanceof Error ? err.message : String(err),
-        }));
+      const result = await live.source.provision(url).catch((err: unknown) => ({
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      }));
       const now = clock.now();
       if (result.ok)
         await db.update(sources).set({ provisionedAt: now }).where(eq(sources.id, live.id));

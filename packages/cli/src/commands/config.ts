@@ -97,7 +97,9 @@ export function applyCommand(deps: CliDeps): Command {
       io.out(
         body.dryRun
           ? `Dry run against ${server.url}: nothing was written.`
-          : `Applied to ${server.url}.`,
+          : body.errors.length > 0
+            ? `Not applied to ${server.url}: the errors below rolled the whole change back.`
+            : `Applied to ${server.url}.`,
       );
       if (body.changes.length > 0) {
         io.out(
