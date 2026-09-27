@@ -1,0 +1,46 @@
+.gauge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.row {
+  flex-direction: row;
+  gap: 8px;
+}
+
+.svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  fill: var(--foreground-strong);
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground-strong);
+  text-align: center;
+}
+
+.caption {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.small {
+  font-size: 10px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.stale {
+  color: var(--st-off-fg);
+}

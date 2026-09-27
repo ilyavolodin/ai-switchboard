@@ -1,0 +1,197 @@
+/* Base styles, typography classes and a11y helpers. Tokens live in tokens.css. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--type-ui-size);
+  line-height: var(--type-ui-line);
+  color: var(--foreground);
+  background: var(--background);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--brand-text);
+}
+
+a:hover {
+  color: var(--tangerine-ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+/* One focus treatment everywhere: a surface gap, then tangerine-ink. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: var(--tangerine-soft);
+  color: var(--ink);
+}
+
+/* ---- Typography classes (Zest scale) --------------------------------------------------- */
+
+.t-page-title {
+  font-family: var(--font-heading);
+  font-size: var(--type-page-title-size);
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: var(--type-page-title-tracking);
+  color: var(--foreground-strong);
+}
+
+.t-screen-title {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 600;
+  color: var(--foreground-strong);
+}
+
+.t-card-title {
+  font-family: var(--font-heading);
+  font-size: var(--type-card-title-size);
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--foreground-strong);
+}
+
+.t-section-title {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--foreground-strong);
+}
+
+.t-figure-xl,
+.t-figure-lg,
+.t-figure-sm {
+  font-family: var(--font-heading);
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground-strong);
+}
+
+.t-figure-xl {
+  font-size: var(--type-figure-xl-size);
+  line-height: var(--type-figure-xl-line);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.t-figure-lg {
+  font-size: var(--type-figure-lg-size);
+  line-height: var(--type-figure-lg-line);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.t-figure-sm {
+  font-size: var(--type-figure-sm-size);
+  line-height: var(--type-figure-sm-line);
+  font-weight: 600;
+}
+
+.t-body {
+  font-size: var(--type-ui-size);
+  line-height: var(--type-ui-line);
+}
+
+.t-label {
+  font-size: var(--type-ui-size);
+  font-weight: 500;
+  color: var(--foreground-strong);
+}
+
+.t-caption {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  color: var(--muted-foreground);
+}
+
+.t-overline {
+  font-size: var(--type-overline-size);
+  line-height: var(--type-overline-line);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--foreground-tertiary);
+}
+
+.t-muted {
+  color: var(--muted-foreground);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

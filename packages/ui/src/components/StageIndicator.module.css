@@ -1,0 +1,49 @@
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stops {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.stop {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.passed {
+  background: var(--border-4);
+}
+
+.pending {
+  border: 1px solid var(--border-4);
+}
+
+.link {
+  width: 24px;
+  height: 1px;
+  background: var(--border-1);
+}
+
+.linkPassed {
+  background: var(--border-4);
+}
+
+.compact .link {
+  width: 12px;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -1,0 +1,55 @@
+.stack {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(380px, calc(100vw - 32px));
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--inverse-surface);
+  color: var(--inverse-foreground);
+  box-shadow: var(--shadow-float);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.text {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+@media (max-width: 760px) {
+  .stack {
+    bottom: calc(var(--bottom-nav-height) + 12px);
+  }
+}

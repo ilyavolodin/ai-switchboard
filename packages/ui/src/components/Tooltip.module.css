@@ -1,0 +1,44 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  z-index: var(--z-tooltip);
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: var(--radius-control);
+  background: var(--inverse-surface);
+  color: var(--inverse-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  box-shadow: var(--shadow-float);
+  pointer-events: none;
+  /* Closed tips take no space (they stay the trigger's accessible description). */
+  display: none;
+}
+
+.bottom {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
+.right {
+  left: calc(100% + 8px);
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.open {
+  display: block;
+}

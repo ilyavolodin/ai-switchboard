@@ -1,0 +1,129 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  color: var(--foreground-strong);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 60ms ease;
+}
+
+.button:active:not([aria-disabled='true']) {
+  transform: translateY(1px);
+}
+
+.sm {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  gap: 6px;
+}
+
+.lg {
+  height: 40px;
+  padding: 0 18px;
+  font-size: 14px;
+}
+
+.block {
+  width: 100%;
+}
+
+.primary {
+  border: 0;
+  background: var(--gradient-tangerine);
+  box-shadow: var(--glow-tangerine);
+  color: var(--primary-foreground);
+}
+
+.primary:hover:not([aria-disabled='true']) {
+  filter: brightness(1.04);
+  color: var(--primary-foreground);
+}
+
+.secondary {
+  border-color: var(--border);
+  background: var(--card);
+}
+
+.secondary:hover:not([aria-disabled='true']) {
+  background: var(--surface-hover);
+  color: var(--foreground-strong);
+}
+
+.outline {
+  border-color: var(--border);
+  background: transparent;
+}
+
+.outline:hover:not([aria-disabled='true']) {
+  background: var(--surface-hover);
+  color: var(--foreground-strong);
+}
+
+.soft {
+  background: var(--tangerine-soft);
+  color: var(--tangerine-ink);
+}
+
+.soft:hover:not([aria-disabled='true']) {
+  color: var(--tangerine-ink);
+  border-color: var(--primary);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.ghost:hover:not([aria-disabled='true']) {
+  background: var(--surface-hover);
+  color: var(--foreground-strong);
+}
+
+.danger {
+  border: 0;
+  background: var(--coral);
+  color: var(--on-bright);
+}
+
+.danger:hover:not([aria-disabled='true']) {
+  color: var(--on-bright);
+  filter: brightness(1.04);
+}
+
+.dangerOutline {
+  border-color: var(--st-err);
+  color: var(--st-err-fg);
+}
+
+.dangerOutline:hover:not([aria-disabled='true']) {
+  background: var(--st-err-bg);
+  color: var(--st-err-fg);
+}
+
+.button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.loading {
+  cursor: progress;
+}

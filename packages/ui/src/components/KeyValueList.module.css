@@ -1,0 +1,30 @@
+.list {
+  display: grid;
+  grid-template-columns: minmax(90px, max-content) minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.key {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+}
+
+.value {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.more {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--brand-text);
+  font-size: 12px;
+  cursor: pointer;
+}

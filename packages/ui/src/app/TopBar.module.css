@@ -1,0 +1,109 @@
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--topbar-height);
+  padding: 0 20px 0 24px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  background: var(--card);
+  border-bottom: 1px solid var(--border-1);
+}
+
+.title {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--foreground-strong);
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search {
+  width: 220px;
+  flex-shrink: 1;
+}
+
+.spacer {
+  flex-grow: 1;
+}
+
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 8px;
+  border-radius: var(--radius-full);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.chip:hover {
+  filter: brightness(0.97);
+}
+
+.err {
+  background: var(--st-err-bg);
+  color: var(--st-err-fg);
+}
+
+.err:hover {
+  color: var(--st-err-fg);
+}
+
+.warn {
+  background: var(--st-warn-bg);
+  color: var(--st-warn-fg);
+}
+
+.warn:hover {
+  color: var(--st-warn-fg);
+}
+
+.chipDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+@media (max-width: 1100px) {
+  .search {
+    width: 160px;
+  }
+}
+
+@media (max-width: 760px) {
+  .bar {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .title {
+    display: none;
+  }
+
+  .search {
+    flex-grow: 1;
+    width: auto;
+  }
+
+  .chipWord {
+    display: none;
+  }
+}

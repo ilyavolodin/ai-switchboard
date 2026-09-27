@@ -1,0 +1,109 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 0;
+  border-radius: var(--radius-node);
+  background: var(--surface-sunken);
+  min-width: 0;
+}
+
+.nested {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-1);
+  border-radius: var(--radius-control);
+  min-width: 0;
+}
+
+.legend {
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--foreground-tertiary);
+}
+
+.itemLegend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground-strong);
+}
+
+.required {
+  color: var(--st-err-fg);
+}
+
+.help {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.more {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.more summary {
+  cursor: pointer;
+  color: var(--brand-text);
+}
+
+.more p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+.default {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--st-err-fg);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.number {
+  max-width: 180px;
+}

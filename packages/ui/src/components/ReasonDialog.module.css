@@ -1,0 +1,17 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.consequence {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--foreground);
+}
+
+.audit {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}

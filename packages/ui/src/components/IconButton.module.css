@@ -1,0 +1,36 @@
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-1);
+  background: var(--card);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.iconButton:hover:not([aria-disabled='true']) {
+  color: var(--foreground-strong);
+  background: var(--surface-hover);
+}
+
+.ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.md {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+}
+
+.iconButton[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

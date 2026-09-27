@@ -1,0 +1,57 @@
+.track {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 0;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.option:hover {
+  color: var(--foreground-strong);
+}
+
+.selected {
+  background: var(--card);
+  font-weight: 500;
+  color: var(--foreground-strong);
+  box-shadow: var(--shadow-card);
+}
+
+/* The window picker (24 h / 7 d / 30 d): mono, tangerine-soft selection. */
+.window .option {
+  height: 24px;
+  font-family: var(--font-mono);
+}
+
+.window .selected {
+  background: var(--tangerine-soft);
+  color: var(--tangerine-ink);
+  box-shadow: none;
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.8;
+}

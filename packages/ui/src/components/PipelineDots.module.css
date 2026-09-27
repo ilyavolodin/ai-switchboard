@@ -1,0 +1,24 @@
+.dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.dot {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hollow {
+  border: 1.5px solid var(--line-strong);
+  background: transparent !important;
+}
+
+.sm {
+  gap: 3px;
+}
+
+.lg {
+  gap: 6px;
+}

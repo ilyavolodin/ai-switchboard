@@ -1,0 +1,32 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px 0 7px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  width: fit-content;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+}
+
+.sm {
+  height: 20px;
+  font-size: 11px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--chip-dot);
+}
+
+.count {
+  font-family: var(--font-mono);
+}

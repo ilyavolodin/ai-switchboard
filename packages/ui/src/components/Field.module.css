@@ -1,0 +1,80 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.row > .labelWrap {
+  padding-top: 8px;
+}
+
+.labelWrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground-strong);
+}
+
+.required {
+  color: var(--st-err-fg);
+  font-weight: 600;
+}
+
+.changedDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.help {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+.error {
+  font-size: 12px;
+  color: var(--st-err-fg);
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.disabled .label {
+  color: var(--disabled-foreground);
+}
+
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .row > .labelWrap {
+    padding-top: 0;
+  }
+}

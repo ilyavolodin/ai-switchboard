@@ -1,0 +1,72 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  line-height: 1.45;
+  border: 1px solid transparent;
+}
+
+.lg {
+  gap: 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.error {
+  background: var(--st-err-bg);
+  color: var(--st-err-fg);
+  border-color: var(--st-err);
+}
+
+.warn {
+  background: var(--st-warn-bg);
+  color: var(--st-warn-fg);
+}
+
+.info {
+  background: var(--sky-soft);
+  color: var(--sky-ink);
+}
+
+.neutral {
+  background: var(--accent-0);
+  color: var(--muted-foreground);
+  border: 1px dashed var(--border);
+}
+
+.icon {
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.content {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Buttons inside banners inherit the banner colour (outline in currentColor). */
+.actions :global(button),
+.actions :global(a) {
+  color: inherit;
+}
+
+@media (max-width: 720px) {
+  .banner {
+    flex-wrap: wrap;
+  }
+}

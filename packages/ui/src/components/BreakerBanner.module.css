@@ -1,0 +1,21 @@
+.timeline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--st-err);
+}
+
+.link {
+  width: 16px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.4;
+}

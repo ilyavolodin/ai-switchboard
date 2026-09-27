@@ -1,0 +1,45 @@
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.tick {
+  font-family: var(--font-body);
+  font-size: 10px;
+  fill: var(--muted-foreground);
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--foreground);
+}
