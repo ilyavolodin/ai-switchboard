@@ -391,12 +391,30 @@ export async function pollSource(ctx: Ctx, sourceId: string): Promise<void> {
     { 'x-switchboard-origin': 'poll' },
     'ok',
   );
-  await storeDrafts(ctx, row, live, drafts, {
-    rawRef,
-    inTx: async (tx) => {
-      await tx.update(sources).set({ watermark }).where(eq(sources.id, sourceId));
-    },
-  });
+  try {
+    await storeDrafts(ctx, row, live, drafts, {
+      rawRef,
+      inTx: async (tx) => {
+        // Compare-and-set: a poll that overlapped another one (slow backend, redelivered job)
+        // started from a watermark that has moved on; its page was already emitted.
+        const [current] = await tx
+          .select({ watermark: sources.watermark })
+          .from(sources)
+          .where(eq(sources.id, sourceId))
+          .for('update');
+        if ((current?.watermark ?? null) !== row.watermark) throw new WatermarkMoved();
+        await tx.update(sources).set({ watermark }).where(eq(sources.id, sourceId));
+      },
+    });
+  } catch (err) {
+    if (!(err instanceof WatermarkMoved)) throw err;
+    await ctx.db.delete(eventRaw).where(eq(eventRaw.ref, rawRef));
+    ctx.log.info({ source_id: sourceId }, 'poll overlapped another; its page is dropped');
+  }
+}
+
+class WatermarkMoved extends Error {
+  override readonly name = 'WatermarkMoved';
 }
 
 /** Re-inject a stored raw body through the same parse; new events carry `replayOf`. */

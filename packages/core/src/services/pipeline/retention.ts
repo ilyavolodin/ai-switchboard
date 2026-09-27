@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 
+import { DEDUPE_WINDOW_SECONDS } from '../../pipeline/dedupe.js';
 import { getSettings } from '../settings.js';
 
 import type { Deps } from '../../deps.js';
@@ -26,7 +27,9 @@ export async function prune(
     sql`DELETE FROM events WHERE stage = 'unmatched' AND received_at < ${ago(Math.min(30, r.eventsDays))}`,
   );
   await run('event_raw', sql`DELETE FROM event_raw WHERE received_at < ${ago(r.rawBodiesDays)}`);
-  await run('dispatches', sql`DELETE FROM dispatches WHERE created_at < ${ago(r.dispatchesDays)}`);
+  // Dedupe reads batched dispatches of the last 7 days: never prune inside that window.
+  const dispatchDays = Math.max(r.dispatchesDays, Math.ceil(DEDUPE_WINDOW_SECONDS / 86_400) + 1);
+  await run('dispatches', sql`DELETE FROM dispatches WHERE created_at < ${ago(dispatchDays)}`);
   await run(
     'batches',
     sql`DELETE FROM batches WHERE opened_at < ${ago(r.dispatchesDays)}

@@ -2,6 +2,7 @@ import type { ArtifactRef } from '@ai-switchboard/sdk';
 import { and, desc, eq, inArray, lt, type SQL } from 'drizzle-orm';
 
 import {
+  batches,
   dispatches,
   events,
   executors,
@@ -26,19 +27,47 @@ export async function batchArtifacts(
 ): Promise<Map<string, { count: number; artifacts: ArtifactRef[] }>> {
   const out = new Map<string, { count: number; artifacts: ArtifactRef[] }>();
   if (batchIds.length === 0) return out;
+  // Like the pipeline's `batchEvents`: a sweep carries the event batches it merged, and a manual
+  // test run the batch whose events it replays.
+  const owners = new Map<string, Set<string>>();
+  const own = (member: string, root: string) => {
+    const set = owners.get(member) ?? new Set<string>();
+    set.add(root);
+    owners.set(member, set);
+  };
+  for (const id of batchIds) own(id, id);
+  const roots = await ctx.db
+    .select({ id: batches.id, eventsFrom: batches.eventsFrom })
+    .from(batches)
+    .where(inArray(batches.id, batchIds));
+  for (const r of roots) if (r.eventsFrom !== null) own(r.eventsFrom, r.id);
+  const sources = [...owners.keys()];
+  const merged = await ctx.db
+    .select({ id: batches.id, mergedInto: batches.mergedInto })
+    .from(batches)
+    .where(inArray(batches.mergedInto, sources));
+  for (const m of merged) {
+    if (m.mergedInto === null) continue;
+    for (const root of owners.get(m.mergedInto) ?? []) own(m.id, root);
+  }
   const rows = await ctx.db
-    .select({ batchId: dispatches.batchId, artifact: events.artifact })
+    .select({ batchId: dispatches.batchId, eventId: events.id, artifact: events.artifact })
     .from(dispatches)
     .innerJoin(events, eq(events.id, dispatches.eventId))
-    .where(and(inArray(dispatches.batchId, batchIds), eq(dispatches.outcome, 'batched')));
+    .where(and(inArray(dispatches.batchId, [...owners.keys()]), eq(dispatches.outcome, 'batched')));
+  const seen = new Set<string>();
   for (const row of rows) {
     if (!row.batchId) continue;
-    const entry = out.get(row.batchId) ?? { count: 0, artifacts: [] };
-    entry.count++;
-    if (!entry.artifacts.some((a) => a.kind === row.artifact.kind && a.id === row.artifact.id)) {
-      entry.artifacts.push(row.artifact);
+    for (const root of owners.get(row.batchId) ?? []) {
+      if (seen.has(`${root}:${row.eventId}`)) continue;
+      seen.add(`${root}:${row.eventId}`);
+      const entry = out.get(root) ?? { count: 0, artifacts: [] };
+      entry.count++;
+      if (!entry.artifacts.some((a) => a.kind === row.artifact.kind && a.id === row.artifact.id)) {
+        entry.artifacts.push(row.artifact);
+      }
+      out.set(root, entry);
     }
-    out.set(row.batchId, entry);
   }
   return out;
 }

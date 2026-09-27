@@ -82,3 +82,33 @@ export function literalSecretFields(
   }
   return bad;
 }
+
+export const REDACTED = '[redacted]';
+
+/**
+ * Deep-copy `value` with every occurrence of a secret value inside a string replaced by
+ * `[redacted]`. Used on what a backend sends back (results, error messages) before it is stored,
+ * since a backend may echo the credentials or input it received. Values shorter than 4
+ * characters are not matched (too many false positives).
+ */
+export function redactSecretValues(value: unknown, secrets: readonly string[]): unknown {
+  const list = [...new Set(secrets.filter((s) => s.length >= 4))].sort(
+    (a, b) => b.length - a.length,
+  );
+  if (list.length === 0) return value;
+  const walk = (v: unknown): unknown => {
+    if (typeof v === 'string') {
+      let out = v;
+      for (const s of list) if (out.includes(s)) out = out.split(s).join(REDACTED);
+      return out;
+    }
+    if (Array.isArray(v)) return v.map(walk);
+    if (v !== null && typeof v === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, inner] of Object.entries(v)) out[k] = walk(inner);
+      return out;
+    }
+    return v;
+  };
+  return walk(value);
+}

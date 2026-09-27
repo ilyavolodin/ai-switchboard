@@ -121,6 +121,18 @@ export function validateSettings(
   return copy;
 }
 
+/**
+ * Without the plugin its schema (and so its secret fields) is unknown: new settings cannot be
+ * checked for literal secret values, so they are refused until the plugin is back.
+ */
+function checkableSchema(type: { settingsSchema: JSONSchema } | undefined): JSONSchema {
+  if (!type)
+    throw unprocessable(
+      'The plugin for this instance is unavailable, so its settings cannot be checked. Reinstall the plugin first.',
+    );
+  return type.settingsSchema;
+}
+
 function validateCaps(schema: JSONSchema, caps: unknown): Record<string, unknown> {
   const copy = structuredClone(caps ?? {}) as Record<string, unknown>;
   const check = validateAgainst(schema, copy);
@@ -222,10 +234,9 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       const [before] = await db.select().from(sources).where(eq(sources.id, req.params.id));
       if (!before) throw notFound('Source');
       const typeEntry = ctx.runtime.sourceType(before.typeId);
-      const settings =
-        req.body.settings && typeEntry
-          ? validateSettings(typeEntry.type.settingsSchema, req.body.settings)
-          : (req.body.settings ?? before.settings);
+      const settings = req.body.settings
+        ? validateSettings(checkableSchema(typeEntry?.type), req.body.settings)
+        : before.settings;
       const caps = req.body.caps ? validateCaps(sourceCapsSchema, req.body.caps) : before.caps;
       const name = req.body.name !== undefined ? nonEmptyName(req.body.name) : before.name;
       const now = clock.now();
@@ -437,10 +448,9 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       const [before] = await db.select().from(executors).where(eq(executors.id, req.params.id));
       if (!before) throw notFound('Executor');
       const typeEntry = ctx.runtime.executorType(before.typeId);
-      const settings =
-        req.body.settings && typeEntry
-          ? validateSettings(typeEntry.type.settingsSchema, req.body.settings)
-          : (req.body.settings ?? before.settings);
+      const settings = req.body.settings
+        ? validateSettings(checkableSchema(typeEntry?.type), req.body.settings)
+        : before.settings;
       const caps = req.body.caps ? validateCaps(executorCapsSchema, req.body.caps) : before.caps;
       const name = req.body.name !== undefined ? nonEmptyName(req.body.name) : before.name;
       const targetDefaults = req.body.targetDefaults ?? before.targetDefaults;
@@ -661,10 +671,9 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         const reason = requireReason(req.body);
         const before = await load(req.params.id);
         const type = typeOf(before.typeId);
-        const settings =
-          req.body.settings && type
-            ? validateSettings(type.settingsSchema, req.body.settings)
-            : (req.body.settings ?? before.settings);
+        const settings = req.body.settings
+          ? validateSettings(checkableSchema(type), req.body.settings)
+          : before.settings;
         const name = req.body.name !== undefined ? checkName(req.body.name) : before.name;
         const now = clock.now();
         await db

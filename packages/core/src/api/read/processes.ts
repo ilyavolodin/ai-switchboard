@@ -1,5 +1,5 @@
 import { CronExpressionParser } from 'cron-parser';
-import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import {
   approvals,
@@ -11,6 +11,7 @@ import {
   sources,
 } from '../../db/schema.js';
 import { processStatus } from '../../domain/labels.js';
+import { countedRun } from '../../services/pipeline/counters.js';
 import type { ProcessDocument } from '../../domain/process.js';
 import type { StatusTone } from '../../domain/status.js';
 import type { ApiContext } from '../context.js';
@@ -164,10 +165,11 @@ export async function processSummaries(
     ctx.db.select({ id: sources.id, name: sources.name }).from(sources),
     ctx.db.select({ id: executors.id, name: executors.name }).from(executors),
   ]);
+  // The daily-cap bar counts exactly what the budget stage counts (by reservation time).
   const day24 = await ctx.db
     .select({ processId: runs.processId, n: count() })
     .from(runs)
-    .where(and(inArray(runs.processId, ids), gte(runs.createdAt, dayAgo), eq(runs.dryRun, false)))
+    .where(and(inArray(runs.processId, ids), gt(runs.invokedAt, dayAgo), countedRun()))
     .groupBy(runs.processId);
 
   return list.map((p) => {

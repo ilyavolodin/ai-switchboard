@@ -2,8 +2,9 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { Health, InvokeResult, TrackingMode } from '@ai-switchboard/sdk';
 
-import { executors, processes, runUpdates, runs } from '../../db/schema.js';
+import { batches, executors, processes, runUpdates, runs } from '../../db/schema.js';
 import { resolveSecretRefs } from '../../expr/index.js';
+import { redactSecretValues } from '../../secrets/refs.js';
 import {
   classifyInvoke,
   MAX_INVOKE_ATTEMPTS,
@@ -13,9 +14,10 @@ import {
 } from '../../pipeline/invoke.js';
 
 import { JOBS, addSeconds, errorMessage, type Ctx } from './context.js';
+import { batchEvents } from './load.js';
 import { sendSystemAlert } from './notify.js';
 import { closeRun, runHandle, scheduleTracking } from './runs.js';
-import type { RunRow } from './steps.js';
+import { runSteps, type RunRow } from './steps.js';
 
 /**
  * The executor bridge: one invoke attempt for a reserved run. The attempt is claimed with a
@@ -72,9 +74,37 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
   const tracking = live.trackingFor(target);
   const idempotent = live.idempotentFor(target);
 
+  // `before` steps run under this attempt's claim, so recovery never invokes past a step that is
+  // still in flight (a claimed attempt is only ever made `uncertain`). `runSteps` is idempotent
+  // per run: a resumed or retried attempt reuses the recorded outcome.
+  if (proc.document.before.length > 0) {
+    const [batch] = await ctx.db.select().from(batches).where(eq(batches.id, run.batchId));
+    const events = batch ? await batchEvents(ctx.db, batch) : [];
+    const stepsOk = await runSteps(ctx, 'before', run, proc, events);
+    if (!stepsOk) {
+      // Nothing was sent: the run does not count toward budgets and has no after phase.
+      await ctx.db
+        .update(runs)
+        .set({ attempts: 0 })
+        .where(and(eq(runs.id, run.id), eq(runs.status, 'invoking')));
+      await closeRun(ctx, run.id, {
+        status: 'failed',
+        source: 'invoke',
+        reason: 'before_step_failed',
+      });
+      return;
+    }
+  }
+
+  // Every secret value this attempt handles: the resolved input's and the instance's own.
+  const secretValues: string[] = [...(live.secretValues ?? [])];
   let input: unknown;
   try {
-    input = await resolveSecretRefs(run.input, (ref) => ctx.secrets.resolve(ref));
+    input = await resolveSecretRefs(run.input, async (ref) => {
+      const value = await ctx.secrets.resolve(ref);
+      secretValues.push(value);
+      return value;
+    });
   } catch (err) {
     await apply(
       ctx,
@@ -98,7 +128,11 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
   } catch (err) {
     outcome = { kind: 'error', error: err };
   }
-  const cls = classifyInvoke({ idempotent, attempt: run.attempts }, outcome);
+  // A backend may echo what it received (credentials, the input): never store a secret value.
+  const cls = redactSecretValues(
+    classifyInvoke({ idempotent, attempt: run.attempts }, outcome),
+    secretValues,
+  ) as InvokeClassification;
   ctx.log.info(
     { run_id: run.id, process_id: run.processId, action: cls.action, attempt: run.attempts },
     'invoke classified',

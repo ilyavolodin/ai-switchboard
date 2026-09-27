@@ -101,6 +101,38 @@ describe('HttpClient', () => {
     });
   });
 
+  it('checks every redirect hop against the declared capability', async () => {
+    const requested: string[] = [];
+    // A transport that follows redirects itself unless asked not to, like fetch.
+    const fetchLike = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      let url = new URL(input instanceof Request ? input.url : input);
+      for (;;) {
+        requested.push(`${init?.method ?? 'GET'} ${url.href} ${JSON.stringify(init?.headers)}`);
+        const target =
+          url.pathname === '/moved'
+            ? 'https://api.github.com/final'
+            : url.pathname === '/escape'
+              ? 'http://169.254.169.254/latest/meta-data'
+              : null;
+        if (target === null) return Promise.resolve(new Response('{"ok":true}'));
+        if (init?.redirect === 'manual')
+          return Promise.resolve(
+            new Response(null, { status: 302, headers: { location: target } }),
+          );
+        url = new URL(target);
+      }
+    };
+    const client = createHttpClient({ allowedHosts: ['api.github.com'], fetch: fetchLike });
+    await expect(client.get('https://api.github.com/moved')).resolves.toMatchObject({
+      status: 200,
+    });
+    requested.length = 0;
+    await expect(
+      client.get('https://api.github.com/escape', { headers: { authorization: 'token x' } }),
+    ).rejects.toBeInstanceOf(CapabilityError);
+    expect(requested.some((r) => r.includes('169.254.169.254'))).toBe(false);
+  });
+
   it('sends JSON and query parameters', async () => {
     const stub = createStubHttp((req) => ({
       json: { echo: req.json(), q: req.url.searchParams.get('a') },

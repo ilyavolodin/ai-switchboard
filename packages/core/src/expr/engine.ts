@@ -154,6 +154,15 @@ export async function resolveSecretRefs(
   return replaceSecretRefs(value, (ref) => values.get(ref));
 }
 
+/**
+ * Data an expression reads (event context, `$resolve`/`$linked` results, an executor's result)
+ * comes from outside. A marker in it is forged: only `$secretRef` inside the expression may make
+ * one, so the bridge never resolves a secret that a payload asked for. Forged markers become null.
+ */
+export function neutralizeSecretRefs(value: unknown): unknown {
+  return collectSecretRefs(value).size === 0 ? value : replaceSecretRefs(value, () => null);
+}
+
 function filterEnv(env: Record<string, string | undefined>): Map<string, string> {
   const out = new Map<string, string>();
   for (const [k, v] of Object.entries(env)) {
@@ -251,7 +260,7 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
           if (!fns.resolve) throw new ExprLimitError('$resolve is not available here', 'runtime');
           const value = await fns.resolve({ kind: ref.kind, id: ref.id, ...rest(ref) });
           if (aborted) throw new ExprLimitError(`evaluation exceeded ${timeoutMs} ms`, 'timeout');
-          return value ?? undefined;
+          return neutralizeSecretRefs(value) ?? undefined;
         },
         linked: async (ref: unknown) => {
           guard('$linked');
@@ -261,7 +270,7 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
           if (!fns.linked) throw new ExprLimitError('$linked is not available here', 'runtime');
           const value = await fns.linked({ kind: ref.kind, id: ref.id, ...rest(ref) });
           if (aborted) throw new ExprLimitError(`evaluation exceeded ${timeoutMs} ms`, 'timeout');
-          return value;
+          return neutralizeSecretRefs(value);
         },
       };
 
@@ -276,7 +285,7 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
       });
       const run = (async (): Promise<EvalResult> => {
         try {
-          const value: unknown = await compiled.evaluate(context, bindings);
+          const value: unknown = await compiled.evaluate(neutralizeSecretRefs(context), bindings);
           return { ok: true, value: toPlain(value) };
         } catch (err) {
           if (err instanceof ExprLimitError)

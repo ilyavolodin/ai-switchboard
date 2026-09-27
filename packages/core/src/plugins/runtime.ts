@@ -38,6 +38,8 @@ export interface LiveExecutor {
   meters: MeterSpec[];
   trackingFor(target: unknown): TrackingMode;
   idempotentFor(target: unknown): boolean;
+  /** Resolved secret values of the instance's settings, redacted from what the backend returns. */
+  secretValues?: string[];
 }
 
 export interface LiveNotifier {

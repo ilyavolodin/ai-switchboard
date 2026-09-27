@@ -211,7 +211,11 @@ export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<P
         ctx.db
           .select({ id: dispatches.eventId })
           .from(dispatches)
-          .innerJoin(runs, eq(runs.batchId, dispatches.batchId))
+          .leftJoin(batches, eq(batches.id, dispatches.batchId))
+          .innerJoin(
+            runs,
+            or(eq(runs.batchId, dispatches.batchId), eq(runs.batchId, batches.mergedInto)),
+          )
           .where(eq(runs.executorId, q.executor)),
       ),
     );

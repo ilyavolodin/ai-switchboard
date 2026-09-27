@@ -5,6 +5,7 @@ import {
   formatSecretRef,
   literalSecretFields,
   parseSecretRef,
+  redactSecretValues,
   resolveSecretRefs,
 } from './refs.js';
 
@@ -56,5 +57,20 @@ describe('secret references', () => {
         empty: '',
       }),
     ).toEqual(['token']);
+  });
+});
+
+describe('redactSecretValues', () => {
+  it('replaces secret values inside nested strings and leaves the rest', () => {
+    const out = redactSecretValues(
+      { a: 'token abcd-1234 refused', list: ['x', 'abcd-1234abcd-1234'], n: 3, short: 'abc' },
+      ['abcd-1234', 'abc'],
+    );
+    expect(out).toEqual({
+      a: 'token [redacted] refused',
+      list: ['x', '[redacted][redacted]'],
+      n: 3,
+      short: 'abc',
+    });
   });
 });

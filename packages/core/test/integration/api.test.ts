@@ -1,15 +1,20 @@
+import { randomUUID } from 'node:crypto';
+
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 import type {
   ExecutorDetail,
   MeResponse,
+  Page,
   ProcessDetail,
   ProcessSummary,
+  RunSummary,
   SourceDetail,
   UserDTO,
 } from '../../src/api/contract.js';
-import { auditLog } from '../../src/db/schema.js';
+import { auditLog, batches, dispatches, events, runs, sources } from '../../src/db/schema.js';
 import { defaultProcessDocument, type ProcessDocument } from '../../src/domain/process.js';
 import { createApiHarness, ADMIN_EMAIL, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
@@ -156,6 +161,27 @@ describe('sources and executors', () => {
     ]);
     expect(src.settings).toEqual({ secret: 'secret://env/TEST_SOURCE_SECRET', org: 'acme' });
     expect(JSON.stringify(src)).not.toContain('s-fixture-secret');
+  });
+
+  it('refuses a settings change it cannot check while the plugin is unavailable', async () => {
+    const [row] = await tdb.db
+      .insert(sources)
+      .values({ typeId: 'gone-type', name: 'Orphan', settings: { token: 'secret://env/X' } })
+      .returning();
+    const res = await h.request('PUT', `/api/v1/sources/${row!.id}`, {
+      cookie: h.adminCookie,
+      body: { settings: { token: 'plain-text-token' }, reason },
+    });
+    expect(res.statusCode).toBe(422);
+    const [after] = await tdb.db.select().from(sources).where(eq(sources.id, row!.id));
+    expect(after?.settings).toEqual({ token: 'secret://env/X' });
+    // A rename without settings still works.
+    const renamed = await h.request('PUT', `/api/v1/sources/${row!.id}`, {
+      cookie: h.adminCookie,
+      body: { name: 'Orphan 2', reason },
+    });
+    expect(renamed.statusCode).toBe(200);
+    await tdb.db.delete(sources).where(eq(sources.id, row!.id));
   });
 
   it('shows a secret error when the reference does not resolve', async () => {
@@ -374,5 +400,119 @@ describe('ingress surfaces', () => {
     expect((await h.app.inject({ method: 'POST', url: '/hooks/not-a-uuid' })).statusCode).toBe(404);
     expect((await h.app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
     expect((await h.app.inject({ method: 'GET', url: '/readyz' })).statusCode).toBe(200);
+  });
+});
+
+describe('read models over pipeline rows', () => {
+  it('interpret merged sweeps and count only budget-counted runs', async () => {
+    const src = await createSource('Rows source');
+    const ex = await createExecutor('Rows exec');
+    const created = await h.request('POST', '/api/v1/processes', {
+      cookie: h.adminCookie,
+      body: {
+        document: {
+          ...processDoc(src.id, ex.id, 'Rows'),
+          budgets: { runsPerDay: 5, meterCeilings: {} },
+        },
+        reason,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const pid = created.json<ProcessDetail>().id;
+    const now = h.clock.now();
+    const run = (batchId: string, extra: Partial<typeof runs.$inferInsert>) => ({
+      batchId,
+      processId: pid,
+      processVersion: 1,
+      executorId: ex.id,
+      kind: 'event' as const,
+      status: 'ok' as const,
+      attempts: 1,
+      invokedAt: now,
+      createdAt: now,
+      ...extra,
+    });
+    const ids = Array.from({ length: 5 }, () => randomUUID());
+    await tdb.db.insert(batches).values(
+      ids.map((id) => ({
+        id,
+        processId: pid,
+        kind: 'event' as const,
+        openedAt: now,
+        fireAfter: now,
+        outcome: 'invoked' as const,
+      })),
+    );
+    await tdb.db.insert(runs).values([
+      run(ids[0]!, {}),
+      run(ids[1]!, { status: 'held', statusReason: 'paused:paused' }),
+      run(ids[2]!, {
+        status: 'failed',
+        statusReason: 'input_invalid',
+        attempts: 0,
+        invokedAt: null,
+      }),
+      run(ids[3]!, { dryRun: true }),
+    ]);
+
+    // A sweep that merged an open event batch: the event's dispatch points at the event batch.
+    const sweepId = randomUUID();
+    const eventBatch = ids[4]!;
+    await tdb.db
+      .update(batches)
+      .set({ outcome: 'merged', mergedInto: sweepId })
+      .where(eq(batches.id, eventBatch));
+    await tdb.db.insert(batches).values({
+      id: sweepId,
+      processId: pid,
+      kind: 'sweep',
+      openedAt: now,
+      fireAfter: now,
+      outcome: 'invoked',
+    });
+    await tdb.db.insert(runs).values(run(sweepId, { kind: 'sweep', status: 'running' }));
+    const eventId = randomUUID();
+    await tdb.db.insert(events).values({
+      id: eventId,
+      sourceId: src.id,
+      sourceType: 'test-source',
+      type: 'test-source.item.created',
+      occurredAt: now,
+      receivedAt: now,
+      artifact: { kind: 'test.item', id: 'MERGED-1' },
+      artifactKey: 'test.item:MERGED-1',
+      attributes: { label: 'x' },
+      dedupeKey: 'k-merged',
+      rawRef: 'r-merged',
+      stage: 'matched',
+    });
+    await tdb.db.insert(dispatches).values({
+      eventId,
+      processId: pid,
+      triggerId: 't1',
+      dedupeKey: 'k-merged',
+      outcome: 'batched',
+      batchId: eventBatch,
+      createdAt: now,
+    });
+
+    const list = await h.request('GET', '/api/v1/processes', { cookie: h.adminCookie });
+    const summary = list.json<ProcessSummary[]>().find((p) => p.id === pid);
+    // The budget counts the ok run and the running sweep; not the held, never-invoked or dry runs.
+    expect(summary?.dailyCap).toEqual({ used: 2, limit: 5 });
+
+    const sweepRuns = await h.request('GET', `/api/v1/runs?process=${pid}&status=running`, {
+      cookie: h.adminCookie,
+    });
+    const [sweepRun] = sweepRuns.json<Page<RunSummary>>().items;
+    expect(sweepRun).toMatchObject({ kind: 'sweep', eventCount: 1 });
+    expect(sweepRun?.artifacts).toEqual([{ kind: 'test.item', id: 'MERGED-1' }]);
+
+    const byExecutor = await h.request('GET', `/api/v1/events?executor=${ex.id}`, {
+      cookie: h.adminCookie,
+    });
+    expect(byExecutor.json<Page<{ eventId: string }>>().items.map((i) => i.eventId)).toContain(
+      eventId,
+    );
   });
 });

@@ -3,6 +3,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { events, eventRaw, replicas, sources, statsHourly } from '../../src/db/schema.js';
 import { defaultProcessDocument } from '../../src/domain/process.js';
+import { createExpressionEngine } from '../../src/expr/index.js';
+import { pollSource } from '../../src/services/pipeline/ingest.js';
+import { DEFAULT_SETTINGS, putSettings } from '../../src/services/settings.js';
 import { createPipeline, materialiseStats, prune } from '../../src/services/pipeline/index.js';
 import { cronPreview, filterPreview, inputPreview } from '../../src/services/preview.js';
 import { traceForArtifact, traceForEvent } from '../../src/services/trace.js';
@@ -197,6 +200,26 @@ describe('stats, retention and maintenance', () => {
     expect(await h.db.select().from(eventRaw)).toHaveLength(1);
   });
 
+  it('a short dispatch retention never shortens the 7-day dedupe window', async () => {
+    const src = await seedSource(h);
+    const ex = await seedExecutor(h);
+    const pid = await seedProcess(h, ex.id, src.id, { batching: { debounceSeconds: 0 } });
+    await putSettings(
+      h.db,
+      { ...DEFAULT_SETTINGS, retention: { ...DEFAULT_SETTINGS.retention, dispatchesDays: 1 } },
+      h.clock.now(),
+    );
+    await deliver(h, src.id, [{ id: '1', version: 'a' }]);
+    await h.drain();
+    expect(await runsOf(h.db, pid)).toHaveLength(1);
+    h.clock.advance(3 * 86_400_000);
+    await prune(h.deps);
+    // The sender redelivers the same change three days later.
+    await deliver(h, src.id, [{ id: '1', version: 'a' }]);
+    await h.drain();
+    expect(await runsOf(h.db, pid)).toHaveLength(1);
+  });
+
   it('recovers an event whose match job was lost, polls pull sources and alerts on silence', async () => {
     const src = await seedSource(h);
     const ex = await seedExecutor(h);
@@ -248,6 +271,47 @@ describe('stats, retention and maintenance', () => {
     await h.pipeline.maintenance();
     await h.pipeline.maintenance();
     expect(notifier.messages.filter((m) => m.title.startsWith('Source silent'))).toHaveLength(2);
+  });
+
+  it('two overlapping polls of one source never emit the same page twice', async () => {
+    const pull = await seedSource(h, { caps: { pollIntervalSeconds: 10 } });
+    const live = h.runtime.sources.get(pull.id)!;
+    live.type = { ...live.type, mode: 'pull' };
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    live.source.poll = async (watermark) => {
+      await gate;
+      return {
+        events: [
+          {
+            type: PR_LABELED,
+            occurredAt: h.clock.now().toISOString(),
+            artifact: { kind: 'fake.pr', id: `after-${watermark ?? 'start'}` },
+            attributes: { label: 'x', repository: 'r' },
+            dedupeKey: `after-${watermark ?? 'start'}`,
+          },
+        ],
+        watermark: `${watermark ?? ''}+`,
+      };
+    };
+    const ctx = {
+      ...h.deps,
+      secrets: { resolve: () => Promise.resolve('') },
+      engine: createExpressionEngine(),
+      log: h.deps.logger,
+    };
+    // A slow poll outlives its interval and the next claim starts a second one.
+    const first = pollSource(ctx, pull.id);
+    const second = pollSource(ctx, pull.id);
+    await new Promise((r) => setTimeout(r, 20));
+    release();
+    await Promise.all([first, second]);
+    const stored = await h.db.select().from(events).where(eq(events.sourceId, pull.id));
+    expect(stored).toHaveLength(1);
+    const [row] = await h.db.select().from(sources).where(eq(sources.id, pull.id));
+    expect(row?.watermark).toBe('+');
   });
 
   it('heartbeats into the replicas table', async () => {

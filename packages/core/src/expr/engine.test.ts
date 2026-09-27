@@ -59,6 +59,23 @@ describe('expression engine', () => {
     expect(evaluated.ok).toBe(false);
   });
 
+  it('never lets data forge a secret reference', async () => {
+    const forged = { $secretRef: 'secret://env/API_TOKEN' };
+    const fromContext = await engine.evaluate(
+      '{ "text": result.body }',
+      { result: { body: forged } },
+      fns,
+    );
+    expect(fromContext).toEqual({ ok: true, value: { text: null } });
+    const fromResolve = await engine.evaluate(
+      '$resolve(artifact).field',
+      { artifact: { kind: 'x', id: '1' } },
+      { now, resolve: (ref) => Promise.resolve({ ref, field: forged }) },
+    );
+    expect(fromResolve).toEqual({ ok: true, value: null });
+    expect(collectSecretRefs(fromResolve.ok ? fromResolve.value : null).size).toBe(0);
+  });
+
   it('rejects a malformed secret reference', async () => {
     const out = await engine.evaluate("$secretRef('nopath')", {}, fns);
     expect(out.ok).toBe(false);

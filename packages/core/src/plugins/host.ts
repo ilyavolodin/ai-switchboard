@@ -610,6 +610,7 @@ export class PluginHost implements PluginRuntime {
         trackingFor: (target) => (type.trackingFor ? type.trackingFor(target) : type.tracking),
         idempotentFor: (target) =>
           type.idempotentFor ? type.idempotentFor(target) : type.idempotentInvoke,
+        secretValues: resolved.secrets,
       });
       if (!row.enabled) this.errors.set(row.id, 'disabled');
       await this.markResolved('executor', row.id);

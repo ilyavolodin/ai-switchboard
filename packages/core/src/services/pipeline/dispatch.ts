@@ -39,8 +39,6 @@ import { attemptInvoke } from './invoke.js';
 import { batchEvents, type BatchRow } from './load.js';
 import { meterSnapshots } from './meters.js';
 import { notifyProcess } from './notify.js';
-import { closeRun } from './runs.js';
-import { runSteps } from './steps.js';
 
 /**
  * Stages 5–7 for one closed batch: gate, input mapping (validated before any budget is spent),
@@ -394,17 +392,7 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
     );
   }
 
-  const [runRow] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
-  if (!runRow) return { batchId, runId, outcome: 'invoking' };
-  const stepsOk = await runSteps(ctx, 'before', runRow, proc, events);
-  if (!stepsOk) {
-    await closeRun(ctx, runId, {
-      status: 'failed',
-      source: 'invoke',
-      reason: 'before_step_failed',
-    });
-    return { batchId, runId, outcome: 'failed' };
-  }
+  // `before` steps run inside the first invoke attempt, under its claim.
   await attemptInvoke(ctx, runId);
   const [final] = await ctx.db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId));
   return { batchId, runId, outcome: final?.status ?? 'invoking' };

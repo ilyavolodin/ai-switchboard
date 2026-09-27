@@ -5,6 +5,7 @@ import type { Event } from '@ai-switchboard/sdk';
 import { steps, type runs } from '../../db/schema.js';
 import type { StepPhase, StepStatus } from '../../domain/status.js';
 import { evaluateFilter, resolveSecretRefs, stepContext } from '../../expr/index.js';
+import { redactSecretValues } from '../../secrets/refs.js';
 
 import { errorMessage, evalFunctions, type Ctx, type ProcessRow } from './context.js';
 
@@ -97,12 +98,17 @@ export async function runSteps(
       source?.source.act?.bind(source.source) ?? executor?.executor.act?.bind(executor.executor);
     let status: StepStatus = 'ok';
     let error: string | null = null;
+    const secretValues: string[] = [...(source?.secretValues ?? executor?.secretValues ?? [])];
     if (!act) {
       status = 'error';
       error = `provider ${step.provider} is not available or has no actions`;
     } else {
       try {
-        const resolved = await resolveSecretRefs(args.value, (ref) => ctx.secrets.resolve(ref));
+        const resolved = await resolveSecretRefs(args.value, async (ref) => {
+          const value = await ctx.secrets.resolve(ref);
+          secretValues.push(value);
+          return value;
+        });
         const res = await act(step.action, resolved);
         if (!res.ok) {
           status = 'error';
@@ -113,7 +119,12 @@ export async function runSteps(
         error = errorMessage(err);
       }
     }
-    await record(status, args.value, error);
+    // An action's error may echo what it was sent: never store a secret value.
+    await record(
+      status,
+      args.value,
+      error === null ? null : (redactSecretValues(error, secretValues) as string),
+    );
     if (status === 'error') {
       allOk = false;
       if (phase === 'before') break;

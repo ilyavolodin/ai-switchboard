@@ -1,5 +1,6 @@
 import type { FastifyError, FastifyInstance } from 'fastify';
 
+import { isPipelineError } from '../services/pipeline/errors.js';
 import type { ApiError } from './contract.js';
 
 /** Throw from a route or service to send a structured error response. */
@@ -45,6 +46,12 @@ export function registerErrorHandler(app: FastifyInstance): void {
         ...(err.details ? { details: err.details } : {}),
       };
       return reply.code(err.status).send(body);
+    }
+    if (isPipelineError(err)) {
+      // `unavailable` is a 503 (retry later), not an internal error.
+      return reply
+        .code(err.status)
+        .send({ error: err.code, message: err.message } satisfies ApiError);
     }
     const fe = err as FastifyError;
     if (fe.validation) {

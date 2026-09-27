@@ -1,7 +1,18 @@
+import { randomUUID } from 'node:crypto';
+
+import { InvokeError } from '@ai-switchboard/sdk';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { approvals, auditLog, notificationLog, processes, steps } from '../../src/db/schema.js';
+import {
+  approvals,
+  auditLog,
+  batches,
+  notificationLog,
+  processes,
+  runs,
+  steps,
+} from '../../src/db/schema.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import { EXEC_TYPE, callbackRequest } from '../helpers/fake-runtime.js';
 import {
@@ -276,6 +287,31 @@ describe('steps and notifications', () => {
     expect(await h.db.select().from(notificationLog)).toHaveLength(1);
   });
 
+  it('never stores a resolved secret value that the backend echoes back', async () => {
+    const src = await seedSource(h);
+    const ex = await seedExecutor(h);
+    h.secrets.set('secret://env/TOKEN', 'the-token-value');
+    const pid = await seedProcess(h, ex.id, src.id, {
+      input: '{ "runId": run.id, "mode": mode, "token": $secretRef("env/TOKEN") }',
+    });
+    ex.state.script.push(
+      (_run, input) => Promise.resolve({ status: 'completed', result: { echo: input } }),
+      () =>
+        Promise.reject(
+          new InvokeError('400: field token "the-token-value" is invalid', {
+            status: 400,
+            definitive: true,
+          }),
+        ),
+    );
+    await fireOne(src.id, '1');
+    await fireOne(src.id, '2');
+    const stored = JSON.stringify(await runsOf(h.db, pid));
+    expect(ex.state.invocations[0]?.input).toMatchObject({ token: 'the-token-value' });
+    expect(stored).not.toContain('the-token-value');
+    expect(stored).toContain('[redacted]');
+  });
+
   it('a failing before step fails the run before invoke', async () => {
     const src = await seedSource(h);
     const ex = await seedExecutor(h);
@@ -288,6 +324,65 @@ describe('steps and notifications', () => {
       { status: 'failed', statusReason: 'before_step_failed' },
     ]);
     expect(ex.state.invocations).toHaveLength(0);
+  });
+
+  it('recovery never invokes past a before step that is still in flight', async () => {
+    const src = await seedSource(h);
+    const ex = await seedExecutor(h, { tracking: 'callback' });
+    // The before step never returns (the replica died while it ran).
+    src.state.actionResult = new Promise(() => undefined) as never;
+    const pid = await seedProcess(h, ex.id, src.id, {
+      before: [{ provider: src.id, action: 'addLabel', args: '{ "label": "x" }' }],
+    });
+    await deliver(h, src.id, [{ id: '1', version: 'v1' }]);
+    await h.drain();
+    h.clock.advanceSeconds(31);
+    void h.drain();
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await runsOf(h.db, pid))[0]?.status).toBe('invoking');
+    h.clock.advanceSeconds(61);
+    const restarted = await h.replica();
+    await restarted.pipeline.maintenance();
+    await restarted.queue.drain();
+    expect(ex.state.invocations).toHaveLength(0);
+  });
+
+  it('a reserved run resumed by recovery runs its before steps first', async () => {
+    const src = await seedSource(h);
+    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const pid = await seedProcess(h, ex.id, src.id, {
+      before: [{ provider: src.id, action: 'addLabel', args: '{ "label": "working" }' }],
+    });
+    // The replica died right after the reservation committed: nothing ran after it.
+    const batchId = randomUUID();
+    const now = h.clock.now();
+    await h.db.insert(batches).values({
+      id: batchId,
+      processId: pid,
+      kind: 'manual',
+      openedAt: now,
+      fireAfter: now,
+      closedAt: now,
+      outcome: 'invoked',
+    });
+    await h.db.insert(runs).values({
+      batchId,
+      processId: pid,
+      processVersion: 1,
+      executorId: ex.id,
+      kind: 'manual',
+      status: 'invoking',
+      input: { runId: 'x', mode: 'sweep', artifacts: [] },
+      invokedAt: now,
+      deadlineAt: new Date(now.getTime() + 3_600_000),
+      createdAt: now,
+    });
+    h.clock.advanceSeconds(61);
+    await h.pipeline.maintenance();
+    await h.drain();
+    expect(src.state.actions).toEqual([{ action: 'addLabel', args: { label: 'working' } }]);
+    expect(ex.state.invocations).toHaveLength(1);
+    expect((await runsOf(h.db, pid))[0]?.status).toBe('running');
   });
 
   it('notifies on held and throttled batches', async () => {

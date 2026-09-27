@@ -51,6 +51,9 @@ const NOT_SENT_CODES = new Set([
   'ERR_INVALID_URL',
 ]);
 
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 5;
+
 /** `*.atlassian.net` matches `acme.atlassian.net` (not `atlassian.net`); `*` matches all. */
 export function hostMatches(host: string, pattern: string): boolean {
   const h = host.toLowerCase();
@@ -104,39 +107,78 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     for (const [key, value] of Object.entries(req.query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
-    if (options.allowedHosts && !options.allowedHosts.some((p) => hostMatches(url.hostname, p))) {
-      throw new CapabilityError(
-        `Host ${url.hostname} is not in the plugin's declared network capability (${options.allowedHosts.join(', ')})`,
-      );
-    }
-    const headers: Record<string, string> = { ...options.injectHeaders?.(), ...req.headers };
+    const checkHost = (target: URL): void => {
+      if (
+        options.allowedHosts &&
+        !options.allowedHosts.some((p) => hostMatches(target.hostname, p))
+      ) {
+        throw new CapabilityError(
+          `Host ${target.hostname} is not in the plugin's declared network capability (${options.allowedHosts.join(', ')})`,
+        );
+      }
+    };
+    checkHost(url);
+    let headers: Record<string, string> = { ...options.injectHeaders?.(), ...req.headers };
     let body: string | Uint8Array | undefined = req.body;
     if (req.json !== undefined) {
       body = JSON.stringify(req.json);
       headers['content-type'] ??= 'application/json';
     }
-    const method = (req.method ?? (body === undefined ? 'GET' : 'POST')).toUpperCase();
+    let method = (req.method ?? (body === undefined ? 'GET' : 'POST')).toUpperCase();
     const started = Date.now();
+    const signal = AbortSignal.timeout(req.timeoutMs ?? defaultTimeout);
     let res: Response;
-    try {
-      res = await doFetch(url, {
-        method,
-        headers,
-        body: body as string | Uint8Array<ArrayBuffer> | undefined,
-        signal: AbortSignal.timeout(req.timeoutMs ?? defaultTimeout),
-      });
-    } catch (cause) {
-      const code = errorCode(cause) ?? (cause instanceof Error ? cause.name : undefined);
-      const sent = !(code !== undefined && NOT_SENT_CODES.has(code));
-      options.logger?.warn('http request failed', { method, host: url.hostname, code, sent });
-      throw new TransportError(
-        `${method} ${url.hostname}${url.pathname} failed: ${code ?? 'error'}`,
-        {
-          sent,
-          ...(code !== undefined ? { code } : {}),
-          cause,
-        },
-      );
+    // Redirects are followed by hand so every hop is checked against the declared capability
+    // (an allowed host must not be able to bounce a request to an undeclared one).
+    for (let hop = 0; ; hop++) {
+      try {
+        res = await doFetch(url, {
+          method,
+          headers,
+          body: body as string | Uint8Array<ArrayBuffer> | undefined,
+          redirect: 'manual',
+          signal,
+        });
+      } catch (cause) {
+        const code = errorCode(cause) ?? (cause instanceof Error ? cause.name : undefined);
+        // After the first hop the request has reached a backend already.
+        const sent = hop > 0 || !(code !== undefined && NOT_SENT_CODES.has(code));
+        options.logger?.warn('http request failed', { method, host: url.hostname, code, sent });
+        throw new TransportError(
+          `${method} ${url.hostname}${url.pathname} failed: ${code ?? 'error'}`,
+          {
+            sent,
+            ...(code !== undefined ? { code } : {}),
+            cause,
+          },
+        );
+      }
+      const location = REDIRECT_STATUSES.has(res.status) ? res.headers.get('location') : null;
+      if (location === null || hop >= MAX_REDIRECTS) break;
+      let next: URL;
+      try {
+        next = new URL(location, url);
+      } catch {
+        break;
+      }
+      checkHost(next);
+      if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) {
+        method = 'GET';
+        body = undefined;
+        headers = Object.fromEntries(
+          Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'content-type'),
+        );
+      }
+      if (next.origin !== url.origin) {
+        // Never forward credentials to another origin.
+        headers = Object.fromEntries(
+          Object.entries(headers).filter(
+            ([k]) => !['authorization', 'cookie', 'proxy-authorization'].includes(k.toLowerCase()),
+          ),
+        );
+      }
+      await res.arrayBuffer().catch(() => undefined);
+      url = next;
     }
     const buf = Buffer.from(await res.arrayBuffer());
     const resHeaders: Record<string, string> = {};
