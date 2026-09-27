@@ -663,6 +663,8 @@ export interface ActivityQuery {
   process?: string;
   executor?: string;
   stage?: string;
+  /** Exact event type, e.g. `github.pull_request.labeled`. */
+  type?: string;
   artifact?: string;
   from?: Iso;
   to?: Iso;

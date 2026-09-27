@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { FakeClock } from '../../src/clock.js';
 import { testConfig } from '../../src/config.js';
-import { plugins, pluginTypes, sources } from '../../src/db/schema.js';
+import { plugins, pluginTypes, secretProviders, sources } from '../../src/db/schema.js';
 import { silentLogger } from '../../src/logger.js';
 import { PluginHost } from '../../src/plugins/host.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
@@ -226,5 +226,70 @@ describe('plugin host', () => {
     const [p] = await tdb.db.select().from(plugins).where(eq(plugins.name, 'throwing'));
     expect(p?.errorCount).toBe(1);
     expect(telemetry.signals.filter((s) => s.name === 'switchboard.plugin.errors')).toHaveLength(1);
+  });
+  it('keeps the live instance through a reload and lets the newest reload win a race', async () => {
+    // A secret provider whose resolve can be held open, to interleave two reloads.
+    let held: { promise: Promise<string>; release: () => void } | undefined;
+    const gated = definePlugin({
+      id: 'gated',
+      displayName: 'Gated',
+      secretProviders: [
+        {
+          id: 'gated',
+          displayName: 'Gated',
+          settingsSchema: { type: 'object' },
+          create: () => ({
+            resolve: () => held?.promise ?? Promise.resolve('s-gated'),
+            health: () =>
+              Promise.resolve({ status: 'healthy', checkedAt: new Date().toISOString() }),
+          }),
+        },
+      ],
+    });
+    const h = host({
+      builtin: [
+        { name: 'test-plugin', version: '1.0.0', definition: testPlugin },
+        { name: 'gated', version: '1.0.0', definition: gated },
+      ],
+    });
+    await h.boot();
+    const [provider] = await tdb.db
+      .insert(secretProviders)
+      .values({ typeId: 'gated', name: 'gated', settings: {} })
+      .returning();
+    await h.reload('secret_provider', provider!.id);
+    const [src] = await tdb.db
+      .insert(sources)
+      .values({ typeId: 'test-source', name: 'v1', settings: { secret: 'secret://gated/x' } })
+      .returning();
+    const id = src!.id;
+    await h.reload('source', id);
+    expect(h.source(id)?.name).toBe('v1');
+
+    let release = (): void => undefined;
+    held = {
+      promise: new Promise<string>((resolve) => {
+        release = () => resolve('s-gated');
+      }),
+      release: () => release(),
+    };
+    await tdb.db.update(sources).set({ name: 'v2' }).where(eq(sources.id, id));
+    const slow = h.reload('source', id);
+    await new Promise((r) => setTimeout(r, 20));
+    // While v2 resolves its secrets, the previous object keeps serving.
+    expect(h.source(id)?.name).toBe('v1');
+
+    const stuck = held;
+    held = undefined;
+    await tdb.db.update(sources).set({ name: 'v3' }).where(eq(sources.id, id));
+    await h.reload('source', id);
+    expect(h.source(id)?.name).toBe('v3');
+    stuck.release();
+    await slow;
+    // The older reload read an older row: it must not replace the newer object.
+    expect(h.source(id)?.name).toBe('v3');
+
+    await tdb.db.delete(sources).where(eq(sources.id, id));
+    await tdb.db.delete(secretProviders).where(eq(secretProviders.id, provider!.id));
   });
 });

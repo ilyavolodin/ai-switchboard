@@ -17,7 +17,7 @@ import {
   type GateDecisionRecord,
 } from '../db/schema.js';
 import type { Deps } from '../deps.js';
-import type { EventStage, RunStatusValue } from '../domain/status.js';
+import { isTerminalRunStatus, type EventStage, type RunStatusValue } from '../domain/status.js';
 
 import { isUuid } from './pipeline/errors.js';
 import { relatedBatchIds } from './pipeline/load.js';
@@ -307,9 +307,7 @@ async function buildTrace(
         ...(r.externalUrl ? { externalUrl: r.externalUrl } : {}),
       });
     }
-    const terminalLogged = updates.some(
-      (u) => u.runId === r.id && ['ok', 'error', 'failed', 'unknown', 'held'].includes(u.status),
-    );
+    const terminalLogged = updates.some((u) => u.runId === r.id && isTerminalRunStatus(u.status));
     if (!terminalLogged && r.finishedAt) {
       entries.push({
         at: iso(r.finishedAt),
@@ -326,7 +324,7 @@ async function buildTrace(
   for (const u of updates) {
     const r = runById.get(u.runId);
     if (!r) continue;
-    const terminal = ['ok', 'error', 'failed', 'unknown', 'held'].includes(u.status);
+    const terminal = isTerminalRunStatus(u.status);
     const detail = u.detail as Record<string, unknown> | null;
     const url =
       typeof detail?.externalUrl === 'string'

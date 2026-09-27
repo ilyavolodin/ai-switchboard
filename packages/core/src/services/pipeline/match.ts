@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 
 import type { Tx } from '../../db/client.js';
 import {
@@ -21,6 +21,7 @@ import {
 
 import {
   JOBS,
+  appendDecisions,
   evalFunctions,
   lockKey,
   processView,
@@ -255,7 +256,7 @@ async function joinOrOpen(
           ? {
               outcome: 'closed' as const,
               closedAt: now,
-              decisions: sql`${batches.decisions} || ${JSON.stringify([closeRecord(decision.closeNow ?? '')])}::jsonb`,
+              decisions: appendDecisions([closeRecord(decision.closeNow ?? '')]),
             }
           : {}),
       })
@@ -325,7 +326,7 @@ export async function fireBatch(ctx: Ctx, batchId: string): Promise<void> {
       .set({
         outcome: 'closed',
         closedAt: now,
-        decisions: sql`${batches.decisions} || ${JSON.stringify([record])}::jsonb`,
+        decisions: appendDecisions([record]),
       })
       .where(eq(batches.id, batchId));
     return { later: null };

@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 
 import type { RawRequest, RunHandle, RunStatus } from '@ai-switchboard/sdk';
 
@@ -18,7 +18,7 @@ import {
 } from '../../pipeline/tracking.js';
 import { mergeUsage, sanitizeUsage } from '../../pipeline/usage.js';
 
-import { JOBS, errorMessage, withTx, type Ctx } from './context.js';
+import { JOBS, callPlugin, withTx, type Ctx } from './context.js';
 import { isUuid } from './errors.js';
 import { batchEvents } from './load.js';
 import { notifyProcess, sendSystemAlert, type NotifyOn } from './notify.js';
@@ -255,7 +255,8 @@ export async function finishRun(ctx: Ctx, runId: string): Promise<void> {
   }
 }
 
-async function recordUpdate(
+/** Append one entry to a run's tracking history (`run_updates`). */
+export async function recordUpdate(
   ctx: Ctx,
   runId: string,
   source: UpdateSource,
@@ -263,6 +264,37 @@ async function recordUpdate(
   detail: Record<string, unknown>,
 ): Promise<void> {
   await ctx.db.insert(runUpdates).values({ runId, at: ctx.clock.now(), source, status, detail });
+}
+
+/**
+ * Move an `invoking` run to `uncertain` (the invoke may have reached the backend) and schedule
+ * tracking to settle it. With `attemptStartedAt`, only while that attempt is still the current
+ * one. A run that already moved on is left alone.
+ */
+export async function markUncertain(
+  ctx: Ctx,
+  runId: string,
+  change: {
+    source: UpdateSource;
+    reason: string;
+    detail: Record<string, unknown>;
+    attemptStartedAt?: Date;
+  },
+): Promise<void> {
+  const [moved] = await ctx.db
+    .update(runs)
+    .set({ status: 'uncertain', statusReason: change.reason, invokeStartedAt: null })
+    .where(
+      and(
+        eq(runs.id, runId),
+        eq(runs.status, 'invoking'),
+        change.attemptStartedAt ? eq(runs.invokeStartedAt, change.attemptStartedAt) : undefined,
+      ),
+    )
+    .returning();
+  if (!moved) return;
+  await recordUpdate(ctx, runId, change.source, 'uncertain', change.detail);
+  await scheduleTracking(ctx, moved, 0);
 }
 
 /** Schedule the tracking jobs for an open run: the next poll (poll tracking) and the deadline. */
@@ -354,31 +386,47 @@ export async function pollRun(ctx: Ctx, runId: string): Promise<void> {
   const live = ctx.runtime.executor(run.executorId);
   if (!proc || !live?.executor.poll || live.trackingFor(proc.document.executor.target) !== 'poll')
     return;
+  const poll = live.executor.poll.bind(live.executor);
+  const next = nextPollAt(now, run.pollCount + 1, run.deadlineAt ?? now);
+  // Claim this poll by moving `next_poll_at` on from the value read: a duplicate job running on
+  // another replica at the same moment finds it moved and stops.
+  const claimed = await ctx.db
+    .update(runs)
+    .set({ nextPollAt: next.at })
+    .where(
+      and(
+        eq(runs.id, runId),
+        inArray(runs.status, ['running', 'uncertain']),
+        run.nextPollAt === null ? isNull(runs.nextPollAt) : eq(runs.nextPollAt, run.nextPollAt),
+      ),
+    )
+    .returning({ id: runs.id });
+  if (claimed.length === 0) return;
+
+  const out = await callPlugin(ctx, live.pluginName, 'poll', () =>
+    poll(runHandle(ctx, run, proc.name)),
+  );
   let status: RunStatus | null = null;
-  try {
-    status = validStatus(await live.executor.poll(runHandle(ctx, run, proc.name)));
+  if (out.ok) {
+    status = validStatus(out.value);
     if (!status)
       ctx.runtime.recordPluginError(
         live.pluginName,
         'exception',
         'poll returned a malformed RunStatus',
       );
-  } catch (err) {
-    ctx.log.warn({ run_id: runId, err: errorMessage(err) }, 'poll failed; will poll again');
+  } else {
+    ctx.log.warn({ run_id: runId, err: out.error }, 'poll failed; will poll again');
   }
-  if (status && status.state !== 'running') {
+  if (status) {
     await applyTracking(ctx, run, status, 'poll');
-    return;
-  }
-  if (status) await applyTracking(ctx, run, status, 'poll');
-  else
+    if (status.state !== 'running') return;
+  } else {
     await ctx.db
       .update(runs)
       .set({ pollCount: run.pollCount + 1 })
       .where(eq(runs.id, runId));
-  const deadline = run.deadlineAt ?? now;
-  const next = nextPollAt(now, run.pollCount + 1, deadline);
-  await ctx.db.update(runs).set({ nextPollAt: next.at }).where(eq(runs.id, runId));
+  }
   await ctx.queue.send(
     next.atDeadline ? JOBS.deadline : JOBS.poll,
     { runId },
@@ -416,12 +464,8 @@ export async function handleCallback(
     let verified: { runId: string; status: unknown } | null = null;
     try {
       verified = live.executor.verifyCallback(req);
-    } catch (err) {
-      ctx.runtime.recordPluginError(
-        live.pluginName,
-        'exception',
-        `verifyCallback: ${errorMessage(err)}`,
-      );
+    } catch {
+      // Counted against the plugin by the runtime's attribution wrapper; a rejection here.
       verified = null;
     }
     if (!verified) {
@@ -484,28 +528,12 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
       now,
     );
     if (action === 'uncertain' && run.invokeStartedAt) {
-      const moved = await ctx.db
-        .update(runs)
-        .set({
-          status: 'uncertain',
-          statusReason: 'invoke attempt in flight for more than 60 s',
-          invokeStartedAt: null,
-        })
-        .where(
-          and(
-            eq(runs.id, run.id),
-            eq(runs.status, 'invoking'),
-            eq(runs.invokeStartedAt, run.invokeStartedAt),
-          ),
-        )
-        .returning();
-      const m = moved[0];
-      if (m) {
-        await recordUpdate(ctx, run.id, 'recovery', 'uncertain', {
-          reason: 'invoking older than 60 s',
-        });
-        await scheduleTracking(ctx, m, 0);
-      }
+      await markUncertain(ctx, run.id, {
+        source: 'recovery',
+        reason: 'invoke attempt in flight for more than 60 s',
+        detail: { reason: 'invoking older than 60 s' },
+        attemptStartedAt: run.invokeStartedAt,
+      });
     } else if (action === 'reinvoke' && run.invokeStartedAt) {
       const moved = await ctx.db
         .update(runs)

@@ -17,7 +17,7 @@ import type { EventStage } from '../../domain/status.js';
 import type { LiveSource } from '../../plugins/runtime.js';
 import { recordAudit } from '../audit.js';
 
-import { JOBS, errorMessage, lockKey, withTx, type Ctx } from './context.js';
+import { JOBS, callPlugin, errorMessage, lockKey, withTx, type Ctx } from './context.js';
 import { PipelineError, isUuid } from './errors.js';
 
 /**
@@ -314,12 +314,8 @@ export async function ingestPush(
       } else {
         try {
           verdict = live.source.verify(req);
-        } catch (err) {
-          ctx.runtime.recordPluginError(
-            live.pluginName,
-            'exception',
-            `verify: ${errorMessage(err)}`,
-          );
+        } catch {
+          // Counted against the plugin by the runtime's attribution wrapper.
           verdict = { ok: false, reason: 'verify threw' };
         }
       }
@@ -358,8 +354,8 @@ export async function ingestPush(
             'parse did not return an array',
           );
         }
-      } catch (err) {
-        ctx.runtime.recordPluginError(live.pluginName, 'exception', `parse: ${errorMessage(err)}`);
+      } catch {
+        // Counted against the plugin by the runtime's attribution wrapper; the raw body is kept.
         return { status: 200 };
       }
     }
@@ -377,15 +373,23 @@ export async function pollSource(ctx: Ctx, sourceId: string): Promise<void> {
   if (!row?.enabled) return;
   const live = ctx.runtime.source(sourceId);
   if (!live?.source.poll) return;
-  let out: { events: unknown; watermark: unknown };
-  try {
-    out = await live.source.poll(row.watermark);
-  } catch (err) {
-    ctx.log.warn({ err, source_id: sourceId }, 'poll failed');
+  const poll = live.source.poll.bind(live.source);
+  const polled = await callPlugin(ctx, live.pluginName, 'poll', () => poll(row.watermark));
+  if (!polled.ok) {
+    ctx.log.warn({ err: polled.error, source_id: sourceId }, 'poll failed');
     return;
   }
-  const drafts = Array.isArray(out.events) ? (out.events as unknown[]) : [];
-  const watermark = typeof out.watermark === 'string' ? out.watermark : row.watermark;
+  const out: unknown = polled.value;
+  if (out === null || typeof out !== 'object') {
+    ctx.runtime.recordPluginError(live.pluginName, 'exception', 'poll returned no result object');
+    return;
+  }
+  const { events: polledEvents, watermark: next } = out as {
+    events?: unknown;
+    watermark?: unknown;
+  };
+  const drafts = Array.isArray(polledEvents) ? (polledEvents as unknown[]) : [];
+  const watermark = typeof next === 'string' ? next : row.watermark;
   const rawRef = await storeRaw(
     ctx,
     sourceId,
@@ -465,7 +469,7 @@ export async function replayEvent(
       const parsed: unknown = await live.source.parse(req);
       drafts = Array.isArray(parsed) ? parsed : [];
     } catch (err) {
-      ctx.runtime.recordPluginError(live.pluginName, 'exception', `parse: ${errorMessage(err)}`);
+      // Already counted against the plugin by the runtime's attribution wrapper.
       throw new PipelineError('invalid', `parse failed on replay: ${errorMessage(err)}`);
     }
   }

@@ -27,12 +27,13 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
   const now = ctx.clock.now();
   const day = new Date(now.getTime() - 86_400_000);
   const recent = new Date(now.getTime() - 5 * 60_000);
-  const [srcs, procs, exs, settings, procRows] = await Promise.all([
-    sourceSummaries(ctx),
-    processSummaries(ctx),
-    executorSummaries(ctx),
+  // One read of the processes table feeds every summary below.
+  const procRows = await ctx.db.select().from(processes).orderBy(processes.name);
+  const [srcs, procs, exs, settings] = await Promise.all([
+    sourceSummaries(ctx, undefined, procRows),
+    processSummaries(ctx, procRows),
+    executorSummaries(ctx, undefined, procRows),
     getSettings(ctx.db),
-    ctx.db.select().from(processes),
   ]);
   const procIds = procRows.map((p) => p.id);
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { instanceStatus, processStatus, runStatusLabel } from '../../domain/labels.js';
 import { RUN_STATUSES } from '../../domain/status.js';
-import { indicatorFor } from './activity.js';
+import { indicatorFor, safeHeaders } from './activity.js';
 import { decodeCursor, encodeCursor, pageLimit } from './paging.js';
 import { dotsFrom, nextSweepAt } from './processes.js';
 import { defaultProcessDocument } from '../../domain/process.js';
@@ -143,5 +143,34 @@ describe('paging', () => {
     expect(pageLimit(undefined)).toBe(50);
     expect(pageLimit('1000')).toBe(200);
     expect(pageLimit(-1)).toBe(50);
+  });
+});
+
+describe('paging edge cases', () => {
+  it('refuses a cursor whose time is not a time', () => {
+    const bad = encodeCursor({ t: 'soon' });
+    expect(() => decodeCursor(bad)).toThrow(/cursor is not a valid time/);
+  });
+});
+
+describe('raw delivery headers', () => {
+  it('drops every header that can carry a credential', () => {
+    const kept = safeHeaders({
+      'content-type': 'application/json',
+      'user-agent': 'GitHub-Hookshot/abc',
+      'x-github-event': 'pull_request',
+      authorization: 'Bearer fixture-secret',
+      'proxy-authorization': 'Basic fixture',
+      cookie: 'a=b',
+      'x-hub-signature-256': 'sha256=abc',
+      'x-api-key': 'fixture-secret',
+      'dd-api-key': 'fixture-secret',
+      'x-auth-password': 'fixture-secret',
+      'x-webhook-secret': 'fixture-secret',
+      'x-slack-request-token': 'fixture-secret',
+      'x-amz-security-token': 'fixture-secret',
+      'x-credentials': 'fixture-secret',
+    });
+    expect(Object.keys(kept).sort()).toEqual(['content-type', 'user-agent', 'x-github-event']);
   });
 });

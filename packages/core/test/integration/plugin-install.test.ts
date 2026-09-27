@@ -291,11 +291,16 @@ describe('plugins API: search, install and remove', () => {
   const reason = 'integration test';
   let viewerToken: string;
   let operatorToken: string;
+  const calls: string[][] = [];
 
   beforeAll(async () => {
+    const npm = fakeNpm(registry);
     h = await createApiHarness(tdb, {
       home: await prepareHome('api'),
-      runNpm: fakeNpm(registry),
+      runNpm: (args, cwd) => {
+        calls.push(args);
+        return npm(args, cwd);
+      },
       registryFetch,
     });
     const token = async (role: string) => {
@@ -376,6 +381,23 @@ describe('plugins API: search, install and remove', () => {
       expect(res.statusCode, `${method} ${url}`).toBe(403);
       expect(res.json<{ message: string }>().message).toMatch(/admin role/);
     }
+  });
+
+  it('refuses an install or inspect that names no package, and a malformed name on remove', async () => {
+    const npmCalls = calls.length;
+    for (const [url, body] of [
+      ['/api/v1/plugins', { reason }],
+      ['/api/v1/plugins/inspect', {}],
+    ] as const) {
+      const res = await h.request('POST', url, { cookie: h.adminCookie, body });
+      expect(res.statusCode, `${url} ${JSON.stringify(body)}`).toBe(400);
+    }
+    expect(calls.length).toBe(npmCalls);
+    const odd = await h.request('DELETE', '/api/v1/plugins/%25', {
+      cookie: h.adminCookie,
+      body: { reason },
+    });
+    expect(odd.statusCode, odd.body).toBe(404);
   });
 
   it('installs, loads at once and audits; the new type is usable with no restart', async () => {

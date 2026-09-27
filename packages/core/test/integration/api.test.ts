@@ -14,7 +14,16 @@ import type {
   SourceDetail,
   UserDTO,
 } from '../../src/api/contract.js';
-import { auditLog, batches, dispatches, events, runs, sources } from '../../src/db/schema.js';
+import {
+  approvals,
+  auditLog,
+  batches,
+  dispatches,
+  events,
+  runs,
+  sources,
+  users,
+} from '../../src/db/schema.js';
 import { defaultProcessDocument, type ProcessDocument } from '../../src/domain/process.js';
 import { createApiHarness, ADMIN_EMAIL, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
@@ -414,6 +423,14 @@ describe('ingress surfaces', () => {
     expect((await h.app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
     expect((await h.app.inject({ method: 'GET', url: '/readyz' })).statusCode).toBe(200);
   });
+
+  it('rate-limits one instance however its id is spelled', async () => {
+    const id = randomUUID();
+    const hit = (url: string) => h.app.inject({ method: 'POST', url, payload: '{}' });
+    for (let i = 0; i < 600; i++) await hit(`/hooks/${id}`);
+    expect((await hit(`/hooks/${id.toUpperCase()}`)).statusCode).toBe(429);
+    expect((await hit(`/hooks/${randomUUID()}`)).statusCode).toBe(200);
+  });
 });
 
 describe('read models over pipeline rows', () => {
@@ -588,5 +605,215 @@ describe('unauthenticated sources', () => {
     expect(res.json<{ message: string }>().message).toMatch(/must verify deliveries/);
     const rows = await tdb.db.select().from(sources).where(eq(sources.typeId, 'test-noverify'));
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('edge cases', () => {
+  /** Walk every page of a list endpoint with `limit=1`, collecting the ids it returns. */
+  async function walk(url: string, idOf: (item: never) => string): Promise<string[]> {
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 20; i++) {
+      const sep = url.includes('?') ? '&' : '?';
+      const res = await h.request(
+        'GET',
+        `${url}${sep}limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+        { cookie: h.adminCookie },
+      );
+      expect(res.statusCode, res.body).toBe(200);
+      const page = res.json<Page<never>>();
+      seen.push(...page.items.map(idOf));
+      cursor = page.nextCursor;
+      if (!cursor) break;
+    }
+    return seen;
+  }
+
+  async function processWithBatches(name: string, n: number) {
+    const src = await createSource(`${name} source`);
+    const ex = await createExecutor(`${name} exec`);
+    const created = await h.request('POST', '/api/v1/processes', {
+      cookie: h.adminCookie,
+      body: { document: processDoc(src.id, ex.id, name), reason },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const pid = created.json<ProcessDetail>().id;
+    const now = h.clock.now();
+    const ids: string[] = Array.from({ length: n }, () => randomUUID());
+    await tdb.db.insert(batches).values(
+      ids.map((id) => ({
+        id,
+        processId: pid,
+        kind: 'event' as const,
+        openedAt: now,
+        fireAfter: now,
+        outcome: 'invoked' as const,
+      })),
+    );
+    return { src, ex, pid, ids, now };
+  }
+
+  it('pages runs that share a timestamp without skipping any', async () => {
+    const { ex, pid, ids, now } = await processWithBatches('Tied runs', 3);
+    await tdb.db.insert(runs).values(
+      ids.map((batchId) => ({
+        batchId,
+        processId: pid,
+        processVersion: 1,
+        executorId: ex.id,
+        kind: 'event' as const,
+        status: 'ok' as const,
+        attempts: 1,
+        createdAt: now,
+      })),
+    );
+    const seen = await walk(`/api/v1/runs?process=${pid}`, (r: RunSummary) => r.id);
+    expect(seen).toHaveLength(3);
+    expect(new Set(seen).size).toBe(3);
+  });
+
+  it('pages approval history that shares a decision time without skipping any', async () => {
+    const { pid, ids, now } = await processWithBatches('Tied approvals', 3);
+    await tdb.db.insert(approvals).values(
+      ids.map((batchId) => ({
+        batchId,
+        processId: pid,
+        rule: 'always',
+        requestedAt: now,
+        decidedAt: now,
+        decidedBy: ADMIN_EMAIL,
+        decision: 'approved' as const,
+        reason,
+      })),
+    );
+    const seen = await walk('/api/v1/approvals/history', (a: { batchId: string }) => a.batchId);
+    expect(seen.filter((id) => ids.includes(id)).sort()).toEqual([...ids].sort());
+  });
+
+  it('filters a source’s events by type before paging', async () => {
+    const src = await createSource('Typed events');
+    const base = h.clock.now().getTime();
+    const event = (i: number, type: string) => ({
+      id: randomUUID(),
+      sourceId: src.id,
+      sourceType: 'test-source',
+      type,
+      occurredAt: new Date(base + i * 1000),
+      receivedAt: new Date(base + i * 1000),
+      artifact: { kind: 'test.item', id: `TYPED-${i}` },
+      artifactKey: `test.item:TYPED-${i}`,
+      attributes: {},
+      dedupeKey: `k-typed-${i}`,
+      rawRef: `r-typed-${i}`,
+      stage: 'received' as const,
+    });
+    // Newest first: the other type is on top, the wanted type below it.
+    await tdb.db
+      .insert(events)
+      .values([
+        event(1, 'test-source.item.created'),
+        event(2, 'test-source.item.created'),
+        event(3, 'test-source.other'),
+      ]);
+    const res = await h.request(
+      'GET',
+      `/api/v1/sources/${src.id}/events?type=test-source.item.created&limit=1`,
+      { cookie: h.adminCookie },
+    );
+    const page = res.json<Page<{ type: string }>>();
+    expect(page.items.map((i) => i.type)).toEqual(['test-source.item.created']);
+    expect(page.nextCursor).not.toBeNull();
+    const all = await walk(
+      `/api/v1/sources/${src.id}/events?type=test-source.item.created`,
+      (e: { eventId: string }) => e.eventId,
+    );
+    expect(all).toHaveLength(2);
+  });
+
+  it('answers 400, not 500, for a malformed time filter or cursor', async () => {
+    for (const url of [
+      '/api/v1/events?from=yesterday',
+      '/api/v1/events?to=2026-13-45',
+      `/api/v1/events?cursor=${Buffer.from(JSON.stringify({ t: 'soon' })).toString('base64url')}`,
+      `/api/v1/runs?cursor=${Buffer.from(JSON.stringify({ t: 'soon' })).toString('base64url')}`,
+    ]) {
+      const res = await h.request('GET', url, { cookie: h.adminCookie });
+      expect(res.statusCode, url).toBe(400);
+    }
+  });
+
+  it('keeps one admin when two admins are demoted at the same time', async () => {
+    const second = await h.request('POST', '/api/v1/users', {
+      cookie: h.adminCookie,
+      body: { email: 'second-admin@acme.test', role: 'admin', reason },
+    });
+    expect(second.statusCode, second.body).toBe(201);
+    const admins = await tdb.db.select().from(users).where(eq(users.role, 'admin'));
+    expect(admins).toHaveLength(2);
+    const results = await Promise.all(
+      admins.map((a) =>
+        h.request('PUT', `/api/v1/users/${a.id}`, {
+          cookie: h.adminCookie,
+          body: { role: 'viewer', reason },
+        }),
+      ),
+    );
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+    const left = await tdb.db.select().from(users).where(eq(users.role, 'admin'));
+    expect(left).toHaveLength(1);
+    // Put things back for the tests that follow.
+    for (const a of admins)
+      await tdb.db.update(users).set({ role: 'admin' }).where(eq(users.id, a.id));
+    await tdb.db.delete(users).where(eq(users.email, 'second-admin@acme.test'));
+  });
+
+  it('refuses an enable request that does not say enabled or disabled', async () => {
+    const src = await createSource('Enable body');
+    const ex = await createExecutor('Enable body exec');
+    const created = await h.request('POST', '/api/v1/processes', {
+      cookie: h.adminCookie,
+      body: { document: processDoc(src.id, ex.id, 'Enable body'), reason },
+    });
+    const proc = created.json<ProcessDetail>();
+    for (const url of [
+      `/api/v1/sources/${src.id}/enable`,
+      `/api/v1/executors/${ex.id}/enable`,
+      `/api/v1/processes/${proc.id}/enable`,
+    ]) {
+      const res = await h.request('POST', url, { cookie: h.adminCookie, body: { reason } });
+      expect(res.statusCode, url).toBe(400);
+    }
+    const after = await h.request('GET', `/api/v1/processes/${proc.id}`, { cookie: h.adminCookie });
+    expect(after.json<ProcessDetail>()).toMatchObject({
+      version: 1,
+      document: { enabled: proc.document.enabled },
+    });
+  });
+
+  it('answers 404 for a malformed id in the path', async () => {
+    for (const url of ['/api/v1/sources/not-a-uuid', '/api/v1/processes/123', '/api/v1/runs/x']) {
+      const res = await h.request('GET', url, { cookie: h.adminCookie });
+      expect(res.statusCode, url).toBe(404);
+    }
+    const res = await h.request('GET', '/api/v1/processes/not-a-uuid/versions/abc', {
+      cookie: h.adminCookie,
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('audits target names for the page it returns', async () => {
+    const src = await createSource('Audited name');
+    const res = await h.request('GET', `/api/v1/audit?target=${src.id}`, {
+      cookie: h.adminCookie,
+    });
+    const page = res.json<Page<{ targetName: string | null }>>();
+    expect(page.items[0]?.targetName).toBe('Audited name');
+    const settings = await h.request('GET', '/api/v1/audit?scope=settings', {
+      cookie: h.adminCookie,
+    });
+    expect(settings.statusCode).toBe(200);
+    // The actor filter is a substring match: LIKE wildcards in it are literal.
+    const wildcard = await h.request('GET', '/api/v1/audit?actor=%25', { cookie: h.adminCookie });
+    expect(wildcard.json<Page<unknown>>().items).toEqual([]);
   });
 });

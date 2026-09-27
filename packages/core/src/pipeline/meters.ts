@@ -1,4 +1,4 @@
-import type { MeterSpec } from '@ai-switchboard/sdk';
+import type { MeterReading, MeterSpec } from '@ai-switchboard/sdk';
 
 /**
  * Meter arithmetic: freshness, estimated readings from the core's own run counts, and ceiling
@@ -73,6 +73,39 @@ export function estimateReading(
     observedAt: now,
     resetsAt: end,
     estimated: true,
+  };
+}
+
+function parseTime(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * One plugin-reported meter reading as stored, or null when it is not a reading of a declared
+ * meter with a numeric utilization. A missing, unparseable or future `observedAt` is `now`: a
+ * reading from the future would stay the latest one, and fresh, until that time came.
+ */
+export function readingFromReport(
+  item: unknown,
+  declared: ReadonlySet<string>,
+  now: Date,
+): StoredReading | null {
+  if (item === null || typeof item !== 'object') return null;
+  const r = item as Partial<Record<keyof MeterReading, unknown>>;
+  if (typeof r.id !== 'string' || !declared.has(r.id)) return null;
+  const utilization = normaliseUtilization(r.utilization);
+  if (utilization === null) return null;
+  const observed = parseTime(r.observedAt);
+  return {
+    meterId: r.id,
+    utilization,
+    used: typeof r.used === 'number' ? r.used : null,
+    limit: typeof r.limit === 'number' ? r.limit : null,
+    observedAt: observed && observed.getTime() <= now.getTime() ? observed : now,
+    resetsAt: parseTime(r.resetsAt),
+    estimated: false,
   };
 }
 

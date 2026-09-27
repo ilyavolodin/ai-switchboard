@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { Health, InvokeResult, TrackingMode } from '@ai-switchboard/sdk';
 
-import { batches, executors, processes, runUpdates, runs } from '../../db/schema.js';
+import { batches, executors, processes, runs } from '../../db/schema.js';
 import { resolveSecretRefs } from '../../expr/index.js';
 import { redactSecretValues } from '../../secrets/refs.js';
 import {
@@ -16,7 +16,7 @@ import {
 import { JOBS, addSeconds, errorMessage, type Ctx } from './context.js';
 import { batchEvents } from './load.js';
 import { sendSystemAlert } from './notify.js';
-import { closeRun, runHandle, scheduleTracking } from './runs.js';
+import { closeRun, markUncertain, recordUpdate, runHandle, scheduleTracking } from './runs.js';
 import { runSteps, type RunRow } from './steps.js';
 
 /**
@@ -187,38 +187,22 @@ async function apply(
         .where(and(eq(runs.id, run.id), eq(runs.status, 'invoking')))
         .returning({ id: runs.id });
       if (moved.length === 0) return;
-      await ctx.db.insert(runUpdates).values({
-        runId: run.id,
-        at: now,
-        source: 'invoke',
-        status: 'invoking',
-        detail: {
-          retry: true,
-          reason: cls.reason,
-          attempt: run.attempts,
-          retryAt: at.toISOString(),
-        },
+      await recordUpdate(ctx, run.id, 'invoke', 'invoking', {
+        retry: true,
+        reason: cls.reason,
+        attempt: run.attempts,
+        retryAt: at.toISOString(),
       });
       await ctx.queue.send(JOBS.invoke, { runId: run.id }, { startAfter: at });
       return;
     }
-    case 'uncertain': {
-      const [moved] = await ctx.db
-        .update(runs)
-        .set({ status: 'uncertain', statusReason: cls.reason, invokeStartedAt: null })
-        .where(and(eq(runs.id, run.id), eq(runs.status, 'invoking')))
-        .returning();
-      if (!moved) return;
-      await ctx.db.insert(runUpdates).values({
-        runId: run.id,
-        at: now,
+    case 'uncertain':
+      await markUncertain(ctx, run.id, {
         source: 'invoke',
-        status: 'uncertain',
+        reason: cls.reason,
         detail: { reason: cls.reason, attempt: run.attempts },
       });
-      await scheduleTracking(ctx, moved, 0);
       return;
-    }
     case 'started': {
       const status = statusAfterStart(tracking);
       if (status === 'ok') {
@@ -252,16 +236,10 @@ async function apply(
           .where(eq(runs.id, run.id));
         return;
       }
-      await ctx.db.insert(runUpdates).values({
-        runId: run.id,
-        at: now,
-        source: 'invoke',
-        status: 'running',
-        detail: {
-          ...(cls.externalId ? { externalId: cls.externalId } : {}),
-          ...(cls.externalUrl ? { externalUrl: cls.externalUrl } : {}),
-          attempt: run.attempts,
-        },
+      await recordUpdate(ctx, run.id, 'invoke', 'running', {
+        ...(cls.externalId ? { externalId: cls.externalId } : {}),
+        ...(cls.externalUrl ? { externalUrl: cls.externalUrl } : {}),
+        attempt: run.attempts,
       });
       await scheduleTracking(ctx, moved, 0);
       return;

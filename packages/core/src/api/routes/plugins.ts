@@ -144,6 +144,17 @@ export const CATALOGUE: Omit<CatalogueEntry, 'installed'>[] = [
 
 const SPEC = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i;
 
+const packageBody = {
+  type: 'object',
+  required: ['package'],
+  properties: { package: { type: 'string' }, range: { type: 'string' } },
+} as const;
+const installBody = {
+  ...packageBody,
+  required: ['package', 'reason'],
+  properties: { ...packageBody.properties, reason: { type: 'string' } },
+} as const;
+
 function specOf(pkg: string, range?: string): string {
   if (!SPEC.test(pkg))
     throw badRequest('Give an npm package name such as @acme/switchboard-source-jira.');
@@ -373,7 +384,7 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
 
   app.post<{ Body: InspectPluginRequest }>(
     '/api/v1/plugins/inspect',
-    admin,
+    { ...admin, schema: { body: packageBody } },
     async (req): Promise<InspectPluginResponse> => {
       const spec = specOf(req.body.package, req.body.range);
       const result = await inspectPlugin({ spec, ...(runNpm ? { runNpm } : {}) }).catch(
@@ -391,47 +402,52 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
     },
   );
 
-  app.post<{ Body: InstallPluginRequest }>('/api/v1/plugins', admin, async (req, reply) => {
-    const reason = requireReason(req.body);
-    const spec = specOf(req.body.package, req.body.range);
-    const {
-      install: result,
-      plugin,
-      pendingRestart,
-    } = await ctx.host.installAndLoad(spec, runNpm).catch(installError);
-    await recordAudit(db, {
-      actor: actorOf(req),
-      scope: 'plugin',
-      targetId: result.name,
-      field: 'installed',
-      after: {
-        spec,
-        version: result.version,
-        integrity: result.integrity,
-        capabilities: result.capabilities ?? null,
-        loaded: plugin.status === 'loaded' && !pendingRestart,
-      },
-      reason,
-      at: clock.now(),
-    });
-    const summary = (await pluginSummaries()).find((p) => p.name === result.name);
-    if (!summary) throw new HttpError(500, 'internal', 'the installed plugin has no row');
-    const warnings = [...result.warnings, ...(plugin.message ? [plugin.message] : [])];
-    return reply.code(201).send({
-      ...summary,
-      pendingRestart,
-      ...(warnings.length > 0 && !pendingRestart && plugin.status !== 'loaded'
-        ? { statusMessage: warnings.join('; ') }
-        : {}),
-    } satisfies PluginSummary);
-  });
+  app.post<{ Body: InstallPluginRequest }>(
+    '/api/v1/plugins',
+    { ...admin, schema: { body: installBody } },
+    async (req, reply) => {
+      const reason = requireReason(req.body);
+      const spec = specOf(req.body.package, req.body.range);
+      const {
+        install: result,
+        plugin,
+        pendingRestart,
+      } = await ctx.host.installAndLoad(spec, runNpm).catch(installError);
+      await recordAudit(db, {
+        actor: actorOf(req),
+        scope: 'plugin',
+        targetId: result.name,
+        field: 'installed',
+        after: {
+          spec,
+          version: result.version,
+          integrity: result.integrity,
+          capabilities: result.capabilities ?? null,
+          loaded: plugin.status === 'loaded' && !pendingRestart,
+        },
+        reason,
+        at: clock.now(),
+      });
+      const summary = (await pluginSummaries()).find((p) => p.name === result.name);
+      if (!summary) throw new HttpError(500, 'internal', 'the installed plugin has no row');
+      const warnings = [...result.warnings, ...(plugin.message ? [plugin.message] : [])];
+      return reply.code(201).send({
+        ...summary,
+        pendingRestart,
+        ...(warnings.length > 0 && !pendingRestart && plugin.status !== 'loaded'
+          ? { statusMessage: warnings.join('; ') }
+          : {}),
+      } satisfies PluginSummary);
+    },
+  );
 
   app.delete<{ Params: { name: string }; Body: { reason: string } }>(
     '/api/v1/plugins/:name',
     admin,
     async (req, reply) => {
       const reason = requireReason(req.body);
-      const name = decodeURIComponent(req.params.name);
+      // Fastify has already decoded the path parameter (`%40acme%2Fbell` → `@acme/bell`).
+      const name = req.params.name;
       const [row] = await db.select().from(plugins).where(eq(plugins.name, name));
       const installed = (await listInstalled(config.home)).find((l) => l.name === name);
       if (!installed && !row?.installSpec) {

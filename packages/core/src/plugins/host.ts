@@ -101,6 +101,10 @@ interface TypeEntry<T> {
   pluginName: string;
 }
 
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /** Errors a plugin raises on purpose to describe a backend outcome; not counted as plugin bugs. */
 function isExpectedError(err: unknown): boolean {
   return isTransportError(err) || isInvokeError(err);
@@ -199,6 +203,9 @@ export class PluginHost implements PluginRuntime {
   private readonly liveProviders = new Map<string, LiveSecretProvider>();
   private readonly providersByName = new Map<string, LiveSecretProvider>();
   private readonly errors = new Map<string, string>();
+  /** Build tickets: see {@link commit}. */
+  private buildEpoch = 0;
+  private readonly claims = new Map<string, number>();
   private readonly pluginErrorQueue = new Map<
     string,
     { exception: number; invalid_event: number; invalid_usage: number }
@@ -454,6 +461,7 @@ export class PluginHost implements PluginRuntime {
   /** Build the configured instances of freshly registered types. */
   private async buildInstancesOf(types: { kind: InstanceKind; typeId: string }[]): Promise<void> {
     const { db } = this.opts;
+    const ticket = this.ticket();
     const ids = (kind: InstanceKind) => types.filter((t) => t.kind === kind).map((t) => t.typeId);
     const providerTypes = ids('secret_provider');
     if (providerTypes.length > 0)
@@ -461,25 +469,25 @@ export class PluginHost implements PluginRuntime {
         .select()
         .from(secretProviders)
         .where(inArray(secretProviders.typeId, providerTypes)))
-        this.buildSecretProvider(row);
+        this.buildSecretProvider(row, ticket);
     const sourceTypes = ids('source');
     if (sourceTypes.length > 0)
       for (const row of await db.select().from(sources).where(inArray(sources.typeId, sourceTypes)))
-        await this.buildSource(row);
+        await this.buildSource(row, ticket);
     const executorTypes = ids('executor');
     if (executorTypes.length > 0)
       for (const row of await db
         .select()
         .from(executors)
         .where(inArray(executors.typeId, executorTypes)))
-        await this.buildExecutor(row);
+        await this.buildExecutor(row, ticket);
     const notifierTypes = ids('notifier');
     if (notifierTypes.length > 0)
       for (const row of await db
         .select()
         .from(notifiers)
         .where(inArray(notifiers.typeId, notifierTypes)))
-        await this.buildNotifier(row);
+        await this.buildNotifier(row, ticket);
   }
 
   /**
@@ -662,10 +670,12 @@ export class PluginHost implements PluginRuntime {
 
   async instantiateAll(): Promise<void> {
     const { db } = this.opts;
-    for (const row of await db.select().from(secretProviders)) this.buildSecretProvider(row);
-    for (const row of await db.select().from(sources)) await this.buildSource(row);
-    for (const row of await db.select().from(executors)) await this.buildExecutor(row);
-    for (const row of await db.select().from(notifiers)) await this.buildNotifier(row);
+    const ticket = this.ticket();
+    for (const row of await db.select().from(secretProviders))
+      this.buildSecretProvider(row, ticket);
+    for (const row of await db.select().from(sources)) await this.buildSource(row, ticket);
+    for (const row of await db.select().from(executors)) await this.buildExecutor(row, ticket);
+    for (const row of await db.select().from(notifiers)) await this.buildNotifier(row, ticket);
   }
 
   // ------------------------------------------------------------------------------------------
@@ -759,19 +769,52 @@ export class PluginHost implements PluginRuntime {
     this.errors.delete(id);
   }
 
-  private async markResolved(kind: 'source' | 'executor', id: string): Promise<void> {
-    const table = kind === 'source' ? sources : executors;
-    await this.opts.db
-      .update(table)
-      .set({ secretsResolvedAt: this.opts.clock.now() })
-      .where(eq(table.id, id));
+  /** A new build ticket. Take it before reading the rows the build uses. */
+  private ticket(): number {
+    return ++this.buildEpoch;
   }
 
-  private buildSecretProvider(row: typeof secretProviders.$inferSelect): void {
-    this.clearInstance(row.id);
+  /**
+   * Swap in what a build produced, unless a build holding a later ticket (so one that read a
+   * newer row) has claimed the instance. Until the swap the previous object keeps serving, so a
+   * reload never leaves a gap while secrets resolve.
+   */
+  private commit(id: string, ticket: number, apply: () => void): boolean {
+    if ((this.claims.get(id) ?? 0) > ticket) return false;
+    this.claims.set(id, ticket);
+    this.clearInstance(id);
+    apply();
+    return true;
+  }
+
+  private fail(id: string, ticket: number, error: string): void {
+    this.commit(id, ticket, () => this.errors.set(id, error));
+  }
+
+  private async markResolved(kind: 'source' | 'executor', id: string): Promise<void> {
+    const table = kind === 'source' ? sources : executors;
+    try {
+      await this.opts.db
+        .update(table)
+        .set({ secretsResolvedAt: this.opts.clock.now() })
+        .where(eq(table.id, id));
+    } catch (err) {
+      // Only the "last resolved" time shown in the UI is lost; the instance is running.
+      this.opts.logger.warn({ err, instance_id: id }, 'could not record secret resolution');
+    }
+  }
+
+  private buildSecretProvider(row: typeof secretProviders.$inferSelect, ticket: number): void {
     const entry = this.types.secret_provider.get(row.typeId);
-    if (!entry) return void this.errors.set(row.id, 'plugin_unavailable');
-    if (!row.enabled) return void this.errors.set(row.id, 'disabled');
+    if (!entry) {
+      this.fail(row.id, ticket, 'plugin_unavailable');
+      return;
+    }
+    if (!row.enabled) {
+      this.fail(row.id, ticket, 'disabled');
+      return;
+    }
+    let live: LiveSecretProvider;
     try {
       const ctx = this.context(
         row.id,
@@ -783,33 +826,31 @@ export class PluginHost implements PluginRuntime {
         entry.type.create(row.settings, ctx),
         this.attributeFor(entry.pluginName, row.id),
       );
-      const live: LiveSecretProvider = {
-        id: row.id,
-        name: row.name,
-        typeId: row.typeId,
-        type: entry.type,
-        provider,
-      };
+      live = { id: row.id, name: row.name, typeId: row.typeId, type: entry.type, provider };
+    } catch (err) {
+      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`);
+      return;
+    }
+    this.commit(row.id, ticket, () => {
       this.liveProviders.set(row.id, live);
       this.providersByName.set(row.name, live);
-    } catch (err) {
-      this.errors.set(row.id, `create_failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    });
   }
 
-  private async buildSource(row: typeof sources.$inferSelect): Promise<void> {
-    this.clearInstance(row.id);
+  private async buildSource(row: typeof sources.$inferSelect, ticket: number): Promise<void> {
     const entry = this.types.source.get(row.typeId);
-    if (!entry) return void this.errors.set(row.id, 'plugin_unavailable');
+    if (!entry) {
+      this.fail(row.id, ticket, 'plugin_unavailable');
+      return;
+    }
     let resolved: { settings: Settings; secrets: string[] };
     try {
       resolved = await this.resolveSettings(row.settings);
     } catch (err) {
-      return void this.errors.set(
-        row.id,
-        `secret_error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.fail(row.id, ticket, `secret_error: ${errorText(err)}`);
+      return;
     }
+    let live: LiveSource;
     try {
       const ctx = this.context(
         row.id,
@@ -825,7 +866,7 @@ export class PluginHost implements PluginRuntime {
         entry.type.dynamicEventTypes && entry.type.instanceEventTypes
           ? entry.type.instanceEventTypes(resolved.settings)
           : entry.type.eventTypes;
-      this.liveSources.set(row.id, {
+      live = {
         id: row.id,
         name: row.name,
         typeId: row.typeId,
@@ -834,32 +875,33 @@ export class PluginHost implements PluginRuntime {
         source,
         eventTypes,
         secretValues: resolved.secrets,
-      });
-      if (!row.enabled) this.errors.set(row.id, 'disabled');
-      await this.markResolved('source', row.id);
+      };
     } catch (err) {
-      this.recordPluginError(
-        entry.pluginName,
-        'exception',
-        `create: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      this.errors.set(row.id, `create_failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.recordPluginError(entry.pluginName, 'exception', `create: ${errorText(err)}`);
+      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`);
+      return;
     }
+    const committed = this.commit(row.id, ticket, () => {
+      this.liveSources.set(row.id, live);
+      if (!row.enabled) this.errors.set(row.id, 'disabled');
+    });
+    if (committed) await this.markResolved('source', row.id);
   }
 
-  private async buildExecutor(row: typeof executors.$inferSelect): Promise<void> {
-    this.clearInstance(row.id);
+  private async buildExecutor(row: typeof executors.$inferSelect, ticket: number): Promise<void> {
     const entry = this.types.executor.get(row.typeId);
-    if (!entry) return void this.errors.set(row.id, 'plugin_unavailable');
+    if (!entry) {
+      this.fail(row.id, ticket, 'plugin_unavailable');
+      return;
+    }
     let resolved: { settings: Settings; secrets: string[] };
     try {
       resolved = await this.resolveSettings(row.settings);
     } catch (err) {
-      return void this.errors.set(
-        row.id,
-        `secret_error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.fail(row.id, ticket, `secret_error: ${errorText(err)}`);
+      return;
     }
+    let live: LiveExecutor;
     try {
       const type = entry.type;
       const ctx = this.context(
@@ -872,7 +914,7 @@ export class PluginHost implements PluginRuntime {
         type.create(resolved.settings, ctx),
         this.attributeFor(entry.pluginName, row.id),
       );
-      this.liveExecutors.set(row.id, {
+      live = {
         id: row.id,
         name: row.name,
         typeId: row.typeId,
@@ -885,23 +927,26 @@ export class PluginHost implements PluginRuntime {
         idempotentFor: (target) =>
           type.idempotentFor ? type.idempotentFor(target) : type.idempotentInvoke,
         secretValues: resolved.secrets,
-      });
-      if (!row.enabled) this.errors.set(row.id, 'disabled');
-      await this.markResolved('executor', row.id);
+      };
     } catch (err) {
-      this.recordPluginError(
-        entry.pluginName,
-        'exception',
-        `create: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      this.errors.set(row.id, `create_failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.recordPluginError(entry.pluginName, 'exception', `create: ${errorText(err)}`);
+      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`);
+      return;
     }
+    const committed = this.commit(row.id, ticket, () => {
+      this.liveExecutors.set(row.id, live);
+      if (!row.enabled) this.errors.set(row.id, 'disabled');
+    });
+    if (committed) await this.markResolved('executor', row.id);
   }
 
-  private async buildNotifier(row: typeof notifiers.$inferSelect): Promise<void> {
-    this.clearInstance(row.id);
+  private async buildNotifier(row: typeof notifiers.$inferSelect, ticket: number): Promise<void> {
     const entry = this.types.notifier.get(row.typeId);
-    if (!entry) return void this.errors.set(row.id, 'plugin_unavailable');
+    if (!entry) {
+      this.fail(row.id, ticket, 'plugin_unavailable');
+      return;
+    }
+    let live: LiveNotifier;
     try {
       const { settings } = await this.resolveSettings(row.settings);
       const ctx = this.context(
@@ -914,17 +959,15 @@ export class PluginHost implements PluginRuntime {
         entry.type.create(settings, ctx),
         this.attributeFor(entry.pluginName, row.id),
       );
-      this.liveNotifiers.set(row.id, {
-        id: row.id,
-        name: row.name,
-        typeId: row.typeId,
-        type: entry.type,
-        notifier,
-      });
-      if (!row.enabled) this.errors.set(row.id, 'disabled');
+      live = { id: row.id, name: row.name, typeId: row.typeId, type: entry.type, notifier };
     } catch (err) {
-      this.errors.set(row.id, `create_failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`);
+      return;
     }
+    this.commit(row.id, ticket, () => {
+      this.liveNotifiers.set(row.id, live);
+      if (!row.enabled) this.errors.set(row.id, 'disabled');
+    });
   }
 
   // ------------------------------------------------------------------------------------------
@@ -975,29 +1018,32 @@ export class PluginHost implements PluginRuntime {
 
   async reload(kind: InstanceKind, id: string): Promise<void> {
     const { db } = this.opts;
+    // Claim the instance before reading its row: an older build finishing later cannot win.
+    const ticket = this.ticket();
+    this.claims.set(id, ticket);
     switch (kind) {
       case 'source': {
         const [row] = await db.select().from(sources).where(eq(sources.id, id));
-        if (row) await this.buildSource(row);
-        else this.clearInstance(id);
+        if (row) await this.buildSource(row, ticket);
+        else this.commit(id, ticket, () => undefined);
         return;
       }
       case 'executor': {
         const [row] = await db.select().from(executors).where(eq(executors.id, id));
-        if (row) await this.buildExecutor(row);
-        else this.clearInstance(id);
+        if (row) await this.buildExecutor(row, ticket);
+        else this.commit(id, ticket, () => undefined);
         return;
       }
       case 'notifier': {
         const [row] = await db.select().from(notifiers).where(eq(notifiers.id, id));
-        if (row) await this.buildNotifier(row);
-        else this.clearInstance(id);
+        if (row) await this.buildNotifier(row, ticket);
+        else this.commit(id, ticket, () => undefined);
         return;
       }
       case 'secret_provider': {
         const [row] = await db.select().from(secretProviders).where(eq(secretProviders.id, id));
-        if (row) this.buildSecretProvider(row);
-        else this.clearInstance(id);
+        if (row) this.buildSecretProvider(row, ticket);
+        else this.commit(id, ticket, () => undefined);
         return;
       }
     }

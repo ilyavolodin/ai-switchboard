@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import type { Event } from '@ai-switchboard/sdk';
 
+import type { Tx } from '../../db/client.js';
 import {
   approvals,
   batches,
@@ -23,10 +24,12 @@ import {
 import { budget, type BudgetResult } from '../../pipeline/budget.js';
 import { gate } from '../../pipeline/gate.js';
 import { trackingDeadline } from '../../pipeline/tracking.js';
+import type { LiveExecutor } from '../../plugins/runtime.js';
 import { getSettings } from '../settings.js';
 
 import {
   JOBS,
+  appendDecisions,
   evalFunctions,
   lockKey,
   processView,
@@ -51,10 +54,6 @@ export interface DispatchResult {
   runId: string | null;
   /** The batch outcome (`held`, `throttled`, `awaiting_approval`, …) or the run status. */
   outcome: string;
-}
-
-function appendDecisions(records: GateDecisionRecord[]) {
-  return sql`${batches.decisions} || ${JSON.stringify(records)}::jsonb`;
 }
 
 function modeFor(batch: BatchRow, events: readonly Event[]): 'event' | 'sweep' {
@@ -160,12 +159,20 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
     },
     now,
   );
-  if (g.breakerClosed) {
-    await ctx.db
+  if (g.breakerClosed && proc.breakerOpenedAt) {
+    // Only the opening this gate saw: a breaker reset and re-opened meanwhile stays open.
+    const closed = await ctx.db
       .update(processes)
       .set({ breakerState: 'closed', breakerOpenedAt: null, breakerResetAt: now })
-      .where(eq(processes.id, proc.id));
-    ctx.telemetry.gauge('switchboard.breaker', 0, { process: proc.id });
+      .where(
+        and(
+          eq(processes.id, proc.id),
+          eq(processes.breakerState, 'open'),
+          eq(processes.breakerOpenedAt, proc.breakerOpenedAt),
+        ),
+      )
+      .returning({ id: processes.id });
+    if (closed.length > 0) ctx.telemetry.gauge('switchboard.breaker', 0, { process: proc.id });
   }
   const gateRecords: GateDecisionRecord[] = g.checks.map((c) => ({
     stage: 'gate',
@@ -246,87 +253,32 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
   }
 
   // Budget check and reservation in one transaction, serialised per executor instance.
-  let result: BudgetResult | null = null;
-  const reserved = await withTx(ctx.db, async (tx) => {
-    result = null;
+  const reservation = await withTx(ctx.db, async (tx) => {
     await lockKey(tx, `executor:${executorId}`);
     const [b] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('update');
-    if (b?.outcome !== 'closed') return 'gone' as const;
-    const [ex] = await tx.select().from(executors).where(eq(executors.id, executorId));
-    const records: GateDecisionRecord[] = [...gateRecords];
-    if (!batch.dryRun) {
-      const counters = await countersFor(
-        tx,
-        { processId: proc.id, executorId, dimensions: live.usage },
-        now,
-      );
-      const meters = await meterSnapshots(tx, executorId, live.meters, ex?.caps ?? {}, now);
-      const caps = ex?.caps ?? {};
-      result = budget(
-        {
+    if (b?.outcome !== 'closed') return { outcome: 'gone' as const, result: null };
+    const checked = batch.dryRun
+      ? { result: null, record: dryRunBudgetRecord(at) }
+      : await checkBudget(tx, {
           kind: batch.kind,
-          process: {
-            runsPerHour: doc.budgets.runsPerHour,
-            runsPerDay: doc.budgets.runsPerDay,
-            usagePerDay: doc.budgets.usagePerDay,
-            meterCeilings: doc.budgets.meterCeilings,
-          },
-          executor: {
-            runsPerHour: caps.runsPerHour,
-            runsPerDay: caps.runsPerDay,
-            usagePerDay: caps.usagePerDay,
-            softHoldUntil: ex?.softHoldUntil ?? null,
-            stalenessMinutes: caps.meterStalenessMinutes ?? settings.meterStalenessMinutes,
-          },
-          counters,
-          dimensions: live.usage,
-          meters,
-        },
-        now,
-      );
-      records.push({
-        stage: 'budget',
-        check: 'budget',
-        pass: result.ok,
-        ...(result.detail !== null ? { detail: result.detail } : {}),
-        at,
-        data: {
-          binding: result.binding,
-          checks: result.checks,
-          counters,
-          meters: Object.fromEntries(
-            Object.entries(meters).map(([id, m]) => [
-              id,
-              {
-                utilization: m.utilization,
-                observedAt: m.observedAt.toISOString(),
-                estimated: m.estimated,
-                resetsAt: m.resetsAt?.toISOString() ?? null,
-              },
-            ]),
-          ),
-          meterStale: result.meterStale,
-        },
-      });
-      if (!result.ok) {
-        await tx
-          .update(batches)
-          .set({
-            outcome: 'throttled',
-            outcomeReason: result.binding,
-            decisions: appendDecisions(records),
-          })
-          .where(eq(batches.id, batchId));
-        return 'throttled' as const;
-      }
-    } else {
-      records.push({
-        stage: 'budget',
-        check: 'budget',
-        pass: true,
-        detail: 'dry run: not counted',
-        at,
-      });
+          budgets: doc.budgets,
+          processId: proc.id,
+          executorId,
+          live,
+          defaultStalenessMinutes: settings.meterStalenessMinutes,
+          now,
+        });
+    const records = [...gateRecords, checked.record];
+    if (checked.result && !checked.result.ok) {
+      await tx
+        .update(batches)
+        .set({
+          outcome: 'throttled',
+          outcomeReason: checked.result.binding,
+          decisions: appendDecisions(records),
+        })
+        .where(eq(batches.id, batchId));
+      return { outcome: 'throttled' as const, result: checked.result };
     }
     await tx.insert(runs).values({
       id: runId,
@@ -348,12 +300,12 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
       .update(batches)
       .set({ outcome: 'invoked', outcomeReason: null, decisions: appendDecisions(records) })
       .where(eq(batches.id, batchId));
-    return 'reserved' as const;
+    return { outcome: 'reserved' as const, result: checked.result };
   });
 
-  const budgetResult = result as BudgetResult | null;
+  const budgetResult = reservation.result;
   if (budgetResult) emitBudgetGauges(ctx, proc, budgetResult);
-  if (reserved === 'gone') {
+  if (reservation.outcome === 'gone') {
     const existing = await existingRun(ctx, batchId);
     const [b] = await ctx.db.select().from(batches).where(eq(batches.id, batchId));
     return {
@@ -362,7 +314,7 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
       outcome: existing?.status ?? b?.outcome ?? 'missing',
     };
   }
-  if (reserved === 'throttled') {
+  if (reservation.outcome === 'throttled') {
     signalBatch(ctx, proc.id, batch, 'throttled', budgetResult?.binding ?? '', null);
     await notifyProcess(ctx, {
       process: proc,
@@ -396,6 +348,84 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
   await attemptInvoke(ctx, runId);
   const [final] = await ctx.db.select({ status: runs.status }).from(runs).where(eq(runs.id, runId));
   return { batchId, runId, outcome: final?.status ?? 'invoking' };
+}
+
+/**
+ * The budget stage for a batch inside the reservation transaction: reads the rolling counters
+ * and meter snapshots, runs the pure check and returns it with its decision record.
+ */
+async function checkBudget(
+  tx: Tx,
+  input: {
+    kind: BatchRow['kind'];
+    budgets: ProcessRow['document']['budgets'];
+    processId: string;
+    executorId: string;
+    live: LiveExecutor;
+    defaultStalenessMinutes: number;
+    now: Date;
+  },
+): Promise<{ result: BudgetResult; record: GateDecisionRecord }> {
+  const { executorId, live, now } = input;
+  const [ex] = await tx.select().from(executors).where(eq(executors.id, executorId));
+  const caps = ex?.caps ?? {};
+  const counters = await countersFor(
+    tx,
+    { processId: input.processId, executorId, dimensions: live.usage },
+    now,
+  );
+  const meters = await meterSnapshots(tx, executorId, live.meters, caps, now);
+  const result = budget(
+    {
+      kind: input.kind,
+      process: {
+        runsPerHour: input.budgets.runsPerHour,
+        runsPerDay: input.budgets.runsPerDay,
+        usagePerDay: input.budgets.usagePerDay,
+        meterCeilings: input.budgets.meterCeilings,
+      },
+      executor: {
+        runsPerHour: caps.runsPerHour,
+        runsPerDay: caps.runsPerDay,
+        usagePerDay: caps.usagePerDay,
+        softHoldUntil: ex?.softHoldUntil ?? null,
+        stalenessMinutes: caps.meterStalenessMinutes ?? input.defaultStalenessMinutes,
+      },
+      counters,
+      dimensions: live.usage,
+      meters,
+    },
+    now,
+  );
+  const record: GateDecisionRecord = {
+    stage: 'budget',
+    check: 'budget',
+    pass: result.ok,
+    ...(result.detail !== null ? { detail: result.detail } : {}),
+    at: now.toISOString(),
+    data: {
+      binding: result.binding,
+      checks: result.checks,
+      counters,
+      meters: Object.fromEntries(
+        Object.entries(meters).map(([id, m]) => [
+          id,
+          {
+            utilization: m.utilization,
+            observedAt: m.observedAt.toISOString(),
+            estimated: m.estimated,
+            resetsAt: m.resetsAt?.toISOString() ?? null,
+          },
+        ]),
+      ),
+      meterStale: result.meterStale,
+    },
+  };
+  return { result, record };
+}
+
+function dryRunBudgetRecord(at: string): GateDecisionRecord {
+  return { stage: 'budget', check: 'budget', pass: true, detail: 'dry run: not counted', at };
 }
 
 function firstEventAt(events: readonly Event[]): Date | null {

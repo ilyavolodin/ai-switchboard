@@ -36,9 +36,14 @@ export function secretRefsOf(
   }));
 }
 
-async function allProcesses(
-  ctx: ApiContext,
-): Promise<{ id: string; name: string; document: ProcessDocument }[]> {
+/** What the instance read models need of a process; callers that already hold them pass them in. */
+export interface ProcessRef {
+  id: string;
+  name: string;
+  document: ProcessDocument;
+}
+
+async function allProcesses(ctx: ApiContext): Promise<ProcessRef[]> {
   return ctx.db
     .select({ id: processes.id, name: processes.name, document: processes.document })
     .from(processes);
@@ -47,6 +52,7 @@ async function allProcesses(
 export async function sourceSummaries(
   ctx: ApiContext,
   rows?: SourceRow[],
+  processList?: ProcessRef[],
 ): Promise<SourceSummary[]> {
   const list = rows ?? (await ctx.db.select().from(sources).orderBy(sources.name));
   if (list.length === 0) return [];
@@ -64,7 +70,7 @@ export async function sourceSummaries(
       ),
     )
     .groupBy(events.sourceId, events.type);
-  const procs = await allProcesses(ctx);
+  const procs = processList ?? (await allProcesses(ctx));
   return list.map((row) => {
     const typeEntry = ctx.runtime.sourceType(row.typeId);
     const error = ctx.runtime.instanceError(row.id);
@@ -96,11 +102,11 @@ export async function sourceSummaries(
 export async function sourceDetail(ctx: ApiContext, id: string): Promise<SourceDetail> {
   const [row] = await ctx.db.select().from(sources).where(eq(sources.id, id));
   if (!row) throw notFound('Source');
-  const [summary] = await sourceSummaries(ctx, [row]);
+  const procs = await allProcesses(ctx);
+  const [summary] = await sourceSummaries(ctx, [row], procs);
   if (!summary) throw notFound('Source');
   const typeEntry = ctx.runtime.sourceType(row.typeId);
   const live = ctx.runtime.source(id);
-  const procs = await allProcesses(ctx);
   const isPush = (typeEntry?.type.mode ?? 'push') !== 'pull';
   return {
     ...summary,
@@ -135,6 +141,7 @@ export async function sourceDetail(ctx: ApiContext, id: string): Promise<SourceD
 export async function executorSummaries(
   ctx: ApiContext,
   rows?: ExecutorRow[],
+  processList?: ProcessRef[],
 ): Promise<ExecutorSummary[]> {
   const list = rows ?? (await ctx.db.select().from(executors).orderBy(executors.name));
   if (list.length === 0) return [];
@@ -145,8 +152,8 @@ export async function executorSummaries(
     .from(runs)
     .where(and(inArray(runs.executorId, ids), gte(runs.createdAt, since)))
     .groupBy(runs.executorId);
-  const gauges = await meterGauges(ctx, ids);
-  const procs = await allProcesses(ctx);
+  const procs = processList ?? (await allProcesses(ctx));
+  const gauges = await meterGauges(ctx, ids, procs);
   const now = ctx.clock.now().getTime();
   return list.map((row) => {
     const typeEntry = ctx.runtime.executorType(row.typeId);
@@ -180,12 +187,12 @@ export async function executorSummaries(
 export async function executorDetail(ctx: ApiContext, id: string): Promise<ExecutorDetail> {
   const [row] = await ctx.db.select().from(executors).where(eq(executors.id, id));
   if (!row) throw notFound('Executor');
-  const [summary] = await executorSummaries(ctx, [row]);
+  const procs = await allProcesses(ctx);
+  const [summary] = await executorSummaries(ctx, [row], procs);
   if (!summary) throw notFound('Executor');
   const typeEntry = ctx.runtime.executorType(row.typeId);
   const live = ctx.runtime.executor(id);
   const type = typeEntry?.type;
-  const procs = await allProcesses(ctx);
   return {
     ...summary,
     settings: row.settings,

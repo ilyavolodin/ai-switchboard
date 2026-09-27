@@ -19,14 +19,7 @@ import { handleCallback, recoverRuns } from './runs.js';
 import { schedulerTick } from './scheduler.js';
 import { registerWorkers, type WorkerHandle } from './workers.js';
 
-export type { SecretResolver, PipelineDeps } from './context.js';
-export { JOBS } from './context.js';
-export { PipelineError, isPipelineError } from './errors.js';
-export type { PipelineErrorCode } from './errors.js';
-export type { SystemAlert } from './notify.js';
-export { sendSystemAlert } from './notify.js';
-export { countersFor, processRunCounts } from './counters.js';
-export { latestReadings, meterSnapshots } from './meters.js';
+export type { PipelineDeps } from './context.js';
 export { materialiseStats } from './stats.js';
 export { prune } from './retention.js';
 

@@ -1,19 +1,17 @@
 import { validateAgainst } from '@ai-switchboard/sdk';
-import { and, desc, eq, inArray } from 'drizzle-orm';
-import type { FastifyInstance } from 'fastify';
+import { eq } from 'drizzle-orm';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import jsonata from 'jsonata';
 
 import { actorOf, requireRole } from '../../auth/fastify.js';
-import {
-  batches,
-  executors,
-  notifiers,
-  processes,
-  processVersions,
-  sources,
-} from '../../db/schema.js';
+import { executors, notifiers, sources } from '../../db/schema.js';
 import { processDocumentSchema, type ProcessDocument } from '../../domain/process.js';
-import { recordAudit, recordAuditDiff } from '../../services/audit.js';
+import {
+  createProcess,
+  deleteProcess,
+  saveProcessVersion,
+  type SaveMeta,
+} from '../../services/processes.js';
 import type { DbOrTx } from '../../db/client.js';
 import type { ApiContext } from '../context.js';
 import type {
@@ -22,20 +20,29 @@ import type {
   EnableRequest,
   FilterPreviewRequest,
   InputPreviewRequest,
-  ProcessVersionDetail,
-  ProcessVersionSummary,
-  RecentBatchDTO,
   RunNowRequest,
   UpdateProcessRequest,
 } from '../contract.js';
 import { badRequest, conflict, HttpError, notFound, requireReason } from '../errors.js';
-import { processDetail, processSummaries } from '../read/processes.js';
-import { batchArtifacts } from '../read/runs.js';
+import {
+  processDetail,
+  processExists,
+  processSummaries,
+  processVersion,
+  processVersionList,
+  recentBatches,
+} from '../read/processes.js';
 
 const reasoned = {
   type: 'object',
   required: ['reason'],
   properties: { reason: { type: 'string' } },
+} as const;
+
+const enableBody = {
+  type: 'object',
+  required: ['reason', 'enabled'],
+  properties: { reason: { type: 'string' }, enabled: { type: 'boolean' } },
 } as const;
 
 function compileError(expr: string | undefined): string | null {
@@ -175,6 +182,11 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
   const { db, clock } = ctx;
   const viewer = { preHandler: requireRole('viewer') };
   const operator = { preHandler: requireRole('operator') };
+  const meta = (req: FastifyRequest, reason: string): SaveMeta => ({
+    actor: actorOf(req),
+    reason,
+    now: clock.now(),
+  });
 
   app.get('/api/v1/processes', viewer, async () => processSummaries(ctx));
   app.get<{ Params: { id: string } }>('/api/v1/processes/:id', viewer, async (req) =>
@@ -187,40 +199,7 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
     async (req, reply) => {
       const reason = requireReason(req.body);
       const doc = await validateProcessDocument(ctx, req.body.document);
-      const now = clock.now();
-      const actor = actorOf(req);
-      const id = await db.transaction(async (tx) => {
-        const [row] = await tx
-          .insert(processes)
-          .values({
-            name: doc.name,
-            document: doc,
-            enabled: doc.enabled,
-            version: 1,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning({ id: processes.id });
-        if (!row) throw new HttpError(500, 'internal', 'insert failed');
-        await tx.insert(processVersions).values({
-          processId: row.id,
-          version: 1,
-          document: doc,
-          savedBy: actor,
-          savedAt: now,
-          reason,
-        });
-        await recordAudit(tx, {
-          actor,
-          scope: 'process',
-          targetId: row.id,
-          field: 'created',
-          after: doc,
-          reason,
-          at: now,
-        });
-        return row.id;
-      });
+      const id = await createProcess(db, doc, meta(req, reason));
       return reply.code(201).send(await processDetail(ctx, id));
     },
   );
@@ -231,83 +210,30 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
     async (req) => {
       const reason = requireReason(req.body);
       const doc = await validateProcessDocument(ctx, req.body.document);
-      const now = clock.now();
-      const actor = actorOf(req);
-      await db.transaction(async (tx) => {
-        const [before] = await tx
-          .select()
-          .from(processes)
-          .where(eq(processes.id, req.params.id))
-          .for('update');
-        if (!before) throw notFound('Process');
+      const saved = await saveProcessVersion(db, req.params.id, meta(req, reason), (before) => {
         if (req.body.expectedVersion !== before.version) {
           throw conflict(
             `The process was changed by someone else (version ${before.version}); reload and reapply your edit.`,
           );
         }
-        const version = before.version + 1;
-        await tx
-          .update(processes)
-          .set({ name: doc.name, document: doc, enabled: doc.enabled, version, updatedAt: now })
-          .where(eq(processes.id, before.id));
-        await tx.insert(processVersions).values({
-          processId: before.id,
-          version,
-          document: doc,
-          savedBy: actor,
-          savedAt: now,
-          reason,
-        });
-        await recordAuditDiff(
-          tx,
-          { actor, scope: 'process', targetId: before.id, reason, at: now },
-          flatten(before.document as unknown as Record<string, unknown>),
-          flatten(doc as unknown as Record<string, unknown>),
-        );
+        return { document: doc, audit: 'diff' };
       });
+      if (!saved) throw notFound('Process');
       return processDetail(ctx, req.params.id);
     },
   );
 
   app.post<{ Params: { id: string }; Body: EnableRequest }>(
     '/api/v1/processes/:id/enable',
-    { ...operator, schema: { body: reasoned } },
+    { ...operator, schema: { body: enableBody } },
     async (req) => {
       const reason = requireReason(req.body);
-      const now = clock.now();
-      const actor = actorOf(req);
-      await db.transaction(async (tx) => {
-        const [before] = await tx
-          .select()
-          .from(processes)
-          .where(eq(processes.id, req.params.id))
-          .for('update');
-        if (!before) throw notFound('Process');
-        const doc = { ...before.document, enabled: req.body.enabled };
-        const version = before.version + 1;
-        await tx
-          .update(processes)
-          .set({ enabled: req.body.enabled, document: doc, version, updatedAt: now })
-          .where(eq(processes.id, before.id));
-        await tx.insert(processVersions).values({
-          processId: before.id,
-          version,
-          document: doc,
-          savedBy: actor,
-          savedAt: now,
-          reason,
-        });
-        await recordAudit(tx, {
-          actor,
-          scope: 'process',
-          targetId: before.id,
-          field: 'enabled',
-          before: before.enabled,
-          after: req.body.enabled,
-          reason,
-          at: now,
-        });
-      });
+      const { enabled } = req.body;
+      const saved = await saveProcessVersion(db, req.params.id, meta(req, reason), (before) => ({
+        document: { ...before.document, enabled },
+        audit: { field: 'enabled', before: before.enabled, after: enabled },
+      }));
+      if (!saved) throw notFound('Process');
       return processDetail(ctx, req.params.id);
     },
   );
@@ -317,20 +243,7 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
     operator,
     async (req, reply) => {
       const reason = requireReason(req.body);
-      const [row] = await db.select().from(processes).where(eq(processes.id, req.params.id));
-      if (!row) throw notFound('Process');
-      await db.transaction(async (tx) => {
-        await tx.delete(processes).where(eq(processes.id, row.id));
-        await recordAudit(tx, {
-          actor: actorOf(req),
-          scope: 'process',
-          targetId: row.id,
-          field: 'deleted',
-          before: row.document,
-          reason,
-          at: clock.now(),
-        });
-      });
+      if (!(await deleteProcess(db, req.params.id, meta(req, reason)))) throw notFound('Process');
       return reply.code(204).send();
     },
   );
@@ -340,18 +253,13 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
     { ...operator, schema: { body: reasoned } },
     async (req) => {
       const reason = requireReason(req.body);
-      const [row] = await db
-        .select({ id: processes.id })
-        .from(processes)
-        .where(eq(processes.id, req.params.id));
-      if (!row) throw notFound('Process');
-      const result = await ctx.pipeline.runNow(row.id, {
+      if (!(await processExists(ctx, req.params.id))) throw notFound('Process');
+      return ctx.pipeline.runNow(req.params.id, {
         ...(req.body.dryRun !== undefined ? { dryRun: req.body.dryRun } : {}),
         ...(req.body.batchId !== undefined ? { batchId: req.body.batchId } : {}),
         actor: actorOf(req),
         reason,
       });
-      return result;
     },
   );
 
@@ -365,46 +273,14 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
     },
   );
 
-  app.get<{ Params: { id: string } }>(
-    '/api/v1/processes/:id/versions',
-    viewer,
-    async (req): Promise<ProcessVersionSummary[]> => {
-      const rows = await db
-        .select({
-          version: processVersions.version,
-          savedBy: processVersions.savedBy,
-          savedAt: processVersions.savedAt,
-          reason: processVersions.reason,
-        })
-        .from(processVersions)
-        .where(eq(processVersions.processId, req.params.id))
-        .orderBy(desc(processVersions.version));
-      return rows.map((r) => ({ ...r, savedAt: r.savedAt.toISOString() }));
-    },
+  app.get<{ Params: { id: string } }>('/api/v1/processes/:id/versions', viewer, async (req) =>
+    processVersionList(ctx, req.params.id),
   );
 
   app.get<{ Params: { id: string; version: string } }>(
     '/api/v1/processes/:id/versions/:version',
     viewer,
-    async (req): Promise<ProcessVersionDetail> => {
-      const [row] = await db
-        .select()
-        .from(processVersions)
-        .where(
-          and(
-            eq(processVersions.processId, req.params.id),
-            eq(processVersions.version, Number(req.params.version)),
-          ),
-        );
-      if (!row) throw notFound('Version');
-      return {
-        version: row.version,
-        savedBy: row.savedBy,
-        savedAt: row.savedAt.toISOString(),
-        reason: row.reason,
-        document: row.document,
-      };
-    },
+    async (req) => processVersion(ctx, req.params.id, req.params.version),
   );
 
   app.post<{ Params: { id: string; version: string }; Body: { reason: string } }>(
@@ -412,50 +288,14 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
     { ...operator, schema: { body: reasoned } },
     async (req) => {
       const reason = requireReason(req.body);
-      const [old] = await db
-        .select()
-        .from(processVersions)
-        .where(
-          and(
-            eq(processVersions.processId, req.params.id),
-            eq(processVersions.version, Number(req.params.version)),
-          ),
-        );
-      if (!old) throw notFound('Version');
+      const old = await processVersion(ctx, req.params.id, req.params.version);
       const doc = await validateProcessDocument(ctx, old.document);
-      const now = clock.now();
-      const actor = actorOf(req);
-      await db.transaction(async (tx) => {
-        const [before] = await tx
-          .select()
-          .from(processes)
-          .where(eq(processes.id, req.params.id))
-          .for('update');
-        if (!before) throw notFound('Process');
-        const version = before.version + 1;
-        await tx
-          .update(processes)
-          .set({ name: doc.name, document: doc, enabled: doc.enabled, version, updatedAt: now })
-          .where(eq(processes.id, before.id));
-        await tx.insert(processVersions).values({
-          processId: before.id,
-          version,
-          document: doc,
-          savedBy: actor,
-          savedAt: now,
-          reason: `restore v${old.version}: ${reason}`,
-        });
-        await recordAudit(tx, {
-          actor,
-          scope: 'process',
-          targetId: before.id,
-          field: 'restored',
-          before: before.version,
-          after: old.version,
-          reason,
-          at: now,
-        });
-      });
+      const saved = await saveProcessVersion(db, req.params.id, meta(req, reason), (before) => ({
+        document: doc,
+        versionReason: `restore v${old.version}: ${reason}`,
+        audit: { field: 'restored', before: before.version, after: old.version },
+      }));
+      if (!saved) throw notFound('Process');
       return processDetail(ctx, req.params.id);
     },
   );
@@ -463,31 +303,7 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
     '/api/v1/processes/:id/batches',
     viewer,
-    async (req): Promise<RecentBatchDTO[]> => {
-      const rows = await db
-        .select()
-        .from(batches)
-        .where(
-          and(
-            eq(batches.processId, req.params.id),
-            inArray(batches.kind, ['event', 'sweep', 'manual']),
-          ),
-        )
-        .orderBy(desc(batches.openedAt))
-        .limit(Math.min(Number(req.query.limit ?? 20) || 20, 100));
-      const arts = await batchArtifacts(
-        ctx,
-        rows.map((r) => r.id),
-      );
-      return rows.map((b) => ({
-        id: b.id,
-        kind: b.kind,
-        openedAt: b.openedAt.toISOString(),
-        size: b.size,
-        outcome: b.outcome,
-        artifacts: arts.get(b.id)?.artifacts ?? [],
-      }));
-    },
+    async (req) => recentBatches(ctx, req.params.id, req.query.limit),
   );
 
   app.post<{ Body: FilterPreviewRequest }>(
@@ -501,17 +317,4 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
   app.post<{ Body: CronPreviewRequest }>('/api/v1/processes/preview/cron', viewer, (req) =>
     ctx.preview.cronPreview(req.body),
   );
-}
-
-/** One level of dotted keys so the audit log reads `gates.approval: none → always`. */
-function flatten(doc: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(doc)) {
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      for (const [k2, v2] of Object.entries(v as Record<string, unknown>)) out[`${k}.${k2}`] = v2;
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
 }

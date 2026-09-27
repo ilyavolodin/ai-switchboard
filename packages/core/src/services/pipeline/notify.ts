@@ -7,7 +7,7 @@ import { renderTemplate } from '../../expr/index.js';
 import { getSettings } from '../settings.js';
 
 import {
-  errorMessage,
+  callPlugin,
   evalFunctions,
   processView,
   withTx,
@@ -69,27 +69,19 @@ export async function notifyProcess(ctx: Ctx, n: ProcessNotification): Promise<v
     const title = `${n.process.name}: ${n.on}`;
     const text =
       rendered.error !== undefined ? `(template error: ${rendered.error})` : rendered.text;
-    const live = ctx.runtime.notifier(target.notifierId);
-    let status: 'sent' | 'error' = 'sent';
-    let error: string | null = null;
-    if (!live) {
-      status = 'error';
-      error = ctx.runtime.instanceError(target.notifierId) ?? 'notifier unavailable';
-    } else {
-      try {
-        await live.notifier.send({
-          on: n.on,
-          severity: SEVERITY[n.on],
-          title,
-          text,
-          ...(n.url ? { url: n.url } : {}),
-          fields: { process: n.process.name, status: n.on },
-        });
-      } catch (err) {
-        status = 'error';
-        error = errorMessage(err);
-      }
-    }
+    const { status, error } = await send(
+      ctx,
+      target.notifierId,
+      {
+        on: n.on,
+        severity: SEVERITY[n.on],
+        title,
+        text,
+        ...(n.url ? { url: n.url } : {}),
+        fields: { process: n.process.name, status: n.on },
+      },
+      ctx.runtime.instanceError(target.notifierId) ?? 'notifier unavailable',
+    );
     await ctx.db.insert(notificationLog).values({
       notifierId: target.notifierId,
       on: n.on,
@@ -103,6 +95,21 @@ export async function notifyProcess(ctx: Ctx, n: ProcessNotification): Promise<v
       at: now,
     });
   }
+}
+
+/** Send through a notifier instance, time-limited; the outcome as `notification_log` records it. */
+async function send(
+  ctx: Ctx,
+  notifierId: string,
+  message: NotificationMessage,
+  unavailable: string,
+): Promise<{ status: 'sent' | 'error'; error: string | null }> {
+  const live = ctx.runtime.notifier(notifierId);
+  if (!live) return { status: 'error', error: unavailable };
+  const notifier = live.notifier;
+  const plugin = ctx.runtime.notifierType(live.typeId)?.pluginName ?? live.typeId;
+  const out = await callPlugin(ctx, plugin, 'send', () => notifier.send(message));
+  return out.ok ? { status: 'sent', error: null } : { status: 'error', error: out.error };
 }
 
 export interface SystemAlert {
@@ -146,26 +153,18 @@ export async function sendSystemAlert(ctx: Ctx, alert: SystemAlert): Promise<boo
     const settings = await getSettings(ctx.db);
     const notifierId = settings.systemNotifierId;
     if (notifierId === null) return false;
-    const live = ctx.runtime.notifier(notifierId);
-    let status: 'sent' | 'error' = 'sent';
-    let error: string | null = null;
-    if (!live) {
-      status = 'error';
-      error = 'system notifier unavailable';
-    } else {
-      try {
-        await live.notifier.send({
-          on: 'system',
-          severity: alert.severity ?? 'warning',
-          title: alert.title,
-          text: alert.text,
-          fields: { alert: alert.key },
-        });
-      } catch (err) {
-        status = 'error';
-        error = errorMessage(err);
-      }
-    }
+    const { status, error } = await send(
+      ctx,
+      notifierId,
+      {
+        on: 'system',
+        severity: alert.severity ?? 'warning',
+        title: alert.title,
+        text: alert.text,
+        fields: { alert: alert.key },
+      },
+      'system notifier unavailable',
+    );
     await ctx.db.insert(notificationLog).values({
       notifierId,
       on: 'system',

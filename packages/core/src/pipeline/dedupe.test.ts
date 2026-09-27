@@ -18,6 +18,12 @@ describe('dedupe', () => {
       [{ id: 'd1', createdAt: ago(DEDUPE_WINDOW_SECONDS + 1) }],
       'batched',
     ],
+    [
+      // Replicas' clocks drift: a racing replica ahead by a second wrote the first dispatch.
+      'a dispatch stamped slightly ahead by another replica collapses',
+      [{ id: 'd1', createdAt: new Date(now.getTime() + 1000) }],
+      'deduped',
+    ],
   ])('%s', (_name, prior, outcome) => {
     expect(dedupe(prior, now).outcome).toBe(outcome);
   });

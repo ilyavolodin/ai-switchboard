@@ -1,16 +1,17 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
-import { verifyPassword } from '../../auth/crypto.js';
+import { generatePassword, hashPassword, verifyPassword } from '../../auth/crypto.js';
 import { actorOf, requireRole } from '../../auth/fastify.js';
 import { OIDC_FLOW_COOKIE, OidcError } from '../../auth/oidc.js';
-import { passwordProblem } from '../../auth/password-policy.js';
+import { PASSWORD_MAX_LENGTH, passwordProblem } from '../../auth/password-policy.js';
 import {
   createSession,
   revokeSession,
   SESSION_COOKIE,
   SESSION_TTL_MS,
 } from '../../auth/sessions.js';
+import { AttemptThrottle } from '../../auth/throttle.js';
 import { users } from '../../db/schema.js';
 import { storePassword } from '../../services/users.js';
 import type { ApiContext } from '../context.js';
@@ -65,17 +66,14 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
     me(req.user?.id, req.user?.passwordChangeRequired ?? false),
   );
 
-  // Per replica, in memory: a brute-force brake, not state that must survive a restart.
-  const failures = new Map<string, { n: number; until: number }>();
+  const attempts = new AttemptThrottle(clock);
   const throttled = (key: string): void => {
-    const f = failures.get(key);
-    if (f && f.until > clock.now().getTime())
+    if (attempts.locked(key))
       throw new HttpError(429, 'too_many_attempts', 'Too many attempts; wait a minute.');
   };
-  const failed = (key: string): void => {
-    const n = (failures.get(key)?.n ?? 0) + 1;
-    failures.set(key, { n, until: n >= 5 ? clock.now().getTime() + 60_000 : 0 });
-  };
+  // Compared against when the email has no password, so a miss costs as long as a wrong password
+  // and the response time does not tell which emails have accounts.
+  let decoy: Promise<string> | undefined;
 
   app.post<{ Body: LocalLoginRequest }>(
     '/api/v1/auth/login',
@@ -84,7 +82,11 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
         body: {
           type: 'object',
           required: ['email', 'password'],
-          properties: { email: { type: 'string' }, password: { type: 'string' } },
+          properties: {
+            email: { type: 'string', maxLength: 320 },
+            // Longer than any password the policy accepts; bounds the scrypt input.
+            password: { type: 'string', maxLength: PASSWORD_MAX_LENGTH * 4 },
+          },
         },
       },
     },
@@ -96,14 +98,13 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
         .select()
         .from(users)
         .where(and(eq(users.email, email), isNotNull(users.passwordHash)));
-      const ok = row?.passwordHash
-        ? await verifyPassword(req.body.password, row.passwordHash)
-        : false;
+      decoy ??= hashPassword(generatePassword());
+      const ok = await verifyPassword(req.body.password, row?.passwordHash ?? (await decoy));
       if (!row || !ok) {
-        failed(key);
+        attempts.fail(key);
         throw new HttpError(401, 'invalid_credentials', 'Email or password is incorrect.');
       }
-      failures.delete(key);
+      attempts.succeed(key);
       const token = await createSession(db, row.id, 'password', clock.now());
       void reply.setCookie(SESSION_COOKIE, token, cookieOptions);
       return me(row.id, row.mustChangePassword);
@@ -136,11 +137,11 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       if (!row?.passwordHash)
         throw conflict('This account has no password; ask an admin to set one.');
       if (!(await verifyPassword(req.body.currentPassword, row.passwordHash))) {
-        failed(key);
+        attempts.fail(key);
         // 400, not 401: the session is fine, only the confirmation failed.
         throw new HttpError(400, 'invalid_credentials', 'The current password is incorrect.');
       }
-      failures.delete(key);
+      attempts.succeed(key);
       const problem = passwordProblem(req.body.newPassword, row.email);
       if (problem) throw badRequest(problem);
       if (req.body.newPassword === req.body.currentPassword)

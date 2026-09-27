@@ -7,7 +7,7 @@ import type { StepPhase, StepStatus } from '../../domain/status.js';
 import { evaluateFilter, resolveSecretRefs, stepContext } from '../../expr/index.js';
 import { redactSecretValues } from '../../secrets/refs.js';
 
-import { errorMessage, evalFunctions, type Ctx, type ProcessRow } from './context.js';
+import { callPlugin, errorMessage, evalFunctions, type Ctx, type ProcessRow } from './context.js';
 
 /**
  * `before` and `after` steps: actions on a source or executor instance, with arguments and an
@@ -109,10 +109,16 @@ export async function runSteps(
           secretValues.push(value);
           return value;
         });
-        const res = await act(step.action, resolved);
-        if (!res.ok) {
+        const plugin = source?.pluginName ?? executor?.pluginName ?? step.provider;
+        const out = await callPlugin(ctx, plugin, `act ${step.action}`, () =>
+          act(step.action, resolved),
+        );
+        if (!out.ok) {
           status = 'error';
-          error = res.message ?? 'action failed';
+          error = out.error;
+        } else if (!out.value.ok) {
+          status = 'error';
+          error = out.value.message ?? 'action failed';
         }
       } catch (err) {
         status = 'error';

@@ -1,23 +1,13 @@
-import { and, desc, eq, isNotNull, isNull, lt, type SQL } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
 import { actorOf, requireRole } from '../../auth/fastify.js';
-import { approvals, batches, events, processes } from '../../db/schema.js';
 import type { ApiContext } from '../context.js';
-import type {
-  ActivityQuery,
-  ApprovalHistoryItem,
-  ApprovalItem,
-  ApprovalRulesResponse,
-  CloseRunRequest,
-  Page,
-  RunsQuery,
-} from '../contract.js';
+import type { ActivityQuery, CloseRunRequest, RunsQuery } from '../contract.js';
 import { badRequest, notFound, requireReason } from '../errors.js';
-import { eventDetail, listActivity } from '../read/activity.js';
+import { eventDetail, eventExists, listActivity } from '../read/activity.js';
+import { approvalHistory, approvalRules, pendingApprovals } from '../read/approvals.js';
 import { board, statusStrip } from '../read/board.js';
-import { decodeCursor, encodeCursor, pageLimit } from '../read/paging.js';
-import { batchArtifacts, listRuns, runDetail } from '../read/runs.js';
+import { listRuns, runDetail } from '../read/runs.js';
 import {
   meterHistory,
   parseWindow,
@@ -46,14 +36,10 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
     viewer,
     async (req) => sourceStats(ctx, req.params.id, parseWindow(req.query.window)),
   );
-  app.get<{ Params: { id: string }; Querystring: ActivityQuery & { type?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: ActivityQuery }>(
     '/api/v1/sources/:id/events',
     viewer,
-    async (req) => {
-      const page = await listActivity(ctx, { ...req.query, source: req.params.id });
-      const type = req.query.type;
-      return type ? { ...page, items: page.items.filter((i) => i.type === type) } : page;
-    },
+    async (req) => listActivity(ctx, { ...req.query, source: req.params.id }),
   );
   app.get<{ Params: { id: string }; Querystring: { window?: string } }>(
     '/api/v1/executors/:id/meters',
@@ -93,12 +79,8 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
     { ...operator, schema: { body: reasoned } },
     async (req) => {
       const reason = requireReason(req.body);
-      const [row] = await ctx.db
-        .select({ id: events.id })
-        .from(events)
-        .where(eq(events.id, req.params.id));
-      if (!row) throw notFound('Event');
-      return ctx.pipeline.replay(row.id, actorOf(req), reason);
+      if (!(await eventExists(ctx, req.params.id))) throw notFound('Event');
+      return ctx.pipeline.replay(req.params.id, actorOf(req), reason);
     },
   );
   app.get<{ Querystring: { artifact?: string } }>('/api/v1/trace', viewer, async (req) => {
@@ -130,87 +112,13 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
   );
 
   // Approvals --------------------------------------------------------------------------------
-  const approvalItems = async (
-    rows: (typeof approvals.$inferSelect)[],
-  ): Promise<ApprovalItem[]> => {
-    const arts = await batchArtifacts(
-      ctx,
-      rows.map((r) => r.batchId),
-    );
-    const procs = await ctx.db.select({ id: processes.id, name: processes.name }).from(processes);
-    const kinds =
-      rows.length > 0
-        ? await ctx.db.select({ id: batches.id, kind: batches.kind }).from(batches)
-        : [];
-    return rows.map((r) => ({
-      batchId: r.batchId,
-      process: {
-        id: r.processId,
-        name: procs.find((p) => p.id === r.processId)?.name ?? '(deleted process)',
-      },
-      rule: r.rule,
-      requestedAt: r.requestedAt.toISOString(),
-      artifacts: arts.get(r.batchId)?.artifacts ?? [],
-      eventCount: arts.get(r.batchId)?.count ?? 0,
-      kind: kinds.find((k) => k.id === r.batchId)?.kind ?? 'event',
-      input: r.input,
-    }));
-  };
-
-  app.get('/api/v1/approvals', viewer, async () => {
-    const rows = await ctx.db
-      .select()
-      .from(approvals)
-      .where(isNull(approvals.decision))
-      .orderBy(approvals.requestedAt);
-    return approvalItems(rows);
-  });
-
+  app.get('/api/v1/approvals', viewer, async () => pendingApprovals(ctx));
   app.get<{ Querystring: { cursor?: string; limit?: string } }>(
     '/api/v1/approvals/history',
     viewer,
-    async (req): Promise<Page<ApprovalHistoryItem>> => {
-      const limit = pageLimit(req.query.limit);
-      const cursor = decodeCursor(req.query.cursor);
-      const where: SQL[] = [isNotNull(approvals.decision)];
-      if (cursor) where.push(lt(approvals.decidedAt, new Date(cursor.t)));
-      const rows = await ctx.db
-        .select()
-        .from(approvals)
-        .where(and(...where))
-        .orderBy(desc(approvals.decidedAt))
-        .limit(limit + 1);
-      const items = await approvalItems(rows.slice(0, limit));
-      const last = rows[limit - 1];
-      return {
-        items: items.map((item, i) => {
-          const r = rows[i];
-          return {
-            ...item,
-            decision: r?.decision ?? 'rejected',
-            decidedBy: r?.decidedBy ?? '',
-            decidedAt: r?.decidedAt?.toISOString() ?? '',
-            reason: r?.reason ?? '',
-          };
-        }),
-        nextCursor:
-          rows.length > limit && last?.decidedAt
-            ? encodeCursor({ t: last.decidedAt.toISOString() })
-            : null,
-      };
-    },
+    async (req) => approvalHistory(ctx, req.query),
   );
-
-  app.get('/api/v1/approvals/rules', viewer, async (): Promise<ApprovalRulesResponse> => {
-    const procs = await ctx.db
-      .select({ id: processes.id, name: processes.name, document: processes.document })
-      .from(processes);
-    return {
-      processes: procs
-        .filter((p) => p.document.gates.approval !== 'none')
-        .map((p) => ({ id: p.id, name: p.name, rule: p.document.gates.approval })),
-    };
-  });
+  app.get('/api/v1/approvals/rules', viewer, async () => approvalRules(ctx));
 
   app.post<{ Params: { batchId: string }; Body: { reason: string } }>(
     '/api/v1/approvals/:batchId/approve',

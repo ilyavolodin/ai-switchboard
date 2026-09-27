@@ -59,7 +59,8 @@ export async function registerIngressRoutes(
         rateLimit: {
           max: 600,
           timeWindow: '1 minute',
-          keyGenerator: (req: FastifyRequest) => req.url.split('?')[0] ?? '',
+          // Per instance: ids are case-insensitive, so `/hooks/ABC…` shares `/hooks/abc…`'s budget.
+          keyGenerator: (req: FastifyRequest) => (req.url.split('?')[0] ?? '').toLowerCase(),
         },
       },
     };

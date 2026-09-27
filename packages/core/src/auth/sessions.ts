@@ -130,7 +130,10 @@ export async function userForApiToken(
     .where(and(eq(apiTokens.tokenHash, sha256(secret)), isNull(apiTokens.revokedAt)));
   const row = rows[0];
   if (!row) return null;
-  await db.update(apiTokens).set({ lastUsedAt: now }).where(eq(apiTokens.id, row.token.id));
+  // Like the session slide: at most one write a minute, not one per API call.
+  const last = row.token.lastUsedAt?.getTime();
+  if (last === undefined || now.getTime() - last > 60_000)
+    await db.update(apiTokens).set({ lastUsedAt: now }).where(eq(apiTokens.id, row.token.id));
   const role = roleAtLeast(row.user.role, row.token.role) ? row.token.role : row.user.role;
   // A token is its own credential; a pending password change restricts password sessions only.
   return {

@@ -7,6 +7,7 @@ import {
   dispatches,
   executors,
   processes,
+  processVersions,
   runs,
   sources,
 } from '../../db/schema.js';
@@ -15,9 +16,17 @@ import { countedRun } from '../../services/pipeline/counters.js';
 import type { ProcessDocument } from '../../domain/process.js';
 import type { StatusTone } from '../../domain/status.js';
 import type { ApiContext } from '../context.js';
-import type { PipelineDots, ProcessDetail, ProcessSummary } from '../contract.js';
+import type {
+  PipelineDots,
+  ProcessDetail,
+  ProcessSummary,
+  ProcessVersionDetail,
+  ProcessVersionSummary,
+  RecentBatchDTO,
+} from '../contract.js';
 import { notFound } from '../errors.js';
-import { runSummaries } from './runs.js';
+import { pageLimit } from './paging.js';
+import { batchArtifacts, runSummaries } from './runs.js';
 
 type ProcessRow = typeof processes.$inferSelect;
 
@@ -135,7 +144,7 @@ export async function processSummaries(
   const now = ctx.clock.now();
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
   const dayAgo = new Date(now.getTime() - 86_400_000);
-  const [hours, daily, pending, lastRuns, srcs, exs] = await Promise.all([
+  const [hours, daily, pending, lastRuns, srcs, exs, day24] = await Promise.all([
     hourCounts(ctx, ids),
     ctx.db
       .select({
@@ -164,13 +173,13 @@ export async function processSummaries(
       .orderBy(runs.processId, desc(runs.createdAt)),
     ctx.db.select({ id: sources.id, name: sources.name }).from(sources),
     ctx.db.select({ id: executors.id, name: executors.name }).from(executors),
+    // The daily-cap bar counts exactly what the budget stage counts (by reservation time).
+    ctx.db
+      .select({ processId: runs.processId, n: count() })
+      .from(runs)
+      .where(and(inArray(runs.processId, ids), gt(runs.invokedAt, dayAgo), countedRun()))
+      .groupBy(runs.processId),
   ]);
-  // The daily-cap bar counts exactly what the budget stage counts (by reservation time).
-  const day24 = await ctx.db
-    .select({ processId: runs.processId, n: count() })
-    .from(runs)
-    .where(and(inArray(runs.processId, ids), gt(runs.invokedAt, dayAgo), countedRun()))
-    .groupBy(runs.processId);
 
   return list.map((p) => {
     const doc = p.document;
@@ -255,4 +264,81 @@ export async function processDetail(ctx: ApiContext, id: string): Promise<Proces
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** Whether a process row exists. */
+export async function processExists(ctx: ApiContext, id: string): Promise<boolean> {
+  const rows = await ctx.db
+    .select({ id: processes.id })
+    .from(processes)
+    .where(eq(processes.id, id));
+  return rows.length > 0;
+}
+
+/** A process's saved versions, newest first. */
+export async function processVersionList(
+  ctx: ApiContext,
+  processId: string,
+): Promise<ProcessVersionSummary[]> {
+  const rows = await ctx.db
+    .select({
+      version: processVersions.version,
+      savedBy: processVersions.savedBy,
+      savedAt: processVersions.savedAt,
+      reason: processVersions.reason,
+    })
+    .from(processVersions)
+    .where(eq(processVersions.processId, processId))
+    .orderBy(desc(processVersions.version));
+  return rows.map((r) => ({ ...r, savedAt: r.savedAt.toISOString() }));
+}
+
+/** One saved version with its document. `version` comes from the path: anything else is a 404. */
+export async function processVersion(
+  ctx: ApiContext,
+  processId: string,
+  version: string | number,
+): Promise<ProcessVersionDetail> {
+  const n = Number(version);
+  if (!Number.isSafeInteger(n) || n < 1) throw notFound('Version');
+  const [row] = await ctx.db
+    .select()
+    .from(processVersions)
+    .where(and(eq(processVersions.processId, processId), eq(processVersions.version, n)));
+  if (!row) throw notFound('Version');
+  return {
+    version: row.version,
+    savedBy: row.savedBy,
+    savedAt: row.savedAt.toISOString(),
+    reason: row.reason,
+    document: row.document,
+  };
+}
+
+/** A process's latest batches (events, sweeps and manual runs) with their artifacts. */
+export async function recentBatches(
+  ctx: ApiContext,
+  processId: string,
+  limit: string | undefined,
+): Promise<RecentBatchDTO[]> {
+  const rows = await ctx.db
+    .select()
+    .from(batches)
+    .where(
+      and(eq(batches.processId, processId), inArray(batches.kind, ['event', 'sweep', 'manual'])),
+    )
+    .orderBy(desc(batches.openedAt))
+    .limit(pageLimit(limit, 20, 100));
+  const arts = await batchArtifacts(
+    ctx,
+    rows.map((r) => r.id),
+  );
+  return rows.map((b) => ({
+    id: b.id,
+    kind: b.kind,
+    openedAt: b.openedAt.toISOString(),
+    size: b.size,
+    outcome: b.outcome,
+    artifacts: arts.get(b.id)?.artifacts ?? [],
+  }));
 }

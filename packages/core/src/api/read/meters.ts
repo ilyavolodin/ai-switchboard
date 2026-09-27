@@ -1,5 +1,5 @@
 import type { MeterSpec } from '@ai-switchboard/sdk';
-import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { desc, inArray } from 'drizzle-orm';
 
 import type { DbOrTx } from '../../db/client.js';
 import { executors, meterReadings, processes } from '../../db/schema.js';
@@ -48,7 +48,9 @@ export function meterSpecsFor(ctx: ApiContext, executorId: string, typeId: strin
 export async function meterGauges(
   ctx: ApiContext,
   executorIds?: string[],
+  processList?: Pick<typeof processes.$inferSelect, 'id' | 'name' | 'document'>[],
 ): Promise<MeterGaugeDTO[]> {
+  if (executorIds?.length === 0) return [];
   const rows = await ctx.db
     .select({
       id: executors.id,
@@ -57,23 +59,18 @@ export async function meterGauges(
       caps: executors.caps,
     })
     .from(executors)
-    .where(
-      executorIds
-        ? inArray(
-            executors.id,
-            executorIds.length > 0 ? executorIds : ['00000000-0000-0000-0000-000000000000'],
-          )
-        : sql`true`,
-    );
+    .where(executorIds ? inArray(executors.id, executorIds) : undefined);
   if (rows.length === 0) return [];
   const settings = await getSettings(ctx.db);
   const readings = await latestReadings(
     ctx.db,
     rows.map((r) => r.id),
   );
-  const procs = await ctx.db
-    .select({ id: processes.id, name: processes.name, document: processes.document })
-    .from(processes);
+  const procs =
+    processList ??
+    (await ctx.db
+      .select({ id: processes.id, name: processes.name, document: processes.document })
+      .from(processes));
   const now = ctx.clock.now().getTime();
   const out: MeterGaugeDTO[] = [];
   for (const ex of rows) {
@@ -110,12 +107,4 @@ export async function meterGauges(
     });
   }
   return out;
-}
-
-export async function executorMeterIds(db: DbOrTx, executorId: string): Promise<string[]> {
-  const rows = await db
-    .selectDistinct({ meterId: meterReadings.meterId })
-    .from(meterReadings)
-    .where(eq(meterReadings.executorId, executorId));
-  return rows.map((r) => r.meterId);
 }

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 
 import {
   batches,
@@ -13,7 +13,7 @@ import type { BatchOutcome, RunStatusValue } from '../../domain/status.js';
 import type { ApiContext } from '../context.js';
 import type { ActivityQuery, ActivityRow, EventDetail, Page, StageIndicator } from '../contract.js';
 import { notFound } from '../errors.js';
-import { decodeCursor, encodeCursor, pageLimit } from './paging.js';
+import { afterCursor, decodeCursor, encodeCursor, pageLimit, parseTime } from './paging.js';
 
 type EventRow = typeof events.$inferSelect;
 
@@ -190,9 +190,10 @@ export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<P
   const where: SQL[] = [];
   if (q.source) where.push(eq(events.sourceId, q.source));
   if (q.stage) where.push(inArray(events.stage, q.stage.split(',') as EventRow['stage'][]));
+  if (q.type) where.push(eq(events.type, q.type));
   if (q.artifact) where.push(artifactCondition(q.artifact));
-  if (q.from) where.push(gte(events.receivedAt, new Date(q.from)));
-  if (q.to) where.push(lte(events.receivedAt, new Date(q.to)));
+  if (q.from) where.push(gte(events.receivedAt, parseTime(q.from, 'from')));
+  if (q.to) where.push(lte(events.receivedAt, parseTime(q.to, 'to')));
   if (q.process) {
     where.push(
       inArray(
@@ -220,15 +221,7 @@ export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<P
       ),
     );
   }
-  if (cursor) {
-    const t = new Date(cursor.t);
-    where.push(
-      cursor.id
-        ? (or(lt(events.receivedAt, t), and(eq(events.receivedAt, t), lt(events.id, cursor.id))) ??
-            sql`true`)
-        : lt(events.receivedAt, t),
-    );
-  }
+  if (cursor) where.push(afterCursor(events.receivedAt, events.id, cursor));
   const rows = await ctx.db
     .select()
     .from(events)
@@ -246,7 +239,23 @@ export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<P
   };
 }
 
+/** Whether an event row exists (a replay of a pruned or unknown event is a 404). */
+export async function eventExists(ctx: ApiContext, id: string): Promise<boolean> {
+  const rows = await ctx.db.select({ id: events.id }).from(events).where(eq(events.id, id));
+  return rows.length > 0;
+}
+
 const RAW_LIMIT = 64 * 1024;
+
+/** Header names that can carry a credential: API keys, passwords, tokens, signatures, cookies. */
+const CREDENTIAL_HEADER = /auth|cookie|secret|token|signature|api-?key|password|credential/i;
+
+/** A stored delivery's headers without any that could carry a credential the sender put there. */
+export function safeHeaders(
+  headers: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(headers).filter(([k]) => !CREDENTIAL_HEADER.test(k)));
+}
 
 export async function eventDetail(ctx: ApiContext, id: string): Promise<EventDetail> {
   const [row] = await ctx.db.select().from(events).where(eq(events.id, id));
@@ -254,14 +263,6 @@ export async function eventDetail(ctx: ApiContext, id: string): Promise<EventDet
   const [activity] = await activityRows(ctx, [row]);
   if (!activity) throw notFound('Event');
   const [raw] = await ctx.db.select().from(eventRaw).where(eq(eventRaw.ref, row.rawRef));
-  // Never echo credentials that a sender put in headers.
-  const safeHeaders = raw
-    ? Object.fromEntries(
-        Object.entries(raw.headers).filter(
-          ([k]) => !/authorization|cookie|secret|token|signature/i.test(k),
-        ),
-      )
-    : {};
   return {
     ...activity,
     attributes: row.attributes,
@@ -270,7 +271,7 @@ export async function eventDetail(ctx: ApiContext, id: string): Promise<EventDet
     stageReason: row.stageReason,
     raw: raw
       ? {
-          headers: safeHeaders,
+          headers: safeHeaders(raw.headers),
           body: raw.body.subarray(0, RAW_LIMIT).toString('utf8'),
           truncated: raw.body.length > RAW_LIMIT,
         }

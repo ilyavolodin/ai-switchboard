@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 import {
   approvals,
@@ -13,7 +13,7 @@ import {
 import { isTerminalRunStatus } from '../../domain/status.js';
 import { recordAudit } from '../audit.js';
 
-import { withTx, type Ctx } from './context.js';
+import { appendDecisions, withTx, type Ctx } from './context.js';
 import { dispatchBatch, type DispatchResult } from './dispatch.js';
 import { PipelineError, isUuid } from './errors.js';
 import { batchEvents } from './load.js';
@@ -148,7 +148,7 @@ async function decide(
         approvalState: decision,
         outcome: decision === 'approved' ? 'closed' : 'rejected',
         ...(decision === 'rejected' ? { outcomeReason: 'rejected' } : {}),
-        decisions: sql`${batches.decisions} || ${JSON.stringify([record])}::jsonb`,
+        decisions: appendDecisions([record]),
       })
       .where(eq(batches.id, batchId));
     await tx
@@ -247,7 +247,7 @@ export async function clearSoftHold(
     await tx
       .update(executors)
       .set({ softHoldUntil: null, softHoldReason: null })
-      .where(and(eq(executors.id, executorId)));
+      .where(eq(executors.id, executorId));
     await recordAudit(tx, {
       actor,
       scope: 'executor',

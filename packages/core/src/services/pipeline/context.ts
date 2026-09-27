@@ -1,9 +1,9 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 
 import type { ArtifactRef, Event } from '@ai-switchboard/sdk';
 
 import type { Db, DbOrTx, Tx } from '../../db/client.js';
-import type { events, processes } from '../../db/schema.js';
+import { batches, type GateDecisionRecord, type events, type processes } from '../../db/schema.js';
 import type { Deps } from '../../deps.js';
 import type { EvalFunctions, ExpressionEngine } from '../../expr/index.js';
 import type { CoreLogger } from '../../logger.js';
@@ -19,6 +19,8 @@ export interface PipelineDeps extends Deps {
   heartbeatIntervalMs?: number;
   /** Non-secret deployment values for `$env`; defaults to `process.env` (filtered by prefix). */
   env?: Record<string, string | undefined>;
+  /** Time limit for a plugin call the pipeline waits on; default `PLUGIN_CALL_TIMEOUT_MS`. */
+  pluginCallTimeoutMs?: number;
 }
 
 /** What every pipeline service function receives. */
@@ -57,20 +59,6 @@ function pgCode(err: unknown): string | undefined {
   return undefined;
 }
 
-export function isUniqueViolation(err: unknown): boolean {
-  return pgCode(err) === '23505';
-}
-
-/** A connection-level failure (Postgres down), as opposed to a query error. */
-export function isConnectionError(err: unknown): boolean {
-  const code = pgCode(err);
-  if (code === undefined) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return /ECONNREFUSED|ENOTFOUND|terminat|Connection|timeout/i.test(msg);
-  }
-  return code.startsWith('08') || code === '57P01' || code === '57P03' || code.startsWith('ECONN');
-}
-
 /**
  * Run `fn` in a transaction, retrying on unique violations, serialization failures and
  * deadlocks (a racing replica won; the retry re-reads and usually no-ops).
@@ -89,6 +77,11 @@ export async function withTx<T>(db: Db, fn: (tx: Tx) => Promise<T>, attempts = 4
 /** A transaction-scoped advisory lock on an arbitrary key. */
 export async function lockKey(tx: DbOrTx, key: string): Promise<void> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+}
+
+/** `batches.decisions || records`: append decision records to a batch in an update. */
+export function appendDecisions(records: readonly GateDecisionRecord[]): SQL {
+  return sql`${batches.decisions} || ${JSON.stringify(records)}::jsonb`;
 }
 
 export type EventRow = typeof events.$inferSelect;
@@ -162,6 +155,47 @@ export function evalFunctions(
       return live.source.linked(ref);
     },
   };
+}
+
+/**
+ * Default time limit for a plugin call (poll, readMeters, a notifier send, an action). Below the
+ * 60 s after which recovery treats an in-flight invoke attempt as stale, so a hung `before` step
+ * fails its run before recovery can call the attempt `uncertain`.
+ */
+export const PLUGIN_CALL_TIMEOUT_MS = 45_000;
+
+/**
+ * Await a plugin call with a time limit, so a plugin that never settles cannot hold a worker.
+ * A timeout is counted against the plugin here; a throw was already counted by the runtime's
+ * attribution wrapper. Either way the failure comes back as a value, never a rejection.
+ */
+export async function callPlugin<T>(
+  ctx: Pick<Ctx, 'runtime' | 'pluginCallTimeoutMs'>,
+  pluginName: string,
+  method: string,
+  call: () => Promise<T> | T,
+): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  const ms = ctx.pluginCallTimeoutMs ?? PLUGIN_CALL_TIMEOUT_MS;
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), ms);
+    timer.unref();
+  });
+  try {
+    // `then(call)`: a plugin that returns a plain value or throws synchronously is handled too.
+    const settled = Promise.resolve()
+      .then(call)
+      .then((value) => ({ value }));
+    const out = await Promise.race([settled, timeout]);
+    if (out !== 'timeout') return { ok: true, value: out.value };
+    const error = `${method}: timed out after ${ms} ms`;
+    ctx.runtime.recordPluginError(pluginName, 'exception', error);
+    return { ok: false, error };
+  } catch (err) {
+    return { ok: false, error: `${method}: ${errorMessage(err)}` };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function errorMessage(err: unknown): string {

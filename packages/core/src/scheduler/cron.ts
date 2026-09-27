@@ -76,8 +76,10 @@ export function parseCron(expression: string): CronParse {
   }
 }
 
+/** Is `timezone` a zone Luxon can evaluate in (an IANA name, `UTC`, a fixed offset)? */
 export function isValidTimezone(timezone: string): boolean {
-  return DateTime.now().setZone(timezone).isValid;
+  // Any fixed instant will do; the clock plays no part in whether a zone exists.
+  return DateTime.fromMillis(0).setZone(timezone).isValid;
 }
 
 interface Wall {

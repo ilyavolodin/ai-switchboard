@@ -2,7 +2,7 @@ import { hostname } from 'node:os';
 
 import { and, eq, isNull, lt, lte, or, sql } from 'drizzle-orm';
 
-import { batches, events, executors, replicas, runs, sources } from '../../db/schema.js';
+import { batches, events, executors, replicas, sources } from '../../db/schema.js';
 import { getSettings } from '../settings.js';
 
 import { JOBS, type Ctx } from './context.js';
@@ -144,13 +144,4 @@ export async function heartbeat(ctx: Ctx, startedAt: Date): Promise<void> {
       set: { heartbeatAt: now, version: ctx.config.version },
     });
   ctx.telemetry.counter('switchboard.heartbeat', { replica: ctx.config.replicaId });
-}
-
-/** Open runs by status (used by tests and the doctor). */
-export async function openRunCount(ctx: Ctx): Promise<number> {
-  const [row] = await ctx.db
-    .select({ n: sql<number>`count(*)`.mapWith(Number) })
-    .from(runs)
-    .where(sql`${runs.status} IN ('invoking','running','uncertain')`);
-  return row?.n ?? 0;
 }

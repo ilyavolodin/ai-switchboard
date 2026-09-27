@@ -83,15 +83,6 @@ export async function countersFor(
   };
 }
 
-/** A process's counted runs in the last hour and 24 hours (for the API's daily-cap bars). */
-export async function processRunCounts(
-  db: DbOrTx,
-  processId: string,
-  now: Date,
-): Promise<{ hour: number; day: number }> {
-  return runCounts(db, eq(runs.processId, processId), now);
-}
-
 /** An executor's counted runs since `since` (estimated meters). */
 export async function executorRunsSince(
   db: DbOrTx,

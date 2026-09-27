@@ -1,5 +1,5 @@
 import type { ArtifactRef } from '@ai-switchboard/sdk';
-import { and, desc, eq, inArray, lt, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
 
 import {
   batches,
@@ -16,7 +16,7 @@ import type { RunStatusValue } from '../../domain/status.js';
 import type { ApiContext } from '../context.js';
 import type { Page, RunDetail, RunSummary, RunsQuery } from '../contract.js';
 import { notFound } from '../errors.js';
-import { decodeCursor, encodeCursor, pageLimit } from './paging.js';
+import { afterCursor, decodeCursor, encodeCursor, pageLimit } from './paging.js';
 
 type RunRow = typeof runs.$inferSelect;
 
@@ -126,19 +126,21 @@ export async function listRuns(ctx: ApiContext, q: RunsQuery): Promise<Page<RunS
   if (q.process) where.push(eq(runs.processId, q.process));
   if (q.executor) where.push(eq(runs.executorId, q.executor));
   if (q.status) where.push(inArray(runs.status, q.status.split(',') as RunStatusValue[]));
-  if (cursor) where.push(lt(runs.createdAt, new Date(cursor.t)));
+  if (cursor) where.push(afterCursor(runs.createdAt, runs.id, cursor));
   const rows = await ctx.db
     .select()
     .from(runs)
     .where(where.length > 0 ? and(...where) : undefined)
-    .orderBy(desc(runs.createdAt))
+    .orderBy(desc(runs.createdAt), desc(runs.id))
     .limit(limit + 1);
   const items = await runSummaries(ctx, rows.slice(0, limit));
   const last = rows[limit - 1];
   return {
     items,
     nextCursor:
-      rows.length > limit && last ? encodeCursor({ t: last.createdAt.toISOString() }) : null,
+      rows.length > limit && last
+        ? encodeCursor({ t: last.createdAt.toISOString(), id: last.id })
+        : null,
   };
 }
 

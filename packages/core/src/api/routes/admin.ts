@@ -1,5 +1,5 @@
 import { SDK_VERSION, validateAgainst, type JSONSchema } from '@ai-switchboard/sdk';
-import { and, desc, eq, lt, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
 import { roleAtLeast } from '../../auth/crypto.js';
@@ -18,6 +18,7 @@ import {
   sources,
   users,
 } from '../../db/schema.js';
+import type { DbOrTx } from '../../db/client.js';
 import { ROLES, type Role } from '../../domain/status.js';
 import { recordAudit, recordAuditDiff } from '../../services/audit.js';
 import { getSettings, putSettings } from '../../services/settings.js';
@@ -122,6 +123,19 @@ function tokenDTO(row: typeof apiTokens.$inferSelect): ApiTokenDTO {
   };
 }
 
+/**
+ * Refuse (409) unless another admin remains. Locks the admin rows, so two admins demoting or
+ * removing each other at the same moment cannot both succeed.
+ */
+async function keepAnotherAdmin(tx: DbOrTx, message: string): Promise<void> {
+  const admins = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.role, 'admin'))
+    .for('update');
+  if (admins.length <= 1) throw conflict(message);
+}
+
 function checkRole(role: unknown): Role {
   if (typeof role !== 'string' || !ROLES.includes(role as Role))
     throw badRequest(`role must be one of ${ROLES.join(', ')}`);
@@ -224,14 +238,12 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
     async (req) => {
       const reason = requireReason(req.body);
       const role = checkRole(req.body.role);
-      const [before] = await db.select().from(users).where(eq(users.id, req.params.id));
-      if (!before) throw notFound('User');
-      if (before.role === 'admin' && role !== 'admin') {
-        const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, 'admin'));
-        if (admins.length <= 1) throw conflict('This is the last admin; add another admin first.');
-      }
       const now = clock.now();
       const [row] = await db.transaction(async (tx) => {
+        const [before] = await tx.select().from(users).where(eq(users.id, req.params.id));
+        if (!before) throw notFound('User');
+        if (before.role === 'admin' && role !== 'admin')
+          await keepAnotherAdmin(tx, 'This is the last admin; add another admin first.');
         const r = await tx.update(users).set({ role }).where(eq(users.id, before.id)).returning();
         await recordAudit(tx, {
           actor: actorOf(req),
@@ -255,15 +267,12 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
     admin,
     async (req, reply) => {
       const reason = requireReason(req.body);
-      const [before] = await db.select().from(users).where(eq(users.id, req.params.id));
-      if (!before) throw notFound('User');
-      if (before.id === req.user?.id) throw conflict('You cannot remove yourself.');
-      if (before.role === 'admin') {
-        const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, 'admin'));
-        if (admins.length <= 1) throw conflict('This is the last admin.');
-      }
       const now = clock.now();
       await db.transaction(async (tx) => {
+        const [before] = await tx.select().from(users).where(eq(users.id, req.params.id));
+        if (!before) throw notFound('User');
+        if (before.id === req.user?.id) throw conflict('You cannot remove yourself.');
+        if (before.role === 'admin') await keepAnotherAdmin(tx, 'This is the last admin.');
         await revokeUserSessions(tx, before.id);
         await tx.update(apiTokens).set({ revokedAt: now }).where(eq(apiTokens.userId, before.id));
         await tx.delete(users).where(eq(users.id, before.id));
@@ -431,16 +440,24 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
       const where: SQL[] = [];
       if (q.scope) where.push(eq(auditLog.scope, q.scope));
       if (q.target) where.push(eq(auditLog.targetId, q.target));
-      if (q.actor) where.push(sql`${auditLog.actor} ILIKE ${`%${q.actor}%`}`);
-      if (cursor?.id) where.push(lt(auditLog.id, Number(cursor.id)));
+      if (q.actor) {
+        const escaped = q.actor.replace(/[\\%_]/g, (c) => `\\${c}`);
+        where.push(sql`${auditLog.actor} ILIKE ${`%${escaped}%`}`);
+      }
+      const after = Number(cursor?.id);
+      if (Number.isSafeInteger(after)) where.push(lt(auditLog.id, after));
       const rows = await db
         .select()
         .from(auditLog)
         .where(where.length > 0 ? and(...where) : undefined)
         .orderBy(desc(auditLog.id))
         .limit(limit + 1);
-      const names = await targetNames(ctx);
-      const items = rows.slice(0, limit).map((r) => ({
+      const page = rows.slice(0, limit);
+      const names = await targetNames(
+        ctx,
+        page.map((r) => r.targetId),
+      );
+      const items = page.map((r) => ({
         id: r.id,
         at: r.at.toISOString(),
         actor: r.actor,
@@ -493,16 +510,39 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
   });
 }
 
-/** id → display name across every instance kind, users and processes, for audit rows. */
-async function targetNames(ctx: ApiContext): Promise<Map<string, string>> {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** id → display name for the audit rows on one page, across instances, users and processes. */
+async function targetNames(
+  ctx: ApiContext,
+  targetIds: (string | null)[],
+): Promise<Map<string, string>> {
   const out = new Map<string, string>();
+  // Plugin names, `global` and bootstrap emails are not row ids.
+  const ids = [...new Set(targetIds.filter((id): id is string => id !== null && UUID.test(id)))];
+  if (ids.length === 0) return out;
   const lists = await Promise.all([
-    ctx.db.select({ id: processes.id, name: processes.name }).from(processes),
-    ctx.db.select({ id: sources.id, name: sources.name }).from(sources),
-    ctx.db.select({ id: executors.id, name: executors.name }).from(executors),
-    ctx.db.select({ id: notifiers.id, name: notifiers.name }).from(notifiers),
-    ctx.db.select({ id: secretProviders.id, name: secretProviders.name }).from(secretProviders),
-    ctx.db.select({ id: users.id, name: users.email }).from(users),
+    ctx.db
+      .select({ id: processes.id, name: processes.name })
+      .from(processes)
+      .where(inArray(processes.id, ids)),
+    ctx.db
+      .select({ id: sources.id, name: sources.name })
+      .from(sources)
+      .where(inArray(sources.id, ids)),
+    ctx.db
+      .select({ id: executors.id, name: executors.name })
+      .from(executors)
+      .where(inArray(executors.id, ids)),
+    ctx.db
+      .select({ id: notifiers.id, name: notifiers.name })
+      .from(notifiers)
+      .where(inArray(notifiers.id, ids)),
+    ctx.db
+      .select({ id: secretProviders.id, name: secretProviders.name })
+      .from(secretProviders)
+      .where(inArray(secretProviders.id, ids)),
+    ctx.db.select({ id: users.id, name: users.email }).from(users).where(inArray(users.id, ids)),
   ]);
   for (const list of lists) for (const r of list) out.set(r.id, r.name);
   return out;

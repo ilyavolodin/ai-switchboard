@@ -108,7 +108,7 @@ export async function createSwitchboard(options: CreateOptions): Promise<Switchb
   const preview: PreviewPort = {
     filterPreview: (req) => filterPreview(deps, req),
     inputPreview: (req) => inputPreview(deps, req),
-    cronPreview: (req) => cronPreview(req),
+    cronPreview: (req) => cronPreview(req, clock),
     traceForArtifact: (q) => traceForArtifact(deps, q),
     traceForEvent: (id) => traceForEvent(deps, id),
   };

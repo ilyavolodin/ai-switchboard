@@ -2,6 +2,8 @@ import {
   InvokeError,
   TransportError,
   dedupeKey,
+  isInvokeError,
+  isTransportError,
   signHmac,
   verifyHmac,
   type ActionResult,
@@ -9,16 +11,19 @@ import {
   type ArtifactSnapshot,
   type EventDraft,
   type EventTypeSpec,
+  type Executor,
   type ExecutorType,
   type Health,
   type InvokeResult,
   type MeterReading,
   type MeterSpec,
   type NotificationMessage,
+  type Notifier,
   type NotifierType,
   type RawRequest,
   type RunHandle,
   type RunStatus,
+  type Source,
   type SourceType,
   type TrackingMode,
   type UsageDimension,
@@ -244,6 +249,48 @@ async function behave(
   }
 }
 
+/**
+ * Mirrors `PluginHost`'s attribution proxy: a plugin method that throws (anything but a
+ * TransportError or InvokeError) is counted against its plugin, then the error propagates. The
+ * pipeline relies on this layer, so the fake has it too.
+ */
+function attributed<T extends object>(
+  target: T,
+  pluginName: string,
+  runtime: { recordPluginError: PluginRuntime['recordPluginError'] },
+): T {
+  const record = (err: unknown, method: string): void => {
+    if (isTransportError(err) || isInvokeError(err)) return;
+    runtime.recordPluginError(
+      pluginName,
+      'exception',
+      `${method}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  };
+  return new Proxy(target, {
+    get(obj, prop, receiver) {
+      const value: unknown = Reflect.get(obj, prop, receiver);
+      if (typeof value !== 'function') return value;
+      const fn = value as (...args: unknown[]) => unknown;
+      return (...args: unknown[]) => {
+        try {
+          const out = fn.apply(obj, args);
+          if (out instanceof Promise) {
+            return out.catch((err: unknown) => {
+              record(err, String(prop));
+              throw err;
+            });
+          }
+          return out;
+        } catch (err) {
+          record(err, String(prop));
+          throw err;
+        }
+      };
+    },
+  });
+}
+
 export interface FakeNotifierState {
   messages: NotificationMessage[];
 }
@@ -341,44 +388,48 @@ export class FakeRuntime implements PluginRuntime {
       type,
       eventTypes: type.eventTypes,
       secretValues: [secret],
-      source: {
-        verify: (req) =>
-          verifyHmac({
-            secret,
-            payload: req.body,
-            signature: req.headers['x-signature'],
-            prefix: 'sha256=',
-          })
-            ? { ok: true }
-            : { ok: false, reason: 'bad signature' },
-        parse: (req): EventDraft[] => {
-          const body = JSON.parse(req.body.toString('utf8')) as HookBody;
-          return body.events.map((e) => {
-            const artifact: ArtifactRef = {
-              kind: e.kind ?? 'fake.pr',
-              id: e.id,
-              ...(e.version !== undefined ? { version: e.version } : {}),
-            };
-            return {
-              type: e.type,
-              occurredAt: e.occurredAt,
-              artifact,
-              attributes: e.attributes as EventDraft['attributes'],
-              dedupeKey: dedupeKey(e.type, artifact, body.deliveryId),
-              ...(body.deliveryId !== undefined ? { deliveryId: body.deliveryId } : {}),
-            };
-          });
+      source: attributed<Source>(
+        {
+          verify: (req) =>
+            verifyHmac({
+              secret,
+              payload: req.body,
+              signature: req.headers['x-signature'],
+              prefix: 'sha256=',
+            })
+              ? { ok: true }
+              : { ok: false, reason: 'bad signature' },
+          parse: (req): EventDraft[] => {
+            const body = JSON.parse(req.body.toString('utf8')) as HookBody;
+            return body.events.map((e) => {
+              const artifact: ArtifactRef = {
+                kind: e.kind ?? 'fake.pr',
+                id: e.id,
+                ...(e.version !== undefined ? { version: e.version } : {}),
+              };
+              return {
+                type: e.type,
+                occurredAt: e.occurredAt,
+                artifact,
+                attributes: e.attributes as EventDraft['attributes'],
+                dedupeKey: dedupeKey(e.type, artifact, body.deliveryId),
+                ...(body.deliveryId !== undefined ? { deliveryId: body.deliveryId } : {}),
+              };
+            });
+          },
+          resolve: (ref) => {
+            state.resolveCalls.push(ref);
+            return Promise.resolve(state.resolved.get(`${ref.kind}:${ref.id}`) ?? null);
+          },
+          act: (action, args) => {
+            state.actions.push({ action, args });
+            return Promise.resolve(state.actionResult);
+          },
+          health: () => Promise.resolve(healthy()),
         },
-        resolve: (ref) => {
-          state.resolveCalls.push(ref);
-          return Promise.resolve(state.resolved.get(`${ref.kind}:${ref.id}`) ?? null);
-        },
-        act: (action, args) => {
-          state.actions.push({ action, args });
-          return Promise.resolve(state.actionResult);
-        },
-        health: () => Promise.resolve(healthy()),
-      },
+        HOOK_PLUGIN,
+        this,
+      ),
     });
     this.sourceStates.set(id, state);
     return state;
@@ -417,29 +468,33 @@ export class FakeRuntime implements PluginRuntime {
       meters: meterSpecs,
       trackingFor: () => state.tracking,
       idempotentFor: () => state.idempotent,
-      executor: {
-        invoke: async (target, input, run) => {
-          state.invocations.push({ target, input, run });
-          const next = state.script.shift() ?? state.fallback;
-          return behave(next, state, run, input);
+      executor: attributed<Executor>(
+        {
+          invoke: async (target, input, run) => {
+            state.invocations.push({ target, input, run });
+            const next = state.script.shift() ?? state.fallback;
+            return behave(next, state, run, input);
+          },
+          poll: (run) => {
+            state.polls.push(run);
+            return Promise.resolve(state.pollScript.shift() ?? { state: 'running' });
+          },
+          verifyCallback: (req) => {
+            if (req.headers['x-callback-token'] !== state.callbackToken) return null;
+            const body = JSON.parse(req.body.toString('utf8')) as { runId: string } & RunStatus;
+            const { runId, ...status } = body;
+            return { runId, status };
+          },
+          readMeters: () => Promise.resolve(state.readings),
+          act: (action, args) => {
+            state.actions.push({ action, args });
+            return Promise.resolve({ ok: true });
+          },
+          health: () => Promise.resolve(healthy()),
         },
-        poll: (run) => {
-          state.polls.push(run);
-          return Promise.resolve(state.pollScript.shift() ?? { state: 'running' });
-        },
-        verifyCallback: (req) => {
-          if (req.headers['x-callback-token'] !== state.callbackToken) return null;
-          const body = JSON.parse(req.body.toString('utf8')) as { runId: string } & RunStatus;
-          const { runId, ...status } = body;
-          return { runId, status };
-        },
-        readMeters: () => Promise.resolve(state.readings),
-        act: (action, args) => {
-          state.actions.push({ action, args });
-          return Promise.resolve({ ok: true });
-        },
-        health: () => Promise.resolve(healthy()),
-      },
+        EXEC_PLUGIN,
+        this,
+      ),
     });
     this.executorStates.set(id, state);
     return state;
@@ -454,13 +509,17 @@ export class FakeRuntime implements PluginRuntime {
       name,
       typeId: NOTIFIER_TYPE,
       type,
-      notifier: {
-        send: (message) => {
-          state.messages.push(message);
-          return Promise.resolve();
+      notifier: attributed<Notifier>(
+        {
+          send: (message) => {
+            state.messages.push(message);
+            return Promise.resolve();
+          },
+          health: () => Promise.resolve(healthy()),
         },
-        health: () => Promise.resolve(healthy()),
-      },
+        '@test/fake-notifier',
+        this,
+      ),
     });
     this.notifierStates.set(id, state);
     return state;

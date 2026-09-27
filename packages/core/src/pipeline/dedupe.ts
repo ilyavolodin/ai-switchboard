@@ -19,12 +19,13 @@ export function dedupeWindowStart(now: Date): Date {
 
 /**
  * `prior` are earlier batched dispatches with the same process and key. A key seen inside the
- * window is a duplicate; one seen before it is new again.
+ * window is a duplicate; one seen before it is new again. There is no upper bound: a dispatch
+ * stamped a little after `now` was written by a replica whose clock runs ahead.
  */
 export function dedupe(prior: readonly PriorDispatch[], now: Date): DedupeDecision {
   const start = dedupeWindowStart(now).getTime();
   const hit = prior
-    .filter((p) => p.createdAt.getTime() > start && p.createdAt.getTime() <= now.getTime())
+    .filter((p) => p.createdAt.getTime() > start)
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
   return hit ? { outcome: 'deduped', duplicateOf: hit.id } : { outcome: 'batched' };
 }

@@ -76,6 +76,14 @@ export function registerErrorHandler(app: FastifyInstance): void {
     if (pgCode === '22P02') {
       return reply.code(404).send({ error: 'not_found', message: 'Not found.' } satisfies ApiError);
     }
+    // A unique index refused the write (a name already taken, or a concurrent create won).
+    if (pgCode === '23505') {
+      req.log.warn({ err }, 'unique constraint refused a write');
+      return reply.code(409).send({
+        error: 'conflict',
+        message: 'That conflicts with an existing entry (the name may already be taken).',
+      } satisfies ApiError);
+    }
     req.log.error({ err }, 'unhandled error');
     return reply.code(500).send({
       error: 'internal',

@@ -7,7 +7,14 @@ import { executors, notifiers, secretProviders, sources } from '../../db/schema.
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import { instanceStatus } from '../../domain/labels.js';
 import { literalSecretFields } from '../../secrets/refs.js';
+import type { InstanceKind } from '../../plugins/host.js';
 import { recordAudit, recordAuditDiff } from '../../services/audit.js';
+import {
+  clearExecutorHealth,
+  deleteInstance,
+  findInstance,
+  setInstanceEnabled,
+} from '../../services/instances.js';
 import type { ApiContext } from '../context.js';
 import type {
   CreateExecutorRequest,
@@ -40,6 +47,12 @@ const reasoned = {
   type: 'object',
   required: ['reason'],
   properties: { reason: { type: 'string' } },
+} as const;
+
+const enableBody = {
+  type: 'object',
+  required: ['reason', 'enabled'],
+  properties: { reason: { type: 'string' }, enabled: { type: 'boolean' } },
 } as const;
 
 const sourceCapsSchema: JSONSchema = {
@@ -159,6 +172,101 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
   const operator = { preHandler: requireRole('operator') };
   const admin = { preHandler: requireRole('admin') };
 
+  /**
+   * Enable/disable, reload and delete work the same for every instance kind: check the row,
+   * change it, rebuild the live object, audit, answer with the kind's view.
+   */
+  const registerLifecycle = (spec: {
+    kind: InstanceKind;
+    base: string;
+    label: string;
+    role: typeof operator;
+    view: (id: string) => Promise<unknown>;
+    /** Refuse a delete while processes use the instance; the hint ends the 409 message. */
+    inUseHint?: string;
+    /** Runs before the rebuild on reload. */
+    beforeReload?: (id: string) => Promise<void>;
+    /** Runs after the rebuild on reload. */
+    afterReload?: () => Promise<void>;
+  }): void => {
+    const { kind, base, label, role } = spec;
+    const load = async (id: string) => {
+      const row = await findInstance(db, kind, id);
+      if (!row) throw notFound(label);
+      return row;
+    };
+
+    app.post<{ Params: { id: string }; Body: EnableRequest }>(
+      `${base}/:id/enable`,
+      { ...role, schema: { body: enableBody } },
+      async (req) => {
+        const reason = requireReason(req.body);
+        const before = await load(req.params.id);
+        const now = clock.now();
+        await setInstanceEnabled(db, kind, before.id, req.body.enabled, now);
+        await ctx.host.reload(kind, before.id);
+        await recordAudit(db, {
+          actor: actorOf(req),
+          scope: kind,
+          targetId: before.id,
+          field: 'enabled',
+          before: before.enabled,
+          after: req.body.enabled,
+          reason,
+          at: now,
+        });
+        return spec.view(before.id);
+      },
+    );
+
+    app.post<{ Params: { id: string }; Body: { reason: string } }>(
+      `${base}/:id/reload`,
+      { ...role, schema: { body: reasoned } },
+      async (req) => {
+        const reason = requireReason(req.body);
+        const row = await load(req.params.id);
+        await spec.beforeReload?.(row.id);
+        await ctx.host.reload(kind, row.id);
+        await spec.afterReload?.();
+        await recordAudit(db, {
+          actor: actorOf(req),
+          scope: kind,
+          targetId: row.id,
+          field: 'reload',
+          reason,
+          at: clock.now(),
+        });
+        return spec.view(row.id);
+      },
+    );
+
+    app.delete<{ Params: { id: string }; Body: { reason: string } }>(
+      `${base}/:id`,
+      role,
+      async (req, reply) => {
+        const reason = requireReason(req.body);
+        const row = await load(req.params.id);
+        if (spec.inUseHint !== undefined) {
+          const users = await processesUsing(ctx, row.id);
+          if (users.length > 0)
+            throw conflict(`Still used by ${users.join(', ')}.${spec.inUseHint}`);
+        }
+        await deleteInstance(db, kind, row.id);
+        await ctx.host.reload(kind, row.id);
+        await recordAudit(db, {
+          actor: actorOf(req),
+          scope: kind,
+          targetId: row.id,
+          field: 'deleted',
+          before: { name: row.name, typeId: row.typeId },
+          reason,
+          at: clock.now(),
+        });
+        return reply.code(204).send();
+      },
+    );
+  };
+
   // ------------------------------------------------------------------------------------------
   // Sources
   // ------------------------------------------------------------------------------------------
@@ -190,6 +298,15 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     }
     return rest;
   };
+
+  registerLifecycle({
+    kind: 'source',
+    base: '/api/v1/sources',
+    label: 'Source',
+    role: operator,
+    view: (id) => sourceDetail(ctx, id),
+    inUseHint: ' Remove it from those processes first.',
+  });
 
   app.get('/api/v1/sources', viewer, async () => sourceSummaries(ctx));
   app.get<{ Params: { id: string } }>('/api/v1/sources/:id', viewer, async (req) =>
@@ -298,56 +415,6 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     },
   );
 
-  app.post<{ Params: { id: string }; Body: EnableRequest }>(
-    '/api/v1/sources/:id/enable',
-    { ...operator, schema: { body: reasoned } },
-    async (req) => {
-      const reason = requireReason(req.body);
-      const [before] = await db.select().from(sources).where(eq(sources.id, req.params.id));
-      if (!before) throw notFound('Source');
-      const now = clock.now();
-      await db
-        .update(sources)
-        .set({ enabled: req.body.enabled, updatedAt: now })
-        .where(eq(sources.id, before.id));
-      await ctx.host.reload('source', before.id);
-      await recordAudit(db, {
-        actor: actorOf(req),
-        scope: 'source',
-        targetId: before.id,
-        field: 'enabled',
-        before: before.enabled,
-        after: req.body.enabled,
-        reason,
-        at: now,
-      });
-      return sourceDetail(ctx, before.id);
-    },
-  );
-
-  app.post<{ Params: { id: string }; Body: { reason: string } }>(
-    '/api/v1/sources/:id/reload',
-    { ...operator, schema: { body: reasoned } },
-    async (req) => {
-      const reason = requireReason(req.body);
-      const [row] = await db
-        .select({ id: sources.id })
-        .from(sources)
-        .where(eq(sources.id, req.params.id));
-      if (!row) throw notFound('Source');
-      await ctx.host.reload('source', row.id);
-      await recordAudit(db, {
-        actor: actorOf(req),
-        scope: 'source',
-        targetId: row.id,
-        field: 'reload',
-        reason,
-        at: clock.now(),
-      });
-      return sourceDetail(ctx, row.id);
-    },
-  );
-
   app.post<{ Params: { id: string }; Body: { reason: string } }>(
     '/api/v1/sources/:id/provision',
     { ...operator, schema: { body: reasoned } },
@@ -391,34 +458,20 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     },
   );
 
-  app.delete<{ Params: { id: string }; Body: { reason: string } }>(
-    '/api/v1/sources/:id',
-    operator,
-    async (req, reply) => {
-      const reason = requireReason(req.body);
-      const [row] = await db.select().from(sources).where(eq(sources.id, req.params.id));
-      if (!row) throw notFound('Source');
-      const users = await processesUsing(ctx, row.id);
-      if (users.length > 0)
-        throw conflict(`Still used by ${users.join(', ')}. Remove it from those processes first.`);
-      await db.delete(sources).where(eq(sources.id, row.id));
-      await ctx.host.reload('source', row.id);
-      await recordAudit(db, {
-        actor: actorOf(req),
-        scope: 'source',
-        targetId: row.id,
-        field: 'deleted',
-        before: { name: row.name, typeId: row.typeId },
-        reason,
-        at: clock.now(),
-      });
-      return reply.code(204).send();
-    },
-  );
-
   // ------------------------------------------------------------------------------------------
   // Executors
   // ------------------------------------------------------------------------------------------
+
+  registerLifecycle({
+    kind: 'executor',
+    base: '/api/v1/executors',
+    label: 'Executor',
+    role: operator,
+    view: (id) => executorDetail(ctx, id),
+    inUseHint: ' Bind those processes elsewhere first.',
+    // A reload clears an "unhealthy" mark set after 401/403; the next health check re-evaluates.
+    beforeReload: (id) => clearExecutorHealth(db, id),
+  });
 
   app.get('/api/v1/executors', viewer, async () => executorSummaries(ctx));
   app.get<{ Params: { id: string } }>('/api/v1/executors/:id', viewer, async (req) =>
@@ -500,58 +553,6 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     },
   );
 
-  app.post<{ Params: { id: string }; Body: EnableRequest }>(
-    '/api/v1/executors/:id/enable',
-    { ...operator, schema: { body: reasoned } },
-    async (req) => {
-      const reason = requireReason(req.body);
-      const [before] = await db.select().from(executors).where(eq(executors.id, req.params.id));
-      if (!before) throw notFound('Executor');
-      const now = clock.now();
-      await db
-        .update(executors)
-        .set({ enabled: req.body.enabled, updatedAt: now })
-        .where(eq(executors.id, before.id));
-      await ctx.host.reload('executor', before.id);
-      await recordAudit(db, {
-        actor: actorOf(req),
-        scope: 'executor',
-        targetId: before.id,
-        field: 'enabled',
-        before: before.enabled,
-        after: req.body.enabled,
-        reason,
-        at: now,
-      });
-      return executorDetail(ctx, before.id);
-    },
-  );
-
-  app.post<{ Params: { id: string }; Body: { reason: string } }>(
-    '/api/v1/executors/:id/reload',
-    { ...operator, schema: { body: reasoned } },
-    async (req) => {
-      const reason = requireReason(req.body);
-      const [row] = await db
-        .select({ id: executors.id })
-        .from(executors)
-        .where(eq(executors.id, req.params.id));
-      if (!row) throw notFound('Executor');
-      // A reload clears an "unhealthy" mark set after 401/403; the next health check re-evaluates.
-      await db.update(executors).set({ health: null }).where(eq(executors.id, row.id));
-      await ctx.host.reload('executor', row.id);
-      await recordAudit(db, {
-        actor: actorOf(req),
-        scope: 'executor',
-        targetId: row.id,
-        field: 'reload',
-        reason,
-        at: clock.now(),
-      });
-      return executorDetail(ctx, row.id);
-    },
-  );
-
   app.post<{ Params: { id: string }; Body: { reason: string } }>(
     '/api/v1/executors/:id/meters/read',
     { ...operator, schema: { body: reasoned } },
@@ -582,31 +583,6 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       const reason = requireReason(req.body);
       await ctx.pipeline.clearSoftHold(req.params.id, actorOf(req), reason);
       return executorDetail(ctx, req.params.id);
-    },
-  );
-
-  app.delete<{ Params: { id: string }; Body: { reason: string } }>(
-    '/api/v1/executors/:id',
-    operator,
-    async (req, reply) => {
-      const reason = requireReason(req.body);
-      const [row] = await db.select().from(executors).where(eq(executors.id, req.params.id));
-      if (!row) throw notFound('Executor');
-      const users = await processesUsing(ctx, row.id);
-      if (users.length > 0)
-        throw conflict(`Still used by ${users.join(', ')}. Bind those processes elsewhere first.`);
-      await db.delete(executors).where(eq(executors.id, row.id));
-      await ctx.host.reload('executor', row.id);
-      await recordAudit(db, {
-        actor: actorOf(req),
-        scope: 'executor',
-        targetId: row.id,
-        field: 'deleted',
-        before: { name: row.name, typeId: row.typeId },
-        reason,
-        at: clock.now(),
-      });
-      return reply.code(204).send();
     },
   );
 
@@ -653,6 +629,18 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       }
       return n;
     };
+
+    registerLifecycle({
+      kind,
+      base,
+      label: kind === 'notifier' ? 'Notifier' : 'Secret provider',
+      role: admin,
+      view: async (id) => summarize(await load(id)),
+      // Instances resolve their secrets when built: rebuild them against the reloaded provider.
+      ...(kind === 'secret_provider'
+        ? { afterReload: () => ctx.host.instantiateAll() }
+        : { inUseHint: '' }),
+    });
 
     app.get(base, viewer, async () =>
       (await db.select().from(table).orderBy(table.name)).map(summarize),
@@ -721,77 +709,6 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
           { name, ...prefix('settings', settings) },
         );
         return summarize(await load(before.id));
-      },
-    );
-
-    app.post<{ Params: { id: string }; Body: EnableRequest }>(
-      `${base}/:id/enable`,
-      { ...admin, schema: { body: reasoned } },
-      async (req) => {
-        const reason = requireReason(req.body);
-        const before = await load(req.params.id);
-        const now = clock.now();
-        await db
-          .update(table)
-          .set({ enabled: req.body.enabled, updatedAt: now })
-          .where(eq(table.id, before.id));
-        await ctx.host.reload(kind, before.id);
-        await recordAudit(db, {
-          actor: actorOf(req),
-          scope: kind,
-          targetId: before.id,
-          field: 'enabled',
-          before: before.enabled,
-          after: req.body.enabled,
-          reason,
-          at: now,
-        });
-        return summarize(await load(before.id));
-      },
-    );
-
-    app.post<{ Params: { id: string }; Body: { reason: string } }>(
-      `${base}/:id/reload`,
-      { ...admin, schema: { body: reasoned } },
-      async (req) => {
-        const reason = requireReason(req.body);
-        const row = await load(req.params.id);
-        await ctx.host.reload(kind, row.id);
-        if (kind === 'secret_provider') await ctx.host.instantiateAll();
-        await recordAudit(db, {
-          actor: actorOf(req),
-          scope: kind,
-          targetId: row.id,
-          field: 'reload',
-          reason,
-          at: clock.now(),
-        });
-        return summarize(await load(row.id));
-      },
-    );
-
-    app.delete<{ Params: { id: string }; Body: { reason: string } }>(
-      `${base}/:id`,
-      admin,
-      async (req, reply) => {
-        const reason = requireReason(req.body);
-        const row = await load(req.params.id);
-        if (kind === 'notifier') {
-          const users = await processesUsing(ctx, row.id);
-          if (users.length > 0) throw conflict(`Still used by ${users.join(', ')}.`);
-        }
-        await db.delete(table).where(eq(table.id, row.id));
-        await ctx.host.reload(kind, row.id);
-        await recordAudit(db, {
-          actor: actorOf(req),
-          scope: kind,
-          targetId: row.id,
-          field: 'deleted',
-          before: { name: row.name, typeId: row.typeId },
-          reason,
-          at: clock.now(),
-        });
-        return reply.code(204).send();
       },
     );
   }

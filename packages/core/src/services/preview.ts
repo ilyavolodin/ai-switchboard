@@ -8,7 +8,7 @@ import type {
   InputPreviewRequest,
   InputPreviewResponse,
 } from '../api/contract.js';
-import { systemClock, type Clock } from '../clock.js';
+import type { Clock } from '../clock.js';
 import { batches, events, executors } from '../db/schema.js';
 import type { Deps } from '../deps.js';
 import {
@@ -134,10 +134,7 @@ export async function inputPreview(
   };
 }
 
-/** Validate a cron, describe it and list the next three times. */
-export function cronPreview(
-  req: CronPreviewRequest,
-  clock: Clock = systemClock,
-): CronPreviewResponse {
+/** Validate a cron, describe it and list the next three times from the core clock's now. */
+export function cronPreview(req: CronPreviewRequest, clock: Clock): CronPreviewResponse {
   return previewCron(req, clock.now());
 }

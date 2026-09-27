@@ -1,6 +1,6 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
-import type { MeterReading, MeterSpec } from '@ai-switchboard/sdk';
+import type { MeterSpec } from '@ai-switchboard/sdk';
 
 import type { DbOrTx } from '../../db/client.js';
 import { executors, meterReadings, processes, type ExecutorCaps } from '../../db/schema.js';
@@ -10,12 +10,12 @@ import {
   estimatedLimit,
   estimateReading,
   isEstimatedMeter,
-  normaliseUtilization,
   periodBounds,
+  readingFromReport,
   type StoredReading,
 } from '../../pipeline/meters.js';
 
-import { errorMessage, type Ctx } from './context.js';
+import { callPlugin, type Ctx } from './context.js';
 import { executorRunsSince } from './counters.js';
 import { sendSystemAlert } from './notify.js';
 
@@ -122,32 +122,16 @@ export async function readMeters(ctx: Ctx, executorId: string): Promise<void> {
   const declared = new Set(specs.map((s) => s.id));
   let reported: unknown[] = [];
   if (live.executor.readMeters) {
-    try {
-      const out: unknown = await live.executor.readMeters();
-      reported = Array.isArray(out) ? (out as unknown[]) : [];
-    } catch (err) {
-      ctx.log.warn({ err: errorMessage(err), executor_id: executorId }, 'readMeters failed');
-    }
+    const read = live.executor.readMeters.bind(live.executor);
+    const out = await callPlugin(ctx, live.pluginName, 'readMeters', read);
+    if (out.ok) reported = Array.isArray(out.value) ? out.value : [];
+    else ctx.log.warn({ err: out.error, executor_id: executorId }, 'readMeters failed');
   }
   const previous = await latestReadings(ctx.db, executorId);
   const readings: StoredReading[] = [];
   for (const item of reported) {
-    if (item === null || typeof item !== 'object') continue;
-    const r = item as Partial<MeterReading>;
-    if (typeof r.id !== 'string' || !declared.has(r.id)) continue;
-    const utilization = normaliseUtilization(r.utilization);
-    if (utilization === null) continue;
-    const observed = typeof r.observedAt === 'string' ? new Date(r.observedAt) : now;
-    const resets = typeof r.resetsAt === 'string' ? new Date(r.resetsAt) : null;
-    readings.push({
-      meterId: r.id,
-      utilization,
-      used: typeof r.used === 'number' ? r.used : null,
-      limit: typeof r.limit === 'number' ? r.limit : null,
-      observedAt: Number.isNaN(observed.getTime()) ? now : observed,
-      resetsAt: resets && !Number.isNaN(resets.getTime()) ? resets : null,
-      estimated: false,
-    });
+    const reading = readingFromReport(item, declared, now);
+    if (reading) readings.push(reading);
   }
   for (const spec of specs) {
     if (readings.some((r) => r.meterId === spec.id)) continue;
@@ -210,14 +194,4 @@ export async function readMeters(ctx: Ctx, executorId: string): Promise<void> {
       }
     }
   }
-}
-
-/** Newest-first readings for one meter (trace and tests). */
-export async function meterHistory(db: DbOrTx, executorId: string, meterId: string, limit = 50) {
-  return db
-    .select()
-    .from(meterReadings)
-    .where(and(eq(meterReadings.executorId, executorId), eq(meterReadings.meterId, meterId)))
-    .orderBy(desc(meterReadings.observedAt))
-    .limit(limit);
 }

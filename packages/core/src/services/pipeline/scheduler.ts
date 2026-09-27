@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, eq, max, sql } from 'drizzle-orm';
+import { and, eq, max } from 'drizzle-orm';
 
 import { batches, processes, scheduleTicks, type GateDecisionRecord } from '../../db/schema.js';
 import type { Schedule } from '../../domain/process.js';
 import { dueSweep, type DueSweep } from '../../scheduler/due.js';
 
-import { JOBS, withTx, type Ctx, type ProcessRow } from './context.js';
+import { JOBS, appendDecisions, withTx, type Ctx, type ProcessRow } from './context.js';
 
 /**
  * `scheduler.tick` (every minute): for every enabled schedule of every enabled process, fire the
@@ -101,7 +101,7 @@ export async function createSweep(
           outcome: 'merged',
           mergedInto: batchId,
           closedAt: now,
-          decisions: sql`${batches.decisions} || ${JSON.stringify([merged])}::jsonb`,
+          decisions: appendDecisions([merged]),
         })
         .where(eq(batches.id, b.id));
     }
