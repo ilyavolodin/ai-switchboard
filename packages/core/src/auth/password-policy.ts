@@ -1,31 +1,32 @@
 /** Local password rules. The UI shows the same rules; this module is the authority. */
-export const PASSWORD_MIN_LENGTH = 12;
+/**
+ * Deliberately modest: organisations sign in through OIDC, so local accounts are for small teams
+ * and evaluation. The login throttle does the rest.
+ */
+export const PASSWORD_MIN_LENGTH = 8;
 /** An upper bound so a huge body can't make scrypt the bottleneck. */
 export const PASSWORD_MAX_LENGTH = 256;
 
 /**
- * The obvious choices people reach for first. Short on purpose: length does most of the work, this
- * only catches the passwords every guessing list starts with.
+ * The handful of passwords every guessing list starts with. Short on purpose; this is not a
+ * strength meter.
  */
 const BLOCKLIST = new Set([
-  '123456789012',
-  '1234567890123',
-  'qwertyuiopas',
-  'qwertyuiop123',
-  'password1234',
-  'password12345',
-  'password123!',
-  'passwordpassword',
-  'letmein12345',
-  'welcome12345',
-  'changeme1234',
+  'password',
+  'password1',
+  '12345678',
+  '123456789',
+  '1234567890',
+  '87654321',
+  'qwertyui',
+  'qwerty123',
+  'iloveyou',
+  'letmein1',
+  'changeme',
+  'welcome1',
+  'admin123',
   'administrator',
-  'adminadmin123',
-  'iloveyou1234',
-  'switchboard1',
-  'switchboard123',
-  'aiswitchboard',
-  'correcthorsebatterystaple',
+  'switchboard',
 ]);
 
 /** Why `password` is not acceptable for the account `email`, or null when it is. */

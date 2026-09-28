@@ -36,7 +36,7 @@ describe('Change password', () => {
 
     await user.click(submit);
     expect(screen.getByText('Enter your current password.')).toBeVisible();
-    expect(screen.getByText(/at least 12 characters/)).toBeVisible();
+    expect(screen.getByText(/at least 8 characters/)).toBeVisible();
 
     await user.type(screen.getByLabelText(/^Current password/), 'temporary-password-1');
     await user.type(screen.getByLabelText(/^New password/), 'ilya@lola.com');

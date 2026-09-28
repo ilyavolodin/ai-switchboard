@@ -59,7 +59,7 @@ client address or 5 per account (normalised email) within 5 minutes answer 429
 `too_many_attempts` with `Retry-After: <seconds>` until the oldest counted failure leaves the
 window. `POST /auth/password` allows 5 failed confirmations per user in the same window.
 
-**Password rules:** at least 12 characters (at most 256), not the account's email (or the part
+**Password rules:** at least 8 characters (at most 256), not the account's email (or the part
 before `@`), not one of the most common passwords.
 
 ## Board and status

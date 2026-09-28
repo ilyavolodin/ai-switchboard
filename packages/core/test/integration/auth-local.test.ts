@@ -96,9 +96,9 @@ describe('local accounts', () => {
     expect(wrong.json<{ error: string }>().error).toBe('invalid_credentials');
 
     for (const [candidate, message] of [
-      ['short', /at least 12/],
+      ['short', /at least 8/],
       ['dave@acme.test', /email/],
-      ['password1234', /too common/],
+      ['password1', /too common/],
       [TEMP, /different/],
     ] as const) {
       const res = await change(TEMP, candidate);

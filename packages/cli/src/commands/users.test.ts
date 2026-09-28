@@ -186,11 +186,11 @@ describe('switchboard users reset-password', () => {
 
   it('prints any other refusal as an error', async () => {
     const { run } = harness({
-      resetPassword: () => Promise.reject(new Error('Use at least 12 characters.')),
+      resetPassword: () => Promise.reject(new Error('Use at least 8 characters.')),
     });
     const cap = await run('users', 'reset-password', 'a@b.c', '--password', 'short');
     expect(cap.exitCode).toBe(1);
-    expect(cap.err).toEqual(['error: Use at least 12 characters.']);
+    expect(cap.err).toEqual(['error: Use at least 8 characters.']);
   });
 });
 

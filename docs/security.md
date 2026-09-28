@@ -13,7 +13,7 @@ people who deploy and operate it.
   optionally `SWITCHBOARD_OIDC_ALLOWED_DOMAINS`. The redirect URI is
   `<SWITCHBOARD_PUBLIC_URL>/api/v1/auth/oidc/callback`.
 - **Local passwords** work alongside OIDC (or without it). An account can have a password, an
-  OIDC identity, or both. Passwords are hashed with scrypt; the rules are at least 12 characters,
+  OIDC identity, or both. Passwords are hashed with scrypt; the rules are at least 8 characters,
   not the account's email, and not one of the most common passwords. Failed sign-ins and failed
   password confirmations are throttled in Postgres (`login_attempts`), so the limits hold across
   replicas: within any 5 minutes, 10 failures from one client address, or 5 against one account

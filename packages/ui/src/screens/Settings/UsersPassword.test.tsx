@@ -37,7 +37,7 @@ describe('Users · passwords', () => {
     const dialog = await screen.findByRole('dialog', { name: /Set the password for daria/ });
     await user.type(within(dialog).getByRole('textbox', { name: /Temporary password/ }), 'short');
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
-    expect(within(dialog).getByText(/at least 12 characters/)).toBeVisible();
+    expect(within(dialog).getByText(/at least 8 characters/)).toBeVisible();
     expect(api.callsTo('PUT /users/u-daria/password')).toHaveLength(0);
 
     const field = within(dialog).getByRole('textbox', { name: /Temporary password/ });

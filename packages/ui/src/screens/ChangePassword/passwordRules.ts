@@ -2,7 +2,7 @@
  * The local password rules, as the form shows them. The server (`auth/password-policy.ts`) is the
  * authority and also rejects the most common passwords; these checks give feedback while typing.
  */
-export const PASSWORD_MIN_LENGTH = 12;
+export const PASSWORD_MIN_LENGTH = 8;
 
 export interface PasswordRule {
   label: string;

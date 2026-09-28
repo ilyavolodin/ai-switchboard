@@ -73,7 +73,7 @@ export function SetPasswordDialog({ email, reset, onClose, onSubmit }: SetPasswo
         <Field
           label="Temporary password"
           error={error}
-          help="At least 12 characters. They choose their own at the next sign-in; every session they have ends now."
+          help="At least 8 characters. They choose their own at the next sign-in; every session they have ends now."
           aside={
             <Button
               size="sm"
