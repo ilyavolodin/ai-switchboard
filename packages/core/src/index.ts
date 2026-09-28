@@ -31,3 +31,11 @@ export type {
   PluginLockfile,
   PluginManifestSummary,
 } from './plugins/install.js';
+export { accountRecovery } from './recovery.js';
+export type { AccountRecovery, RecoveryRequest } from './recovery.js';
+export { RecoveryError, isRecoveryError, closeEmails } from './services/recovery.js';
+export type {
+  AccountSummary,
+  TemporaryPasswordResult,
+  RecoveryErrorCode,
+} from './services/recovery.js';

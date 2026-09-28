@@ -1,13 +1,31 @@
-import { eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 
 import type { CoreConfig } from '../config.js';
-import type { Db } from '../db/client.js';
+import type { Db, DbOrTx } from '../db/client.js';
 import { users } from '../db/schema.js';
 import type { CoreLogger } from '../logger.js';
 import { recordAudit } from '../services/audit.js';
 import { generatePassword, hashPassword } from './crypto.js';
 
 export const LOCAL_ADMIN_EMAIL = 'admin@switchboard.local';
+
+/**
+ * Evaluation installs only: the bootstrap local admin's email when that account exists with a
+ * password, for the sign-in page's "forgot" hint. Null outside evaluation mode, so a production
+ * install never reveals an email to someone who is not signed in.
+ */
+export async function evaluationAdminEmail(
+  db: DbOrTx,
+  config: Pick<CoreConfig, 'evaluation' | 'bootstrapAdmin'>,
+): Promise<string | null> {
+  if (!config.evaluation) return null;
+  const email = (config.bootstrapAdmin ?? LOCAL_ADMIN_EMAIL).toLowerCase();
+  const [row] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.email, email), isNotNull(users.passwordHash)));
+  return row ? email : null;
+}
 
 /**
  * First start: make sure there is a way in.

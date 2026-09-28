@@ -31,6 +31,15 @@ people who deploy and operate it.
   removing a password signs the user out everywhere; a user changing their own password signs out
   their other sessions. The audit log records that a password changed, never the value. API tokens
   are separate credentials: revoke them separately when an account is compromised.
+- **Recovery needs server access.** There is no emailed reset link. A forgotten password is reset
+  by an admin in Settings › Users, or, when nobody can sign in, by `switchboard users
+reset-password <email>` (and `users create-admin <email>` to break glass) run on the server.
+  The CLI reads `DATABASE_URL` and changes Postgres directly, so whoever can run it already holds
+  the database credentials; it adds no network surface. Each reset sets a temporary password
+  (printed once), revokes the account's sessions, clears its sign-in failures and writes
+  `audit_log` with actor `cli@<hostname>` and a reason; the value is never recorded.
+  `switchboard users list` shows every account's email to the same people. The sign-in page names
+  no email, except the bootstrap local admin's in evaluation mode (`MeResponse.evaluationAdminEmail`).
 - **A user row is required.** A valid token from the right issuer for an unknown email lands on
   an "ask an admin" page.
 - **Bootstrap** always leaves a way in. With OIDC and `SWITCHBOARD_BOOTSTRAP_ADMIN`, that email is

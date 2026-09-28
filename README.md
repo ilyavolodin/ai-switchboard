@@ -97,6 +97,9 @@ switchboard export [-o file]          the whole configuration as YAML
 switchboard apply -f file [--dry-run] --reason "<text>"
 switchboard doctor                    database, migrations, plugins, secrets, instance health
 switchboard serve                     start the server
+switchboard users list                every account: email, role, sign-in methods (on the server)
+switchboard users reset-password <email>   a temporary password when someone is locked out
+switchboard users create-admin <email>     break glass: a local admin with a temporary password
 ```
 
 Server commands take `--url` (`SWITCHBOARD_URL`, default `http://localhost:8080`) and `--token`

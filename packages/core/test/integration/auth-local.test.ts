@@ -316,3 +316,26 @@ describe('users directory', () => {
     expect((await h.request('GET', '/api/v1/users/directory')).statusCode).toBe(401);
   });
 });
+
+describe('the sign-in page recovery hint', () => {
+  afterAll(() => {
+    h.ctx.config.evaluation = true;
+  });
+
+  it('names the bootstrap local admin to a signed-out visitor in evaluation mode only', async () => {
+    const signedOut = await h.request('GET', '/api/v1/auth/me');
+    expect(signedOut.json<MeResponse>()).toMatchObject({
+      user: null,
+      evaluation: true,
+      evaluationAdminEmail: ADMIN_EMAIL,
+    });
+    h.ctx.config.evaluation = false;
+    const production = await h.request('GET', '/api/v1/auth/me');
+    expect(production.json<MeResponse>()).toMatchObject({
+      user: null,
+      evaluation: false,
+      evaluationAdminEmail: null,
+    });
+    expect(production.body).not.toContain('@');
+  });
+});

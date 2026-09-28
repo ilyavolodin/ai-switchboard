@@ -131,6 +131,12 @@ export interface MeResponse {
    * `POST /auth/password` and `POST /auth/logout` answers 403 `password_change_required`.
    */
   mustChangePassword: boolean;
+  /**
+   * Evaluation mode only: the bootstrap local admin's email (`admin@switchboard.local` unless
+   * `SWITCHBOARD_BOOTSTRAP_ADMIN` names another), for the sign-in page's recovery hint. Null
+   * outside evaluation mode or when that account has no password; no other email is ever shown.
+   */
+  evaluationAdminEmail: string | null;
 }
 
 export interface LocalLoginRequest {

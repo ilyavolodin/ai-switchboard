@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
-import { constants } from 'node:os';
+import { constants, hostname } from 'node:os';
 
 import type * as CoreModule from '@ai-switchboard/core';
 import type {
+  AccountRecovery,
   CoreConfig,
   DoctorCheck,
   InspectOptions,
@@ -45,6 +46,10 @@ export interface CliDeps {
   resolveServerEntry(): Promise<string>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
+  /** Account recovery straight against the server's database (`switchboard users ...`). */
+  recovery: AccountRecovery;
+  /** This machine's name, for the `cli@<hostname>` audit actor. */
+  hostname(): string;
 }
 
 const core = (): Promise<typeof CoreModule> => import('@ai-switchboard/core');
@@ -98,5 +103,11 @@ export function defaultDeps(): CliDeps {
     resolveServerEntry: () => resolveServerEntry(import.meta.resolve('@ai-switchboard/core')),
     readFile: (path) => readFile(path, 'utf8'),
     writeFile: (path, content) => writeFile(path, content, 'utf8'),
+    recovery: {
+      listUsers: async (config) => (await core()).accountRecovery().listUsers(config),
+      resetPassword: async (config, r) => (await core()).accountRecovery().resetPassword(config, r),
+      createAdmin: async (config, r) => (await core()).accountRecovery().createAdmin(config, r),
+    },
+    hostname,
   };
 }

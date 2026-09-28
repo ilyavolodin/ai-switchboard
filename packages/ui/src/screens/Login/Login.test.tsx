@@ -23,6 +23,7 @@ describe('Login', () => {
           oidcIssuer: 'accounts.google.com',
           evaluation: false,
           mustChangePassword: false,
+          evaluationAdminEmail: null,
         }),
       },
     });
@@ -54,5 +55,46 @@ describe('Login', () => {
       expect(router.state.location.pathname).toBe('/change-password');
     });
     expect(await screen.findByText('Your password is temporary')).toBeVisible();
+  });
+
+  it('explains recovery behind "Forgot password or email?"', async () => {
+    const { user } = renderApp('/login', {
+      overrides: { 'GET /auth/me': () => ({ ...me, user: null }) },
+    });
+    const toggle = await screen.findByRole('button', { name: 'Forgot password or email?' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('region', { name: 'Forgot password or email' })).toBeNull();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const panel = screen.getByRole('region', { name: 'Forgot password or email' });
+    expect(panel).toHaveTextContent('Settings › Users');
+    expect(panel).toHaveTextContent('switchboard users reset-password <email>');
+    expect(panel).toHaveTextContent(
+      'docker compose exec switchboard switchboard users reset-password <email>',
+    );
+    expect(panel).toHaveTextContent('switchboard users list');
+    expect(panel).toHaveTextContent('Evaluation admin: admin@switchboard.local');
+
+    await user.click(toggle);
+    expect(screen.queryByRole('region', { name: 'Forgot password or email' })).toBeNull();
+  });
+
+  it('names no email outside evaluation mode', async () => {
+    const { user } = renderApp('/login', {
+      overrides: {
+        'GET /auth/me': () => ({
+          ...me,
+          user: null,
+          evaluation: false,
+          evaluationAdminEmail: null,
+        }),
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Forgot password or email?' }));
+    const panel = screen.getByRole('region', { name: 'Forgot password or email' });
+    expect(panel).toHaveTextContent('switchboard users reset-password <email>');
+    expect(panel).not.toHaveTextContent(/Evaluation admin/);
+    expect(panel.textContent).not.toMatch(/@/);
   });
 });

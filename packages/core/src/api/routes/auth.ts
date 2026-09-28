@@ -1,6 +1,7 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
+import { evaluationAdminEmail } from '../../auth/bootstrap.js';
 import { generatePassword, hashPassword, verifyPassword } from '../../auth/crypto.js';
 import { actorOf, requireRole } from '../../auth/fastify.js';
 import { OIDC_FLOW_COOKIE, OidcError } from '../../auth/oidc.js';
@@ -67,6 +68,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       oidcIssuer: issuerHost(),
       evaluation: config.evaluation,
       mustChangePassword: row !== undefined && restricted,
+      evaluationAdminEmail: await evaluationAdminEmail(db, config),
     };
   };
 

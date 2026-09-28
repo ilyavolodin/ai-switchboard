@@ -35,6 +35,13 @@ Local password sign-in works whether or not OIDC is configured; an account can h
 an OIDC identity, or both. `MeResponse.oidcIssuer` names the issuer for the "Sign in with …"
 button.
 
+`MeResponse.evaluationAdminEmail` is the bootstrap local admin's email (`admin@switchboard.local`,
+or `SWITCHBOARD_BOOTSTRAP_ADMIN`) when the server runs in evaluation mode and that account has a
+password, for the sign-in page's "Forgot password or email?" hint; otherwise `null`. No other
+email is returned to a signed-out caller. Recovery itself has no API route: an admin uses
+`PUT /users/:id/password`, and without one, `switchboard users reset-password` runs on the server
+([runbook](runbook.md#locked-out)).
+
 **Temporary passwords.** A password an admin sets (on create or with `PUT /users/:id/password`),
 and the generated bootstrap password, is temporary (`mustChangePassword`). A session that signed
 in with it is restricted: every `/api` route except `GET /auth/me`, `POST /auth/password`,
@@ -223,6 +230,11 @@ a secret-provider plugin does the same for the providers it brings up. Each secr
 response shows the rebuild's outcome. `DELETE /secret-providers/:id` answers 409 while any source,
 executor, notifier or process (a `secret://` field, or `$secretRef('<provider>/<name>')` in an
 expression) still references the provider, naming them.
+
+Every instance mutation (create, `PUT`, enable, reload, delete, `POST /apply`) rebuilds the live
+instance on the replica that answers, so its response reflects the result. Other replicas rebuild
+it, and a provider's dependents, on their next reconcile pass, within
+`SWITCHBOARD_INSTANCE_SYNC_SECONDS` (10 s): a `reload` bumps the row's `config_version` for that.
 
 `GET /secret-providers/:id/secrets` → `ProviderSecretsResponse` (role: **admin**; secret names map
 out the credentials a deployment holds, so viewers and operators get 403). It returns secret

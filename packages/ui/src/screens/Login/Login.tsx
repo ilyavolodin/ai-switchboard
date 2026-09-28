@@ -1,4 +1,4 @@
-import { type SubmitEvent, useState } from 'react';
+import { type SubmitEvent, useId, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 
 import { errorMessage, isApiRequestError } from '../../api/client.js';
@@ -11,6 +11,7 @@ import { Icon } from '../../components/Icon.js';
 import { Logo } from '../../components/Logo.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { TextField } from '../../components/TextField.js';
+import { ForgotAccess } from './ForgotAccess.js';
 import styles from './Login.module.css';
 
 function fromState(state: unknown): string {
@@ -22,6 +23,7 @@ function fromState(state: unknown): string {
  * Sign in: email + password (`POST /auth/login`) always, plus a button to the issuer
  * (`/api/v1/auth/oidc/start`) when OIDC is configured. A temporary password continues to
  * `/change-password`. An evaluation install without OIDC shows the evaluation banner.
+ * "Forgot password or email?" explains recovery (an admin, or the server CLI).
  */
 export function Login() {
   const me = useMe();
@@ -30,6 +32,8 @@ export function Login() {
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const forgotId = useId();
   const target = fromState(location.state);
 
   if (me.isPending) {
@@ -138,6 +142,23 @@ export function Login() {
             Sign in
           </Button>
         </form>
+        <button
+          type="button"
+          className={styles.forgot}
+          aria-expanded={forgotOpen}
+          aria-controls={forgotId}
+          onClick={() => {
+            setForgotOpen((open) => !open);
+          }}
+        >
+          Forgot password or email?
+        </button>
+        {forgotOpen && (
+          <ForgotAccess
+            id={forgotId}
+            evaluationAdminEmail={me.data?.evaluationAdminEmail ?? null}
+          />
+        )}
       </main>
     </div>
   );

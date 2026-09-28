@@ -54,6 +54,21 @@ Account**, and add people with their own temporary passwords in **Settings › U
 evaluation banner stays until you configure an issuer ([configuration](configuration.md)).
 The Board is empty and shows a three-step guide: add a source, add an executor, draw a process.
 
+**Locked out?** The local admin's email is `admin@switchboard.local` unless
+`SWITCHBOARD_BOOTSTRAP_ADMIN` names another (in evaluation mode the sign-in page's **Forgot
+password or email?** panel shows it). Switchboard sends no email, so recovery runs on the server,
+with its database access instead of a sign-in:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec switchboard switchboard users list
+docker compose -f deploy/docker-compose.yml exec switchboard \
+  switchboard users reset-password admin@switchboard.local
+```
+
+`reset-password` prints a new temporary password once, signs the account out everywhere and
+writes the audit log; you choose your own password at the next sign-in. Other people can simply
+ask an admin to reset theirs in **Settings › Users** ([runbook](runbook.md#locked-out)).
+
 ## 3. Add a webhook source
 
 **Sources → New source → Webhook.**

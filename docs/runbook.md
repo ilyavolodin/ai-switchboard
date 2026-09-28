@@ -79,13 +79,17 @@ Secret values are never in Postgres, so rotation happens in the secret provider:
 2. Press **Reload instance** on the source, executor or notifier (or
    `POST $SB/sources/<id>/reload`, `POST $SB/executors/<id>/reload`,
    `POST $SB/notifiers/<id>/reload` with a reason). The core resolves the references again and
-   rebuilds that one instance.
+   rebuilds that one instance. The replica that served the request rebuilds it at once; the
+   reload also bumps the instance's `config_version`, so every other replica rebuilds it within
+   `SWITCHBOARD_INSTANCE_SYNC_SECONDS` (10 s). Wait that long before judging the result on a
+   multi-replica install.
 3. Confirm the instance's secret references show a fresh _last resolved_ time and its health is
    green. `switchboard doctor` checks every reference and every instance.
 
 Changing a **secret provider** itself (Settings › Secret providers: add, enable or disable,
 edit, rename or reload it) rebuilds every source, executor and notifier whose settings reference
-it; the provider's row lists them with their status afterwards. Renaming a provider does not
+it, on every replica (the others within `SWITCHBOARD_INSTANCE_SYNC_SECONDS`); the provider's row
+lists them with their status afterwards. Renaming a provider does not
 rewrite references: instances still naming the old `secret://<old>/…` fail with
 `secret_error: secret provider "<old>" is not configured or not running` until you edit them. A
 provider that anything still references cannot be deleted (409 naming the users); point those
@@ -182,6 +186,49 @@ docker compose -f deploy/docker-compose.yml exec switchboard switchboard doctor
 kubectl exec deploy/switchboard -- switchboard doctor
 ```
 
+## Locked out
+
+Switchboard has no email delivery, so a forgotten password (or a forgotten email) is reset by a
+person, never by a link.
+
+- **Someone else is an admin:** they reset the password in **Settings › Users** ("Reset
+  password", with a reason). The account signs in with that temporary password and must choose a
+  new one first.
+- **Nobody can sign in** (the only admin forgot the password, or which email it was): run the CLI
+  on the server, with the server's environment. It talks to Postgres directly (`DATABASE_URL`),
+  so it needs no session and no token; access to the server is the credential.
+
+```bash
+# Every account: email, role, password, OIDC, pending change, last sign-in
+docker compose -f deploy/docker-compose.yml exec switchboard switchboard users list
+kubectl exec deploy/switchboard -- switchboard users list --json
+
+# A generated temporary password, printed once
+docker compose -f deploy/docker-compose.yml exec switchboard \
+  switchboard users reset-password admin@switchboard.local --reason "forgot the admin password"
+
+# Break glass: create a local admin (or promote an existing account) with a temporary password
+kubectl exec deploy/switchboard -- switchboard users create-admin ops@example.com \
+  --reason "only admin left the company"
+```
+
+`reset-password <email>` refuses an email with no account and lists close matches (the same
+local part, a typo, the same domain). `--password <pw>` sets a password of your choice instead of
+a generated one; it is checked against the password rules and not printed. Either way the
+password is temporary: the next password sign-in must change it. The reset signs the account out
+of every session, clears its failed sign-in count (so a 429 lockout ends too) and writes an
+`audit_log` row with actor `cli@<hostname>` and the `--reason` (default "password reset from the
+server CLI"); the value is never logged or audited. API tokens are not touched; revoke them in
+**Settings › Users** if the account was compromised.
+
+`create-admin` is the same for an account that must become an admin: it creates the account
+when the email is new, promotes it otherwise (audited as a role change), and sets a temporary
+password. Use it when every admin signs in through an issuer that is down, or the only admin left.
+
+The local admin's email defaults to `admin@switchboard.local` (or `SWITCHBOARD_BOOTSTRAP_ADMIN`).
+In evaluation mode the sign-in page's **Forgot password or email?** panel shows it; outside
+evaluation mode the page never names an email.
+
 ## Backups and restore
 
 - **Postgres is the only state.** Back it up the way you back up any Postgres: managed snapshots,
@@ -219,6 +266,16 @@ replica, and unique constraints keep runs once. To scale:
   `$SWITCHBOARD_HOME` and removes ones an admin removed (the `plugins.remove_requested_at`
   tombstone), unregistering them without a restart. Plugins added with the CLI on one replica
   are that replica's alone, and are left alone by the sync pass unless an admin removes them.
+- Instance changes converge the same way. The replica that handles a change to a source,
+  executor, notifier or secret provider (create, edit, caps, enable or disable, reload, delete,
+  `apply`) rebuilds it at once; every other replica rebuilds it on its next reconcile pass (at
+  boot and every `SWITCHBOARD_INSTANCE_SYNC_SECONDS`, 10 s), so for up to that long a request
+  landing on another replica may still see the old configuration. Each write bumps the row's
+  `config_version`; a pass compares those with what the replica built and rebuilds only what
+  moved, plus the dependents of a changed secret provider. `switchboard.instance.rebuilds`
+  counts what the passes rebuilt, by `kind` and `change`. If one replica keeps serving old
+  settings, check its logs for `could not reconcile instances with the database`; a restart
+  rebuilds everything.
 - To separate ingress and API from pipeline work, run some replicas with
   `SWITCHBOARD_WORKERS=false`: they serve the UI, API, hooks and callbacks and run no pipeline
   workers or scheduler.

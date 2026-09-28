@@ -388,6 +388,7 @@ export function buildFixtures(now: number) {
     oidcIssuer: null,
     evaluation: true,
     mustChangePassword: false,
+    evaluationAdminEmail: 'admin@switchboard.local',
   };
 
   // ---- Meters ---------------------------------------------------------------------------

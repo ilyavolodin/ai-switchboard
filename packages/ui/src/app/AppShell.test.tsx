@@ -122,6 +122,7 @@ describe('app shell', () => {
           oidcIssuer: 'accounts.google.com',
           evaluation: false,
           mustChangePassword: false,
+          evaluationAdminEmail: null,
         }),
       },
     });

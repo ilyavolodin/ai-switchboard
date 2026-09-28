@@ -10,6 +10,7 @@ import { applyCommand, exportCommand } from './commands/config.js';
 import { doctorCommand } from './commands/doctor.js';
 import { pluginsCommand } from './commands/plugins.js';
 import { serveCommand } from './commands/serve.js';
+import { usersCommand } from './commands/users.js';
 import { defaultDeps, type CliDeps } from './deps.js';
 
 /** The CLI's version; the CLI and the core release together, so it is also the core version. */
@@ -26,7 +27,7 @@ export function buildProgram(
   const deps: CliDeps = { ...defaultDeps(), ...overrides };
   const program = new Command('switchboard')
     .description(
-      'AI Switchboard: manage plugins, export and apply configuration, check and start the server.',
+      'AI Switchboard: manage plugins, export and apply configuration, check and start the server, recover accounts.',
     )
     .version(
       `switchboard ${CLI_VERSION} (sdk ${SDK_VERSION})`,
@@ -45,13 +46,14 @@ Environment:
   SWITCHBOARD_URL     server base URL for export/apply (default http://localhost:8080)
   SWITCHBOARD_TOKEN   API token for export/apply (Authorization: Bearer)
   SWITCHBOARD_HOME    plugins directory root for plugins add/remove/list (default ./.switchboard)
-  DATABASE_URL, ...   doctor and serve read the same variables as the server
+  DATABASE_URL, ...   doctor, serve and users read the same variables as the server
 
 Examples:
   switchboard plugins add @acme/switchboard-source-jira@^1
   switchboard export -o switchboard.yaml
   switchboard apply -f switchboard.yaml --dry-run --reason "review staging config"
-  switchboard doctor`,
+  switchboard doctor
+  switchboard users reset-password admin@switchboard.local`,
     );
 
   program.addCommand(pluginsCommand(deps));
@@ -59,6 +61,7 @@ Examples:
   program.addCommand(applyCommand(deps));
   program.addCommand(doctorCommand(deps));
   program.addCommand(serveCommand(deps));
+  program.addCommand(usersCommand(deps));
   if (options.exitOverride === true) program.exitOverride();
   inheritSettings(program);
   return program;
