@@ -121,3 +121,8 @@
   color: var(--brand-text);
   cursor: pointer;
 }
+
+.editor {
+  position: relative;
+  min-width: 0;
+}

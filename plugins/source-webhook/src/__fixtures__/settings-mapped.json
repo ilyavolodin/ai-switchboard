@@ -1,0 +1,37 @@
+{
+  "verification": "hmac",
+  "secret": "fixture-secret",
+  "mappingMode": "mapped",
+  "rules": [
+    {
+      "type": "webhook.issue.created",
+      "title": "Issue created",
+      "when": { "path": "headers.x-event-type", "equals": "issue.created" },
+      "artifactKind": "issue",
+      "artifactIdPath": "body.issue.id",
+      "artifactUrlPath": "body.issue.url",
+      "artifactVersionPath": "body.issue.updated_at",
+      "occurredAtPath": "body.created_at",
+      "attributes": [
+        { "name": "priority", "path": "body.issue.priority", "type": "string" },
+        { "name": "estimate", "path": "body.issue.estimate", "type": "number" },
+        { "name": "labels", "path": "body.issue.labels.name", "type": "string[]" },
+        {
+          "name": "project",
+          "path": "body.project.key",
+          "type": "string",
+          "description": "Project key"
+        }
+      ]
+    },
+    {
+      "type": "webhook.issue.updated",
+      "title": "Issue updated",
+      "when": { "path": "headers.x-event-type", "equals": "issue.updated" },
+      "artifactKind": "issue",
+      "artifactIdPath": "body.issue.id",
+      "artifactVersionPath": "body.issue.updated_at",
+      "attributes": [{ "name": "priority", "path": "body.issue.priority", "type": "string" }]
+    }
+  ]
+}

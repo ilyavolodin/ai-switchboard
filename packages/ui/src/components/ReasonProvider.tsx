@@ -35,6 +35,7 @@ export function ReasonProvider({ children }: { children: ReactNode }) {
         confirmLabel={request?.confirmLabel ?? 'Confirm'}
         danger={request?.danger}
         placeholder={request?.placeholder}
+        optional={request?.optional}
         onConfirm={(reason) => {
           settle(reason);
         }}

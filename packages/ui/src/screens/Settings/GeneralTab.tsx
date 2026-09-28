@@ -12,11 +12,15 @@ import { QuietHoursBar } from '../../components/QuietHoursBar.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { TextField } from '../../components/TextField.js';
+import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import styles from './Settings.module.css';
 import { changedFields, generalDraft, parsePositiveInt, timezones } from './settingsForm.js';
 
-/** General: installation timezone, default quiet hours, staleness and silence, system notifier. */
+/**
+ * General: installation timezone, default quiet hours, staleness and silence, system notifier,
+ * and whether every change must carry a reason.
+ */
 export function GeneralTab() {
   const settings = useSettings();
   if (settings.isPending) return <Skeleton shape="card" height={320} label="Loading settings" />;
@@ -42,6 +46,7 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
   const [staleness, setStaleness] = useState(String(base.meterStalenessMinutes));
   const [silence, setSilence] = useState(String(base.sourceSilenceMinutes));
   const [notifier, setNotifier] = useState(base.systemNotifierId ?? '');
+  const [requireReasons, setRequireReasons] = useState(base.requireReasons);
 
   const stalenessN = parsePositiveInt(staleness);
   const silenceN = parsePositiveInt(silence);
@@ -52,6 +57,7 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
     meterStalenessMinutes: stalenessN ?? base.meterStalenessMinutes,
     sourceSilenceMinutes: silenceN ?? base.sourceSilenceMinutes,
     systemNotifierId: notifier === '' ? null : notifier,
+    requireReasons,
   });
   const dirty = Object.keys(changes).length > 0;
 
@@ -176,6 +182,26 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
               onChange={(e) => {
                 setNotifier(e.target.value);
               }}
+            />
+          )}
+        </Field>
+        <Field
+          label="Require a reason for every change"
+          layout="row"
+          help={
+            requireReasons
+              ? 'Every change asks for a one-line reason, recorded in the audit log. The API refuses a change without one.'
+              : 'Changes save without a prompt and are audited as “(no reason given)”; destructive actions still ask to confirm, with an optional note. The audit log still records who changed what, and when.'
+          }
+          changed={requireReasons !== base.requireReasons}
+        >
+          {({ id, describedBy }) => (
+            <Toggle
+              id={id}
+              describedBy={describedBy}
+              checked={requireReasons}
+              requires="admin"
+              onChange={setRequireReasons}
             />
           )}
         </Field>

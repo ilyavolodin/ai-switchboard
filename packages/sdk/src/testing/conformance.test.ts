@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SecretListing, SecretProvider, SecretProviderType } from '../index.js';
+import type {
+  EventDraft,
+  SecretListing,
+  SecretProvider,
+  SecretProviderType,
+  SourceType,
+} from '../index.js';
 import {
   ConformanceFailure,
+  rawRequest,
   runConformance,
   secretProviderConformanceChecks,
+  sourceConformanceChecks,
   type ConformanceCheck,
 } from './index.js';
 
@@ -128,5 +136,60 @@ describe('secretProviderConformanceChecks', () => {
         'list() returns well-formed names'
       ],
     ).toMatch(/ISO-8601/);
+  });
+});
+
+describe('sourceConformanceChecks: parseWithNotes', () => {
+  const event: EventDraft = {
+    type: 'demo.thing.happened',
+    occurredAt: '2026-01-01T00:00:00.000Z',
+    artifact: { kind: 'thing', id: '1' },
+    attributes: {},
+    dedupeKey: 'demo.thing.happened:thing:1:',
+  };
+  const sourceType = (notesEvents: EventDraft[]): SourceType => ({
+    id: 'demo',
+    displayName: 'Demo',
+    mode: 'push',
+    settingsSchema: { type: 'object', properties: {} },
+    allowsUnauthenticated: true,
+    eventTypes: [
+      {
+        type: 'demo.thing.happened',
+        title: 'Thing',
+        description: 'Thing',
+        attributes: { type: 'object', properties: {} },
+        examples: [{}],
+      },
+    ],
+    create: () => ({
+      parse: () => [event],
+      parseWithNotes: () => ({ events: notesEvents, notes: ['a note'] }),
+      health: () => Promise.resolve({ status: 'unknown', checkedAt: event.occurredAt }),
+    }),
+  });
+  const delivery = rawRequest({ body: '{}' });
+  const fixtures = {
+    settings: {},
+    push: {
+      deliveries: [delivery],
+      sameChange: [delivery, delivery] as [typeof delivery, typeof delivery],
+      differentChange: [delivery, delivery] as [typeof delivery, typeof delivery],
+      wrongSignature: delivery,
+      missingHeader: delivery,
+    },
+  };
+  const name = 'parseWithNotes (when present) returns the same events as parse';
+
+  it('passes when parseWithNotes agrees with parse', async () => {
+    expect((await failures(sourceConformanceChecks(sourceType([event]), fixtures)))[name]).toBe(
+      undefined,
+    );
+  });
+
+  it('fails when parseWithNotes returns different events', async () => {
+    expect((await failures(sourceConformanceChecks(sourceType([]), fixtures)))[name]).toMatch(
+      /different events/,
+    );
   });
 });

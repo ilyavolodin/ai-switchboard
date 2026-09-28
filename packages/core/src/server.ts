@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { registerAuth } from './auth/fastify.js';
 import type { ApiContext } from './api/context.js';
 import { registerErrorHandler } from './api/errors.js';
+import { createReasonPolicy, registerReasonPolicy } from './api/reasons.js';
 import { registerAdminRoutes } from './api/routes/admin.js';
 import { registerAuthRoutes } from './api/routes/auth.js';
 import { registerConfigRoutes } from './api/routes/config.js';
@@ -18,6 +19,8 @@ import { registerPluginRoutes } from './api/routes/plugins.js';
 import { registerProcessRoutes } from './api/routes/processes.js';
 import { registerReadRoutes } from './api/routes/read.js';
 import { registerSecretRoutes } from './api/routes/secrets.js';
+import { registerSourcePreviewRoutes } from './api/routes/source-preview.js';
+import { getSettings } from './services/settings.js';
 import type { TelemetryRuntime } from './telemetry/setup.js';
 
 export interface ServerOptions {
@@ -61,12 +64,17 @@ export async function buildServer(
   await app.register(cookie, options.cookieSecret ? { secret: options.cookieSecret } : {});
   await app.register(rateLimit, { global: false });
   registerAuth(app, ctx.db, ctx.clock);
+  registerReasonPolicy(
+    app,
+    createReasonPolicy(async () => (await getSettings(ctx.db)).requireReasons, ctx.clock),
+  );
 
   await registerIngressRoutes(app, ctx, {
     prometheus: options.telemetry?.prometheus,
     ready: options.ready ?? (() => true),
   });
   registerAuthRoutes(app, ctx);
+  registerSourcePreviewRoutes(app, ctx);
   registerInstanceRoutes(app, ctx);
   registerSecretRoutes(app, ctx);
   registerProcessRoutes(app, ctx);

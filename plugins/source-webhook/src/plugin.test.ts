@@ -11,6 +11,9 @@ import {
 
 import finished from './__fixtures__/deploy-finished.json' with { type: 'json' };
 import started from './__fixtures__/deploy-started.json' with { type: 'json' };
+import issue from './__fixtures__/issue-created.json' with { type: 'json' };
+import mappedSettings from './__fixtures__/settings-mapped.json' with { type: 'json' };
+import quickSettings from './__fixtures__/settings-quick.json' with { type: 'json' };
 import baseSettings from './__fixtures__/settings.json' with { type: 'json' };
 import plugin from './plugin.js';
 import { webhookSource } from './source.js';
@@ -101,6 +104,52 @@ runConformance(
   sourceConformanceChecks(webhookSource, {
     ...hmacFixtures,
     settings: settings({ verification: 'none', secret: undefined }),
+  }),
+  { describe, it },
+);
+
+runConformance(
+  'webhook source (quick mode)',
+  sourceConformanceChecks(webhookSource, {
+    ...hmacFixtures,
+    settings: structuredClone(quickSettings),
+  }),
+  { describe, it },
+);
+
+runConformance(
+  'webhook source (quick mode, no settings)',
+  sourceConformanceChecks(webhookSource, {
+    ...hmacFixtures,
+    settings: { verification: 'none' },
+    push: {
+      ...hmacFixtures.push!,
+      // Without a version path a redelivery collapses by its delivery id.
+      sameChange: [signed(finished), signed(finished)],
+    },
+  }),
+  { describe, it },
+);
+
+const issueUpdated = signed(
+  withBody(issue, (b) => {
+    b.issue = { ...(b.issue as object), updated_at: '2026-09-27T09:30:00Z' };
+  }),
+);
+
+runConformance(
+  'webhook source (mapped mode)',
+  sourceConformanceChecks(webhookSource, {
+    ...hmacFixtures,
+    settings: structuredClone(mappedSettings),
+    push: {
+      ...hmacFixtures.push!,
+      deliveries: [signed(issue), signed(issue, { 'x-event-type': 'issue.updated' })],
+      sameChange: [signed(issue), signed(issue, { 'x-delivery-id': 'retry-2' })],
+      differentChange: [signed(issue), issueUpdated],
+      wrongSignature: signed(issue, { 'x-signature-256': `sha256=${'0'.repeat(64)}` }),
+      missingHeader: signed(issue, { 'x-signature-256': undefined }),
+    },
   }),
   { describe, it },
 );

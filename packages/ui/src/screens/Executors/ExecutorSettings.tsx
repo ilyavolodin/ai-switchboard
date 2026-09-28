@@ -39,11 +39,11 @@ export function ExecutorSettings({ executor }: { executor: ExecutorDetail }) {
     <InstanceSettingsForm<ExecutorCapsDTO>
       entity={executor}
       kind="executor"
-      renderCaps={(caps, onChange, disabled) => (
+      renderCaps={(caps, onChange, disabled, baseline) => (
         <ExecutorCapsFields
           value={caps}
           onChange={onChange}
-          baseline={executor.caps}
+          baseline={baseline}
           usage={executor.usage}
           estimated={estimatedMeters(executor.meterSpecs, executor.meters)}
           hasMeters={executor.meterSpecs.length > 0}

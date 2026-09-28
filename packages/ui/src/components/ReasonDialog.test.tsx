@@ -55,10 +55,11 @@ describe('ReasonDialog', () => {
   });
 });
 
-function ResetButton() {
+function ResetButton({ danger }: { danger?: boolean }) {
   const reset = useReasonedMutation(useResetBreaker(), {
     title: 'Reset the Autofix breaker?',
     confirmLabel: 'Reset breaker',
+    ...(danger ? { danger } : {}),
   });
   return <Button onClick={() => void reset.run({ id: 'p-autofix' })}>Reset</Button>;
 }
@@ -83,5 +84,32 @@ describe('useReasonedMutation', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(api.callsTo('POST /processes/p-autofix/breaker/reset')).toHaveLength(0);
+  });
+
+  it('skips the prompt when the installation does not require reasons', async () => {
+    const { user, api } = renderWithProviders(<ResetButton />, { requireReasons: false });
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+    await vi.waitFor(() => {
+      expect(api.callsTo('POST /processes/p-autofix/breaker/reset')).toHaveLength(1);
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(api.callsTo('POST /processes/p-autofix/breaker/reset')[0]?.body).toEqual({
+      reason: '',
+    });
+  });
+
+  it('still confirms a danger action, with an optional note, when reasons are optional', async () => {
+    const { user, api } = renderWithProviders(<ResetButton danger />, { requireReasons: false });
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+    const dialog = screen.getByRole('dialog', { name: 'Reset the Autofix breaker?' });
+    expect(screen.getByRole('textbox', { name: /Note \(optional\)/ })).not.toBeRequired();
+    await user.click(screen.getByRole('button', { name: 'Reset breaker' }));
+    await vi.waitFor(() => {
+      expect(api.callsTo('POST /processes/p-autofix/breaker/reset')).toHaveLength(1);
+    });
+    expect(dialog).not.toBeInTheDocument();
+    expect(api.callsTo('POST /processes/p-autofix/breaker/reset')[0]?.body).toEqual({
+      reason: '',
+    });
   });
 });

@@ -17,10 +17,12 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StageIndicator } from '../../components/StageIndicator.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
+import { WhyNothingRan } from '../../components/WhyNothingRan.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { traceHref } from '../../lib/artifact.js';
 import { cx } from '../../lib/cx.js';
 import { runStatusTone } from '../../lib/tone.js';
+import { whyFromExplanations } from '../../lib/why.js';
 import styles from './detail.module.css';
 
 /**
@@ -148,6 +150,7 @@ function EventItem({
 
 function EventPanel({ id, row }: { id: string; row: ActivityRow }) {
   const detail = useEvent(row.eventId);
+  const why = whyFromExplanations(detail.data?.explanations ?? []);
   const names = row.processes.map((p) => p.name);
   const replay = useReasonedMutation(
     useReplayEvent(),
@@ -190,11 +193,23 @@ function EventPanel({ id, row }: { id: string; row: ActivityRow }) {
             ]}
           />
         )}
+        {why.length > 0 && (
+          <>
+            <p className={styles.detailTitle} style={{ marginTop: 12 }}>
+              {row.processes.length === 0 ? 'Why nothing ran' : 'Processes that did not take it'}
+            </p>
+            <WhyNothingRan items={why} label="Why nothing ran" />
+          </>
+        )}
         <p className={styles.detailTitle} style={{ marginTop: 12 }}>
           Processes matched
         </p>
         {row.processes.length === 0 ? (
-          <span className={styles.caption}>No process matched.</span>
+          <span className={styles.caption}>
+            {detail.data && why.length === 0 && detail.data.stage === 'unmatched'
+              ? 'No process has a trigger on this source.'
+              : 'No process matched.'}
+          </span>
         ) : (
           <ul className={styles.list}>
             {row.processes.map((p) => (

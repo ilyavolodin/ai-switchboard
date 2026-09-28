@@ -74,6 +74,13 @@ export function TriggerEditor({
 
   const counts = new Map(summary?.eventsByType24h.map((e) => [e.type, e.count]) ?? []);
   const attributes = declaredAttributes(specs, trigger.eventTypes);
+  // Types that accept any attribute (a quick-mode webhook) declare none: offer the ones recent
+  // events actually carried.
+  const seenAttributes = [
+    ...new Set((preview.data?.rows ?? []).flatMap((r) => Object.keys(r.attributes))),
+  ]
+    .filter((name) => !attributes.some((a) => a.name === name))
+    .map((name) => ({ name, type: 'seen in recent events' }));
   const examples = specs
     .filter((s) => trigger.eventTypes.includes(s.type) && s.examples.length > 0)
     .map((s) => ({ type: s.type, examples: s.examples }));
@@ -211,6 +218,10 @@ export function TriggerEditor({
                       label="Filter expression"
                       value={trigger.filter ?? ''}
                       disabled={disabled}
+                      completions={{
+                        variables: ['event', 'attributes', 'artifact', 'type', 'process', 'now'],
+                        attributes: [...attributes, ...seenAttributes],
+                      }}
                       onChange={(filter) => {
                         change({ filter: filter === '' ? undefined : filter });
                       }}

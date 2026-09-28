@@ -1,8 +1,11 @@
 import type { SourceCapsDTO, SourceDetail } from '@ai-switchboard/core/contract';
+import { useState } from 'react';
 
 import { useDeleteSource, useUpdateSource } from '../../api/index.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { deliverySample, EMPTY_SAMPLE, type SampleDraft } from '../../lib/sampleDelivery.js';
 import { InstanceSettingsForm } from '../shared/InstanceSettingsForm.js';
+import { SamplePreview } from './SamplePreview.js';
 import { SourceCapsFields } from './SourceCapsFields.js';
 
 /**
@@ -10,6 +13,9 @@ import { SourceCapsFields } from './SourceCapsFields.js';
  * bar that asks for a reason. Delete lives at the bottom.
  */
 export function SourceSettings({ source }: { source: SourceDetail }) {
+  // A pasted sample delivery (push sources): the preview panel and the path fields use it.
+  const [sample, setSample] = useState<SampleDraft>(EMPTY_SAMPLE);
+  const push = source.mode !== 'pull';
   const save = useReasonedMutation(
     useUpdateSource(),
     {
@@ -38,11 +44,11 @@ export function SourceSettings({ source }: { source: SourceDetail }) {
     <InstanceSettingsForm<SourceCapsDTO>
       entity={source}
       kind="source"
-      renderCaps={(caps, onChange, disabled) => (
+      renderCaps={(caps, onChange, disabled, baseline) => (
         <SourceCapsFields
           value={caps}
           onChange={onChange}
-          baseline={source.caps}
+          baseline={baseline}
           eventTypes={source.eventTypes}
           mode={source.mode}
           disabled={disabled}
@@ -54,6 +60,20 @@ export function SourceSettings({ source }: { source: SourceDetail }) {
       deleting={remove.pending}
       deleteNote="Deleting removes the instance and its webhook URL. Processes keep their triggers but stop matching."
       afterDelete="/sources"
+      sample={push ? deliverySample(sample) : null}
+      renderAfterSettings={
+        push
+          ? (settings) => (
+              <SamplePreview
+                typeId={source.typeId}
+                settings={settings}
+                sourceId={source.id}
+                sample={sample}
+                onSampleChange={setSample}
+              />
+            )
+          : undefined
+      }
     />
   );
 }

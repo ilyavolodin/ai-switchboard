@@ -1,6 +1,7 @@
 /**
  * JSON Schema (draft 2020-12) helpers for `SchemaForm`: reading the UI annotations plugins use
- * (`x-secret`, `x-widget`, `x-group`, `x-order`, `x-placeholder`, `x-help`), defaults, immutable
+ * (`x-secret`, `x-widget`, `x-group`, `x-order`, `x-placeholder`, `x-help`, `x-effectiveDefault`,
+ * `x-docs`), defaults, immutable
  * path updates, secret references and client-side validation with Ajv.
  */
 import type { JSONSchema } from '@ai-switchboard/core/contract';
@@ -374,12 +375,17 @@ export function resolveConditionals(s: JSONSchema, value: unknown): ResolvedObje
   // Branches are decided on the value the plugin will actually get: unset fields take their
   // defaults (an `if` on a missing property would otherwise match every branch).
   const defaults = schemaDefaults(s);
-  const obj = {
+  const obj: Record<string, unknown> = {
     ...(defaults !== null && typeof defaults === 'object'
       ? (defaults as Record<string, unknown>)
       : {}),
     ...Object.fromEntries(Object.entries(given).filter(([, v]) => v !== undefined)),
   };
+  for (const [key, child] of orderedProperties(s)) {
+    if (given[key] !== undefined) continue;
+    const effective = effectiveDefault(child, given);
+    if (effective !== undefined) obj[key] = effective;
+  }
   for (const c of conditionalsOf(s)) {
     for (const k of [...mentioned(c.then), ...mentioned(c.else)]) conditional.add(k);
     const branch = matches(c.if, obj) ? c.then : c.else;
@@ -396,6 +402,32 @@ export function resolveConditionals(s: JSONSchema, value: unknown): ResolvedObje
   const hidden = new Set<string>();
   for (const k of conditional) if (!active.has(k) && !base.includes(k)) hidden.add(k);
   return { required: [...required], hidden };
+}
+
+/**
+ * The `x-effectiveDefault` annotation (SDK 1.4): `[{ when?: <schema>, value }]`, what the plugin
+ * does while a field is unset, decided by the rest of the object (`parent`). Returns the value of
+ * the first entry whose `when` matches (an entry without `when` always does), else the plain
+ * `default`, else `undefined`. Unlike `default` it is only shown, never written into settings,
+ * so a plugin can tell "unset" from a chosen value (the webhook keeps old instances on JSONata).
+ */
+export function effectiveDefault(s: JSONSchema, parent: unknown): unknown {
+  const raw = s['x-effectiveDefault'];
+  const list = Array.isArray(raw) ? (raw as unknown[]) : [];
+  for (const entry of list) {
+    const e = asSchema(entry);
+    if (!e || !('value' in e)) continue;
+    const when = typeof e.when === 'boolean' ? e.when : asSchema(e.when);
+    if (e.when === undefined || (when !== null && matches(when, parent ?? {}))) return e.value;
+  }
+  return 'default' in s ? s.default : undefined;
+}
+
+/** `x-docs: { url, label? }`: a link to the field's documentation, or null. */
+export function docsLink(s: JSONSchema): { url: string; label: string } | null {
+  const d = asSchema(s['x-docs']);
+  if (!d || typeof d.url !== 'string' || !/^https?:\/\//.test(d.url)) return null;
+  return { url: d.url, label: typeof d.label === 'string' ? d.label : 'Documentation' };
 }
 
 /**

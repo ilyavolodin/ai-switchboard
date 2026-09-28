@@ -101,7 +101,8 @@ Relative imports use the `.js` extension (NodeNext): `import { x } from './batch
   Values live only in the live plugin object. `$secretRef(name)` yields a reference the executor
   bridge resolves after evaluation. The API never returns a secret value.
 - **Every state-changing action carries a one-line `reason` and writes `audit_log`.** Routes reject
-  an empty reason with 400.
+  an empty reason with 400, unless an admin turned `requireReasons` off (Settings › General): then
+  a blank reason is audited as "(no reason given)" (`packages/core/src/api/reasons.ts`).
 - **Plugins are attributed.** Wrap every plugin call so exceptions and invalid events are counted
   against the plugin (`PluginRuntime.recordPluginError`) and never crash the pipeline.
 - **One metric and one structured log line per pipeline decision,** with the same attributes

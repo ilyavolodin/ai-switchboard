@@ -40,6 +40,57 @@ describe('Trace', () => {
     expect(terminal).toHaveTextContent('failed');
   });
 
+  it('says why nothing ran for an event no process took', async () => {
+    renderWithProviders(<Trace />, {
+      ...at('ev-1'),
+      overrides: {
+        'GET /trace': () => ({
+          query: 'ev-1',
+          artifacts: [{ kind: 'linear.issue', id: 'LOL-1' }],
+          entries: [
+            {
+              at: '2026-09-27T08:00:00.000Z',
+              kind: 'event',
+              tone: 'off',
+              title: 'issue.label_added on linear.issue LOL-1: unmatched',
+              eventId: 'ev-1',
+            },
+            {
+              at: '2026-09-27T08:00:00.100Z',
+              kind: 'filter',
+              tone: 'warn',
+              title: 'Autofix did not take it: process is disabled',
+              data: { taken: false, reason: 'process is disabled', basis: 'recorded' },
+              eventId: 'ev-1',
+              processId: 'p-autofix',
+              processName: 'Autofix',
+            },
+            {
+              at: '2026-09-27T08:00:00.100Z',
+              kind: 'filter',
+              tone: 'off',
+              title: 'Triage did not take it: trigger "labels" is disabled',
+              data: { taken: false, reason: 'trigger "labels" is disabled', basis: 'now' },
+              eventId: 'ev-1',
+              processId: 'p-triage',
+              processName: 'Triage',
+            },
+          ],
+          text: '',
+        }),
+      },
+    });
+    const why = await screen.findByRole('region', { name: 'Why nothing ran' });
+    expect(within(why).getByRole('link', { name: 'Autofix' })).toBeVisible();
+    expect(why).toHaveTextContent('Autofix: process is disabled');
+    expect(why).toHaveTextContent('Triage: trigger "labels" is disabled (now)');
+    // A process that did not take the event did not touch it.
+    const touched = screen.getByRole('region', { name: 'Processes that touched it' });
+    expect(within(touched).getByText('No process matched it.')).toBeVisible();
+    const stands = screen.getByRole('region', { name: 'Where it stands' });
+    expect(stands).toHaveTextContent(/did not take it/);
+  });
+
   it('shows the artifact chips, counts and where it stands', async () => {
     renderWithProviders(<Trace />, at('LOL-1712'));
     expect(await screen.findByRole('link', { name: /LOL-1712 \(opens Linear/ })).toHaveAttribute(

@@ -1,0 +1,8 @@
+{
+  "verification": "hmac",
+  "secret": "fixture-secret",
+  "mappingMode": "quick",
+  "quickEventType": "webhook.deploy.finished",
+  "artifactIdPath": "body.deployment.id",
+  "artifactVersionPath": "body.deployment.updated_at"
+}

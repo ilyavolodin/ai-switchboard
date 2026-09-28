@@ -233,6 +233,8 @@ export interface ApiHarnessOptions {
   home?: string;
   runNpm?: ApiContext['runNpm'];
   registryFetch?: ApiContext['registryFetch'];
+  /** More built-in plugins next to `test-plugin` (e.g. a reference plugin). */
+  plugins?: { name: string; version: string; definition: PluginDefinition }[];
 }
 
 export async function createApiHarness(
@@ -252,7 +254,10 @@ export async function createApiHarness(
     logger,
     telemetry,
     config,
-    builtin: [{ name: 'test-plugin', version: '1.0.0', definition: testPlugin }],
+    builtin: [
+      { name: 'test-plugin', version: '1.0.0', definition: testPlugin },
+      ...(options.plugins ?? []),
+    ],
     scanDirs: [],
     ...(options.runNpm ? { runNpm: options.runNpm } : {}),
   });

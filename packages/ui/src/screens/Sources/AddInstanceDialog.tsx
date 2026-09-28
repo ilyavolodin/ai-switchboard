@@ -14,10 +14,12 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { TextField } from '../../components/TextField.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { asRecord, secretProviderIds } from '../../lib/instances.js';
+import { deliverySample, EMPTY_SAMPLE, type SampleDraft } from '../../lib/sampleDelivery.js';
 import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
 import { ManifestReview } from '../Plugins/ManifestReview.js';
 import { NpmSearch } from '../Plugins/NpmSearch.js';
 import styles from './forms.module.css';
+import { SamplePreview } from './SamplePreview.js';
 
 /** What the dialog hands back when the person presses Create. */
 export interface InstanceDraft<C> {
@@ -74,6 +76,8 @@ export function AddInstanceDialog<C>({
   const [awaiting, setAwaiting] = useState<string[] | null>(null);
   const [installNote, setInstallNote] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
+  // The pasted sample delivery (push sources): feeds the preview panel and path suggestions.
+  const [sample, setSample] = useState<SampleDraft>(EMPTY_SAMPLE);
   const inspect = useInspectPlugin();
   const install = useReasonedMutation(
     useInstallPlugin(),
@@ -94,6 +98,7 @@ export function AddInstanceDialog<C>({
     setSettings(asRecord(schemaDefaults(t.settingsSchema)));
     setCaps(initialCaps(t));
     setAttempted(false);
+    setSample(EMPTY_SAMPLE);
   };
   // Once the installed plugin's types arrive in the picker, continue into the first one
   // (adjusting state while rendering, as React recommends over an effect).
@@ -139,6 +144,7 @@ export function AddInstanceDialog<C>({
   };
 
   const errors = type ? validateAgainstSchema(type.settingsSchema, settings) : {};
+  const pushSource = kind === 'source' && type !== null && type.mode !== 'pull';
   const invalid = Object.keys(errors).length > 0 || name.trim() === '';
   const noun = kind === 'source' ? 'source' : 'executor';
 
@@ -317,7 +323,16 @@ export function AddInstanceDialog<C>({
             onChange={setSettings}
             showAllErrors={attempted}
             secretProviders={secretProviderIds(secretProviders.data)}
+            sample={pushSource ? deliverySample(sample) : null}
           />
+          {pushSource && (
+            <SamplePreview
+              typeId={type.typeId}
+              settings={settings}
+              sample={sample}
+              onSampleChange={setSample}
+            />
+          )}
           {caps !== null && renderCaps(type, caps, setCaps)}
           {attempted && invalid && (
             <Banner tone="error" title="Some fields need attention">

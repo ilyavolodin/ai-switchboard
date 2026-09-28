@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import { approvals, dispatches, events, plugins, processes, runs } from '../../db/schema.js';
 import { getSettings } from '../../services/settings.js';
@@ -250,6 +250,48 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
       action: { id: 'open', label: 'Open' },
       since: null,
     });
+  }
+  // A disabled process that has never run but whose triggers turned events away: most likely
+  // created disabled and forgotten. One that ran before was paused on purpose, so it stays quiet.
+  const idle = procRows.filter((p) => !p.enabled && p.document.triggers.length > 0);
+  if (idle.length > 0) {
+    const [missed, ran] = await Promise.all([
+      ctx.db.execute<{ process_id: string; n: string }>(sql`
+        SELECT d->>'processId' AS process_id, count(*)::text AS n
+        FROM ${events}, jsonb_array_elements(${events.matchDecisions}) AS d
+        WHERE ${events.receivedAt} >= ${day}
+          AND d->>'skip' = 'process_disabled'
+          AND d->>'processId' IN (${sql.join(
+            idle.map((p) => sql`${p.id}`),
+            sql`, `,
+          )})
+        GROUP BY 1`),
+      ctx.db
+        .selectDistinct({ processId: runs.processId })
+        .from(runs)
+        .where(
+          inArray(
+            runs.processId,
+            idle.map((p) => p.id),
+          ),
+        ),
+    ]);
+    for (const m of missed.rows) {
+      const p = idle.find((x) => x.id === m.process_id);
+      const n = Number(m.n);
+      if (!p || n === 0 || ran.some((r) => r.processId === p.id)) continue;
+      attention.push({
+        id: `disabled:${p.id}`,
+        kind: 'process_disabled',
+        tone: 'warn',
+        title: `${p.name} is disabled and turned away ${n} event${n === 1 ? '' : 's'} in 24 h`,
+        detail: 'It has never run. Enable it if it should take these events.',
+        targetKind: 'process',
+        targetId: p.id,
+        action: { id: 'enable_process', label: 'Enable' },
+        since: null,
+      });
+    }
   }
   const failed = await ctx.db
     .select({ name: plugins.name, status: plugins.status })

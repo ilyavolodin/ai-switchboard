@@ -16,6 +16,8 @@ export const UI_KEYWORDS = [
   'x-help',
   'x-warning',
   'x-enumLabels',
+  'x-effectiveDefault',
+  'x-docs',
 ] as const;
 
 /** An Ajv instance for draft 2020-12 with formats and Switchboard's UI annotations registered. */

@@ -125,7 +125,20 @@ and Backstage. There is no sandbox. The controls are at install time:
 Every action a step performs is recorded in `steps` with the run that caused it, so any label,
 comment or dispatch the system made traces back to a process, a trigger and a human-set rule.
 Every configuration change and manual action writes an `audit_log` row with actor, before, after
-and reason. Scope the credentials used for actions to what the actions need (the `github` source
+and reason.
+
+Reasons are required by default: the API refuses a change without a one-line reason (400). An
+admin can turn this off under Settings › General › "Require a reason for every change"
+(`requireReasons`). The switch itself is admin-only and audited like any setting. With reasons
+optional, the UI stops prompting (destructive actions still ask to confirm, with an optional
+note), and a change without a reason is audited as `(no reason given)`. The actor, the time and
+the before and after values are recorded either way, so turning reasons off loses the _why_, not
+the _who_ or the _what_. Each replica caches the setting for up to 5 seconds, so for a few
+seconds after the switch flips, another replica may still refuse a change without a reason (when
+it was just turned off) or accept one (when it was just turned on). A failed read of the setting
+counts as "required".
+
+Scope the credentials used for actions to what the actions need (the `github` source
 documents the App permissions per action).
 
 ## Data

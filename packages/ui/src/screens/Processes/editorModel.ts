@@ -29,12 +29,15 @@ export const SECTIONS = [
 ] as const;
 export type SectionId = (typeof SECTIONS)[number] | 'basics';
 
-/** A blank document, like the core's `defaultProcessDocument`. */
+/**
+ * A blank document, like the core's `defaultProcessDocument` but enabled: a process made in the
+ * editor is meant to run, and the Create reason prompt already says it starts enabled.
+ */
 export function newProcessDocument(executorInstanceId: string): ProcessDocument {
   return {
     name: '',
     description: '',
-    enabled: false,
+    enabled: true,
     triggers: [],
     schedules: [],
     batching: { debounceSeconds: 30, maxSize: 20, maxAgeSeconds: 600 },

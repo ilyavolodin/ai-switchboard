@@ -1,4 +1,5 @@
 import type { SourceDetail as SourceDetailDTO } from '@ai-switchboard/core/contract';
+import { useState } from 'react';
 import { useParams } from 'react-router';
 
 import {
@@ -28,6 +29,7 @@ import { SourceEventsTab } from './SourceEventsTab.js';
 import { SourceOverview } from './SourceOverview.js';
 import { enableSourcePrompt, modeLabel } from './sourceModel.js';
 import { SourceSettings } from './SourceSettings.js';
+import { TestEventResult } from './TestEventResult.js';
 
 /**
  * A source instance: header (status, webhook URL or poll interval, secret references, Register
@@ -51,6 +53,7 @@ export function SourceDetail() {
 function SourceView({ source, tab }: { source: SourceDetailDTO; tab: string | undefined }) {
   const base = `/sources/${source.id}`;
   const events24h = source.eventsByType24h.reduce((s, t) => s + t.count, 0);
+  const [sentTest, setSentTest] = useState<string[] | null>(null);
   const vars = { id: source.id };
   const provision = useReasonedMutation(
     useProvisionSource(),
@@ -120,7 +123,11 @@ function SourceView({ source, tab }: { source: SourceDetailDTO; tab: string | un
               icon="play"
               requires="operator"
               loading={testEvent.pending}
-              onClick={() => void testEvent.run(vars)}
+              onClick={() =>
+                void testEvent.run(vars).then((d) => {
+                  if (d && d.eventIds.length > 0) setSentTest(d.eventIds);
+                })
+              }
             >
               Send test event
             </Button>
@@ -173,6 +180,16 @@ function SourceView({ source, tab }: { source: SourceDetailDTO; tab: string | un
         )}
         <SecretRefsFact refs={source.secretRefs} />
       </div>
+
+      {sentTest && (
+        <TestEventResult
+          key={sentTest.join(',')}
+          eventIds={sentTest}
+          onDismiss={() => {
+            setSentTest(null);
+          }}
+        />
+      )}
 
       <InstanceStateBanners
         noun="source"

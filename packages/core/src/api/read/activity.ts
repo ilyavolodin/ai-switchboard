@@ -10,6 +10,8 @@ import {
   sources,
 } from '../../db/schema.js';
 import type { BatchOutcome, RunStatusValue } from '../../domain/status.js';
+import { summarizeWhy } from '../../pipeline/explain.js';
+import { explanationsFor } from '../../services/explain.js';
 import type { ApiContext } from '../context.js';
 import type { ActivityQuery, ActivityRow, EventDetail, Page, StageIndicator } from '../contract.js';
 import { notFound } from '../errors.js';
@@ -134,6 +136,10 @@ export async function activityRows(ctx: ApiContext, rows: EventRow[]): Promise<A
     ctx,
     rows.map((r) => r.id),
   );
+  const why = await explanationsFor(
+    ctx.db,
+    rows.filter((r) => r.stage === 'unmatched'),
+  );
   const srcIds = [...new Set(rows.map((r) => r.sourceId))];
   const srcs =
     srcIds.length > 0
@@ -162,6 +168,7 @@ export async function activityRows(ctx: ApiContext, rows: EventRow[]): Promise<A
         runStatus: d.runStatus,
       })),
       replayOf: e.replayOf,
+      whyNothingRan: summarizeWhy(e.stage, why.get(e.id) ?? []),
     };
   });
 }
@@ -263,12 +270,14 @@ export async function eventDetail(ctx: ApiContext, id: string): Promise<EventDet
   const [activity] = await activityRows(ctx, [row]);
   if (!activity) throw notFound('Event');
   const [raw] = await ctx.db.select().from(eventRaw).where(eq(eventRaw.ref, row.rawRef));
+  const explanations = await explanationsFor(ctx.db, [row]);
   return {
     ...activity,
     attributes: row.attributes,
     dedupeKey: row.dedupeKey,
     deliveryId: row.deliveryId,
     stageReason: row.stageReason,
+    explanations: explanations.get(row.id) ?? [],
     raw: raw
       ? {
           headers: safeHeaders(raw.headers),

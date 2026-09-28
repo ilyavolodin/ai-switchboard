@@ -114,6 +114,9 @@ export function BatchingFields({ doc, baseline, set, errors, disabled }: Section
               describedBy={describedBy}
               label="Group-by expression"
               textareaRows={1}
+              completions={{
+                variables: ['event', 'attributes', 'artifact', 'type', 'process', 'now'],
+              }}
               value={b.groupBy ?? ''}
               disabled={disabled}
               insertions={[{ label: 'artifact.id' }, { label: 'event.sourceId' }]}
@@ -289,6 +292,7 @@ export function GatesFields({ doc, baseline, set, errors, disabled }: SectionPro
                 label="Approval expression"
                 value={g.approval}
                 disabled={disabled}
+                completions={{ variables: ['events', 'process', 'run', 'mode'] }}
                 insertions={[
                   { label: '$count(events)' },
                   { label: 'mode' },
@@ -435,6 +439,7 @@ export function NotificationsFields({
                 label="Notification template"
                 value={n.template}
                 disabled={disabled}
+                completions={{ variables: ['process', 'run', 'events'] }}
                 insertions={[
                   { label: 'process.name' },
                   { label: 'run.status' },

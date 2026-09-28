@@ -49,6 +49,8 @@ function storedHeaders(
 interface CheckedDraft {
   stage: EventStage | null;
   reason: string | null;
+  /** Each validation problem on its own (`reason` joins them). */
+  problems: string[];
   type: string;
   occurredAt: Date;
   artifact: ArtifactRef;
@@ -118,6 +120,7 @@ export function checkDraft(draft: unknown, live: LiveSource, now: Date): Checked
   return {
     stage: problems.length > 0 ? 'event_invalid' : null,
     reason: problems.length > 0 ? problems.join('; ').slice(0, 1000) : null,
+    problems,
     type,
     occurredAt: Number.isNaN(occurred.getTime()) ? now : occurred,
     artifact,

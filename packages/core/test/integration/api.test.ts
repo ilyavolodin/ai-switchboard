@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 import type {
+  ActivityRow,
+  EventDetail,
   ExecutorDetail,
   MeResponse,
   Page,
@@ -363,6 +365,65 @@ describe('board and status', () => {
     expect(board.attention.some((a) => a.kind === 'meter_stale')).toBe(true);
     const status = await h.request('GET', '/api/v1/status', { cookie: h.adminCookie });
     expect(status.json<{ meters: unknown[] }>().meters.length).toBeGreaterThan(0);
+  });
+
+  it('flags a never-run disabled process that turned events away, and explains the event', async () => {
+    const src = await createSource('Test — forgotten');
+    const ex = await createExecutor('Exec — forgotten');
+    const doc = { ...processDoc(src.id, ex.id, 'Forgotten'), enabled: false };
+    const created = await h.request('POST', '/api/v1/processes', {
+      cookie: h.adminCookie,
+      body: { document: doc, reason },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const pid = created.json<ProcessDetail>().id;
+    const at = h.clock.now();
+    const eventId = randomUUID();
+    await tdb.db.insert(events).values({
+      id: eventId,
+      sourceId: src.id,
+      sourceType: 'test-source',
+      type: 'test-source.item.created',
+      occurredAt: at,
+      receivedAt: at,
+      artifact: { kind: 'test.item', id: 'FORGOT-1' },
+      artifactKey: 'test.item:FORGOT-1',
+      attributes: { label: 'x' },
+      dedupeKey: 'k-forgot',
+      rawRef: 'r-forgot',
+      stage: 'unmatched',
+      matchDecisions: [
+        {
+          processId: pid,
+          triggerId: 't1',
+          result: false,
+          skip: 'process_disabled',
+          at: at.toISOString(),
+        },
+      ],
+    });
+    const res = await h.request('GET', '/api/v1/board', { cookie: h.adminCookie });
+    const board = res.json<{ attention: { kind: string; targetId: string; title: string }[] }>();
+    const item = board.attention.find((a) => a.kind === 'process_disabled' && a.targetId === pid);
+    expect(item?.title).toBe('Forgotten is disabled and turned away 1 event in 24 h');
+
+    const detail = await h.request('GET', `/api/v1/events/${eventId}`, { cookie: h.adminCookie });
+    expect(detail.json<EventDetail>().explanations).toEqual([
+      {
+        processId: pid,
+        processName: 'Forgotten',
+        taken: false,
+        reason: 'process is disabled',
+        basis: 'recorded',
+        tone: 'warn',
+      },
+    ]);
+    const list = await h.request('GET', `/api/v1/events?source=${src.id}`, {
+      cookie: h.adminCookie,
+    });
+    expect(list.json<Page<ActivityRow>>().items[0]?.whyNothingRan).toBe(
+      'Forgotten: process is disabled',
+    );
   });
 });
 

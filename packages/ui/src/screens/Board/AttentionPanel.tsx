@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 
 import {
   useApprove,
+  useEnableProcess,
   useReadMeters,
   useReloadExecutor,
   useReloadSource,
@@ -87,7 +88,19 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
     { successMessage: 'Test event sent' },
   );
 
+  const enableProcess = useReasonedMutation(
+    useEnableProcess(),
+    {
+      title: 'Enable the process?',
+      confirmLabel: 'Enable',
+      consequence:
+        'Its triggers and sweeps start runs from now on; events it turned away stay unmatched.',
+    },
+    { successMessage: 'Process enabled' },
+  );
+
   const handlers: Record<string, Run | undefined> = {
+    enable_process: (i) => enableProcess.run({ id: i.targetId, enabled: true }),
     reset_breaker: (i) => reset.run({ id: i.targetId }),
     approve: (i) => approve.run({ batchId: i.targetId }),
     reload: (i) =>

@@ -23,6 +23,7 @@ export type GeneralDraft = Pick<
   | 'meterStalenessMinutes'
   | 'sourceSilenceMinutes'
   | 'systemNotifierId'
+  | 'requireReasons'
 >;
 
 export function generalDraft(s: GlobalSettings): GeneralDraft {
@@ -32,6 +33,7 @@ export function generalDraft(s: GlobalSettings): GeneralDraft {
     meterStalenessMinutes: s.meterStalenessMinutes,
     sourceSilenceMinutes: s.sourceSilenceMinutes,
     systemNotifierId: s.systemNotifierId,
+    requireReasons: s.requireReasons,
   };
 }
 

@@ -26,6 +26,7 @@ import type {
   GlobalSettings,
   InputPreviewResponse,
   InstanceSummary,
+  LastDeliveryResponse,
   JSONSchema,
   MeResponse,
   MeterGaugeDTO,
@@ -389,6 +390,7 @@ export function buildFixtures(now: number) {
     evaluation: true,
     mustChangePassword: false,
     evaluationAdminEmail: 'admin@switchboard.local',
+    requireReasons: true,
   };
 
   // ---- Meters ---------------------------------------------------------------------------
@@ -1253,6 +1255,7 @@ export function buildFixtures(now: number) {
     indicator: { reached, tone, label },
     processes: procs,
     replayOf: null,
+    whyNothingRan: null,
   });
 
   const activity: ActivityRow[] = [
@@ -1346,17 +1349,21 @@ export function buildFixtures(now: number) {
       'throttled · day cap 2/2',
       [{ id: P.flaky, name: 'Flaky Tests', outcome: 'throttled', runId: null, runStatus: null }],
     ),
-    row(
-      'ev-1709',
-      S.linear,
-      'comment.created',
-      art('linear.issue', 'LOL-1709'),
-      38 * MIN,
-      1,
-      'off',
-      'no process matched',
-      [],
-    ),
+    {
+      ...row(
+        'ev-1709',
+        S.linear,
+        'comment.created',
+        art('linear.issue', 'LOL-1709'),
+        38 * MIN,
+        1,
+        'off',
+        'no process matched',
+        [],
+      ),
+      whyNothingRan:
+        'Autofix: event type comment.created is not in trigger "autofix label" (subscribes to issue.label_added)',
+    },
     row(
       'ev-dd9f21',
       S.datadog,
@@ -1389,6 +1396,16 @@ export function buildFixtures(now: number) {
     dedupeKey: 'issue.label_added:linear.issue:LOL-1712:2026-09-27T07:36:41Z',
     deliveryId: 'lin_dlv_8f2c',
     stageReason: null,
+    explanations: [
+      {
+        processId: P.autofix,
+        processName: 'Autofix',
+        taken: true,
+        reason: 'trigger "autofix label" matched',
+        basis: 'recorded',
+        tone: 'ok',
+      },
+    ],
     raw: {
       headers: { 'content-type': 'application/json', 'linear-signature': '[verified]' },
       body: '{"action":"update","type":"Issue","data":{"identifier":"LOL-1712"}}',
@@ -1732,6 +1749,28 @@ export function buildFixtures(now: number) {
       };
     }),
     verifyFailures: [{ hour: iso(-5 * HOUR), count: 2 }],
+  };
+
+  // The newest stored delivery of a source (Source › Settings › "Use the last delivery").
+  const lastDelivery: LastDeliveryResponse = {
+    receivedAt: iso(-2 * HOUR),
+    body: JSON.stringify(
+      {
+        id: 'dep_48213',
+        service: 'api',
+        environment: 'production',
+        status: 'success',
+        deployment: { id: 'dep_48213', updated_at: '2026-09-27T10:14:06Z' },
+        tags: ['team:payments'],
+      },
+      null,
+      2,
+    ),
+    headers: {
+      'content-type': 'application/json',
+      'x-delivery-id': '7f3a9c1e-2b44-4d0a-9d4f-8e1b2a6c5d01',
+      'x-signature-256': '[redacted]',
+    },
   };
 
   const meterHistory: MeterHistoryResponse = {
@@ -2203,6 +2242,7 @@ export function buildFixtures(now: number) {
     oidc: null,
     systemNotifierId: 'n-slack',
     sourceSilenceMinutes: 720,
+    requireReasons: true,
     export: {
       schedule: '55 23 * * *',
       sourceId: S.github,
@@ -2352,6 +2392,7 @@ export function buildFixtures(now: number) {
     sources,
     sourceDetail,
     sourceStats,
+    lastDelivery,
     executors,
     executorDetail,
     meterHistory,

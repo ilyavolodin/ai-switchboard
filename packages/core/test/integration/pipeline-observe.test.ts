@@ -7,6 +7,7 @@ import { createExpressionEngine } from '../../src/expr/index.js';
 import { pollSource } from '../../src/services/pipeline/ingest.js';
 import { DEFAULT_SETTINGS, putSettings } from '../../src/services/settings.js';
 import { createPipeline, materialiseStats, prune } from '../../src/services/pipeline/index.js';
+import { explanationsFor } from '../../src/services/explain.js';
 import { cronPreview, filterPreview, inputPreview } from '../../src/services/preview.js';
 import { traceForArtifact, traceForEvent } from '../../src/services/trace.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
@@ -105,6 +106,68 @@ describe('trace', () => {
     const one = await traceForEvent(h.deps, ev!.id);
     expect(one.entries.some((e) => e.kind === 'terminal')).toBe(true);
     expect((await traceForArtifact(h.deps, 'nothing-here')).entries).toEqual([]);
+  });
+});
+
+describe('why nothing ran', () => {
+  it('records at match time why each process on the source did not take the event', async () => {
+    const src = await seedSource(h);
+    const ex = await seedExecutor(h);
+    const trig = (extra = {}) => ({
+      id: 't1',
+      sourceId: src.id,
+      eventTypes: [PR_LABELED],
+      describe: 'PR labeled',
+      enabled: true,
+      ...extra,
+    });
+    const off = await seedProcess(h, ex.id, src.id, { name: 'Off' }, false);
+    const trigOff = await seedProcess(h, ex.id, src.id, {
+      name: 'TriggerOff',
+      triggers: [trig({ enabled: false })],
+    });
+    const other = await seedProcess(h, ex.id, src.id, {
+      name: 'Other',
+      triggers: [trig({ eventTypes: ['fake-hook.issue.*'] })],
+    });
+    const picky = await seedProcess(h, ex.id, src.id, {
+      name: 'Picky',
+      triggers: [trig({ filter: "attributes.label = 'nope'" })],
+    });
+    await deliver(h, src.id, [{ id: '9', version: 'a' }]);
+    await h.drain();
+
+    const [ev] = await h.db.select().from(events).where(eq(events.sourceId, src.id));
+    expect(ev?.stage).toBe('unmatched');
+    expect(
+      ev?.matchDecisions.map((d) => [d.processId, d.skip ?? (d.result ? 'true' : 'false')]),
+    ).toEqual(
+      expect.arrayContaining([
+        [off, 'process_disabled'],
+        [trigOff, 'trigger_disabled'],
+        [other, 'type_not_subscribed'],
+        [picky, 'false'],
+      ]),
+    );
+
+    const why = (await explanationsFor(h.db, ev ? [ev] : [])).get(ev?.id ?? '') ?? [];
+    expect(Object.fromEntries(why.map((x) => [x.processId, [x.taken, x.reason, x.basis]]))).toEqual(
+      {
+        [off]: [false, 'process is disabled', 'recorded'],
+        [trigOff]: [false, 'trigger "PR labeled" is disabled', 'recorded'],
+        [other]: [
+          false,
+          `event type ${PR_LABELED} is not in trigger "PR labeled" (subscribes to fake-hook.issue.*)`,
+          'recorded',
+        ],
+        [picky]: [false, "filter false: attributes.label = 'nope'", 'recorded'],
+      },
+    );
+
+    const trace = await traceForEvent(h.deps, ev?.id ?? '');
+    const titles = trace.entries.filter((e) => e.kind === 'filter').map((e) => e.title);
+    expect(titles).toContain('Off did not take it: process is disabled');
+    expect(trace.text).toContain('TriggerOff did not take it: trigger "PR labeled" is disabled');
   });
 });
 

@@ -25,7 +25,9 @@ telemetry, config }`). No module-level singletons except constant tables.
 - Routes:
   - Validate bodies with JSON Schema (Fastify `schema.body`).
   - Every mutating route requires a non-empty `reason` and writes `audit_log` through
-    `services/audit.ts`.
+    `services/audit.ts`. Call `requireReason(req.body)` and give the body schema a `reason`
+    property: when `requireReasons` is off, `api/reasons.ts` fills a blank one with
+    "(no reason given)" for such routes (and for bodiless DELETEs).
   - Role checks use `requireRole('operator')` style preHandlers. A viewer gets 403, with a message
     that names the role.
   - Keep `api/contract.ts` and `docs/api.md` in sync with the routes.

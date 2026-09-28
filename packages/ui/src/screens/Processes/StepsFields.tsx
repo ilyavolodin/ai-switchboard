@@ -103,6 +103,9 @@ function StepEditor({
             label={`${label} arguments`}
             value={step.args}
             disabled={disabled}
+            completions={{
+              variables: phase === 'after' ? ['events', 'run', 'result'] : ['events', 'run'],
+            }}
             insertions={argNames.map((n) => ({ label: n, insert: `"${n}": ` }))}
             onChange={(args) => {
               onChange({ ...step, args });

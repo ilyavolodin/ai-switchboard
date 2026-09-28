@@ -6,7 +6,10 @@
  * A JSON Schema (draft 2020-12) document. UI annotations: `x-secret`, `x-widget`, `x-group`,
  * `x-order`, `x-placeholder`, `x-help`, `x-enumLabels` (`{ "<value>": "<label>" }`) and
  * `x-warning` (`{ when: <schema>, message }`: a red
- * warning under the field while its value matches `when`). See the plugin author guide.
+ * warning under the field while its value matches `when`) and `x-effectiveDefault` (since 1.4:
+ * `[{ when?: <schema over the parent object>, value }]`, what the plugin does while the field is
+ * unset, shown by the form but never written into settings). `x-widget: 'path'` (1.4) offers
+ * dotted paths from a sample delivery. See the plugin author guide.
  */
 export type JSONSchema = Record<string, unknown>;
 

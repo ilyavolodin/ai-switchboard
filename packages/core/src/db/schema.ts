@@ -25,6 +25,7 @@ import type {
   BatchOutcome,
   DispatchOutcome,
   EventStage,
+  MatchSkip,
   Role,
   RunStatusValue,
   StepPhase,
@@ -374,13 +375,19 @@ export const batches = pgTable(
   ],
 );
 
-/** One trigger filter evaluation, stored on the event for the trace ("why did nothing happen"). */
+/**
+ * One trigger filter evaluation, stored on the event for the trace ("why did nothing happen").
+ * A trigger on the event's source that was never evaluated is recorded too, with `skip` naming
+ * why (process disabled, trigger disabled, event type not subscribed) and `result: false`.
+ */
 export interface MatchDecisionRecord {
   processId: string;
   triggerId: string;
   expr?: string;
   result: boolean;
   error?: string;
+  /** Set when the trigger was not evaluated at all; absent on events matched before it existed. */
+  skip?: MatchSkip;
   /** The batch key the group-by expression produced (when it matched). */
   batchKey?: string;
   at: string;

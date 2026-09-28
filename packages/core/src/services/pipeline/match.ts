@@ -16,6 +16,7 @@ import {
   candidateTriggers,
   decideMatches,
   eventStageAfterMatch,
+  skippedTriggers,
   type FilterEvaluation,
 } from '../../pipeline/match.js';
 
@@ -52,17 +53,13 @@ export async function matchEvent(ctx: Ctx, eventId: string): Promise<void> {
   if (row?.stage !== 'received') return;
   const event = toEvent(row);
   const now = ctx.clock.now();
-  // A stable order keeps lock acquisition consistent across concurrent match jobs.
-  const procRows = await ctx.db
-    .select()
-    .from(processes)
-    .where(eq(processes.enabled, true))
-    .orderBy(processes.id);
+  // A stable order keeps lock acquisition consistent across concurrent match jobs. Disabled
+  // processes are read too, only so the event records why they did not take it.
+  const procRows = await ctx.db.select().from(processes).orderBy(processes.id);
   const byId = new Map(procRows.map((p) => [p.id, p]));
-  const candidates = candidateTriggers(
-    event,
-    procRows.map((p) => ({ id: p.id, enabled: p.enabled, document: p.document })),
-  );
+  const matchable = procRows.map((p) => ({ id: p.id, enabled: p.enabled, document: p.document }));
+  const candidates = candidateTriggers(event, matchable);
+  const skipped = skippedTriggers(event, matchable);
   const fns = evalFunctions(ctx, [event], now);
 
   const evaluations: FilterEvaluation[] = [];
@@ -111,6 +108,15 @@ export async function matchEvent(ctx: Ctx, eventId: string): Promise<void> {
       at: now.toISOString(),
     };
   });
+  for (const k of skipped) {
+    records.push({
+      processId: k.processId,
+      triggerId: k.triggerId,
+      result: false,
+      skip: k.skip,
+      at: now.toISOString(),
+    });
+  }
 
   const signals: { processId: string; outcome: string; batchId?: string }[] = [];
   const jobs: PendingJob[] = [];

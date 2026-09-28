@@ -99,6 +99,7 @@ const settingsSchema: JSONSchema = {
     },
     systemNotifierId: { anyOf: [{ type: 'null' }, { type: 'string' }] },
     sourceSilenceMinutes: { type: 'integer', minimum: 1 },
+    requireReasons: { type: 'boolean' },
     export: {
       type: 'object',
       additionalProperties: false,
@@ -183,6 +184,8 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
           after as unknown as Record<string, unknown>,
         );
       });
+      // This replica sees the new policy at once; others within the policy's TTL.
+      app.reasons.invalidate();
       return after;
     },
   );

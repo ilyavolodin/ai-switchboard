@@ -7,6 +7,11 @@ export interface Session {
   authMode: MeResponse['authMode'];
   oidcConfigured: boolean;
   evaluation: boolean;
+  /**
+   * `MeResponse.requireReasons`: when false the reason prompt is skipped (destructive actions
+   * still confirm, with an optional note).
+   */
+  requireReasons: boolean;
 }
 
 /** Filled by the app shell; tests use `renderWithProviders({ role })`. */
@@ -15,6 +20,7 @@ export const SessionContext = createContext<Session>({
   authMode: 'local',
   oidcConfigured: false,
   evaluation: false,
+  requireReasons: true,
 });
 
 /** viewer < operator < admin. */

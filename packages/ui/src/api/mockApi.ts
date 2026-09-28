@@ -4,7 +4,11 @@
  * `installMockApi()`; `VITE_MOCK_API=1 pnpm dev:ui` installs it in the browser so screens can be
  * built without a backend. Every request is recorded in `calls`.
  */
-import type { ApiError } from '@ai-switchboard/core/contract';
+import type {
+  ApiError,
+  SourcePreviewRequest,
+  SourcePreviewResponse,
+} from '@ai-switchboard/core/contract';
 
 import { at } from '../lib/at.js';
 import { API_BASE } from './client.js';
@@ -56,6 +60,59 @@ export interface MockApi {
 
 const page = <T>(items: T[]) => ({ items, nextCursor: null });
 
+/**
+ * A stand-in for `POST /sources/preview`, shaped like the webhook's quick mode: a JSON object
+ * body becomes one `webhook.request.received` event with its top-level scalars as attributes.
+ */
+function samplePreview(body: unknown): SourcePreviewResponse {
+  const req = (body ?? {}) as Partial<SourcePreviewRequest>;
+  const declaredTypes: SourcePreviewResponse['declaredTypes'] = [
+    {
+      type: 'webhook.request.received',
+      title: 'Webhook delivery',
+      description: 'One event per delivery.',
+      attributes: { type: 'object', properties: {} },
+      examples: [{}],
+    },
+  ];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(req.request?.body ?? '');
+  } catch {
+    return {
+      events: [],
+      errors: ['The sample could not be parsed: the body is not JSON'],
+      notes: [],
+      declaredTypes,
+    };
+  }
+  const obj =
+    parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  const attributes: Record<string, string | number | boolean> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') attributes[k] = v;
+  }
+  const id = typeof obj.id === 'string' || typeof obj.id === 'number' ? String(obj.id) : 'body-1';
+  return {
+    events: [
+      {
+        type: 'webhook.request.received',
+        occurredAt: '2026-09-27T10:00:00.000Z',
+        artifact: { kind: 'webhook.request', id },
+        attributes,
+        dedupeKey: `webhook.request.received:webhook.request:${id}:`,
+        valid: true,
+        problems: [],
+      },
+    ],
+    errors: [],
+    notes: [],
+    declaredTypes,
+  };
+}
+
 /** Default handlers for every route in docs/api.md, answering from fixtures. */
 export function defaultHandlers(f: Fixtures): MockHandlers {
   const byId = <T extends { id: string }>(list: T[], id: string | undefined) =>
@@ -64,7 +121,8 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     mockStatus(404, { error: 'not_found', message: `${what} not found` } satisfies ApiError);
   const requireReason = (req: MockRequest) => {
     const reason = (req.body as { reason?: unknown } | undefined)?.reason;
-    return typeof reason === 'string' && reason.trim() !== ''
+    // Like the server: with `requireReasons` off, a blank reason is accepted.
+    return !f.settings.requireReasons || (typeof reason === 'string' && reason.trim() !== '')
       ? null
       : mockStatus(400, { error: 'reason_required', message: 'A reason is required' });
   };
@@ -113,6 +171,9 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
       window: r.query.get('window') ?? f.sourceStats.window,
     }),
     'GET /sources/:id/events': (r) => page(f.activity.filter((a) => a.sourceId === r.params.id)),
+    'POST /sources/preview': (r) => samplePreview(r.body),
+    'GET /sources/:id/last-delivery': (r) =>
+      byId(f.sources, r.params.id) ? f.lastDelivery : notFound('source'),
 
     'GET /executors': () => f.executors,
     'POST /executors': reasoned(() => f.executorDetail(at(f.executors, 0))),

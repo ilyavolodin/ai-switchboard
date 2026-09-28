@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   oidc: null,
   systemNotifierId: null,
   sourceSilenceMinutes: 1440,
+  requireReasons: true,
   export: { schedule: null, sourceId: null, repository: null, path: null, branch: null },
 };
 

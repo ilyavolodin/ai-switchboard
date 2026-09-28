@@ -32,8 +32,19 @@ export function useEvents(query: Omit<ActivityQuery, 'cursor'> = {}) {
 }
 
 /** GET /events/:id */
-export function useEvent(id: string | undefined) {
-  return useIdQuery<EventDetail>(id, qk.events.detail, (i) => `/events/${seg(i)}`);
+export function useEvent(id: string | undefined, opts: { untilMatched?: boolean } = {}) {
+  return useQuery({
+    queryKey: qk.events.detail(id ?? ''),
+    queryFn: ({ signal }) => apiFetch<EventDetail>(`/events/${seg(id ?? '')}`, { signal }),
+    enabled: Boolean(id),
+    // A just-sent event is matched by a queue job: poll briefly until it leaves `received`.
+    ...(opts.untilMatched
+      ? {
+          refetchInterval: (q: { state: { data?: EventDetail; dataUpdateCount: number } }) =>
+            q.state.data?.stage === 'received' && q.state.dataUpdateCount < 20 ? 1500 : false,
+        }
+      : {}),
+  });
 }
 
 /** GET /events/:id/trace */

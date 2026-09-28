@@ -15,6 +15,10 @@ export const EVENT_STAGES = [
 ] as const;
 export type EventStage = (typeof EVENT_STAGES)[number];
 
+/** Why match did not evaluate a trigger on the event's source (stored in `events.match_decisions`). */
+export const MATCH_SKIPS = ['process_disabled', 'trigger_disabled', 'type_not_subscribed'] as const;
+export type MatchSkip = (typeof MATCH_SKIPS)[number];
+
 export const DISPATCH_OUTCOMES = ['batched', 'deduped', 'filter_error'] as const;
 export type DispatchOutcome = (typeof DISPATCH_OUTCOMES)[number];
 

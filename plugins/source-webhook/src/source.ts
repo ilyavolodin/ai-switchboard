@@ -1,10 +1,6 @@
 import {
-  compileEventTypes,
-  dedupeKey,
-  narrowMapped,
   safeEqual,
   verifyHmac,
-  type EventDraft,
   type EventTypeSpec,
   type PluginContext,
   type RawRequest,
@@ -14,8 +10,17 @@ import {
   type VerifyResult,
 } from '@ai-switchboard/sdk';
 
-import { asList, compileExpression } from './mapping.js';
-import { readSettings, settingsSchema, SOURCE_ID, type WebhookSettings } from './settings.js';
+import { compileJsonata } from './jsonata-mode.js';
+import { compileMapped } from './mapped.js';
+import type { Delivery, Mapper } from './mapper.js';
+import { compileQuick } from './quick.js';
+import {
+  mappingModeOf,
+  readSettings,
+  settingsSchema,
+  SOURCE_ID,
+  type WebhookSettings,
+} from './settings.js';
 
 /** Headers never handed to the mapping, so a mapping cannot copy a credential into attributes. */
 const ALWAYS_HIDDEN = ['authorization', 'cookie', 'proxy-authorization'];
@@ -76,44 +81,46 @@ function makeVerify(s: WebhookSettings): ((req: RawRequest) => VerifyResult) | u
   }
 }
 
+/** Compile the instance's mode. `raw` is the settings as given (before defaults), for the mode. */
+function compileMapper(raw: Settings, s: WebhookSettings): Mapper {
+  switch (mappingModeOf(raw)) {
+    case 'quick':
+      return compileQuick(s);
+    case 'mapped':
+      return compileMapped(s.rules ?? []);
+    case 'jsonata':
+      return compileJsonata(s.eventTypes ?? [], s.mapping ?? '');
+  }
+}
+
+function deliveryOf(req: RawRequest, s: WebhookSettings, hidden: Set<string>): Delivery {
+  const headers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (v !== undefined && !hidden.has(k.toLowerCase())) headers[k.toLowerCase()] = v;
+  }
+  const query: Record<string, string> = {};
+  for (const [k, v] of Object.entries(req.query)) if (v !== undefined) query[k] = v;
+  const headerDelivery = req.headers[s.deliveryIdHeader.toLowerCase()];
+  return {
+    body: parseBody(req),
+    headers,
+    query,
+    raw: req.body,
+    receivedAt: req.receivedAt,
+    deliveryId: headerDelivery !== undefined && headerDelivery !== '' ? headerDelivery : undefined,
+  };
+}
+
 function createWebhookSource(settings: Settings, ctx: PluginContext): Source {
   const s = readSettings(settings);
-  const types = compileEventTypes(SOURCE_ID, s.eventTypes);
-  const mapping = compileExpression(s.mapping, 'mapping');
+  const mapper = compileMapper(settings, s);
   const hidden = hiddenHeaders(s);
-  const deliveryHeader = s.deliveryIdHeader.toLowerCase();
-
-  const parse = async (req: RawRequest): Promise<EventDraft[]> => {
-    const headers: Record<string, string> = {};
-    for (const [k, v] of Object.entries(req.headers)) {
-      if (v !== undefined && !hidden.has(k.toLowerCase())) headers[k.toLowerCase()] = v;
-    }
-    const query: Record<string, string> = {};
-    for (const [k, v] of Object.entries(req.query)) if (v !== undefined) query[k] = v;
-    const result = await mapping.evaluate({ body: parseBody(req), headers, query }, req.receivedAt);
-    const headerDelivery = req.headers[deliveryHeader];
-    const events: EventDraft[] = [];
-    for (const item of asList(result)) {
-      const mapped = narrowMapped(item, types);
-      if (!mapped) continue;
-      const deliveryId =
-        mapped.deliveryId ??
-        (headerDelivery !== undefined && headerDelivery !== '' ? headerDelivery : undefined);
-      events.push({
-        type: mapped.type,
-        occurredAt: mapped.occurredAt ?? req.receivedAt,
-        artifact: mapped.artifact,
-        attributes: mapped.attributes,
-        dedupeKey: dedupeKey(mapped.type, mapped.artifact, deliveryId),
-        ...(deliveryId !== undefined ? { deliveryId } : {}),
-      });
-    }
-    return events;
-  };
+  const report = (req: RawRequest) => mapper.map(deliveryOf(req, s, hidden));
 
   const verify = makeVerify(s);
   const source: Source = {
-    parse,
+    parse: async (req) => (await report(req)).events,
+    parseWithNotes: report,
     health: () =>
       Promise.resolve({
         status: 'unknown',
@@ -130,9 +137,7 @@ function createWebhookSource(settings: Settings, ctx: PluginContext): Source {
 /** The instance's event types, compiled from its settings. Invalid settings yield none. */
 export function instanceEventTypes(settings: Settings): EventTypeSpec[] {
   try {
-    return [...compileEventTypes(SOURCE_ID, readSettings(settings).eventTypes).values()].map(
-      (t) => t.spec,
-    );
+    return compileMapper(settings, readSettings(settings)).eventTypes;
   } catch {
     return [];
   }
@@ -143,7 +148,7 @@ export const webhookSource: SourceType = {
   displayName: 'Webhook',
   icon: 'webhook',
   description:
-    'Receive any JSON (or form-encoded) webhook. You name the event types and write a JSONata mapping from the delivery to type, artifact and attributes.',
+    'Receive any JSON (or form-encoded) webhook. Start with no setup (one event per delivery, attributes from the body), or name event types and pick their fields by path, or write a JSONata mapping.',
   mode: 'push',
   settingsSchema,
   dynamicEventTypes: true,

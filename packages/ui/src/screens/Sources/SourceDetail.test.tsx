@@ -1,8 +1,15 @@
 import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import type {
+  SourceDetail as SourceDetailDTO,
+  UpdateSourceRequest,
+} from '@ai-switchboard/core/contract';
+
+import { buildFixtures } from '../../api/fixtures.js';
+import { at } from '../../lib/at.js';
 import type { RenderOptions } from '../../test/render.js';
-import { renderWithProviders } from '../../test/render.js';
+import { renderWithProviders, TEST_NOW } from '../../test/render.js';
 import { SourceDetail } from './SourceDetail.js';
 
 function renderSource(path: string, options: RenderOptions = {}) {
@@ -77,6 +84,46 @@ describe('SourceDetail', () => {
         reason: 'rotated key',
       });
     });
+  });
+
+  it('says why nothing ran after a test event, with a link to its trace', async () => {
+    const f = buildFixtures(TEST_NOW);
+    const { user } = renderSource('/sources/src-linear', {
+      overrides: {
+        'GET /events/:id': ({ params }) => ({
+          ...f.eventDetail,
+          eventId: params.id,
+          stage: 'unmatched',
+          indicator: { reached: 1, tone: 'off', label: 'no process wants it' },
+          processes: [],
+          explanations: [
+            {
+              processId: 'p-autofix',
+              processName: 'Autofix',
+              taken: false,
+              reason: 'process is disabled',
+              basis: 'recorded',
+              tone: 'warn',
+            },
+          ],
+        }),
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Send test event' }));
+    await reasonAndConfirm(user, 'why is nothing running', 'Send test event');
+    expect(await screen.findByText('Test event sent: nothing ran')).toBeInTheDocument();
+    const why = screen.getByRole('list', { name: 'Why nothing ran' });
+    expect(within(why).getByRole('link', { name: 'Autofix' })).toHaveAttribute(
+      'href',
+      '/processes/p-autofix',
+    );
+    expect(why).toHaveTextContent('Autofix: process is disabled');
+    expect(screen.getByRole('link', { name: 'Open its trace' })).toHaveAttribute(
+      'href',
+      '/activity/trace/ev-test-1',
+    );
+    await user.click(screen.getByRole('button', { name: 'Dismiss the test event result' }));
+    expect(screen.queryByText('Test event sent: nothing ran')).toBeNull();
   });
 
   it('draws the overview charts and asks for the chosen window', async () => {
@@ -157,6 +204,55 @@ describe('SourceDetail', () => {
         eventTypesEnabled: ['issue.label_added'],
       },
     });
+  });
+
+  it('is clean after a save the server normalises (defaults, key order, derived caps)', async () => {
+    const fixtures = buildFixtures(TEST_NOW);
+    let current: SourceDetailDTO = fixtures.sourceDetail(
+      at(
+        fixtures.sources.filter((s) => s.id === 'src-linear'),
+        0,
+      ),
+    );
+    const { user, api, router } = renderSource(`/sources/${current.id}/settings`, {
+      fixtures,
+      overrides: {
+        'GET /sources/:id': () => current,
+        // Like the real PUT: Ajv fills schema defaults, jsonb reorders keys and the core derives
+        // `caps.unauthenticated` from the built instance.
+        'PUT /sources/:id': (r) => {
+          const body = r.body as UpdateSourceRequest;
+          const settings = { ...(body.settings ?? {}) };
+          const reordered = Object.fromEntries(
+            Object.entries({ filledDefault: 'on', ...settings }).reverse(),
+          );
+          current = {
+            ...current,
+            name: body.name ?? current.name,
+            settings: reordered,
+            caps: { ...body.caps, unauthenticated: true },
+          };
+          return current;
+        },
+      },
+    });
+    const team = await screen.findByLabelText(/Team key/);
+    await user.clear(team);
+    await user.type(team, 'PLAT');
+    const region = screen.getByRole('region', { name: 'Save settings' });
+    expect(region).toHaveTextContent('1 unsaved change');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await reasonAndConfirm(user, 'moved team', 'Save changes');
+    await vi.waitFor(() => {
+      expect(api.callsTo(`PUT /sources/${current.id}`)).toHaveLength(1);
+    });
+    await vi.waitFor(() => {
+      expect(region).toHaveTextContent('No unsaved changes');
+    });
+    expect(screen.getByLabelText(/Team key/)).toHaveValue('PLAT');
+    await act(() => router.navigate(`/sources/${current.id}`));
+    expect(screen.queryByRole('dialog', { name: 'Leave without saving?' })).toBeNull();
+    expect(router.state.location.pathname).toBe(`/sources/${current.id}`);
   });
 
   it('keeps actions visible but disabled for viewers', async () => {

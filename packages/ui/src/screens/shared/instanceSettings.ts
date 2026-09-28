@@ -9,8 +9,22 @@ export interface InstanceSettingsDraft<C> {
 }
 
 /**
+ * Caps fields the core derives and never takes from a request: `unauthenticated` follows from the
+ * source's verification setting. They are not edited, sent, or counted as a change.
+ */
+const DERIVED_CAPS = ['unauthenticated'];
+
+/** The caps a person edits: no `undefined` keys, no core-derived fields. */
+export function editableCaps<C extends object>(caps: C): C {
+  return Object.fromEntries(
+    Object.entries(withoutUndefined(caps)).filter(([k]) => !DERIVED_CAPS.includes(k)),
+  ) as C;
+}
+
+/**
  * How many of the three parts (name, plugin settings, core caps) differ from what is saved. Caps
- * compare without `undefined` keys, so clearing a field back to "no cap" is not a change.
+ * compare without `undefined` keys, so clearing a field back to "no cap" is not a change, and
+ * without core-derived fields. All parts compare canonically (key order does not matter).
  */
 export function instanceChangeCount<C extends object>(
   draft: InstanceSettingsDraft<C>,
@@ -19,6 +33,6 @@ export function instanceChangeCount<C extends object>(
   return [
     draft.name !== saved.name,
     !sameValue(draft.settings, saved.settings),
-    !sameValue(withoutUndefined(draft.caps), withoutUndefined(saved.caps)),
+    !sameValue(editableCaps(draft.caps), editableCaps(saved.caps)),
   ].filter(Boolean).length;
 }

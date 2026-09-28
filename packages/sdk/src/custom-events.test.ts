@@ -5,7 +5,10 @@ import {
   compileEventTypes,
   customEventTypePattern,
   eventTypeDefinitionSchema,
+  attributeKey,
+  flattenAttributes,
   narrowMapped,
+  openAttributesSchema,
   toIsoTime,
   validateAgainst,
   type EventTypeDefinition,
@@ -77,5 +80,53 @@ describe('custom event types', () => {
     expect(coerceAttribute(['a', 1, {}], 'string[]')).toEqual(['a', '1']);
     expect(toIsoTime(1_700_000_000_000)).toBe('2023-11-14T22:13:20.000Z');
     expect(toIsoTime('not a date')).toBeUndefined();
+  });
+});
+
+describe('open attribute schemas (1.4)', () => {
+  it('accepts any flat key and still refuses nested values', () => {
+    const schema = openAttributesSchema({ status: { type: 'string' } });
+    expect(validateAgainst(schema, { status: 'ok', count: 3, tags: ['a'], on: true }).valid).toBe(
+      true,
+    );
+    expect(validateAgainst(schema, { status: 3 }).valid).toBe(false);
+    expect(validateAgainst(schema, { nested: { a: 1 } }).valid).toBe(false);
+    expect(validateAgainst(schema, { list: [1, 2] }).valid).toBe(false);
+  });
+
+  it('flattens top-level fields and one level of nesting with filter-friendly keys', () => {
+    const body = {
+      action: 'opened',
+      number: 7,
+      draft: false,
+      labels: ['bug', 3],
+      'x-kind': 'pr',
+      '1st': 'yes',
+      pull_request: { id: 99, head: { ref: 'main' }, title: 'Fix' },
+      reviewers: [{ login: 'a' }],
+      nothing: null,
+      huge: 'x'.repeat(2000),
+    };
+    expect(flattenAttributes(body)).toEqual({
+      action: 'opened',
+      number: 7,
+      draft: false,
+      labels: ['bug', '3'],
+      x_kind: 'pr',
+      _1st: 'yes',
+      pull_request_id: 99,
+      pull_request_title: 'Fix',
+    });
+    expect(flattenAttributes(body, { depth: 0 })).not.toHaveProperty('pull_request_id');
+    expect(Object.keys(flattenAttributes(body, { maxAttributes: 2 }))).toEqual([
+      'action',
+      'number',
+    ]);
+    expect(flattenAttributes('text')).toEqual({});
+    expect(flattenAttributes([1, 2])).toEqual({});
+    expect(attributeKey('x-github-event')).toBe('x_github_event');
+    for (const key of Object.keys(flattenAttributes(body))) {
+      expect(key).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
+    }
   });
 });

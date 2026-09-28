@@ -6,6 +6,8 @@ import type {
   TraceEntryKind,
 } from '@ai-switchboard/core/contract';
 
+import { isWhyEntry } from '../../lib/why.js';
+
 /** The entries whose details (expression + result, gate checks, meter readings) start open. */
 export const EXPANDED_KINDS: readonly TraceEntryKind[] = ['filter', 'gate', 'budget', 'approval'];
 
@@ -44,6 +46,8 @@ export function summarizeTrace(entries: TraceEntry[]): TraceSummary {
   let errors = 0;
   for (const e of entries) {
     if (e.eventId && (e.kind === 'event' || e.kind === 'batch_join')) events.add(e.eventId);
+    // A process that did not take the event did not touch it; "Why nothing ran" lists it.
+    if (isWhyEntry(e)) continue;
     if (e.processId) {
       lastProcess = e.processId;
       const known = processes.get(e.processId);
@@ -94,7 +98,8 @@ const STOPS = [0, 1, 2, 3, 4, 5] as const;
 export function traceStage(entries: TraceEntry[]): StageIndicator {
   let reached: StageIndicator['reached'] = 0;
   for (const e of entries) {
-    const r = REACHED[e.kind];
+    // "Did not take it" stops the event at received, whatever its tone.
+    const r = isWhyEntry(e) ? 1 : REACHED[e.kind];
     if (r == null) continue;
     // A check that stopped the batch leaves it at the stop before the one it guards.
     const stopped = (e.tone === 'warn' || e.tone === 'error') && r < 5;

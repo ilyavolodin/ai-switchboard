@@ -94,7 +94,7 @@ switchboard plugins remove <name>     uninstall a plugin
 switchboard plugins list              installed plugins from plugins.lock.json
 switchboard plugins inspect <spec>    version, SDK range, integrity and capabilities, without installing
 switchboard export [-o file]          the whole configuration as YAML
-switchboard apply -f file [--dry-run] --reason "<text>"
+switchboard apply -f file [--dry-run] [--reason "<text>"]   # --reason unless reasons are optional
 switchboard doctor                    database, migrations, plugins, secrets, instance health
 switchboard serve                     start the server
 switchboard users list                every account: email, role, sign-in methods (on the server)

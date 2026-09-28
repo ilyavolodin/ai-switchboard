@@ -268,3 +268,81 @@ export function narrowMapped(
     deliveryId: scalarString(item.deliveryId),
   };
 }
+
+/** The value schema of one flat attribute: a scalar or an array of strings. */
+const FLAT_VALUE_SCHEMA: JSONSchema = {
+  anyOf: [
+    { type: 'string' },
+    { type: 'number' },
+    { type: 'boolean' },
+    { type: 'array', items: { type: 'string' } },
+  ],
+};
+
+/**
+ * An attributes schema for an event type whose attribute names are only known per delivery
+ * (since SDK 1.4), e.g. a webhook that copies the body's top-level fields. Declared `properties`
+ * stay typed; any other key is accepted when its value is flat (a scalar or a string array), so
+ * the core's validation still refuses nested objects.
+ */
+export function openAttributesSchema(properties: Record<string, JSONSchema> = {}): JSONSchema {
+  return { type: 'object', properties, additionalProperties: FLAT_VALUE_SCHEMA };
+}
+
+/** Options for `flattenAttributes`. */
+export interface FlattenOptions {
+  /** Nested objects are flattened this many levels (default 1: `deployment.id` → `deployment_id`). */
+  depth?: number;
+  /** At most this many attributes (default 64); later keys are dropped. */
+  maxAttributes?: number;
+  /** Strings longer than this are dropped rather than cut (default 1024). */
+  maxStringLength?: number;
+}
+
+/** A key made filter-friendly: `x-event-type` → `x_event_type`, `1st` → `_1st`. */
+export function attributeKey(key: string): string {
+  const cleaned = key.replace(/[^A-Za-z0-9_]/g, '_');
+  return /^[A-Za-z_]/.test(cleaned) ? cleaned : `_${cleaned}`;
+}
+
+/**
+ * Turn an object's fields into flat attributes (since SDK 1.4): strings, finite numbers and
+ * booleans are kept, arrays of scalars become string arrays, nested objects are flattened
+ * `depth` levels with `_` (`deployment.id` → `deployment_id`), and keys are made
+ * filter-friendly (`attributeKey`). Nulls, arrays of objects, deeper objects and over-long
+ * strings are dropped, so `attributes.<name>` always works in a filter. A non-object gives `{}`.
+ */
+export function flattenAttributes(value: unknown, options: FlattenOptions = {}): Attributes {
+  const depth = options.depth ?? 1;
+  const max = options.maxAttributes ?? 64;
+  const maxLength = options.maxStringLength ?? 1024;
+  const out: Attributes = {};
+  const put = (key: string, v: string | number | boolean | string[]): void => {
+    if (Object.keys(out).length >= max || key in out) return;
+    out[key] = v;
+  };
+  const walk = (obj: Record<string, unknown>, prefix: string, level: number): void => {
+    for (const [rawKey, v] of Object.entries(obj)) {
+      const key = prefix === '' ? attributeKey(rawKey) : `${prefix}_${attributeKey(rawKey)}`;
+      if (typeof v === 'string') {
+        if (v.length <= maxLength) put(key, v);
+      } else if (typeof v === 'number') {
+        if (Number.isFinite(v)) put(key, v);
+      } else if (typeof v === 'boolean') {
+        put(key, v);
+      } else if (Array.isArray(v)) {
+        const scalars = v.every(
+          (x) => typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean',
+        );
+        if (scalars) {
+          const list = v.map((x: string | number | boolean) => String(x));
+          if (list.every((x) => x.length <= maxLength)) put(key, list);
+        }
+      } else if (isRecord(v) && level < depth) {
+        walk(v, key, level + 1);
+      }
+    }
+  };
+  if (isRecord(value)) walk(value, '', 0);
+  return out;
+}

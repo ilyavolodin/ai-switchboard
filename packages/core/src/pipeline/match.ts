@@ -1,4 +1,5 @@
 import type { ProcessDocument } from '../domain/process.js';
+import type { MatchSkip } from '../domain/status.js';
 
 /**
  * Stage 2, match: which enabled processes and triggers want an event. Filters are evaluated by
@@ -42,6 +43,39 @@ export function candidateTriggers(
         triggerId: t.id,
         ...(t.filter !== undefined ? { filter: t.filter } : {}),
       });
+    }
+  }
+  return out;
+}
+
+export interface SkippedTrigger {
+  processId: string;
+  triggerId: string;
+  skip: MatchSkip;
+}
+
+/**
+ * The triggers on the event's source that `candidateTriggers` passed over, and why, so an
+ * unmatched event can say what was true when it arrived. A disabled process yields one entry (its
+ * first trigger on the source); otherwise one per disabled or non-subscribing trigger.
+ */
+export function skippedTriggers(
+  event: { sourceId: string; type: string },
+  processes: readonly MatchableProcess[],
+): SkippedTrigger[] {
+  const out: SkippedTrigger[] = [];
+  for (const p of processes) {
+    const onSource = p.document.triggers.filter((t) => t.sourceId === event.sourceId);
+    const first = onSource[0];
+    if (!first) continue;
+    if (!p.enabled) {
+      out.push({ processId: p.id, triggerId: first.id, skip: 'process_disabled' });
+      continue;
+    }
+    for (const t of onSource) {
+      if (!t.enabled) out.push({ processId: p.id, triggerId: t.id, skip: 'trigger_disabled' });
+      else if (!t.eventTypes.some((pattern) => eventTypeMatches(pattern, event.type)))
+        out.push({ processId: p.id, triggerId: t.id, skip: 'type_not_subscribed' });
     }
   }
   return out;

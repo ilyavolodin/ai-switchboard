@@ -1,12 +1,21 @@
 import type { FilterPreviewResponse } from '@ai-switchboard/core/contract';
 import { type ReactNode, useRef, useState } from 'react';
 
+import { useSuggestions } from '../hooks/useSuggestions.js';
 import { cx } from '../lib/cx.js';
 import { evaluationCounts } from '../lib/expression.js';
 import { formatClock, toMs } from '../lib/format.js';
+import {
+  expressionCompletions,
+  rankSuggestions,
+  wordAt,
+  type CompletionSources,
+  type Suggestion,
+} from '../lib/suggest.js';
 import { ArtifactChip } from './ArtifactChip.js';
 import styles from './ExpressionEditor.module.css';
 import { Skeleton } from './Skeleton.js';
+import { SuggestionList } from './SuggestionList.js';
 import { Textarea } from './Textarea.js';
 
 /** One evaluated event row (from `POST /processes/preview/filter`). */
@@ -44,6 +53,12 @@ export interface ExpressionEditorProps {
   /** Describes the scope, e.g. "last 20 real events of these types". */
   scope?: string;
   disabled?: boolean;
+  /**
+   * What completion offers as you type (or on Ctrl+Space): the context variables this
+   * expression sees, declared attribute names, extra entries, and JSONata functions. The insert
+   * chips are offered too.
+   */
+  completions?: CompletionSources;
 }
 
 function defaultSummary(row: EvaluationRow): string {
@@ -52,10 +67,18 @@ function defaultSummary(row: EvaluationRow): string {
     .join(' · ');
 }
 
+/** The insert chips as completions (chips that insert a fragment, like `"name": `, are not). */
+function chipCompletions(insertions: ExpressionInsertion[]): Suggestion[] {
+  return insertions
+    .filter((i) => i.insert === undefined)
+    .map((i) => ({ value: i.label, hint: 'insert', ...(i.title ? { detail: i.title } : {}) }));
+}
+
 /**
- * A JSONata editor: a monospace textarea, insert chips for declared attributes, and the live
- * evaluation panel — one row per recent event, green `true`, grey `false`, coral error — with a
- * "14 true · 6 false · 0 errors" summary.
+ * A JSONata editor: a monospace textarea with completion (context variables, declared
+ * attributes, functions; arrows move, Enter accepts, Escape closes, Ctrl+Space opens), insert
+ * chips for declared attributes, and the live evaluation panel — one row per recent event, green
+ * `true`, grey `false`, coral error — with a "14 true · 6 false · 0 errors" summary.
  */
 export function ExpressionEditor({
   value,
@@ -72,8 +95,38 @@ export function ExpressionEditor({
   textareaRows = 2,
   scope = 'last 20 real events of these types',
   disabled,
+  completions,
 }: ExpressionEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const candidates = expressionCompletions({
+    ...completions,
+    extra: [...(completions?.extra ?? []), ...chipCompletions(insertions)],
+  });
+
+  const complete = (s: Suggestion) => {
+    const el = ref.current;
+    const cursor = el?.selectionStart ?? value.length;
+    const { start } = wordAt(value, cursor);
+    const next = value.slice(0, start) + s.value + value.slice(cursor);
+    // A function lands with the cursor between its parentheses.
+    const caret = start + s.value.length - (s.value.endsWith('()') ? 1 : 0);
+    onChange(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(caret, caret);
+    });
+  };
+  const suggest = useSuggestions(complete);
+  const refresh = (text: string, cursor: number, force = false) => {
+    const { word } = wordAt(text, cursor);
+    if (word === '' && !force) {
+      suggest.close();
+      return;
+    }
+    const ranked = rankSuggestions(candidates, word);
+    if (ranked.length > 0) suggest.show(ranked);
+    else suggest.close();
+  };
 
   const insert = (snippet: string) => {
     const el = ref.current;
@@ -89,20 +142,33 @@ export function ExpressionEditor({
 
   return (
     <div className={styles.wrap}>
-      <Textarea
-        ref={ref}
-        id={id}
-        aria-label={id ? undefined : label}
-        aria-describedby={describedBy}
-        mono
-        rows={textareaRows}
-        spellCheck={false}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => {
-          onChange(e.target.value);
-        }}
-      />
+      <div className={styles.editor}>
+        <Textarea
+          ref={ref}
+          id={id}
+          aria-label={id ? undefined : label}
+          aria-describedby={describedBy}
+          {...suggest.inputProps}
+          mono
+          rows={textareaRows}
+          spellCheck={false}
+          value={value}
+          disabled={disabled}
+          onChange={(e) => {
+            onChange(e.target.value);
+            refresh(e.target.value, e.target.selectionStart);
+          }}
+          onBlur={suggest.close}
+          onKeyDown={(e) => {
+            if (suggest.onKeyDown(e)) return;
+            if (e.key === ' ' && e.ctrlKey) {
+              e.preventDefault();
+              refresh(value, e.currentTarget.selectionStart, true);
+            }
+          }}
+        />
+        <SuggestionList state={suggest} label={`Completions for ${label}`} />
+      </div>
       {insertions.length > 0 && (
         <div className={styles.insert}>
           <span>insert</span>

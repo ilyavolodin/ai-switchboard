@@ -214,6 +214,36 @@ export function sourceConformanceChecks(
           },
         },
         {
+          name: 'parseWithNotes (when present) returns the same events as parse',
+          run: async () => {
+            const src = make();
+            if (typeof src.parseWithNotes !== 'function') return;
+            for (const d of push.deliveries) {
+              const events = (await src.parse?.(d)) ?? [];
+              const report = await src.parseWithNotes(d);
+              assert(
+                Array.isArray(report.events) && Array.isArray(report.notes),
+                'parseWithNotes must return { events, notes }',
+              );
+              assert(
+                JSON.stringify(report.events) === JSON.stringify(events),
+                'parseWithNotes returned different events than parse',
+              );
+              assert(
+                report.notes.every((n) => typeof n === 'string'),
+                'parseWithNotes notes must be strings',
+              );
+              const raw = d.body.length > 32 ? d.body.toString('utf8') : null;
+              for (const note of report.notes) {
+                assert(raw === null || !note.includes(raw), 'a note contains the raw body');
+                for (const secret of secrets) {
+                  assert(secret === '' || !note.includes(secret), 'a note contains a secret value');
+                }
+              }
+            }
+          },
+        },
+        {
           name: 'dedupeKey is stable for the same change and differs across changes',
           run: async () => {
             const src = make();

@@ -322,13 +322,29 @@ describe('switchboard apply', () => {
     );
   });
 
-  it('requires --reason', async () => {
-    const fetch = stubFetch(() => ({ status: 200, body: '{}' }));
+  it('leaves --reason to the server: sends an empty reason and shows its 400', async () => {
+    const fetch = stubFetch(() => ({
+      status: 400,
+      body: JSON.stringify({
+        error: 'bad_request',
+        message: 'A reason is required for every change.',
+        details: ['reason must be a non-empty string'],
+      }),
+    }));
     const { run } = harness({ fetch, readFile });
     const cap = await run('apply', '-f', 'sb.yaml');
+    expect(fetch.calls[0]).toMatchObject({ body: { yaml, reason: '' } });
     expect(cap.exitCode).toBe(1);
-    expect(cap.err.join('')).toMatch(/--reason/);
-    expect(fetch.calls).toHaveLength(0);
+    expect(cap.err.join('\n')).toContain('A reason is required for every change.');
+  });
+
+  it('applies without --reason when the server makes reasons optional', async () => {
+    const response: ApplyResponse = { dryRun: false, changes: [], errors: [] };
+    const fetch = stubFetch(() => ({ status: 200, body: JSON.stringify(response) }));
+    const { run } = harness({ fetch, readFile });
+    const cap = await run('apply', '-f', 'sb.yaml');
+    expect(cap.exitCode).toBe(0);
+    expect(cap.out.join('\n')).toContain('Applied to');
   });
 
   it('rejects invalid YAML before calling the server', async () => {

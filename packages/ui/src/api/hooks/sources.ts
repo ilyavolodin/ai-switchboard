@@ -2,15 +2,18 @@ import type {
   ActivityRow,
   CreateSourceRequest,
   EnableRequest,
+  LastDeliveryResponse,
   Page,
   Reasoned,
   SourceDetail,
+  SourcePreviewRequest,
+  SourcePreviewResponse,
   SourceStatsResponse,
   SourceSummary,
   StatsWindow,
   UpdateSourceRequest,
 } from '@ai-switchboard/core/contract';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '../client.js';
 import { POLL, qk } from '../keys.js';
@@ -119,5 +122,35 @@ export function useReloadSource() {
     method: 'POST',
     path: (v) => `/sources/${seg(v.id)}/reload`,
     invalidate: fleet,
+  });
+}
+
+/**
+ * POST /sources/preview — a sample delivery through draft settings (Add source, Source ›
+ * Settings). Read-only, so a query keyed by the request; pass `null` to pause (no sample yet).
+ */
+export function usePreviewSource(req: SourcePreviewRequest | null) {
+  return useQuery({
+    queryKey: qk.preview.source(req ?? { typeId: '', settings: {}, request: { body: '' } }),
+    queryFn: ({ signal }) =>
+      apiFetch<SourcePreviewResponse>('/sources/preview', { method: 'POST', body: req, signal }),
+    enabled: req != null,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/**
+ * GET /sources/:id/last-delivery — never fetched on its own: call `refetch()` when the person
+ * asks for it (a stored delivery is a sender's raw body).
+ */
+export function useLastDelivery(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.sources.lastDelivery(id ?? ''),
+    queryFn: ({ signal }) =>
+      apiFetch<LastDeliveryResponse>(`/sources/${seg(id ?? '')}/last-delivery`, { signal }),
+    enabled: false,
+    retry: false,
   });
 }

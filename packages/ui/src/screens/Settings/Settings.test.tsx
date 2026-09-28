@@ -44,6 +44,28 @@ describe('Settings', () => {
     );
   });
 
+  it('turns "Require a reason for every change" off (admin, with a reason)', async () => {
+    const { user, api } = open('');
+    const toggle = await screen.findByRole('switch', { name: /Require a reason for every change/ });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    expect(screen.getByText(/audited as “\(no reason given\)”/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await giveReason(user, 'small team, audit trail is enough', 'Save settings');
+    await vi.waitFor(() => {
+      expect(api.callsTo('PUT /settings')[0]?.body).toEqual({
+        settings: { requireReasons: false },
+        reason: 'small team, audit trail is enough',
+      });
+    });
+  });
+
+  it('keeps the reasons switch read-only for an operator', async () => {
+    open('', 'operator');
+    const toggle = await screen.findByRole('switch', { name: /Require a reason for every change/ });
+    expect(toggle).toHaveAttribute('aria-disabled', 'true');
+  });
+
   it('saves general settings with a reason, sending only what changed', async () => {
     const { user, api } = open('');
     const staleness = await screen.findByRole('textbox', { name: /Meter staleness/ });

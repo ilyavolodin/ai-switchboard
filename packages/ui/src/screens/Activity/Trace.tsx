@@ -14,7 +14,9 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StageIndicator } from '../../components/StageIndicator.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { TraceTimeline } from '../../components/TraceTimeline.js';
+import { WhyNothingRan } from '../../components/WhyNothingRan.js';
 import { traceHref } from '../../lib/artifact.js';
+import { whyFromTrace } from '../../lib/why.js';
 import {
   EXPANDED_KINDS,
   QUERY_FORMS,
@@ -115,6 +117,9 @@ export function Trace() {
 function TraceBody({ data }: { data: NonNullable<ReturnType<typeof useTrace>['data']> }) {
   const summary = summarizeTrace(data.entries);
   const stage = traceStage(data.entries);
+  const why = whyFromTrace(data.entries);
+  const whyTitle =
+    summary.processes.length === 0 ? 'Why nothing ran' : 'Processes that did not take it';
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   return (
     <div className={styles.grid}>
@@ -140,6 +145,11 @@ function TraceBody({ data }: { data: NonNullable<ReturnType<typeof useTrace>['da
         <Card title="Where it stands" aria-label="Where it stands">
           <StageIndicator indicator={stage} />
         </Card>
+        {why.length > 0 && (
+          <Card title={whyTitle} aria-label={whyTitle}>
+            <WhyNothingRan items={why} label={whyTitle} />
+          </Card>
+        )}
         <Card title="Processes that touched it" aria-label="Processes that touched it">
           {summary.processes.length === 0 ? (
             <span className="t-caption">No process matched it.</span>

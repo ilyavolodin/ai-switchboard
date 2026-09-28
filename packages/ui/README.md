@@ -90,6 +90,11 @@ src/test/                          setup.ts, render.tsx (renderWithProviders, re
   </Button>;
   ```
 
+  When the installation makes reasons optional (`Session.requireReasons`, from
+  `MeResponse.requireReasons`), `useReasonPrompt` skips the prompt and sends `reason: ''` (the
+  server audits "(no reason given)"); a `danger: true` action still opens the dialog as a
+  confirmation with an optional note. Tests: `renderWithProviders(ui, { requireReasons: false })`.
+
   Fleet-affecting actions pass `danger: true` and a `consequence` sentence naming the effect (or
   render `<ConfirmDialog>` yourself).
 
@@ -100,7 +105,8 @@ src/test/                          setup.ts, render.tsx (renderWithProviders, re
 Auth `useMe`, `useLogin`, `useLogout`, `useChangePassword`, `useWhoami`, `OIDC_START_URL` · Board `useStatus`,
 `useBoard`, `usePluginTypes` · Sources `useSources`, `useSource`, `useSourceStats`,
 `useSourceEvents`, `useCreateSource`, `useUpdateSource`, `useDeleteSource`, `useEnableSource`,
-`useProvisionSource`, `useSendTestEvent`, `useReloadSource` · Executors `useExecutors`,
+`useProvisionSource`, `useSendTestEvent`, `useReloadSource`, `usePreviewSource` (sample delivery
+through draft settings), `useLastDelivery` (fetched on `refetch()` only) · Executors `useExecutors`,
 `useExecutor`, `useExecutorMeters`, `useExecutorUsage`, `useCreateExecutor`, `useUpdateExecutor`,
 `useDeleteExecutor`, `useEnableExecutor`, `useReloadExecutor`, `useReadMeters`,
 `useClearSoftHold` · Processes `useProcesses`, `useProcess`, `useProcessFunnel`,
@@ -121,29 +127,31 @@ Auth `useMe`, `useLogin`, `useLogout`, `useChangePassword`, `useWhoami`, `OIDC_S
 
 ## Components (`src/components`)
 
-| Component                                                                 | Purpose · key props                                                                                                                                                       |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `StatusChip`                                                              | Four tones, always a word · `tone label count? size`                                                                                                                      |
-| `Button` / `LinkButton` / `IconButton`                                    | primary (gradient + glow), secondary, outline, soft, ghost, danger, danger-outline · `variant size loading icon requires` (role-gated: aria-disabled + tooltip)           |
-| `Icon`, `Logo`, `Spinner`                                                 | Stroke icon set from the mockups (`name`) · the "Cg" mark (`gapColor`)                                                                                                    |
-| `Card`, `PageHeader`                                                      | Surface card with title/meta/actions · screen header with back/meta/actions                                                                                               |
-| `RoutedTabs`, `SegmentedControl`, `FilterChips`                           | URL tabs · single-choice (incl. `variant="window"` 24 h/7 d/30 d) · toggle chips                                                                                          |
-| `Field`, `TextField`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Toggle` | Form controls; `Field` is a render prop giving `{ id, describedBy, invalid }`; `changed` = tangerine dot                                                                  |
-| `SearchInput`, `Tooltip`, `Time`, `Countdown`                             | `/`-hinted search · hover/focus tip (aria-describedby) · relative time + absolute on hover · "resets in 2 h 10 m"                                                         |
-| `MeterGauge`                                                              | Arc of used fraction, ceiling ticks, coral above ceiling, grey + "last read …" when stale, estimated · `meter size(sm                                                     | node | md  | lg) processId label` |
-| `MeterBand`                                                               | Meter history bands with ceiling and run ticks · `meters runs processId`                                                                                                  |
-| `PipelineDots`, `PipelineFunnel`, `StageIndicator`                        | Five dots (last hour) · funnel sized ∝ counts, sweeps as own stream · event stage stops                                                                                   |
-| `Sparkline`, `BarChart`, `CapacityBar`                                    | Tiny line · grouped/stacked SVG bars with hidden data table · used/limit bar with ticks                                                                                   |
-| `ArtifactChip`, `KeyValueList`, `CodeBlock`                               | Kind icon + id linking out (new tab) · collapsible attributes · pretty JSON (copy)                                                                                        |
-| `ExpressionEditor`                                                        | JSONata textarea + insert chips + live evaluation rows (true/false/error) · `value onChange rows insertions`                                                              |
-| `SchemaForm`                                                              | JSON Schema 2020-12 form (groups, x-order, x-secret refs, x-widget, defaults, Ajv messages) · `schema value onChange showAllErrors secretProviders secretStatus baseline` |
-| `SecretRefInput`, `StringListInput`                                       | `secret://<provider>/<name>` input (never shows values) · editable string list                                                                                            |
-| `CronField`, `QuietHoursBar`                                              | cron + cronstrue + next three from the API + timezone · 24-hour bar, editable                                                                                             |
-| `Dialog`, `ReasonDialog`, `ConfirmDialog`, `Drawer`                       | Modal (focus trap; Escape closes the top one only) · reason required · consequence sentence required · side panel / bottom sheet (modal too)                              |
-| `ReasonProvider`, `ToastProvider`                                         | App-level hosts behind `useReasonedMutation` and `useToast`                                                                                                               |
-| `Banner`, `BreakerBanner`, `EmptyState`, `Skeleton`, `LoadMore`, `Table`  | error/warn/info/neutral strip · red breaker banner with failed runs + Reset slot · teaching empty state (ghost nodes) · loading · pagination · runs/audit tables          |
-| `TraceTimeline`                                                           | Vertical timeline of `TraceEntry` with tone dots, expandable data, links, "Copy as text"                                                                                  |
-| `NodeCard`, `SourceNode`, `ProcessNode`, `ExecutorNode`, `FlowNode`       | Canvas nodes (border = status); `FlowNode` is the React Flow node type with handles + hover card                                                                          |
+| Component                                                                 | Purpose · key props                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StatusChip`                                                              | Four tones, always a word · `tone label count? size`                                                                                                                                                                      |
+| `Button` / `LinkButton` / `IconButton`                                    | primary (gradient + glow), secondary, outline, soft, ghost, danger, danger-outline · `variant size loading icon requires` (role-gated: aria-disabled + tooltip)                                                           |
+| `Icon`, `Logo`, `Spinner`                                                 | Stroke icon set from the mockups (`name`) · the "Cg" mark (`gapColor`)                                                                                                                                                    |
+| `Card`, `PageHeader`                                                      | Surface card with title/meta/actions · screen header with back/meta/actions                                                                                                                                               |
+| `RoutedTabs`, `SegmentedControl`, `FilterChips`                           | URL tabs · single-choice (incl. `variant="window"` 24 h/7 d/30 d) · toggle chips                                                                                                                                          |
+| `Field`, `TextField`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Toggle` | Form controls; `Field` is a render prop giving `{ id, describedBy, invalid }`; `changed` = tangerine dot                                                                                                                  |
+| `SearchInput`, `Tooltip`, `Time`, `Countdown`                             | `/`-hinted search · hover/focus tip (aria-describedby) · relative time + absolute on hover · "resets in 2 h 10 m"                                                                                                         |
+| `MeterGauge`                                                              | Arc of used fraction, ceiling ticks, coral above ceiling, grey + "last read …" when stale, estimated · `meter size(sm                                                                                                     | node | md  | lg) processId label` |
+| `MeterBand`                                                               | Meter history bands with ceiling and run ticks · `meters runs processId`                                                                                                                                                  |
+| `PipelineDots`, `PipelineFunnel`, `StageIndicator`                        | Five dots (last hour) · funnel sized ∝ counts, sweeps as own stream · event stage stops                                                                                                                                   |
+| `Sparkline`, `BarChart`, `CapacityBar`                                    | Tiny line · grouped/stacked SVG bars with hidden data table · used/limit bar with ticks                                                                                                                                   |
+| `ArtifactChip`, `KeyValueList`, `CodeBlock`                               | Kind icon + id linking out (new tab) · collapsible attributes · pretty JSON (copy)                                                                                                                                        |
+| `ExpressionEditor`                                                        | JSONata textarea + completion (variables, attributes, functions; arrows/Enter/Escape, Ctrl+Space) + insert chips + live evaluation rows · `value onChange rows insertions completions`                                    |
+| `SchemaForm`                                                              | JSON Schema 2020-12 form (groups, x-order, x-secret refs, x-widget incl. `path`, x-effectiveDefault, x-docs, defaults, Ajv messages) · `schema value onChange showAllErrors secretProviders secretStatus baseline sample` |
+| `PathInput`, `SuggestionList`                                             | Dotted-path field suggesting a sample's paths with example values (combobox) · the listbox under a control driven by `useSuggestions`                                                                                     |
+| `SecretRefInput`, `StringListInput`                                       | `secret://<provider>/<name>` input (never shows values) · editable string list                                                                                                                                            |
+| `CronField`, `QuietHoursBar`                                              | cron + cronstrue + next three from the API + timezone · 24-hour bar, editable                                                                                                                                             |
+| `Dialog`, `ReasonDialog`, `ConfirmDialog`, `Drawer`                       | Modal (focus trap; Escape closes the top one only) · reason required · consequence sentence required · side panel / bottom sheet (modal too)                                                                              |
+| `ReasonProvider`, `ToastProvider`                                         | App-level hosts behind `useReasonedMutation` and `useToast`                                                                                                                                                               |
+| `Banner`, `BreakerBanner`, `EmptyState`, `Skeleton`, `LoadMore`, `Table`  | error/warn/info/neutral strip · red breaker banner with failed runs + Reset slot · teaching empty state (ghost nodes) · loading · pagination · runs/audit tables                                                          |
+| `TraceTimeline`                                                           | Vertical timeline of `TraceEntry` with tone dots, expandable data, links, "Copy as text"                                                                                                                                  |
+| `WhyNothingRan`                                                           | Processes that did not take an event, each with its reason and a "(now)" mark when computed from the current configuration · `items label` (from `lib/why.ts`)                                                            |
+| `NodeCard`, `SourceNode`, `ProcessNode`, `ExecutorNode`, `FlowNode`       | Canvas nodes (border = status); `FlowNode` is the React Flow node type with handles + hover card                                                                                                                          |
 
 ## Theming and styling
 

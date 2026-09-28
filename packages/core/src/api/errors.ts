@@ -25,7 +25,11 @@ export const conflict = (message: string): HttpError => new HttpError(409, 'conf
 export const unprocessable = (message: string, details?: string[]): HttpError =>
   new HttpError(422, 'unprocessable', message, details);
 
-/** Every mutation carries a non-empty one-line reason. */
+/**
+ * Every mutation carries a non-empty one-line reason. When `requireReasons` is off, the
+ * `preValidation` hook in `reasons.ts` has already filled a missing one with "(no reason given)",
+ * so this check (and the audit write that follows) is the same in both modes.
+ */
 export function requireReason(body: unknown): string {
   const reason =
     body !== null && typeof body === 'object' && 'reason' in body ? body.reason : undefined;

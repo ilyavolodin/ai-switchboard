@@ -55,6 +55,9 @@ export {
   coerceAttribute,
   toIsoTime,
   narrowMapped,
+  openAttributesSchema,
+  flattenAttributes,
+  attributeKey,
 } from './custom-events.js';
 export type {
   AttributeKind,
@@ -62,6 +65,7 @@ export type {
   EventTypeDefinition,
   CompiledEventType,
   MappedEvent,
+  FlattenOptions,
 } from './custom-events.js';
 
 export {

@@ -88,4 +88,73 @@ describe('ExpressionEditor', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'show all 5' })).toBeInTheDocument();
   });
+
+  describe('completion', () => {
+    function Completing({ initial = '' }: { initial?: string }) {
+      const [value, setValue] = useState(initial);
+      return (
+        <>
+          <ExpressionEditor
+            label="Filter expression"
+            value={value}
+            onChange={setValue}
+            completions={{
+              variables: ['event', 'attributes', 'process', 'now'],
+              attributes: [{ name: 'priority', type: 'string', description: 'The priority' }],
+            }}
+          />
+          <output aria-label="current value">{value}</output>
+        </>
+      );
+    }
+    const current = () => screen.getByRole('status', { name: 'current value' });
+
+    it('offers declared attributes and context variables as you type, and Enter accepts', async () => {
+      const user = userEvent.setup();
+      render(<Completing />);
+      const box = screen.getByRole('textbox', { name: 'Filter expression' });
+      await user.type(box, 'attr');
+      const list = screen.getByRole('listbox', { name: 'Completions for Filter expression' });
+      const options = within(list).getAllByRole('option');
+      expect(options[0]).toHaveTextContent('attributes.priority');
+      expect(options[0]).toHaveAttribute('title', 'The priority');
+      expect(box).toHaveAttribute('aria-activedescendant', options[0]?.id ?? '');
+      await user.keyboard('{Enter}');
+      expect(current()).toHaveTextContent(/^attributes\.priority$/);
+      expect(screen.queryByRole('listbox')).toBeNull();
+    });
+
+    it('completes functions with the cursor inside the parentheses', async () => {
+      const user = userEvent.setup();
+      render(<Completing initial="" />);
+      const box = screen.getByRole('textbox', { name: 'Filter expression' });
+      await user.type(box, '$cou');
+      await user.keyboard('{Enter}');
+      expect(current()).toHaveTextContent('$count()');
+      await new Promise((r) => requestAnimationFrame(r));
+      await user.keyboard('events');
+      expect(current()).toHaveTextContent('$count(events)');
+    });
+
+    it('moves with the arrows, closes on Escape and opens again on Ctrl+Space', async () => {
+      const user = userEvent.setup();
+      render(<Completing />);
+      const box = screen.getByRole('textbox', { name: 'Filter expression' });
+      await user.type(box, '$re');
+      expect(screen.getAllByRole('option')[0]).toHaveTextContent('$resolve(artifact)');
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('listbox')).toBeNull();
+      await user.keyboard('{Control>} {/Control}');
+      expect(screen.getByRole('listbox')).toBeVisible();
+      await user.keyboard('{ArrowDown}{ArrowUp}{Enter}');
+      expect(current()).toHaveTextContent('$resolve(artifact)');
+    });
+
+    it('offers nothing inside a string literal', async () => {
+      const user = userEvent.setup();
+      render(<Completing />);
+      await user.type(screen.getByRole('textbox', { name: 'Filter expression' }), "x = 'attr");
+      expect(screen.queryByRole('listbox')).toBeNull();
+    });
+  });
 });

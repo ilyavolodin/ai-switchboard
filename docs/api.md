@@ -5,7 +5,7 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 
 - Auth: a session cookie (`sb_session`) from sign-in, or `Authorization: Bearer <api token>`.
 - Roles: `viewer` reads; `operator` also changes sources, executors, processes, approvals, manual runs and replays; `admin` also manages plugins, users, secret providers, notifiers and settings.
-- Every state-changing body carries `reason` (non-empty). Every change writes `audit_log` rows.
+- Every state-changing body carries `reason` (non-empty). Every change writes `audit_log` rows. An admin can make reasons optional (`GlobalSettings.requireReasons: false`, Settings › General): then a missing or blank `reason` is accepted (a `DELETE` may omit the body) and audited as `(no reason given)`. `MeResponse.requireReasons` tells a client whether to ask. Each replica caches the setting for 5 s; the replica that saves it applies it at once, the others within the cache window.
 - Errors: `{ error, message, details? }` with 400 (validation, including a malformed time or cursor), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, or a name already taken), 422 (semantic), 429 (too many sign-in attempts), 503.
 - Lists: `?cursor=&limit=` → `Page<T>` (`{ items, nextCursor }`). Filters apply before paging, and a cursor is keyed by time and id, so rows that share a timestamp are neither skipped nor repeated.
 
@@ -69,6 +69,11 @@ before `@`), not one of the most common passwords.
 | GET    | `/status` | `StatusStripResponse` | viewer |
 | GET    | `/board`  | `BoardResponse`       | viewer |
 
+`BoardResponse.attention` includes a `process_disabled` item (action `enable_process`) for a
+disabled process that has never run and turned events away in the last 24 hours (its triggers
+matched the source, and match recorded `process is disabled`). A process that ran before was
+paused on purpose and gets no item.
+
 ## Plugin types
 
 | Method | Path                  | Response          | Role   |
@@ -84,19 +89,35 @@ through `<img>` only, never as inline markup, and fall back to the kind's generi
 
 ## Sources
 
-| Method | Path                                | Body → Response                         | Role     |
-| ------ | ----------------------------------- | --------------------------------------- | -------- |
-| GET    | `/sources`                          | → `SourceSummary[]`                     | viewer   |
-| POST   | `/sources`                          | `CreateSourceRequest` → `SourceDetail`  | operator |
-| GET    | `/sources/:id`                      | → `SourceDetail`                        | viewer   |
-| PUT    | `/sources/:id`                      | `UpdateSourceRequest` → `SourceDetail`  | operator |
-| DELETE | `/sources/:id`                      | `Reasoned` → 204                        | operator |
-| POST   | `/sources/:id/enable`               | `EnableRequest` → `SourceDetail`        | operator |
-| POST   | `/sources/:id/provision`            | `Reasoned` → `{ ok, message }`          | operator |
-| POST   | `/sources/:id/test-event`           | `Reasoned & { type? }` → `{ eventIds }` | operator |
-| POST   | `/sources/:id/reload`               | `Reasoned` → `SourceDetail`             | operator |
-| GET    | `/sources/:id/stats?window=`        | → `SourceStatsResponse`                 | viewer   |
-| GET    | `/sources/:id/events?cursor=&type=` | → `Page<ActivityRow>`                   | viewer   |
+| Method | Path                                | Body → Response                                  | Role     |
+| ------ | ----------------------------------- | ------------------------------------------------ | -------- |
+| GET    | `/sources`                          | → `SourceSummary[]`                              | viewer   |
+| POST   | `/sources`                          | `CreateSourceRequest` → `SourceDetail`           | operator |
+| GET    | `/sources/:id`                      | → `SourceDetail`                                 | viewer   |
+| PUT    | `/sources/:id`                      | `UpdateSourceRequest` → `SourceDetail`           | operator |
+| DELETE | `/sources/:id`                      | `Reasoned` → 204                                 | operator |
+| POST   | `/sources/:id/enable`               | `EnableRequest` → `SourceDetail`                 | operator |
+| POST   | `/sources/:id/provision`            | `Reasoned` → `{ ok, message }`                   | operator |
+| POST   | `/sources/:id/test-event`           | `Reasoned & { type? }` → `{ eventIds }`          | operator |
+| POST   | `/sources/:id/reload`               | `Reasoned` → `SourceDetail`                      | operator |
+| GET    | `/sources/:id/stats?window=`        | → `SourceStatsResponse`                          | viewer   |
+| GET    | `/sources/:id/events?cursor=&type=` | → `Page<ActivityRow>`                            | viewer   |
+| POST   | `/sources/preview`                  | `SourcePreviewRequest` → `SourcePreviewResponse` | operator |
+| GET    | `/sources/:id/last-delivery`        | → `LastDeliveryResponse`                         | operator |
+
+`POST /sources/preview` tries a sample delivery against draft settings, for push (and both)
+source types; a pull-only type is 422, an unknown type 404. It builds a throwaway instance
+(secret references resolved server-side; with `sourceId`, secret fields left empty keep that
+source's stored references), runs `parse` — never `verify`, so no signature is needed — and
+checks each event against the instance's declared schemas as ingest would. Nothing is stored or
+counted against the plugin, and no reason is needed. Settings that fail the schema, a secret that
+does not resolve, a `create` that throws and a `parse` that throws come back as `errors` with an
+empty `events`; an event that would be stored as `event_invalid` has `valid: false` and its
+`problems`. `notes` are the plugin's own explanations of what produced no event (SDK 1.4
+`parseWithNotes`), and `declaredTypes` the draft instance's event types. Resolved secret values
+are redacted from everything returned. `GET /sources/:id/last-delivery` returns the newest stored
+push delivery with a body (`{ receivedAt, body, headers }`, 404 when there is none yet); headers
+whose names suggest a credential or signature read `[redacted]`.
 
 ## Executors
 
@@ -152,6 +173,25 @@ per-target and default timeouts (core default 300 s); no answer in time is a los
 | POST   | `/events/:id/replay`                                                          | `Reasoned` → `{ eventIds }`                           | operator |
 | GET    | `/trace?artifact=`                                                            | → `TraceResponse` (artifact id, `kind:id`, or `#482`) | viewer   |
 | GET    | `/events/:id/trace`                                                           | → `TraceResponse`                                     | viewer   |
+
+"Why nothing ran". Match records a decision for every trigger on the event's source, including
+the ones it never evaluated (`skip`: `process_disabled`, `trigger_disabled`,
+`type_not_subscribed`), so the reason is what was true when the event arrived.
+`EventDetail.explanations` has one `EventExplanation` per process with a trigger on the source:
+`{ processId, processName, taken, reason, basis, tone }`. The `reason` is one of
+`trigger "…" matched` (plus `but it was deduped`), `process is disabled`, `trigger "…" is disabled`,
+`event type <t> is not in trigger "…" (subscribes to …)`, `filter false: <expr>`,
+`filter error: <msg>`, and for events stopped at the door `source is disabled`,
+`type <t> is muted on the source`, `event invalid: …`, `source throttled`. `basis` is `recorded`,
+or `now` when nothing was recorded for that process (events matched before skips were recorded,
+or a trigger added since) and the reason comes from the current configuration. Processes created
+after the event are left out. `ActivityRow.whyNothingRan` is the one-line summary for an
+`unmatched` event (`Autofix: process is disabled (+1 more)`, or
+`no process has a trigger on this source`), null otherwise. The trace adds a `filter` entry per
+process that did not take the event, titled `<process> did not take it: <reason>` with
+`data: { taken: false, reason, basis }` and tone `warn` (disabled process or trigger, filter
+error, invalid event) or `off`, and `Nothing ran: no process has a trigger on this source` when
+none listens.
 
 ## Runs
 

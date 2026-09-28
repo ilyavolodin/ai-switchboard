@@ -6,7 +6,7 @@ import { Toggle } from '../../components/Toggle.js';
 import type { SectionProps } from './EditorSections.js';
 import styles from './ProcessEditor.module.css';
 
-/** Name, description and — for a new process only — whether it starts enabled. */
+/** Name, description and whether the process is enabled (saved with the document). */
 export function BasicsFields({
   doc,
   baseline,
@@ -56,21 +56,29 @@ export function BasicsFields({
           />
         )}
       </Field>
-      {isNew && (
-        <Field label="Enabled" layout="row" help="off = saved but nothing starts it">
-          {({ id }) => (
-            <Toggle
-              id={id}
-              ariaLabel="Enabled after saving"
-              checked={doc.enabled}
-              requires="operator"
-              onChange={(enabled) => {
-                set((d) => ({ ...d, enabled }));
-              }}
-            />
-          )}
-        </Field>
-      )}
+      <Field
+        label="Enabled"
+        layout="row"
+        changed={!isNew && doc.enabled !== baseline.enabled}
+        help={
+          doc.enabled
+            ? 'on = its triggers and sweeps start runs'
+            : 'off = saved, but no event or sweep starts it (events show "process is disabled")'
+        }
+      >
+        {({ id }) => (
+          <Toggle
+            id={id}
+            ariaLabel={isNew ? 'Enabled after saving' : 'Enabled'}
+            checked={doc.enabled}
+            requires="operator"
+            disabled={disabled}
+            onChange={(enabled) => {
+              set((d) => ({ ...d, enabled }));
+            }}
+          />
+        )}
+      </Field>
     </Card>
   );
 }

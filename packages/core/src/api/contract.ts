@@ -137,6 +137,11 @@ export interface MeResponse {
    * outside evaluation mode or when that account has no password; no other email is ever shown.
    */
   evaluationAdminEmail: string | null;
+  /**
+   * `GlobalSettings.requireReasons`: whether the UI must ask for a reason before a change. When
+   * false the server accepts a change without one (audited as "(no reason given)").
+   */
+  requireReasons: boolean;
 }
 
 export interface LocalLoginRequest {
@@ -261,7 +266,9 @@ export interface AttentionItem {
     | 'source_silent'
     | 'approval'
     | 'plugin_unavailable'
-    | 'uncertain_runs';
+    | 'uncertain_runs'
+    /** A disabled process that has never run turned away events in the last 24 h. */
+    | 'process_disabled';
   tone: StatusTone;
   title: string;
   detail: string;
@@ -645,6 +652,56 @@ export interface InputPreviewResponse {
   errors: string[];
 }
 
+/** A sample delivery for `POST /sources/preview`: the body as text, headers and query. */
+export interface SampleDeliveryDTO {
+  body: string;
+  headers?: Record<string, string>;
+  query?: Record<string, string>;
+}
+
+export interface SourcePreviewRequest {
+  /** A push (or both) source type. */
+  typeId: string;
+  /** Draft settings; secret fields hold `secret://` references, resolved server-side. */
+  settings: Record<string, unknown>;
+  /** The existing source being edited: secret fields left empty take its stored references. */
+  sourceId?: string;
+  request: SampleDeliveryDTO;
+}
+
+/** One event the sample produced, checked against the instance's declared schemas. */
+export interface SourcePreviewEvent {
+  type: string;
+  occurredAt: Iso;
+  artifact: ArtifactRef;
+  attributes: Attributes;
+  dedupeKey: string;
+  deliveryId?: string;
+  /** False when the core would store it as `event_invalid`; `problems` says why. */
+  valid: boolean;
+  problems: string[];
+}
+
+export interface SourcePreviewResponse {
+  events: SourcePreviewEvent[];
+  /** Settings that do not build, a parse that threw, and invalid events, in words. */
+  errors: string[];
+  /** The plugin's notes on what produced no event and why (SDK 1.4 `parseWithNotes`). */
+  notes: string[];
+  /** The event types the draft instance declares. */
+  declaredTypes: EventTypeSpec[];
+}
+
+/**
+ * `GET /sources/:id/last-delivery`: the newest stored delivery (the query string is not
+ * stored), with credential and signature headers redacted.
+ */
+export interface LastDeliveryResponse {
+  receivedAt: Iso;
+  body: string;
+  headers: Record<string, string>;
+}
+
 export interface CronPreviewRequest {
   cron: string;
   timezone: string;
@@ -695,6 +752,12 @@ export interface ActivityRow {
     runStatus: RunStatusValue | null;
   }[];
   replayOf: string | null;
+  /**
+   * For an `unmatched` event, one line saying why nothing ran: the most actionable process reason
+   * (`Autofix: process is disabled (+1 more)`) or `no process has a trigger on this source`.
+   * Null otherwise. `GET /events/:id` has the full list in `explanations`.
+   */
+  whyNothingRan: string | null;
 }
 
 export interface ActivityQuery {
@@ -711,11 +774,30 @@ export interface ActivityQuery {
   limit?: number;
 }
 
+/**
+ * Why a process with a trigger on the event's source did or did not take the event: `process is
+ * disabled`, `trigger "…" is disabled`, `event type … is not in trigger "…" (subscribes to …)`,
+ * `filter false: <expr>`, `filter error: <msg>`, `type … is muted on the source`, `source is
+ * disabled`, `event invalid: …`. `basis: 'recorded'` is what match (or the door) recorded when the
+ * event arrived; `'now'` is computed from the current configuration because nothing was recorded
+ * for that process (an event matched before skips were recorded, or a trigger added since).
+ */
+export interface EventExplanation {
+  processId: string;
+  processName: string;
+  taken: boolean;
+  reason: string;
+  basis: 'recorded' | 'now';
+  tone: 'ok' | 'warn' | 'off';
+}
+
 export interface EventDetail extends ActivityRow {
   attributes: Attributes;
   dedupeKey: string;
   deliveryId: string | null;
   stageReason: string | null;
+  /** One per process with a trigger on the event's source (empty while the event is `received`). */
+  explanations: EventExplanation[];
   raw: { headers: Record<string, string | undefined>; body: string; truncated: boolean } | null;
 }
 
@@ -1044,6 +1126,12 @@ export interface GlobalSettings {
   oidc: { issuer: string; clientId: string; allowedDomains: string[] } | null;
   systemNotifierId: string | null;
   sourceSilenceMinutes: number;
+  /**
+   * Every change must carry a one-line reason (default true). When false, a missing or empty
+   * `reason` is accepted and audited as "(no reason given)". Admin-only to change; the change is
+   * itself audited. Other replicas apply a change within a few seconds.
+   */
+  requireReasons: boolean;
   export: {
     schedule: string | null;
     sourceId: string | null;

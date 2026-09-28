@@ -29,6 +29,8 @@ export interface RenderOptions {
   routePath?: string;
   overrides?: MockHandlers;
   fixtures?: Fixtures;
+  /** The session's `requireReasons` (default true). */
+  requireReasons?: boolean;
 }
 
 export interface Rendered extends RenderResult {
@@ -47,10 +49,12 @@ function testClient(): QueryClient {
 }
 
 function installApi(options: RenderOptions): MockApi {
-  const api = createMockApi({
-    fixtures: options.fixtures ?? buildFixtures(TEST_NOW),
-    overrides: options.overrides,
-  });
+  const fixtures = options.fixtures ?? buildFixtures(TEST_NOW);
+  if (options.requireReasons === false) {
+    fixtures.settings = { ...fixtures.settings, requireReasons: false };
+    fixtures.me = { ...fixtures.me, requireReasons: false };
+  }
+  const api = createMockApi({ fixtures, overrides: options.overrides });
   vi.stubGlobal('fetch', api.fetch);
   return api;
 }
@@ -64,6 +68,7 @@ export function renderWithProviders(ui: ReactElement, options: RenderOptions = {
     authMode: 'local',
     oidcConfigured: false,
     evaluation: true,
+    requireReasons: options.requireReasons ?? true,
   };
   const router = createMemoryRouter(
     [

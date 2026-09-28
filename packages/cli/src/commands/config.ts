@@ -69,23 +69,28 @@ export function exportCommand(deps: CliDeps): Command {
   );
 }
 
-/** `switchboard apply -f file.yaml [--dry-run] --reason "<text>"`. */
+/**
+ * `switchboard apply -f file.yaml [--dry-run] [--reason "<text>"]`. The server decides whether a
+ * reason is required (`requireReasons`, on by default) and answers 400 when one is missing.
+ */
 export function applyCommand(deps: CliDeps): Command {
   return serverFlags(
     new Command('apply')
       .description('Apply a YAML configuration (one transaction, audited with the reason)')
       .requiredOption('-f, --file <file>', 'the YAML configuration to apply')
-      .requiredOption('--reason <text>', 'one-line reason recorded in the audit log')
+      .option(
+        '--reason <text>',
+        'one-line reason recorded in the audit log (required unless the server makes reasons optional)',
+      )
       .option('--dry-run', 'validate and list the changes without writing anything'),
   ).action(
-    run(deps, async (opts: ServerFlags & { file: string; reason: string; dryRun?: boolean }) => {
-      if (opts.reason.trim() === '') throw new Error('--reason must not be empty');
+    run(deps, async (opts: ServerFlags & { file: string; reason?: string; dryRun?: boolean }) => {
       const text = await deps.readFile(opts.file);
       checkYaml(text, opts.file);
       const server = serverOptions(opts, deps.env);
       const request: ApplyRequest = {
         yaml: text,
-        reason: opts.reason,
+        reason: opts.reason?.trim() ?? '',
         ...(opts.dryRun === true ? { dryRun: true } : {}),
       };
       const answer = await apiRequest(deps, server, 'POST', '/apply', { json: request });

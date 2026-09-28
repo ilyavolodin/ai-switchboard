@@ -69,6 +69,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       evaluation: config.evaluation,
       mustChangePassword: row !== undefined && restricted,
       evaluationAdminEmail: await evaluationAdminEmail(db, config),
+      requireReasons: await app.reasons.required(),
     };
   };
 

@@ -16,6 +16,8 @@ export interface ReasonDialogProps {
   confirmLabel: string;
   danger?: boolean;
   placeholder?: string;
+  /** Reasons are optional on this installation: ask for an optional note, allow a blank one. */
+  optional?: boolean;
   busy?: boolean;
   onConfirm: (reason: string) => void;
   onCancel: () => void;
@@ -23,8 +25,9 @@ export interface ReasonDialogProps {
 
 /**
  * Asks for the one-line reason every state-changing action carries (it becomes the audit
- * entry). Confirm is refused until a non-blank reason is typed. Prefer `useReasonedMutation`,
- * which opens this through `<ReasonProvider>`.
+ * entry). Confirm is refused until a non-blank reason is typed, unless `optional` (the
+ * installation does not require reasons), when the field is an optional note. Prefer
+ * `useReasonedMutation`, which opens this through `<ReasonProvider>`.
  */
 export function ReasonDialog({
   open,
@@ -33,6 +36,7 @@ export function ReasonDialog({
   confirmLabel,
   danger,
   placeholder = 'e.g. investigating repeated test timeouts',
+  optional = false,
   busy,
   onConfirm,
   onCancel,
@@ -43,7 +47,7 @@ export function ReasonDialog({
   const submit = (e: SubmitEvent) => {
     e.preventDefault();
     const trimmed = reason.trim();
-    if (!trimmed) {
+    if (!trimmed && !optional) {
       setError('A reason is required — it becomes the audit entry.');
       return;
     }
@@ -63,17 +67,21 @@ export function ReasonDialog({
       <form className={styles.form} onSubmit={submit} noValidate>
         {consequence != null && <p className={styles.consequence}>{consequence}</p>}
         <Field
-          label="Reason"
-          required
+          label={optional ? 'Note (optional)' : 'Reason'}
+          required={!optional}
           error={error}
-          help="One line. It is recorded in the audit log."
+          help={
+            optional
+              ? 'One line for the audit log. Leave it blank to record “(no reason given)”.'
+              : 'One line. It is recorded in the audit log.'
+          }
         >
           {({ id, describedBy, invalid }) => (
             <TextField
               id={id}
               aria-describedby={describedBy}
               invalid={invalid}
-              required
+              required={!optional}
               autoComplete="off"
               maxLength={500}
               placeholder={placeholder}

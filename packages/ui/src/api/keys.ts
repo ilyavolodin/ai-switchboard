@@ -6,6 +6,7 @@ import type {
   InputPreviewRequest,
   PluginKind,
   RunsQuery,
+  SourcePreviewRequest,
   StatsWindow,
 } from '@ai-switchboard/core/contract';
 
@@ -29,6 +30,7 @@ export const qk = {
     detail: (id: string) => ['sources', 'detail', id] as const,
     stats: (id: string, window: StatsWindow) => ['sources', 'stats', id, window] as const,
     events: (id: string, type?: string) => ['sources', 'events', id, type ?? ''] as const,
+    lastDelivery: (id: string) => ['sources', 'last-delivery', id] as const,
   },
 
   executors: {
@@ -55,6 +57,7 @@ export const qk = {
     filter: (req: FilterPreviewRequest) => ['preview', 'filter', req] as const,
     input: (req: InputPreviewRequest) => ['preview', 'input', req] as const,
     cron: (req: CronPreviewRequest) => ['preview', 'cron', req] as const,
+    source: (req: SourcePreviewRequest) => ['preview', 'source', req] as const,
   },
 
   events: {

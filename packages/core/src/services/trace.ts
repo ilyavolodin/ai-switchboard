@@ -25,6 +25,7 @@ import {
   type StepStatus,
 } from '../domain/status.js';
 
+import { explanationsFor } from './explain.js';
 import { isUuid } from './pipeline/errors.js';
 import { relatedBatchIds } from './pipeline/load.js';
 
@@ -238,7 +239,8 @@ async function buildTrace(
       eventId: e.id,
       ...(e.artifact.url ? { externalUrl: e.artifact.url } : {}),
     });
-    for (const m of e.matchDecisions) {
+    // Skips are summarised by the explanation entries below, not listed one by one.
+    for (const m of e.matchDecisions.filter((d) => d.skip === undefined)) {
       entries.push({
         at: m.at,
         kind: 'filter',
@@ -253,6 +255,40 @@ async function buildTrace(
         },
         eventId: e.id,
         ...pn(m.processId),
+      });
+    }
+  }
+
+  const explained = await explanationsFor(deps.db, eventRows);
+  for (const e of eventRows) {
+    const list = explained.get(e.id) ?? [];
+    const at = e.matchDecisions[0]?.at ?? iso(e.receivedAt);
+    if (list.length === 0 && e.stage === 'unmatched') {
+      entries.push({
+        at,
+        kind: 'filter',
+        tone: 'off',
+        title: 'Nothing ran: no process has a trigger on this source',
+        eventId: e.id,
+      });
+    }
+    for (const x of list) {
+      if (x.taken) continue;
+      entries.push({
+        at,
+        kind: 'filter',
+        tone: x.tone === 'warn' ? 'warn' : 'off',
+        title: `${x.processName} did not take it: ${x.reason}`,
+        ...(x.basis === 'now'
+          ? {
+              detail:
+                'Explained from the configuration as it is now: nothing was recorded for this process when the event arrived.',
+            }
+          : {}),
+        data: { taken: false, reason: x.reason, basis: x.basis },
+        eventId: e.id,
+        processId: x.processId,
+        processName: x.processName,
       });
     }
   }

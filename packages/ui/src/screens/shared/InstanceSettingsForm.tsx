@@ -10,10 +10,15 @@ import { Card } from '../../components/Card.js';
 import { Field } from '../../components/Field.js';
 import { SchemaForm } from '../../components/SchemaForm.js';
 import { TextField } from '../../components/TextField.js';
-import { secretProviderIds, withoutUndefined } from '../../lib/instances.js';
+import { secretProviderIds } from '../../lib/instances.js';
 import { validateAgainstSchema } from '../../lib/schema.js';
+import type { DeliverySample } from '../../lib/suggest.js';
 import styles from '../Sources/forms.module.css';
-import { type InstanceSettingsDraft, instanceChangeCount } from './instanceSettings.js';
+import {
+  editableCaps,
+  type InstanceSettingsDraft,
+  instanceChangeCount,
+} from './instanceSettings.js';
 import { unsavedLabel } from './unsavedLabel.js';
 import { LeaveGuardDialog } from './LeaveGuardDialog.js';
 import { useLeaveGuard } from './useLeaveGuard.js';
@@ -33,10 +38,13 @@ export interface InstanceSettingsFormProps<C extends object> {
   entity: InstanceSettingsEntity<C>;
   /** "source" / "executor", for the delete card's copy. */
   kind: 'source' | 'executor';
-  /** The core caps block. */
-  renderCaps: (caps: C, onChange: (next: C) => void, disabled: boolean) => ReactNode;
-  /** Asks for a reason and saves; resolves `null` when cancelled or failed. */
-  onSave: (draft: InstanceSettingsDraft<C>) => Promise<unknown>;
+  /** The core caps block; `baseline` is the saved caps, for the changed markers. */
+  renderCaps: (caps: C, onChange: (next: C) => void, disabled: boolean, baseline: C) => ReactNode;
+  /**
+   * Asks for a reason and saves; resolves to the saved instance as the server returned it, or
+   * `null` when cancelled or failed.
+   */
+  onSave: (draft: InstanceSettingsDraft<C>) => Promise<InstanceSettingsEntity<C> | null>;
   saving: boolean;
   /** Asks for a reason and deletes; resolves `null` when cancelled or failed. */
   onDelete: () => Promise<unknown>;
@@ -45,6 +53,10 @@ export interface InstanceSettingsFormProps<C extends object> {
   deleteNote: string;
   /** Where to go once it is deleted (the list). */
   afterDelete: string;
+  /** A sample delivery the schema form's path fields suggest from (push sources). */
+  sample?: DeliverySample | null;
+  /** Shown under the schema form with the draft settings (the sample-delivery preview). */
+  renderAfterSettings?: (settings: Record<string, unknown>) => ReactNode;
 }
 
 /**
@@ -62,6 +74,8 @@ export function InstanceSettingsForm<C extends object>({
   deleting,
   deleteNote,
   afterDelete,
+  sample,
+  renderAfterSettings,
 }: InstanceSettingsFormProps<C>) {
   const navigate = useNavigate();
   const canEdit = useCan('operator');
@@ -70,8 +84,25 @@ export function InstanceSettingsForm<C extends object>({
   const [settings, setSettings] = useState(entity.settings);
   const [caps, setCaps] = useState<C>(entity.caps);
   const [attempted, setAttempted] = useState(false);
+  // What the draft is compared against: the instance as last saved or loaded. The server
+  // normalises a save (schema defaults filled in, jsonb key order, derived caps), so after a
+  // save both the draft and this baseline are reset from its response, not kept from the form.
+  const [saved, setSaved] = useState<InstanceSettingsDraft<C>>(entity);
+  const [seen, setSeen] = useState(entity);
 
-  const changes = instanceChangeCount({ name, settings, caps }, entity);
+  const changes = instanceChangeCount({ name, settings, caps }, saved);
+  const adopt = (next: InstanceSettingsDraft<C>) => {
+    setSaved({ name: next.name, settings: next.settings, caps: next.caps });
+    setName(next.name);
+    setSettings(next.settings);
+    setCaps(next.caps);
+    setAttempted(false);
+  };
+  // A refetch (another tab's save, a reload) replaces a clean form; unsaved edits are kept.
+  if (seen !== entity) {
+    setSeen(entity);
+    if (changes === 0) adopt(entity);
+  }
   const leaveGuard = useLeaveGuard(changes > 0);
   const errors = validateAgainstSchema(entity.settingsSchema, settings);
   const nameMissing = name.trim() === '';
@@ -79,17 +110,15 @@ export function InstanceSettingsForm<C extends object>({
   const disabled = !canEdit;
 
   const discard = () => {
-    setName(entity.name);
-    setSettings(entity.settings);
-    setCaps(entity.caps);
-    setAttempted(false);
+    adopt(saved);
   };
   const submit = async () => {
     if (invalid) {
       setAttempted(true);
       return;
     }
-    await onSave({ name: name.trim(), settings, caps: withoutUndefined(caps) });
+    const result = await onSave({ name: name.trim(), settings, caps: editableCaps(caps) });
+    if (result) adopt(result);
   };
   const remove = async () => {
     const result = await onDelete();
@@ -105,7 +134,7 @@ export function InstanceSettingsForm<C extends object>({
           label="Name"
           required
           layout="row"
-          changed={name !== entity.name}
+          changed={name !== saved.name}
           error={attempted && nameMissing ? 'Required' : null}
         >
           {({ id, describedBy, invalid: bad }) => (
@@ -125,15 +154,17 @@ export function InstanceSettingsForm<C extends object>({
           schema={entity.settingsSchema}
           value={settings}
           onChange={setSettings}
-          baseline={entity.settings}
+          baseline={saved.settings}
           secretStatus={entity.secretRefs}
           secretProviders={secretProviderIds(secretProviders.data)}
           showAllErrors={attempted}
           disabled={disabled}
           layout="row"
+          sample={sample}
         />
+        {renderAfterSettings?.(settings)}
       </Card>
-      {renderCaps(caps, setCaps, disabled)}
+      {renderCaps(caps, setCaps, disabled, saved.caps)}
       {attempted && invalid && (
         <Banner tone="error" title="Some fields need attention">
           Fix the highlighted fields, then save.

@@ -1066,6 +1066,66 @@ export class PluginHost implements PluginRuntime {
     if (committed) await this.markResolved('source', row.id);
   }
 
+  /**
+   * A throwaway source built from draft settings, for the sample-delivery preview: secret
+   * references are resolved and `create` runs, but nothing is registered, stored, or counted
+   * against the plugin (a half-typed draft is not the plugin's fault). `secretValues` lets the
+   * caller redact what it returns.
+   */
+  async buildPreviewSource(
+    typeId: string,
+    settings: Record<string, unknown>,
+    instanceId: string,
+    name: string,
+  ): Promise<
+    | { ok: true; live: LiveSource }
+    | { ok: false; stage: 'plugin' | 'secret' | 'create'; message: string; secretValues: string[] }
+  > {
+    const entry = this.types.source.get(typeId);
+    if (!entry) {
+      return { ok: false, stage: 'plugin', message: 'plugin_unavailable', secretValues: [] };
+    }
+    let resolved: { settings: Settings; secrets: string[] };
+    try {
+      resolved = await this.resolveSettings(settings);
+    } catch (err) {
+      return { ok: false, stage: 'secret', message: errorText(err), secretValues: [] };
+    }
+    try {
+      const ctx = this.context(
+        instanceId,
+        name,
+        entry.pluginName,
+        this.pluginCapabilities(entry.pluginName),
+      );
+      const source = entry.type.create(resolved.settings, ctx);
+      const eventTypes =
+        entry.type.dynamicEventTypes && entry.type.instanceEventTypes
+          ? entry.type.instanceEventTypes(resolved.settings)
+          : entry.type.eventTypes;
+      return {
+        ok: true,
+        live: {
+          id: instanceId,
+          name,
+          typeId,
+          pluginName: entry.pluginName,
+          type: entry.type,
+          source,
+          eventTypes,
+          secretValues: resolved.secrets,
+        },
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        stage: 'create',
+        message: errorText(err),
+        secretValues: resolved.secrets,
+      };
+    }
+  }
+
   private async buildExecutor(row: typeof executors.$inferSelect, ticket: number): Promise<void> {
     const from: BuiltInstance = { kind: 'executor', version: row.configVersion, name: row.name };
     const entry = this.types.executor.get(row.typeId);

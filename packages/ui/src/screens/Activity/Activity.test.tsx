@@ -40,7 +40,7 @@ describe('Activity', () => {
     );
     expect(
       within(list).getByRole('listitem', { name: /LOL-1709: no process matched/ }),
-    ).toHaveTextContent('no process');
+    ).toHaveTextContent('why: Autofix: event type comment.created is not in trigger');
   });
 
   it('puts filters in the URL and sends them to GET /events', async () => {

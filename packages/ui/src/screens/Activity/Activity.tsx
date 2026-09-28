@@ -265,7 +265,9 @@ function EventRow({ row }: { row: ActivityRow }) {
       </span>
       <span className={styles.processes}>
         {row.processes.length === 0 ? (
-          <span className={styles.none}>no process</span>
+          <span className={styles.none} title={row.whyNothingRan ?? undefined}>
+            {row.whyNothingRan ? `why: ${row.whyNothingRan}` : 'no process'}
+          </span>
         ) : (
           row.processes.map((p) => (
             <span key={p.id} className={styles.process}>

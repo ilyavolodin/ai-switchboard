@@ -3,6 +3,8 @@ import { type ReactNode, useMemo, useState } from 'react';
 
 import {
   asSchema,
+  docsLink,
+  effectiveDefault,
   enumLabel,
   fieldKind,
   fieldSchema,
@@ -23,11 +25,13 @@ import {
   type FieldKind,
   type ValuePath,
 } from '../lib/schema.js';
+import { samplePaths, type DeliverySample, type Suggestion } from '../lib/suggest.js';
 import { Button } from './Button.js';
 import { Checkbox } from './Checkbox.js';
 import { CronField } from './CronField.js';
 import { ExpressionEditor } from './ExpressionEditor.js';
 import { Field, type FieldIds } from './Field.js';
+import { PathInput } from './PathInput.js';
 import styles from './SchemaForm.module.css';
 import { SecretRefInput } from './SecretRefInput.js';
 import { Radio } from './Radio.js';
@@ -53,6 +57,11 @@ export interface SchemaFormProps {
   disabled?: boolean;
   /** `row` puts labels beside controls (settings pages). */
   layout?: 'stack' | 'row';
+  /**
+   * A sample delivery (`{ body, headers, query }`): `x-widget: 'path'` fields suggest its dotted
+   * paths with example values, and expression fields offer them as completions.
+   */
+  sample?: DeliverySample | null;
 }
 
 interface Ctx {
@@ -65,6 +74,8 @@ interface Ctx {
   baseline: Record<string, unknown> | undefined;
   disabled: boolean;
   layout: 'stack' | 'row';
+  /** Paths of the sample delivery, for path fields and expression completion. */
+  paths: Suggestion[];
 }
 
 /**
@@ -74,6 +85,8 @@ interface Ctx {
  * (`secret://<provider>/<name>`, values never shown), `x-widget` picks textarea / password /
  * select / code / cron / expression, `x-placeholder` and `x-help` add hints, and `x-warning`
  * (`{ when, message }`) shows a red warning under a field while its value matches `when`.
+ * `x-widget: 'path'` fields suggest the dotted paths of `sample`; `x-docs` adds a docs link;
+ * `x-effectiveDefault` shows what the plugin does while a field is unset.
  * `if`/`then`/`else` (also inside `allOf`) and `dependentRequired` decide which fields are shown
  * and required for the current value (see `resolveConditionals`). Titles, descriptions,
  * defaults and required markers come from the schema; Ajv validates as you type.
@@ -89,9 +102,11 @@ export function SchemaForm({
   baseline,
   disabled = false,
   layout = 'stack',
+  sample,
 }: SchemaFormProps) {
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
   const errors = useMemo(() => validateAgainstSchema(schema, value), [schema, value]);
+  const paths = useMemo(() => (sample ? samplePaths(sample) : []), [sample]);
   const ctx: Ctx = {
     root: value,
     set: (path, v) => {
@@ -111,6 +126,7 @@ export function SchemaForm({
     baseline,
     disabled,
     layout,
+    paths,
   };
   return (
     <div className={styles.form}>
@@ -156,10 +172,19 @@ function ObjectFields({ schema, path, ctx }: { schema: JSONSchema; path: ValuePa
 function helpFor(s: JSONSchema, title: string): ReactNode {
   const description = typeof s.description === 'string' ? s.description : null;
   const long = typeof s['x-help'] === 'string' ? s['x-help'] : null;
-  if (!description && !long) return undefined;
+  const docs = docsLink(s);
+  if (!description && !long && !docs) return undefined;
   return (
     <>
       {description}
+      {docs && (
+        <>
+          {' '}
+          <a href={docs.url} target="_blank" rel="noreferrer">
+            {docs.label}
+          </a>
+        </>
+      )}
       {long && (
         <details className={styles.more}>
           <summary>More about {title.toLowerCase()}</summary>
@@ -396,6 +421,7 @@ function ControlField({
           ids={ids}
           name={name}
           schema={schema}
+          path={path}
           kind={kind}
           title={title}
           required={required}
@@ -420,6 +446,7 @@ interface ControlProps {
   ids: FieldIds;
   name: string;
   schema: JSONSchema;
+  path: ValuePath;
   kind: FieldKind;
   title: string;
   required: boolean;
@@ -531,6 +558,24 @@ function Control(props: ControlProps) {
         value={text}
         disabled={ctx.disabled}
         onChange={setText}
+        textareaRows={4}
+        completions={{ variables: [], extra: ctx.paths, switchboardFunctions: false }}
+      />
+    );
+  }
+  if (widget === 'path') {
+    return (
+      <PathInput
+        id={id}
+        describedBy={describedBy}
+        label={title}
+        value={text}
+        paths={ctx.paths}
+        invalid={invalid}
+        changed={changed}
+        placeholder={placeholder}
+        disabled={ctx.disabled}
+        onChange={setText}
       />
     );
   }
@@ -576,6 +621,7 @@ function Control(props: ControlProps) {
 function EnumControl({
   ids,
   schema,
+  path,
   title,
   required,
   value,
@@ -589,9 +635,10 @@ function EnumControl({
   const index = indexOf(value);
   const labelOf = (o: unknown): string => enumLabel(schema, o) ?? formatDefault(o);
   if (radio) {
-    // An unset value shows the default the plugin will apply.
+    // An unset value shows what the plugin will do: `x-effectiveDefault`, else the default.
+    const unset = effectiveDefault(schema, getIn(ctx.root, path.slice(0, -1)));
     const shown =
-      index === -1 && value === undefined && 'default' in schema ? indexOf(schema.default) : index;
+      index === -1 && value === undefined && unset !== undefined ? indexOf(unset) : index;
     return (
       <div
         id={id}

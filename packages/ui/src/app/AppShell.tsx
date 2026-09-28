@@ -83,6 +83,7 @@ export function AppShell() {
     authMode: me.data.authMode,
     oidcConfigured: me.data.oidcConfigured,
     evaluation: me.data.evaluation,
+    requireReasons: me.data.requireReasons,
   };
   // Local accounts are first-class, so a missing issuer alone is no warning: only an evaluation
   // install (the Compose quick start) without OIDC shows the banner.

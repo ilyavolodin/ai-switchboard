@@ -7,6 +7,7 @@ import {
   decideMatches,
   eventStageAfterMatch,
   eventTypeMatches,
+  skippedTriggers,
   type MatchableProcess,
 } from './match.js';
 
@@ -61,6 +62,31 @@ describe('candidateTriggers', () => {
       { processId: 'p1', triggerId: 't1', filter: 'x' },
       { processId: 'p7', triggerId: 'a' },
       { processId: 'p7', triggerId: 'b' },
+    ]);
+  });
+});
+
+describe('skippedTriggers', () => {
+  const event = { sourceId: 's1', type: 'github.pr.labeled' };
+
+  it('names why each trigger on the source was passed over', () => {
+    const processes = [
+      process('p1', { triggers: [trigger('t1', 's1', ['github.pr.labeled'])] }),
+      process('p2', { triggers: [trigger('t1', 's2', ['*'])] }),
+      process('p3', { triggers: [trigger('t1', 's1', ['github.pr.opened'])] }),
+      process('p4', { triggers: [trigger('t1', 's1', ['*'], { enabled: false })] }),
+      process(
+        'p5',
+        {
+          triggers: [trigger('a', 's2', ['*']), trigger('b', 's1', ['*']), trigger('c', 's1', [])],
+        },
+        false,
+      ),
+    ];
+    expect(skippedTriggers(event, processes)).toEqual([
+      { processId: 'p3', triggerId: 't1', skip: 'type_not_subscribed' },
+      { processId: 'p4', triggerId: 't1', skip: 'trigger_disabled' },
+      { processId: 'p5', triggerId: 'b', skip: 'process_disabled' },
     ]);
   });
 });

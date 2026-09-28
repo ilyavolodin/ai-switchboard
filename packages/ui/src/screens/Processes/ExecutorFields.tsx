@@ -146,6 +146,7 @@ export function ExecutorFields({
               textareaRows={7}
               value={doc.input}
               disabled={disabled}
+              completions={{ variables: ['events', 'process', 'run', 'mode'] }}
               insertions={[
                 { label: 'events' },
                 { label: 'events.artifact' },

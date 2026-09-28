@@ -17,6 +17,13 @@ export interface ProvisionResult {
   message?: string;
 }
 
+/** What `Source.parseWithNotes` returns (since SDK 1.4). */
+export interface ParseReport {
+  events: EventDraft[];
+  /** Why parts of the delivery produced no event, for the person previewing a sample. */
+  notes: string[];
+}
+
 export interface PollResult {
   events: EventDraft[];
   watermark: string;
@@ -32,6 +39,14 @@ export interface Source {
    * because JSONata evaluation is.
    */
   parse?(req: RawRequest): EventDraft[] | Promise<EventDraft[]>;
+  /**
+   * Optional (since SDK 1.4): `parse` plus plain-language notes on what the delivery did not
+   * produce and why ("no rule matched: headers.x-event-type is `issue.updated`"). The core's
+   * sample-delivery preview calls it instead of `parse` when present, so a person setting up a
+   * source sees why an event is missing. Must return the same events `parse` returns, stay pure,
+   * and never put a secret or the raw body in a note.
+   */
+  parseWithNotes?(req: RawRequest): ParseReport | Promise<ParseReport>;
   /** Register the webhook in the external system via its API. */
   provision?(webhookUrl: string): Promise<ProvisionResult>;
   // pull

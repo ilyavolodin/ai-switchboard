@@ -72,6 +72,8 @@ export function useModal(
     const onKey = (e: KeyboardEvent) => {
       if (stack[stack.length - 1] !== layer) return;
       if (e.key === 'Escape') {
+        // An open suggestion list (path field, expression editor) takes Escape first.
+        if (e.target instanceof HTMLElement && e.target.dataset.suggestionsOpen === 'true') return;
         e.stopPropagation();
         onCloseRef.current();
       } else if (e.key === 'Tab' && node) {

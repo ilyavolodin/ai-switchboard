@@ -233,6 +233,8 @@ describe('ProcessEditor', () => {
     await user.type(screen.getByRole('textbox', { name: /^Name/ }), 'Nightly digest');
     await user.click(screen.getByRole('button', { name: 'Create process' }));
     const dialog = await screen.findByRole('dialog');
+    // A new process starts enabled, and the prompt says so.
+    expect(within(dialog).getByText(/created enabled/)).toBeInTheDocument();
     await user.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'new digest');
     await user.click(within(dialog).getByRole('button', { name: 'Create process' }));
     await vi.waitFor(() => {
@@ -240,8 +242,30 @@ describe('ProcessEditor', () => {
     });
     expect(api.callsTo('POST /processes')[0]?.body).toMatchObject({
       reason: 'new digest',
-      document: { name: 'Nightly digest', executor: { instanceId: 'ex-routines' } },
+      document: {
+        name: 'Nightly digest',
+        enabled: true,
+        executor: { instanceId: 'ex-routines' },
+      },
     });
+  });
+
+  it('enables and disables an existing process from the Basics section', async () => {
+    const { api, user } = renderWithProviders(<ProcessEditor />, editAutofix);
+    await loaded();
+    const basics = screen.getByRole('region', { name: 'Basics' });
+    const toggle = within(basics).getByRole('switch', { name: 'Enabled' });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    expect(within(basics).getByText(/no event or sweep starts it/)).toBeInTheDocument();
+    const footer = screen.getByRole('region', { name: 'Save changes' });
+    expect(within(footer).getByText('1 unsaved change')).toBeInTheDocument();
+    await saveWithReason(user, 'pause while the routine is fixed');
+    await vi.waitFor(() => {
+      expect(api.callsTo('PUT /processes/p-autofix')).toHaveLength(1);
+    });
+    const body = api.callsTo('PUT /processes/p-autofix')[0]?.body as UpdateProcessRequest;
+    expect(body.document.enabled).toBe(false);
   });
 
   it('asks before leaving with unsaved changes, and lets a clean editor go', async () => {

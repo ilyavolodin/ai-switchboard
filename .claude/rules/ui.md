@@ -22,7 +22,8 @@ paths:
   and meters are gauges and bands, activity is a timeline. Numbers are labels on pictures.
 - Data fetching goes through TanStack Query hooks in `src/api/` (one hook per endpoint, typed with
   `@ai-switchboard/core/contract`). Components never call `fetch` directly.
-- Every state-changing action opens a reason prompt (`<ReasonDialog>`) and sends `reason`. Actions
+- Every state-changing action opens a reason prompt (`<ReasonDialog>`) and sends `reason` (through
+  `useReasonPrompt`, which skips it when an admin made reasons optional). Actions
   that affect the whole fleet use `<ConfirmDialog>` with a sentence naming the effect.
 - Viewer role: controls stay visible but are disabled, with a tooltip that names the required role
   (`useCan('operator')`).

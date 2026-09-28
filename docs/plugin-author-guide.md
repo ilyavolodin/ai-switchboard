@@ -117,15 +117,17 @@ name, another mime type, invalid base64, a payload that isn't SVG, or a URI over
 Every type declares `settingsSchema` as JSON Schema draft 2020-12. The UI renders the form from
 it, so a plugin never ships UI code. A few annotations steer the form:
 
-| Annotation      | Effect                                                                                                                                                                                                                   |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `x-secret`      | The field holds a secret. The UI takes a `secret://<provider>/<name>` reference, never shows a value, and the core resolves it before `create`                                                                           |
-| `x-widget`      | Picks a control: `expression` (JSONata editor), `textarea`, `json`                                                                                                                                                       |
-| `x-group`       | Groups fields under a heading                                                                                                                                                                                            |
-| `x-order`       | Orders fields within a group                                                                                                                                                                                             |
-| `x-placeholder` | Placeholder text                                                                                                                                                                                                         |
-| `x-help`        | Longer help shown under the field                                                                                                                                                                                        |
-| `x-warning`     | `{ when: <JSON Schema>, message }` (or a list): a red warning under the field while its value matches `when`, e.g. `{ when: { const: 'none' }, message: 'Anyone who knows the URL can send events — evaluation only.' }` |
+| Annotation           | Effect                                                                                                                                                                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `x-secret`           | The field holds a secret. The UI takes a `secret://<provider>/<name>` reference, never shows a value, and the core resolves it before `create`                                                                                            |
+| `x-widget`           | Picks a control: `expression` (JSONata editor), `textarea`, `json`, `path` (1.4: a dotted path into a sample delivery, e.g. `body.issue.id`; the form suggests the paths of the sample a person pasted)                                   |
+| `x-group`            | Groups fields under a heading                                                                                                                                                                                                             |
+| `x-order`            | Orders fields within a group                                                                                                                                                                                                              |
+| `x-placeholder`      | Placeholder text                                                                                                                                                                                                                          |
+| `x-help`             | Longer help shown under the field                                                                                                                                                                                                         |
+| `x-warning`          | `{ when: <JSON Schema>, message }` (or a list): a red warning under the field while its value matches `when`, e.g. `{ when: { const: 'none' }, message: 'Anyone who knows the URL can send events — evaluation only.' }`                  |
+| `x-effectiveDefault` | 1.4: `[{ when?: <JSON Schema over the parent object>, value }]`: what the plugin does while the field is unset. The form shows it (and decides conditionals with it) but never writes it, unlike `default`, which the core stores on save |
+| `x-docs`             | 1.4: `{ url, label? }`: a documentation link after the field's description (opens in a new tab)                                                                                                                                           |
 
 ```typescript
 import type { JSONSchema } from '@ai-switchboard/sdk';
@@ -193,7 +195,17 @@ instead of throwing, for paths that must never throw. Both come from the SDK (1.
 A source whose event types are defined by the person configuring it (a generic webhook or poller)
 can reuse the SDK's custom event type helpers: `eventTypeDefinitionSchema(sourceId, example)` for
 the settings form, `compileEventTypes(sourceId, definitions)` for `eventTypesFor`, and
-`narrowMapped(item, types)` to turn a mapping's output into a declared event.
+`narrowMapped(item, types)` to turn a mapping's output into a declared event. Since 1.4, a type
+whose attribute names are only known per delivery declares `openAttributesSchema(properties?)`
+(any extra key is accepted when its value is flat, so the core still refuses nested values), and
+`flattenAttributes(body, { depth?, maxAttributes?, maxStringLength? })` turns an object into flat
+attributes with filter-friendly keys (`deployment.id` → `deployment_id`, `attributeKey`). The
+generic webhook's quick mode is built from these two.
+
+A setting whose value the core must not fill in on save (because "unset" means something, like the
+webhook's `mappingMode`: unset + a `mapping` = an instance from before the modes, which stays on
+JSONata) leaves out `default` and declares `x-effectiveDefault` so the form still shows what
+applies.
 
 ## Event types
 
@@ -406,6 +418,14 @@ export const deploysSource: SourceType = {
   events. It may be `async` (JSONata evaluation is), but it does no I/O and reads no clock.
 - Return an empty array for deliveries you don't turn into events (a ping, an unsubscribed
   action). Throwing counts as a plugin error.
+- Optionally (1.4) implement `parseWithNotes(req)` → `{ events, notes }`: the same events as
+  `parse`, plus plain-language notes on what produced no event and why ("no rule matched:
+  `headers.x-event-type` is `issue.updated`"). The Add source dialog and the Settings tab of every
+  push source have a _Try it with a sample delivery_ panel (`POST /api/v1/sources/preview`): it
+  builds a throwaway instance from the draft settings, runs the pasted sample through
+  `parseWithNotes` (or `parse`) — never `verify` — and shows the events, the core's validation of
+  them, and your notes. Notes must not contain a secret or the raw body; the conformance kit
+  checks both and that the events match `parse`.
 - `resolve` reads live state, never a cache: the filters that need it are exactly the ones a stale
   answer breaks. Return `null` for a 404.
 - A source type without `verify` is refused for anything but the generic `webhook` source's
@@ -784,7 +804,8 @@ The checks encode the contracts above:
   resolves; `verify` accepts signed deliveries and rejects a wrong signature, a missing header
   and a stale timestamp; `parse` is deterministic and its events validate; `dedupeKey` is equal
   for the same change and different across changes; no attribute contains the raw body or a
-  secret; `resolve` handles a 404; `poll` advances the watermark and never re-emits.
+  secret; `parseWithNotes`, when present, returns `parse`'s events and notes without the raw body
+  or a secret; `resolve` handles a 404; `poll` advances the watermark and never re-emits.
 - **Executor:** manifest validates; `targetSchema` and `inputSchema` are valid with examples;
   `idempotentInvoke` is declared; the tracking mode's method exists; `invoke` with the example
   target and input against your stub returns a well-formed `InvokeResult`; `verifyCallback`
@@ -951,7 +972,9 @@ with a real token.
   `^1.0.0` and you will load on every 1.x host. The host checks the full range, so if you use an
   export added in a later minor (`parseWith`, `invokeErrorForStatus` and the custom event type
   helpers arrived in 1.2.0; `icon`, `ICON_NAMES`, `invokeTimeoutSeconds`, `invokeTimeoutFor` and
-  `ActionSpec.idempotent` in 1.3.0), declare that minor (`^1.3.0`) in both `switchboard.sdk` and
+  `ActionSpec.idempotent` in 1.3.0; `Source.parseWithNotes`, `openAttributesSchema`,
+  `flattenAttributes`, `attributeKey`, `x-effectiveDefault`, `x-docs` and `x-widget: 'path'` in
+  1.4.0), declare that minor (`^1.4.0`) in both `switchboard.sdk` and
   `peerDependencies`. An older host ignores the optional fields.
 - Your plugin's own version is yours, but treat event type ids, attribute names and action ids as
   public API: people's filters and processes depend on them. Removing or renaming one is a major.
