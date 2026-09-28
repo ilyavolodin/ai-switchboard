@@ -14,7 +14,8 @@
 # Layout of the runtime image:
 #   /app/core            @ai-switchboard/core (dist, drizzle migrations, public UI, prod node_modules
 #                        including the reference plugins)
-#   /app/cli             @ai-switchboard/cli (`switchboard` on PATH)
+#   /app/core/cli        @ai-switchboard/cli's built files (`switchboard` on PATH), sharing the core's
+#                        node_modules so the image holds one copy of the core
 #   /opt/switchboard     $SWITCHBOARD_HOME: plugins/ (installed plugins), plugins.lock.json
 #                        Mount a volume or a prepared directory at /opt/switchboard/plugins to add
 #                        plugins without rebuilding.
@@ -40,12 +41,33 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 COPY . .
 RUN pnpm build
 
-# Self-contained production trees (workspace siblings copied in, not symlinked). `deploy` installs
-# from the store, so it mounts the same cache as the install step (otherwise it re-downloads
-# every production dependency on each build).
+# One self-contained production tree: the core (workspace siblings, including the reference
+# plugins, copied in rather than symlinked). `deploy` installs from the store, so it mounts the same
+# cache as the install step (otherwise it re-downloads every production dependency on each build).
+#
+# The CLI is not deployed separately: that would carry a second full copy of the core and its
+# dependencies. Its built files go to /out/core/cli with no package.json of their own, so
+# `@ai-switchboard/core` resolves by package self-reference to the core around it, and its other
+# dependencies resolve from the core's node_modules. The few the core does not already have
+# (commander) are copied in; they must be dependency-free, which the loop checks.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm --filter @ai-switchboard/core deploy --prod --legacy /out/core \
- && pnpm --filter @ai-switchboard/cli deploy --prod --legacy /out/cli
+ && cp -R packages/cli/dist /out/core/cli \
+ && find /out/core/cli \( -name '*.d.ts' -o -name '*.d.ts.map' \) -delete \
+ && extras=$(node -e ' \
+      const cli = require("./packages/cli/package.json").dependencies; \
+      const core = require("./packages/core/package.json").dependencies; \
+      for (const d of Object.keys(cli)) if (d !== "@ai-switchboard/core" && !(d in core)) console.log(d);') \
+ && for dep in $extras; do \
+      src="packages/cli/node_modules/$dep"; \
+      if node -e 'const p = require(process.argv[1]); process.exit(Object.keys(p.dependencies ?? {}).length ? 1 : 0)' "$PWD/$src/package.json"; then \
+        mkdir -p "/out/core/node_modules/$(dirname "$dep")" && cp -RL "$src" "/out/core/node_modules/$dep"; \
+      else \
+        echo "CLI dependency $dep has dependencies of its own; add it to the core or extend this step" >&2; exit 1; \
+      fi; \
+    done \
+ && node /out/core/cli/main.js --version \
+ && node /out/core/cli/main.js plugins list --home /tmp/switchboard-check
 
 # Optional extra plugins into $SWITCHBOARD_HOME/plugins, pinned in plugins.lock.json.
 ARG SWITCHBOARD_PLUGINS=""
@@ -53,7 +75,7 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
     mkdir -p /opt/switchboard/plugins \
  && for spec in $SWITCHBOARD_PLUGINS; do \
       echo "installing plugin $spec"; \
-      node /out/cli/dist/main.js plugins add "$spec" --home /opt/switchboard || exit 1; \
+      node /out/core/cli/main.js plugins add "$spec" --home /opt/switchboard || exit 1; \
     done
 
 # ------------------------------------------------------------------------------------------------
@@ -78,10 +100,9 @@ RUN apt-get update \
  && useradd --system --uid 10001 --gid switchboard --home-dir /opt/switchboard --shell /usr/sbin/nologin switchboard
 
 COPY --from=build --chown=10001:10001 /out/core /app/core
-COPY --from=build --chown=10001:10001 /out/cli /app/cli
 COPY --from=build --chown=10001:10001 /opt/switchboard /opt/switchboard
-RUN chmod +x /app/cli/dist/main.js \
- && ln -s /app/cli/dist/main.js /usr/local/bin/switchboard
+RUN chmod +x /app/core/cli/main.js \
+ && ln -s /app/core/cli/main.js /usr/local/bin/switchboard
 
 ENV NODE_ENV=production \
     SWITCHBOARD_HOME=/opt/switchboard \
