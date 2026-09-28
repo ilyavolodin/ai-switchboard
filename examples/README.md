@@ -7,8 +7,8 @@ Each file is a complete configuration in the `switchboard/v1` YAML format
 export SWITCHBOARD_URL=http://localhost:8080
 export SWITCHBOARD_TOKEN=<an admin API token from Settings → API tokens>
 
-switchboard apply -f examples/webhook-to-http.yaml --dry-run --reason "try the example"
-switchboard apply -f examples/webhook-to-http.yaml --reason "try the example"
+switchboard apply -f examples/log-executor.yaml --dry-run --reason "try the example"
+switchboard apply -f examples/log-executor.yaml --reason "try the example"
 ```
 
 `--dry-run` prints the change list (`create`, `update`, `unchanged`) without writing anything.
@@ -19,13 +19,14 @@ switchboard container.
 
 | File                                                       | What it wires                                                                                        | Needs                                                                                                            |
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [`log-executor.yaml`](log-executor.yaml)                   | A quick-mode `webhook` (no mapping, no secrets) → one process → the built-in `log` executor          | Nothing: the plain Compose stack. The end state of the [quick start](../docs/quick-start.md)                     |
 | [`webhook-to-http.yaml`](webhook-to-http.yaml)             | A signed `webhook` source → one process → the `http` executor calling the stub's `/exec`             | The Compose stack with the `stub` profile. `WEBHOOK_SECRET` is already set there                                 |
 | [`github-linear-autofix.yaml`](github-linear-autofix.yaml) | GitHub PR labeled + Linear issue filter → Claude Routines, with meters, quiet hours, approval, steps | `GITHUB_TOKEN`, `GITHUB_WEBHOOK_SECRET`, `LINEAR_API_KEY`, `LINEAR_WEBHOOK_SECRET`, `ROUTINE_*`, `SLACK_WEBHOOK` |
 | [`datadog-triage.yaml`](datadog-triage.yaml)               | Datadog monitor triggered → a GitHub Actions workflow, one run per service tag                       | `DATADOG_WEBHOOK_SECRET`, `DATADOG_API_KEY`, `DATADOG_APP_KEY`, `GITHUB_APP_PRIVATE_KEY`                         |
 
 ## webhook-to-http.yaml
 
-The 0.1 "wire one thing" setup and the end state of the [quick start](../docs/quick-start.md).
+The signed-webhook and real-HTTP variant from the quick start's [going further](../docs/quick-start.md#going-further-signed-webhooks-and-a-real-http-call) section.
 The `webhook` source verifies an HMAC-SHA256 signature in `x-signature-256` and maps the stub's
 sample alert body to a `webhook.alert.fired` event with `service`, `severity` and `message`
 attributes. The process `Alert to stub` has one trigger (critical alerts only), a 5-second

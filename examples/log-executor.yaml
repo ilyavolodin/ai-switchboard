@@ -1,44 +1,32 @@
-# Try the pipeline with no backend at all: a webhook source feeds a process bound to the
-# log executor, which writes every run to the server log. A sweep every five minutes starts a
-# run even without events.
+# The quick start as a file: a webhook in quick mode feeds a process bound to the log executor,
+# which writes every run to the server log. Nothing external is needed.
 #
 #   switchboard apply -f examples/log-executor.yaml --reason "try it out"
 #
-# Send a delivery (HMAC-signed with WEBHOOK_SECRET, e.g. through the stub's /send), or wait for
-# the sweep, then watch: docker compose -f deploy/docker-compose.yml logs -f switchboard | grep "log executor"
+# Then POST any JSON to the source's webhook URL (Sources › Test hook shows it):
+#
+#   curl -X POST http://localhost:8080/hooks/<sourceId> \
+#     -H 'content-type: application/json' \
+#     -d '{"id": 1, "title": "Deploy failed", "service": "checkout", "severity": "critical"}'
+#
+# and watch: docker compose -f deploy/docker-compose.yml logs -f switchboard | grep "log executor"
 #
 # To try failures, edit the process target: outcome error (breaker), rate_limited (soft-hold),
 # held (paused), failed (definitive), or set delayMs to see a run in flight.
 apiVersion: switchboard/v1
 kind: Configuration
 
-secretProviders:
-  - name: env
-    type: env
-    enabled: true
-    settings: {}
-
 sources:
-  - name: Test webhook
+  - name: Test hook
     type: webhook
     enabled: true
     settings:
-      verification: hmac
-      secret: secret://env/WEBHOOK_SECRET
-      eventTypes:
-        - type: webhook.item.created
-          title: Item created
-          description: Anything that POSTs JSON with an id.
-          attributes:
-            - { name: title, type: string }
-            - { name: priority, type: string }
-          example: { title: Hello, priority: high }
-      mapping: |
-        {
-          "type": "webhook.item.created",
-          "artifact": { "kind": "item", "id": $string(body.id) },
-          "attributes": { "title": body.title, "priority": body.priority }
-        }
+      # Evaluation only: anyone who knows the URL can send events.
+      verification: none
+      # Quick mode: no mapping. Every delivery is one webhook.request.received event whose
+      # attributes are the body's top-level fields (nested objects flattened as parent_child).
+      mappingMode: quick
+      artifactIdPath: body.id
 
 executors:
   - name: Log
@@ -46,22 +34,23 @@ executors:
     enabled: true
     settings:
       level: info
+      # Adds an "Hourly runs" meter so ceilings can be tried out.
       hourlyLimit: 20
     caps:
       meterPollSeconds: 60
 
 processes:
-  - name: Log everything
-    description: Every item becomes one logged run; a sweep runs every five minutes.
+  - name: Critical deliveries
+    description: Every critical delivery becomes one logged run.
     enabled: true
     triggers:
       - id: t1
-        source: Test webhook
-        eventTypes: [webhook.item.created]
-        describe: An item was created
+        source: Test hook
+        eventTypes: [webhook.request.received]
+        filter: attributes.severity = 'critical'
+        describe: A critical delivery arrived
         enabled: true
-    schedules:
-      - { id: s1, cron: '*/5 * * * *', timezone: UTC, catchUp: skip, enabled: true }
+    schedules: []
     batching: { debounceSeconds: 5, maxSize: 20, maxAgeSeconds: 60 }
     gates:
       approval: none
@@ -72,9 +61,9 @@ processes:
         hourly_runs: { events: 80, sweeps: 95 }
     executor:
       instance: Log
-      target: { label: demo, outcome: ok }
+      target: { label: quick-start, outcome: ok }
     input: |
-      { "mode": mode, "runId": run.id, "items": events.attributes.title }
+      { "mode": mode, "runId": run.id, "titles": events.attributes.title }
     before: []
     after: []
     notify: []

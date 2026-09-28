@@ -1,39 +1,28 @@
 # Quick start
 
-Ten minutes from a clean machine to a webhook starting an HTTP call. You need Docker with Compose
-and nothing else: no external account, because the Compose stack includes a stub server that
-plays both ends.
+Ten minutes from a clean machine to a webhook starting a run. You need Docker with Compose and
+nothing else: no external account and no mapping to write. The built-in **log executor** stands in
+for a real backend and writes every run to the server log.
 
 What you will build:
 
 ```mermaid
 flowchart LR
-  STUB1[stub /send<br/>signed alert] -->|POST /hooks/:sourceId| SRC[Source<br/>Stub alerts]
-  SRC -->|webhook.alert.fired| PROC[Process<br/>Alert to stub]
-  PROC --> EXE[Executor<br/>Stub HTTP]
-  EXE -->|POST /exec| STUB2[stub /exec]
+  CURL[curl<br/>any JSON] -->|POST /hooks/:sourceId| SRC[Source<br/>Test hook]
+  SRC -->|webhook.request.received| PROC[Process<br/>Critical deliveries]
+  PROC --> EXE[Executor<br/>Log]
+  EXE --> LOG[server log]
 ```
 
 ## 1. Start the stack
 
 ```bash
 git clone https://github.com/ai-switchboard/switchboard.git && cd switchboard
-docker compose -f deploy/docker-compose.yml --profile stub up -d
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-This starts three containers:
-
-| Service       | URL from your machine   | URL inside Compose        | What it is                                                   |
-| ------------- | ----------------------- | ------------------------- | ------------------------------------------------------------ |
-| `postgres`    | —                       | `postgres:5432`           | Postgres 17, the only state                                  |
-| `switchboard` | <http://localhost:8080> | `http://switchboard:8080` | The server and UI, in evaluation mode                        |
-| `stub`        | <http://localhost:9090> | `http://stub:9090`        | Webhook sender, `http` executor target and fake Routines API |
-
-The Compose file sets `SWITCHBOARD_EVALUATION=true`, `WEBHOOK_SECRET=change-me-webhook-secret`
-and `STUB_CALLBACK_SECRET=change-me-callback-secret`. The two secrets are read through the `env`
-secret provider as `secret://env/WEBHOOK_SECRET` and `secret://env/STUB_CALLBACK_SECRET`.
-
-Wait until the server is ready:
+This starts two containers: `postgres` (the only state) and `switchboard` (the server and UI at
+<http://localhost:8080>, in evaluation mode). Wait until it is ready:
 
 ```bash
 curl -fsS http://localhost:8080/readyz && echo ready
@@ -41,23 +30,18 @@ curl -fsS http://localhost:8080/readyz && echo ready
 
 ## 2. Sign in
 
-The first start creates a local admin and prints a temporary password once:
+The first start creates a local admin, `admin@switchboard.local`, and prints a temporary password
+once:
 
 ```bash
 docker compose -f deploy/docker-compose.yml logs switchboard | grep -i password
 ```
 
-Open <http://localhost:8080> and sign in with that email and password. Because the password is
-temporary, Switchboard asks you to choose your own right away (at least 8 characters, not your
-email); after that you land on the Board. You can change it again any time from **Settings ›
-Account**, and add people with their own temporary passwords in **Settings › Users**. The amber
-evaluation banner stays until you configure an issuer ([configuration](configuration.md)).
-The Board is empty and shows a three-step guide: add a source, add an executor, draw a process.
+Open <http://localhost:8080>, sign in, and choose your own password (at least 8 characters, not
+your email). You land on the Board, which is empty and shows a three-step guide. The amber banner
+reminds you that OIDC is not configured; that is expected for an evaluation install.
 
-**Locked out?** The local admin's email is `admin@switchboard.local` unless
-`SWITCHBOARD_BOOTSTRAP_ADMIN` names another (in evaluation mode the sign-in page's **Forgot
-password or email?** panel shows it). Switchboard sends no email, so recovery runs on the server,
-with its database access instead of a sign-in:
+**Locked out?** Switchboard sends no email, so recovery runs on the server:
 
 ```bash
 docker compose -f deploy/docker-compose.yml exec switchboard switchboard users list
@@ -65,144 +49,144 @@ docker compose -f deploy/docker-compose.yml exec switchboard \
   switchboard users reset-password admin@switchboard.local
 ```
 
-`reset-password` prints a new temporary password once, signs the account out everywhere and
-writes the audit log; you choose your own password at the next sign-in. Other people can simply
-ask an admin to reset theirs in **Settings › Users** ([runbook](runbook.md#locked-out)).
+`reset-password` prints a new temporary password once ([runbook](runbook.md#locked-out)).
+
+**Tired of typing reasons?** Every change asks for a one-line reason for the audit log. For a
+local install you can turn that off in **Settings › General › Require a reason for every change**.
 
 ## 3. Add a webhook source
 
-**Sources → New source → Webhook.**
+**Sources → Add source → Webhook.**
 
-- **Name:** `Stub alerts`
-- **Verification:** `hmac`, **Secret:** `secret://env/WEBHOOK_SECRET`. Keep the defaults for the
-  signature header (`x-signature-256`), prefix (`sha256=`), algorithm (`sha256`) and encoding
-  (`hex`). These match what the stub sends.
-- **Event types:** add `webhook.alert.fired`, title `Alert fired`, with three string attributes:
-  `service`, `severity`, `message`.
-- **Mapping** (JSONata over `{ body, headers, query }`):
+- **Name:** `Test hook`
+- **Verification:** _None — accept unauthenticated deliveries (evaluation only)_. The red warning
+  is the point: anyone with the URL can send events. Use HMAC or a shared secret for anything real.
+- **How deliveries become events:** _Quick_ (the default). No mapping to write: every delivery becomes one
+  `webhook.request.received` event, and the body's top-level fields become its attributes. Nested
+  objects are flattened one level, so `{"deployment": {"env": "prod"}}` becomes the attribute
+  `deployment_env`.
+- **Artifact id path:** `body.id`. This is the field the artifact (the thing the event is about)
+  is identified by, and what you search for in the trace.
 
-  ```jsonata
-  {
-    "type": "webhook.alert.fired",
-    "artifact": { "kind": "alert", "id": body.id },
-    "attributes": { "service": body.service, "severity": body.severity, "message": body.message },
-    "occurredAt": body.occurredAt
-  }
-  ```
+Try it before saving: paste a sample into **Try it with a sample delivery**, for example
 
-Save with a reason such as `quick start`. Every change asks for a one-line reason and is written
-to the audit log. The source page now shows its webhook URL, `http://localhost:8080/hooks/<sourceId>`.
-Copy the `<sourceId>`.
+```json
+{ "id": 1, "title": "Deploy failed", "service": "checkout", "severity": "critical" }
+```
 
-## 4. Add an HTTP executor
+and the panel shows the event it produces: type, artifact `1`, and attributes `id`, `title`,
+`service` and `severity`.
 
-**Executors → New executor → HTTP.**
+Save. The source page shows its webhook URL, `http://localhost:8080/hooks/<sourceId>`.
 
-- **Name:** `Stub HTTP`
-- **Base URL:** `http://stub:9090`
-- **Usage dimensions:** keep `duration_seconds` and `response_bytes`, and add
-  `cost_usd` (unit `usd`, aggregate `sum`, budgetable). The stub reports a cost on every call.
+## 4. Add the log executor
 
-Save with a reason.
+**Executors → Add executor → Log (test executor).**
+
+- **Name:** `Log`
+- Keep the defaults. Optionally set **Simulated hourly limit** to `20` to get an "Hourly runs"
+  meter you can put ceilings on later.
+
+Save.
 
 ## 5. Draw the process
 
-**Processes → New process**, name `Alert to stub`.
+**Processes → New process.**
 
-1. **Triggers → Add trigger.** Pick `Stub alerts`, tick `webhook.alert.fired`, and set the
-   filter to `attributes.severity = 'critical'`. The editor shows the declared attributes and
-   evaluates the filter against the last 20 real events once there are some. Accept or write the
-   describe sentence: _A critical alert fired_.
-2. **Batching.** Debounce 5 seconds, max size 20, max age 60 seconds.
-3. **Budgets.** Runs per hour 30, runs per day 200, `cost_usd` per day 5.
-4. **Executor.** Pick `Stub HTTP`. Target: method `POST`, URL `/exec`, tracking `sync`, usage
-   expression `{ "cost_usd": response.body.usage.cost_usd }`. Input mapping:
+1. **Basics.** Name it `Critical deliveries`. **Enabled** is on.
+2. **Triggers → Add trigger.** Pick `Test hook` and tick `webhook.request.received`. Set the filter
+   to `attributes.severity = 'critical'` (the editor completes attribute names). Once events
+   exist, the editor shows the filter's result on the last 20 of them.
+3. **Batching.** Debounce 5 seconds is fine.
+4. **Executor.** Pick `Log`. Target: label `quick-start`, outcome `ok`. Keep the default input
+   mapping; the preview shows what the executor will receive.
+5. **Save.**
 
-   ```jsonata
-   { "mode": mode, "runId": run.id, "alerts": events.{ "id": artifact.id, "service": attributes.service } }
-   ```
+The Board now shows `Test hook` → `Critical deliveries` → `Log`.
 
-   The preview validates the produced input against the executor's input schema.
+## 6. Send an event
 
-5. Turn the process on and **Save** with a reason.
-
-The Board now shows `Stub alerts` → `Alert to stub` → `Stub HTTP`.
-
-## 6. Send a test event
-
-The stub's `/send` signs a sample alert with the secret you give it and posts it to the target.
-The target is resolved inside Compose, so use the `switchboard` hostname:
+Post any JSON to the webhook URL:
 
 ```bash
-curl -X POST "http://localhost:9090/send?target=http://switchboard:8080/hooks/<sourceId>&secret=change-me-webhook-secret"
+curl -X POST http://localhost:8080/hooks/<sourceId> \
+  -H 'content-type: application/json' \
+  -d '{"id": 1, "title": "Deploy failed", "service": "checkout", "severity": "critical"}'
 ```
 
-The sample body is `{ id, type: "alert.fired", service, severity, message, occurredAt }` with
-`severity: critical` by default. Add `&severity=warning` to send one that does not match the
-filter: it is recorded as an event and its trace shows the filter evaluating to false.
-
-You can also press **Send test event** on the source page.
+Or press **Send test event** on the source page: the banner says which processes took it and
+links to its trace.
 
 ## 7. Watch the run
 
-Open **Activity**. The event's stage indicator walks received → matched → batched → gated →
-invoking → ok within a few seconds (the debounce is 5 s). Click the row for the trace: the filter
-decision with the expression and its result, the batch opening and closing, each gate check, the
-budget check with the binding limits, the invoke with the stub's response, and the usage the
-run reported (`cost_usd`, `duration_seconds`, `response_bytes`).
+Open **Activity**. Within a few seconds (the debounce is 5 s) the event's indicator walks
+received → matched → batched → gated → invoked → ok. Click it for the trace: the filter decision
+with its expression, the batch, each gate check, the budget check, the invoke and the result.
 
-Check the stub saw the call:
+The log executor wrote the run to the server log:
 
 ```bash
-curl -s http://localhost:9090/requests | head -c 2000
+docker compose -f deploy/docker-compose.yml logs switchboard | grep "log executor"
 ```
 
 ## 8. Try the rest
 
-- **Redelivery collapses:** send the same delivery twice (`curl` the stub's `/requests` for the
-  body, or use _Replay_ on the event page). The second one is `deduped` for this process.
-- **A burst coalesces:** `curl -X POST "http://localhost:9090/burst?n=200&keys=3&target=http://switchboard:8080/hooks/<sourceId>&secret=change-me-webhook-secret"`.
-  The debounce turns 200 events into a handful of runs, and the source caps drop anything beyond
-  `eventCapPerHour`.
-- **Throttled:** set runs per hour to 1 and send two alerts a minute apart. The second batch is
-  `throttled` with the binding limit named, and nothing is re-queued.
-- **Callback tracking:** set the executor's callback secret to `secret://env/STUB_CALLBACK_SECRET`
-  and change the target URL to `/exec/callback` with tracking `callback`. The stub answers 202
-  and posts a signed callback to `/callbacks/<executorId>` half a second later.
-
-## The stub server
-
-`deploy/stub/server.js` is a dependency-free Node server (`node deploy/stub/server.js`, port
-`STUB_PORT`, default 9090) used by this quick start and the integration tests:
-
-| Endpoint                                       | What it does                                                                                                                                                                                                                                                                        |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /exec`                                   | `http` executor target: 200 `{ ok: true, echo, usage: { cost_usd } }`. `?status=`, `?latency=` (ms), `?cost=`, or headers `x-stub-status`, `x-stub-latency-ms`                                                                                                                      |
-| `POST /exec/callback`                          | Answers 202, then after `?delay=` ms (default 500) POSTs `{ runId, externalId, status, errors?, usage: { cost_usd }, finishedAt }` to the `x-switchboard-callback-url` header, signed `x-switchboard-signature: sha256=<hex>` with `STUB_CALLBACK_SECRET`. `?outcome=error` to fail |
-| `POST /send?target=&secret=`                   | Signs a sample alert (`x-signature-256: sha256=<hex>`) and posts it to `target`                                                                                                                                                                                                     |
-| `POST /burst?n=500&keys=5&target=&secret=`     | Posts `n` alerts spread across `keys` services                                                                                                                                                                                                                                      |
-| `POST /v1/claude_code/routines/:id/fire`       | Fake Claude Routines: `{ id, session_url }`, or 429 with `retry-after` when `STUB_ROUTINES_429=1` or every Nth call (`STUB_ROUTINES_429_EVERY`)                                                                                                                                     |
-| `GET /api/oauth/usage`, `POST /v1/oauth/token` | Fake Routines usage windows (`five_hour`, `seven_day`) and OAuth tokens                                                                                                                                                                                                             |
-| `POST /stub/config`                            | Change the 429 behaviour and usage figures at run time                                                                                                                                                                                                                              |
-| `GET /requests`, `DELETE /requests`            | Every request the stub received; reset                                                                                                                                                                                                                                              |
+- **Why nothing ran:** send `"severity": "warning"`. Activity shows it as not taken, and its
+  trace says `filter false: attributes.severity = 'critical'`. Disable the process and send
+  another: the trace says `process is disabled`.
+- **Redelivery collapses:** send the same body twice. The second one is `deduped` for the process.
+- **A burst coalesces:** send ten events within five seconds. The debounce turns them into one run.
+- **Throttled:** set **Budgets › Runs per hour** to 1 and send two events a minute apart. The
+  second batch is `throttled`, with the binding limit named.
+- **Failures:** set the executor target's **Simulated outcome** to `error` and send three events.
+  The breaker opens after the threshold and the Board shows it under **Needs attention** with a
+  Reset button. `rate_limited` opens a soft-hold on the executor instead; `delayMs` shows a run in
+  flight.
+- **Meters:** with a simulated hourly limit, the top bar shows the "Hourly runs" gauge filling up,
+  and a meter ceiling in the process's budgets throttles event runs above it.
 
 ## The same thing as a file
 
-Everything above is in [examples/webhook-to-http.yaml](../examples/webhook-to-http.yaml). Create
-an API token (**Settings → API tokens**, role admin), then:
+Everything above is in [examples/log-executor.yaml](../examples/log-executor.yaml). Create an API
+token (**Settings › API tokens**, role admin), then:
 
 ```bash
 docker compose -f deploy/docker-compose.yml exec -T \
   -e SWITCHBOARD_TOKEN=<token> switchboard \
-  switchboard apply -f /dev/stdin --reason "quick start" < examples/webhook-to-http.yaml
+  switchboard apply -f /dev/stdin --reason "quick start" < examples/log-executor.yaml
 ```
 
-or, with the CLI installed locally (`npm install -g @ai-switchboard/cli`):
+## Going further: signed webhooks and a real HTTP call
+
+The Compose file has an optional `stub` service: a small fake "outside world" used by the
+integration and end-to-end tests. Start it only when you want to try what the log executor can't
+show:
 
 ```bash
-export SWITCHBOARD_URL=http://localhost:8080 SWITCHBOARD_TOKEN=<token>
-switchboard apply -f examples/webhook-to-http.yaml --dry-run --reason "quick start"
-switchboard apply -f examples/webhook-to-http.yaml --reason "quick start"
+docker compose -f deploy/docker-compose.yml --profile stub up -d
+```
+
+It listens on <http://localhost:9090> (`http://stub:9090` inside Compose) and offers:
+
+| Endpoint                                       | What it does                                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /send?target=&secret=`                   | Signs a sample alert (`x-signature-256: sha256=<hex>`) and posts it to `target`: try a webhook source with **HMAC** verification |
+| `POST /burst?n=500&keys=5&target=&secret=`     | Posts `n` signed alerts spread across `keys` services                                                                            |
+| `POST /exec`                                   | An endpoint for the **HTTP** executor: 200 `{ ok, echo, usage: { cost_usd } }`; `?status=`, `?latency=` (ms), `?cost=`           |
+| `POST /exec/callback`                          | Answers 202, then posts a signed callback to `x-switchboard-callback-url`: try **callback** tracking (`?outcome=error` to fail)  |
+| `GET /meter`                                   | `{ used, limit, resetsAt }` for the HTTP executor's meter endpoint                                                               |
+| `POST /v1/claude_code/routines/:id/fire`       | A fake Claude Routines API, including 429 rate limits (`STUB_ROUTINES_429=1`)                                                    |
+| `GET /api/oauth/usage`, `POST /v1/oauth/token` | Fake Routines usage windows and OAuth tokens                                                                                     |
+| `GET /requests`, `DELETE /requests`            | Every request the stub received; reset                                                                                           |
+
+The Compose file sets `WEBHOOK_SECRET=change-me-webhook-secret` and
+`STUB_CALLBACK_SECRET=change-me-callback-secret` for the server, read as
+`secret://env/WEBHOOK_SECRET` and `secret://env/STUB_CALLBACK_SECRET`.
+[examples/webhook-to-http.yaml](../examples/webhook-to-http.yaml) wires an HMAC-verified webhook to
+the stub's `/exec`; send it a signed alert with
+
+```bash
+curl -X POST "http://localhost:9090/send?target=http://switchboard:8080/hooks/<sourceId>&secret=change-me-webhook-secret"
 ```
 
 ## Clean up
@@ -211,7 +195,7 @@ switchboard apply -f examples/webhook-to-http.yaml --reason "quick start"
 docker compose -f deploy/docker-compose.yml --profile stub down -v
 ```
 
-`-v` removes the Postgres volume too.
+`-v` removes the Postgres volume too (`--profile stub` also stops the stub if you started it).
 
 Next: [Concepts](concepts.md) for the vocabulary, [Configuration](configuration.md) for OIDC and
 the YAML format, and the [runbook](runbook.md) for operating it.

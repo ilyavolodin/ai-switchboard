@@ -42,40 +42,44 @@ an **executor**. A batch that a gate stops is **held**. A batch that a budget or
 
 ## Quick start
 
-You need Docker with Compose. The full step-by-step walk-through is in
+You need Docker with Compose, and nothing else. The full walk-through is in
 [docs/quick-start.md](docs/quick-start.md).
 
 ```bash
 git clone https://github.com/ai-switchboard/switchboard.git && cd switchboard
-docker compose -f deploy/docker-compose.yml --profile stub up -d
+docker compose -f deploy/docker-compose.yml up -d --build
 docker compose -f deploy/docker-compose.yml logs switchboard | grep -i password
 ```
 
-1. Open <http://localhost:8080> and sign in as the local admin with the password from the log.
-   Evaluation mode prints it once; a banner reminds you that OIDC is not configured.
-2. **Sources → New source → Webhook.** Name it `Stub alerts`, keep HMAC verification, set the
-   secret to `secret://env/WEBHOOK_SECRET`, declare the event type `webhook.alert.fired` and
-   paste the mapping from [examples/webhook-to-http.yaml](examples/webhook-to-http.yaml).
-3. **Executors → New executor → HTTP.** Name it `Stub HTTP`, base URL `http://stub:9090`.
-4. **Processes → New process.** Add a trigger on `Stub alerts` / `webhook.alert.fired`, bind
-   `Stub HTTP` with target `POST /exec`, sync tracking, and save with a reason.
-5. Send a signed test event through the stub:
+1. Open <http://localhost:8080> and sign in as `admin@switchboard.local` with the password from
+   the log, then choose your own.
+2. **Sources → Add source → Webhook.** Name it `Test hook`, set **Verification** to _None_
+   (evaluation only) and keep **How deliveries become events** on _Quick_: every delivery becomes one event whose
+   attributes are the body's top-level fields. Set **Artifact id path** to `body.id`.
+3. **Executors → Add executor → Log (test executor).** It writes every run to the server log.
+4. **Processes → New process.** Add a trigger on `Test hook` / `webhook.request.received` with
+   the filter `attributes.severity = 'critical'`, pick the `Log` executor, and save.
+5. Send it anything:
 
    ```bash
-   curl -X POST "http://localhost:9090/send?target=http://switchboard:8080/hooks/<sourceId>&secret=change-me-webhook-secret"
+   curl -X POST http://localhost:8080/hooks/<sourceId> -H 'content-type: application/json' \
+     -d '{"id": 1, "title": "Deploy failed", "severity": "critical"}'
    ```
 
-6. **Activity** shows the event walk received → matched → batched → gated → invoking → ok, and
-   the run links to the stub's response.
+6. **Activity** shows the event walk received → matched → batched → gated → invoked → ok; the
+   run is in the log (`docker compose -f deploy/docker-compose.yml logs switchboard | grep "log executor"`).
+   Send `"severity": "warning"` and the trace tells you why nothing ran.
 
-Prefer files to clicking? `switchboard apply -f examples/webhook-to-http.yaml --reason "quick start"`
-creates the same source, executor and process (see [examples/](examples/README.md)).
+Prefer files to clicking? `switchboard apply -f examples/log-executor.yaml --reason "quick start"`
+creates the same source, executor and process (see [examples/](examples/README.md)). To try signed
+webhooks and real HTTP calls, the optional `stub` Compose profile provides a fake backend
+([quick start › going further](docs/quick-start.md#going-further-signed-webhooks-and-a-real-http-call)).
 
 ## Documentation
 
 | Document                                           | For                                                                                  |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [Quick start](docs/quick-start.md)                 | The ten-minute first run with the stub server                                        |
+| [Quick start](docs/quick-start.md)                 | The ten-minute first run, no external services                                       |
 | [Concepts](docs/concepts.md)                       | The ten nouns, held and throttled, the pipeline stages and the outcome vocabulary    |
 | [Architecture](docs/architecture.md)               | Components, runtime, deployment shape, exactly-once, replicas                        |
 | [Configuration](docs/configuration.md)             | Environment variables, the YAML format for `export`/`apply`, global settings         |
