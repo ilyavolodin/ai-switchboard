@@ -6,20 +6,20 @@ import type { BatchKind, BindingLimit } from '../domain/status.js';
 import { isFresh } from './meters.js';
 
 /**
- * Stage 6, budget. Checks, in order: per-process hourly and daily run caps; per-executor-instance
+ * Stage 6, budget. Checks, in order: per-process hourly and daily run caps; per-destination
  * caps; meter ceilings (event batches against `events`, sweeps and manual runs against `sweeps`,
  * on the latest reading while fresh, otherwise counters only and `meter_stale`); usage caps on
- * budgetable dimensions from reported usage; the executor's soft-hold. The first failing check is
+ * budgetable dimensions from reported usage; the destination's soft-hold. The first failing check is
  * the binding limit. Counters are rolling windows (last 60 minutes, last 24 hours).
  */
 
 export interface BudgetCounters {
   processRunsHour: number;
   processRunsDay: number;
-  executorRunsHour: number;
-  executorRunsDay: number;
+  destinationRunsHour: number;
+  destinationRunsDay: number;
   processUsageDay: Record<string, number>;
-  executorUsageDay: Record<string, number>;
+  destinationUsageDay: Record<string, number>;
 }
 
 export interface MeterSnapshot {
@@ -37,7 +37,7 @@ export interface BudgetInput {
     usagePerDay?: Record<string, number> | undefined;
     meterCeilings: Record<string, MeterCeiling>;
   };
-  executor: {
+  destination: {
     runsPerHour?: number | undefined;
     runsPerDay?: number | undefined;
     usagePerDay?: Record<string, number> | undefined;
@@ -98,16 +98,30 @@ export function budget(input: BudgetInput, now: Date): BudgetResult {
   if (!capCheck(checks, 'runs_per_day', c.processRunsDay, input.process.runsPerDay)) {
     fail('runs_per_day', `${c.processRunsDay}/${input.process.runsPerDay} runs in the last 24 h`);
   }
-  if (!capCheck(checks, 'executor_runs_per_hour', c.executorRunsHour, input.executor.runsPerHour)) {
+  if (
+    !capCheck(
+      checks,
+      'destination_runs_per_hour',
+      c.destinationRunsHour,
+      input.destination.runsPerHour,
+    )
+  ) {
     fail(
-      'executor_runs_per_hour',
-      `${c.executorRunsHour}/${input.executor.runsPerHour} executor runs in the last hour`,
+      'destination_runs_per_hour',
+      `${c.destinationRunsHour}/${input.destination.runsPerHour} destination runs in the last hour`,
     );
   }
-  if (!capCheck(checks, 'executor_runs_per_day', c.executorRunsDay, input.executor.runsPerDay)) {
+  if (
+    !capCheck(
+      checks,
+      'destination_runs_per_day',
+      c.destinationRunsDay,
+      input.destination.runsPerDay,
+    )
+  ) {
     fail(
-      'executor_runs_per_day',
-      `${c.executorRunsDay}/${input.executor.runsPerDay} executor runs in the last 24 h`,
+      'destination_runs_per_day',
+      `${c.destinationRunsDay}/${input.destination.runsPerDay} destination runs in the last 24 h`,
     );
   }
 
@@ -116,7 +130,7 @@ export function budget(input: BudgetInput, now: Date): BudgetResult {
     const limit = ceiling[ceilingKind];
     const reading = input.meters[meterId];
     const check = `meter:${meterId}`;
-    if (!reading || !isFresh(reading.observedAt, now, input.executor.stalenessMinutes)) {
+    if (!reading || !isFresh(reading.observedAt, now, input.destination.stalenessMinutes)) {
       meterStale.push(meterId);
       checks.push({
         check,
@@ -150,7 +164,7 @@ export function budget(input: BudgetInput, now: Date): BudgetResult {
   const usageCaps = (
     caps: Record<string, number> | undefined,
     used: Record<string, number>,
-    scope: 'usage_per_day' | 'executor_usage_per_day',
+    scope: 'usage_per_day' | 'destination_usage_per_day',
   ): void => {
     for (const [dim, cap] of Object.entries(caps ?? {})) {
       const spec = budgetable.get(dim);
@@ -171,16 +185,16 @@ export function budget(input: BudgetInput, now: Date): BudgetResult {
     }
   };
   usageCaps(input.process.usagePerDay, c.processUsageDay, 'usage_per_day');
-  usageCaps(input.executor.usagePerDay, c.executorUsageDay, 'executor_usage_per_day');
+  usageCaps(input.destination.usagePerDay, c.destinationUsageDay, 'destination_usage_per_day');
 
-  const hold = input.executor.softHoldUntil;
+  const hold = input.destination.softHoldUntil;
   const held = hold !== null && hold.getTime() > now.getTime();
   checks.push({
     check: 'soft_hold',
     pass: !held,
     ...(hold !== null ? { detail: `until ${hold.toISOString()}` } : {}),
   });
-  if (held) fail('soft_hold', `executor soft-held until ${hold.toISOString()}`);
+  if (held) fail('soft_hold', `destination soft-held until ${hold.toISOString()}`);
 
   const first = failures[0];
   return {

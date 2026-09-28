@@ -111,7 +111,7 @@ function isProcessRef(v: unknown): v is { id: string; name: string } {
 }
 
 /**
- * The processes named by a 409 "still used by" refusal (deleting a source, executor or
+ * The processes named by a 409 "still used by" refusal (deleting a source, destination or
  * notifier), or null for any other error.
  */
 export function usedByOf(e: unknown): { id: string; name: string }[] | null {

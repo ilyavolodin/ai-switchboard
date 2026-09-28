@@ -60,38 +60,38 @@ async function usageLastDay(
   return out;
 }
 
-/** Counters for the budget stage: the process's and the executor instance's rolling windows. */
+/** Counters for the budget stage: the process's and the destination's rolling windows. */
 export async function countersFor(
   db: DbOrTx,
-  scope: { processId: string; executorId: string; dimensions: readonly UsageDimension[] },
+  scope: { processId: string; destinationId: string; dimensions: readonly UsageDimension[] },
   now: Date,
 ): Promise<BudgetCounters> {
   const byProcess = eq(runs.processId, scope.processId);
-  const byExecutor = eq(runs.executorId, scope.executorId);
+  const byDestination = eq(runs.destinationId, scope.destinationId);
   // Sequential: inside a transaction the queries share one connection.
   const p = await runCounts(db, byProcess, now);
-  const e = await runCounts(db, byExecutor, now);
+  const e = await runCounts(db, byDestination, now);
   const pu = await usageLastDay(db, byProcess, scope.dimensions, now);
-  const eu = await usageLastDay(db, byExecutor, scope.dimensions, now);
+  const eu = await usageLastDay(db, byDestination, scope.dimensions, now);
   return {
     processRunsHour: p.hour,
     processRunsDay: p.day,
-    executorRunsHour: e.hour,
-    executorRunsDay: e.day,
+    destinationRunsHour: e.hour,
+    destinationRunsDay: e.day,
     processUsageDay: pu,
-    executorUsageDay: eu,
+    destinationUsageDay: eu,
   };
 }
 
-/** An executor's counted runs since `since` (estimated meters). */
-export async function executorRunsSince(
+/** A destination's counted runs since `since` (estimated meters). */
+export async function destinationRunsSince(
   db: DbOrTx,
-  executorId: string,
+  destinationId: string,
   since: Date,
 ): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)`.mapWith(Number) })
     .from(runs)
-    .where(and(eq(runs.executorId, executorId), gt(runs.invokedAt, since), countedRun()));
+    .where(and(eq(runs.destinationId, destinationId), gt(runs.invokedAt, since), countedRun()));
   return row?.n ?? 0;
 }

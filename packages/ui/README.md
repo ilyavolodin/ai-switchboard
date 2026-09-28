@@ -56,8 +56,8 @@ src/test/                          setup.ts, render.tsx (renderWithProviders, re
 2. In `src/app/routes.tsx` add (or point) the route's `element` at it, with a `handle.title` (the
    top bar shows it). Paths exist for:
    `/`, `/processes`, `/processes/new`, `/processes/:id`, `/processes/:id/edit`, `/processes/:id/:tab`,
-   `/sources`, `/sources/:id`, `/sources/:id/:tab`, `/executors`, `/executors/:id`,
-   `/executors/:id/:tab`, `/activity`, `/activity/trace/:query`, `/approvals`, `/plugins`,
+   `/sources`, `/sources/:id`, `/sources/:id/:tab`, `/destinations`, `/destinations/:id`,
+   `/destinations/:id/:tab`, `/activity`, `/activity/trace/:query`, `/approvals`, `/plugins`,
    `/plugins/:tab`, `/settings`, `/settings/:tab`, `/login`, `/no-access`.
 3. Tabs are URL segments — use `<RoutedTabs>` with `to` links (`end` on the overview tab).
 4. Start the page with `<PageHeader title back meta description actions />`; the shell already
@@ -97,7 +97,7 @@ src/test/                          setup.ts, render.tsx (renderWithProviders, re
 
   Fleet-affecting actions pass `danger: true` and a `consequence` sentence naming the effect (or
   render `<ConfirmDialog>` yourself). An `onError(e)` option that returns true shows the error
-  itself instead of the toast: deleting a source, executor or notifier that processes still use
+  itself instead of the toast: deleting a source, destination or notifier that processes still use
   answers 409 with `usedBy`, which `useInUseRefusal` + `<InUseBanner>` (`screens/shared/`) turn
   into links to those processes' editors.
 
@@ -109,9 +109,9 @@ Auth `useMe`, `useLogin`, `useLogout`, `useChangePassword`, `useWhoami`, `OIDC_S
 `useBoard`, `usePluginTypes` · Sources `useSources`, `useSource`, `useSourceStats`,
 `useSourceEvents`, `useCreateSource`, `useUpdateSource`, `useDeleteSource`, `useEnableSource`,
 `useProvisionSource`, `useSendTestEvent`, `useReloadSource`, `usePreviewSource` (sample delivery
-through draft settings), `useLastDelivery` (fetched on `refetch()` only) · Executors `useExecutors`,
-`useExecutor`, `useExecutorMeters`, `useExecutorUsage`, `useCreateExecutor`, `useUpdateExecutor`,
-`useDeleteExecutor`, `useEnableExecutor`, `useReloadExecutor`, `useReadMeters`,
+through draft settings), `useLastDelivery` (fetched on `refetch()` only) · Destinations `useDestinations`,
+`useDestination`, `useDestinationMeters`, `useDestinationUsage`, `useCreateDestination`, `useUpdateDestination`,
+`useDeleteDestination`, `useEnableDestination`, `useReloadDestination`, `useReadMeters`,
 `useClearSoftHold` · Processes `useProcesses`, `useProcess`, `useProcessFunnel`,
 `useProcessStats`, `useProcessVersions`, `useProcessVersion`, `useProcessBatches`,
 `useProcessActivity`, `usePreviewFilter`, `usePreviewInput`, `usePreviewCron`,
@@ -154,7 +154,7 @@ through draft settings), `useLastDelivery` (fetched on `refetch()` only) · Exec
 | `Banner`, `BreakerBanner`, `EmptyState`, `Skeleton`, `LoadMore`, `Table`  | error/warn/info/neutral strip · red breaker banner with failed runs + Reset slot · teaching empty state (ghost nodes) · loading · pagination · runs/audit tables                                                          |
 | `TraceTimeline`                                                           | Vertical timeline of `TraceEntry` with tone dots, expandable data, links, "Copy as text"                                                                                                                                  |
 | `WhyNothingRan`                                                           | Processes that did not take an event, each with its reason and a "(now)" mark when computed from the current configuration · `items label` (from `lib/why.ts`)                                                            |
-| `NodeCard`, `SourceNode`, `ProcessNode`, `ExecutorNode`, `FlowNode`       | Canvas nodes (border = status); `FlowNode` is the React Flow node type with handles + hover card                                                                                                                          |
+| `NodeCard`, `SourceNode`, `ProcessNode`, `DestinationNode`, `FlowNode`    | Canvas nodes (border = status); `FlowNode` is the React Flow node type with handles + hover card                                                                                                                          |
 
 ## Theming and styling
 
@@ -198,7 +198,7 @@ role and accessible name. React Flow works in jsdom thanks to the stubs in `test
 
 `e2e/` runs the built UI against the real core, Postgres and the stub server — no mock API. It
 answers the four questions the UI exists for (see a breaker on the Board and reset it, find an
-artifact's trace by id with `/`, read a meter on the executor and in the top bar, edit a process
+artifact's trace by id with `/`, read a meter on the destination and in the top bar, edit a process
 and find the change in the audit log), signs in and out, smoke-tests every route (no error state,
 no uncaught or console error, no failed `/api` call, no `undefined`/`NaN`/`[object Object]` in the
 page), and compares the Board at 1440 and 1024 px in light mode against
@@ -217,7 +217,7 @@ pnpm --filter @ai-switchboard/ui test:e2e:only --update-snapshots   # refresh th
   `env` secret provider), and removes them all on teardown. Their logs are in
   `test-results/e2e-stack/`.
 - `e2e/seed.ts` applies one YAML through `POST /api/v1/apply`: a webhook source, an `http`
-  executor on the stub with the stub's `GET /meter` as its meter, and three processes routed by
+  destination on the stub with the stub's `GET /meter` as its meter, and three processes routed by
   the alert's `route` attribute — _Breaker demo_ (the stub's error callback, breaker threshold 1),
   _Healthy alerts_ (sync `ok`) and _Approval demo_ (`approval: always`). It sends one signed alert
   each through the stub's `/send` and polls the API until the run is ok, the breaker is open and

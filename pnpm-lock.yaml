@@ -72,18 +72,18 @@ importers:
 
   packages/core:
     dependencies:
-      '@ai-switchboard/executor-claude-routines':
+      '@ai-switchboard/destination-claude-routines':
         specifier: workspace:*
-        version: link:../../plugins/executor-claude-routines
-      '@ai-switchboard/executor-github-actions':
+        version: link:../../plugins/destination-claude-routines
+      '@ai-switchboard/destination-github-actions':
         specifier: workspace:*
-        version: link:../../plugins/executor-github-actions
-      '@ai-switchboard/executor-http':
+        version: link:../../plugins/destination-github-actions
+      '@ai-switchboard/destination-http':
         specifier: workspace:*
-        version: link:../../plugins/executor-http
-      '@ai-switchboard/executor-log':
+        version: link:../../plugins/destination-http
+      '@ai-switchboard/destination-log':
         specifier: workspace:*
-        version: link:../../plugins/executor-log
+        version: link:../../plugins/destination-log
       '@ai-switchboard/notifier-slack':
         specifier: workspace:*
         version: link:../../plugins/notifier-slack
@@ -291,19 +291,19 @@ importers:
         specifier: ^8.3.1
         version: 8.3.1(@types/node@24.19.0)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
 
-  plugins/executor-claude-routines:
+  plugins/destination-claude-routines:
     devDependencies:
       '@ai-switchboard/sdk':
         specifier: workspace:^
         version: link:../../packages/sdk
 
-  plugins/executor-github-actions:
+  plugins/destination-github-actions:
     devDependencies:
       '@ai-switchboard/sdk':
         specifier: workspace:^
         version: link:../../packages/sdk
 
-  plugins/executor-http:
+  plugins/destination-http:
     dependencies:
       jsonata:
         specifier: ^2.2.2
@@ -313,7 +313,7 @@ importers:
         specifier: workspace:^
         version: link:../../packages/sdk
 
-  plugins/executor-log:
+  plugins/destination-log:
     devDependencies:
       '@ai-switchboard/sdk':
         specifier: workspace:^

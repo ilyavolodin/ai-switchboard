@@ -12,7 +12,7 @@ export interface ToggleProps {
   label?: string;
   ariaLabel?: string;
   size?: 'sm' | 'md';
-  /** The bordered "Enabled [toggle]" control from process and executor headers. */
+  /** The bordered "Enabled [toggle]" control from process and destination headers. */
   boxed?: boolean;
   disabled?: boolean;
   requires?: Role;
@@ -23,7 +23,7 @@ export interface ToggleProps {
 
 /**
  * A switch (`role="switch"`). Tangerine when on, line-strong when off. Enabling or disabling a
- * process, source or executor should route `onChange` through a reason prompt.
+ * process, source or destination should route `onChange` through a reason prompt.
  */
 export function Toggle({
   checked,

@@ -3,7 +3,7 @@ import { type SubmitEvent, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { errorMessage } from '../../api/client.js';
-import { useEvents, useExecutors, useProcesses, useSources } from '../../api/index.js';
+import { useEvents, useDestinations, useProcesses, useSources } from '../../api/index.js';
 import { ArtifactChip } from '../../components/ArtifactChip.js';
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
@@ -54,7 +54,7 @@ export function Activity() {
   const events = useEvents(toActivityQuery(filters, anchor));
   const sources = useSources();
   const processes = useProcesses();
-  const executors = useExecutors();
+  const destinations = useDestinations();
 
   const setFilter = (key: FilterKey, value: string) => {
     if (key === 'range') setAnchor(now());
@@ -116,12 +116,12 @@ export function Activity() {
         />
         <Select
           size="sm"
-          aria-label="Executor"
-          value={filters.executor ?? ''}
-          placeholder="All executors"
-          options={idFilterOptions(executors.data, filters.executor)}
+          aria-label="Destination"
+          value={filters.destination ?? ''}
+          placeholder="All destinations"
+          options={idFilterOptions(destinations.data, filters.destination)}
           onChange={(e) => {
-            setFilter('executor', e.target.value);
+            setFilter('destination', e.target.value);
           }}
         />
         <Select

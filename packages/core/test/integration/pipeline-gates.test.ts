@@ -21,7 +21,7 @@ import {
   deliver,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   setSystemNotifier,
@@ -51,7 +51,7 @@ async function fireOne(sourceId: string, id: string): Promise<void> {
 describe('approval', () => {
   it('holds the batch, then approve runs it with an audit row', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, { gates: { approval: 'always' } });
     await fireOne(src.id, '1');
     const [batch] = await batchesOf(h.db, pid);
@@ -79,7 +79,7 @@ describe('approval', () => {
 
   it('an approval expression holds only matching batches; reject closes it', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       gates: { approval: "events.attributes.repository = 'acme/prod'" },
       batching: { groupBy: 'attributes.repository' },
@@ -100,9 +100,9 @@ describe('approval', () => {
     expect(after).toMatchObject({ outcome: 'rejected', approvalState: 'rejected' });
   });
 
-  it('a dry run skips approval, is not counted and reaches the executor with dryRun', async () => {
+  it('a dry run skips approval, is not counted and reaches the destination with dryRun', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       gates: { approval: 'always' },
       budgets: { runsPerDay: 1 },
@@ -128,7 +128,7 @@ describe('approval', () => {
 
   it('a test run replays the events of a chosen batch', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     await fireOne(src.id, '42');
     const [batch] = await batchesOf(h.db, pid);
@@ -146,7 +146,7 @@ describe('approval', () => {
 describe('breaker', () => {
   it('opens after N failures, holds, alerts, and closes by hand or after cooldown', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const ex = await seedDestination(h, { tracking: 'callback' });
     const notifier = h.runtime.addNotifier('system-notifier', 'System');
     await setSystemNotifier(h.db, 'system-notifier', h.clock.now());
     const pid = await seedProcess(h, ex.id, src.id, {
@@ -199,9 +199,9 @@ describe('breaker', () => {
 });
 
 describe('other gates', () => {
-  it('quiet hours, a disabled executor and an unavailable plugin hold with their reasons', async () => {
+  it('quiet hours, a disabled destination and an unavailable plugin hold with their reasons', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const quiet = await seedProcess(h, ex.id, src.id, {
       gates: { quietHours: { start: '08:00', end: '10:00' } },
     });
@@ -211,18 +211,18 @@ describe('other gates', () => {
       outcomeReason: 'quiet_hours',
     });
 
-    const ex2 = await seedExecutor(h, { enabled: false });
+    const ex2 = await seedDestination(h, { enabled: false });
     const disabled = await seedProcess(h, ex2.id, src.id);
-    const ex3 = await seedExecutor(h);
+    const ex3 = await seedDestination(h);
     const unavailable = await seedProcess(h, ex3.id, src.id);
     h.runtime.unavailableTypes.add(EXEC_TYPE);
     await fireOne(src.id, '2');
-    expect((await batchesOf(h.db, disabled))[0]?.outcomeReason).toBe('executor_disabled');
+    expect((await batchesOf(h.db, disabled))[0]?.outcomeReason).toBe('destination_disabled');
     expect((await batchesOf(h.db, unavailable))[0]?.outcomeReason).toBe('plugin_unavailable');
   });
 
   it('a disabled process holds a manual run', async () => {
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, null, {}, false);
     const out = await h.pipeline.runNow(pid, { actor: 'op', reason: 'try' });
     expect(out.outcome).toBe('held');
@@ -233,7 +233,7 @@ describe('other gates', () => {
 describe('steps and notifications', () => {
   it('runs before/after steps with conditions and sends notifications on the terminal state', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const notifier = h.runtime.addNotifier('n1', 'Slack');
     h.secrets.set('secret://env/TOKEN', 'the-token-value');
     const pid = await seedProcess(h, ex.id, src.id, {
@@ -270,7 +270,7 @@ describe('steps and notifications', () => {
     await fireOne(src.id, '1');
     const [run] = await runsOf(h.db, pid);
     expect(run?.status).toBe('ok');
-    // The secret value reached the executor but was never stored.
+    // The secret value reached the destination but was never stored.
     expect(ex.state.invocations[0]?.input).toMatchObject({ token: 'the-token-value' });
     expect(run?.input).toMatchObject({ token: { $secretRef: 'secret://env/TOKEN' } });
     expect(src.state.actions).toEqual([
@@ -289,7 +289,7 @@ describe('steps and notifications', () => {
 
   it('never stores a resolved secret value that the backend echoes back', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     h.secrets.set('secret://env/TOKEN', 'the-token-value');
     const pid = await seedProcess(h, ex.id, src.id, {
       input: '{ "runId": run.id, "mode": mode, "token": $secretRef("env/TOKEN") }',
@@ -314,7 +314,7 @@ describe('steps and notifications', () => {
 
   it('a failing before step fails the run before invoke', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     src.state.actionResult = { ok: false, message: 'label not found' };
     const pid = await seedProcess(h, ex.id, src.id, {
       before: [{ provider: src.id, action: 'addLabel', args: '{ "label": "x" }' }],
@@ -328,7 +328,7 @@ describe('steps and notifications', () => {
 
   it('recovery never invokes past a before step that is still in flight', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const ex = await seedDestination(h, { tracking: 'callback' });
     // The before step never returns (the replica died while it ran).
     src.state.actionResult = new Promise(() => undefined) as never;
     const pid = await seedProcess(h, ex.id, src.id, {
@@ -349,7 +349,7 @@ describe('steps and notifications', () => {
 
   it('a reserved run resumed by recovery runs its before steps first', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const ex = await seedDestination(h, { tracking: 'callback' });
     const pid = await seedProcess(h, ex.id, src.id, {
       before: [{ provider: src.id, action: 'addLabel', args: '{ "label": "working" }' }],
     });
@@ -369,7 +369,7 @@ describe('steps and notifications', () => {
       batchId,
       processId: pid,
       processVersion: 1,
-      executorId: ex.id,
+      destinationId: ex.id,
       kind: 'manual',
       status: 'invoking',
       input: { runId: 'x', mode: 'sweep', artifacts: [] },
@@ -387,7 +387,7 @@ describe('steps and notifications', () => {
 
   it('notifies on held and throttled batches', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const notifier = h.runtime.addNotifier('n1', 'Slack');
     await seedProcess(h, ex.id, src.id, {
       budgets: { runsPerHour: 0 },

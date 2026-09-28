@@ -9,7 +9,7 @@
 #
 # Then send a signed test delivery through the stub (see docs/quick-start.md).
 #
-# Plugins: @ai-switchboard/source-webhook, executor-http, secrets-env (all baked into the image).
+# Plugins: @ai-switchboard/source-webhook, destination-http, secrets-env (all baked into the image).
 apiVersion: switchboard/v1
 kind: Configuration
 
@@ -58,7 +58,7 @@ sources:
     caps:
       eventCapPerHour: 1000
 
-executors:
+destinations:
   - name: Stub HTTP
     type: http
     enabled: true
@@ -99,7 +99,7 @@ processes:
       runsPerDay: 200
       usagePerDay: { cost_usd: 5 }
       meterCeilings: {}
-    executor:
+    destination:
       instance: Stub HTTP
       target:
         method: POST

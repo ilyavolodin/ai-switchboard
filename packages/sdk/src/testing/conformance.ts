@@ -3,15 +3,15 @@ import { isValidSchema, validateAgainst } from '../schema.js';
 import type { RawRequest, Settings } from '../types/common.js';
 import type { ArtifactRef, EventDraft, EventTypeSpec } from '../types/events.js';
 import type {
-  Executor,
-  ExecutorType,
+  Destination,
+  DestinationType,
   Input,
   InvokeResult,
   RunHandle,
   Target,
   TrackingMode,
   UsageReport,
-} from '../types/executor.js';
+} from '../types/destination.js';
 import type { SecretProvider, SecretProviderType } from '../types/notifier.js';
 import type { Source, SourceType } from '../types/source.js';
 import { createStubHttp, createTestContext, runHandle, type StubHandler } from './stubs.js';
@@ -311,10 +311,10 @@ export function sourceConformanceChecks(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Executors
+// Destinations
 // ---------------------------------------------------------------------------------------------
 
-export interface ExecutorFixtures {
+export interface DestinationFixtures {
   settings: Settings;
   /** The plugin's own stub of its backend. */
   http: StubHandler;
@@ -328,7 +328,7 @@ export interface ExecutorFixtures {
 }
 
 function checkUsage(
-  type: ExecutorType,
+  type: DestinationType,
   settings: Settings,
   usage: UsageReport | undefined,
   where: string,
@@ -350,21 +350,21 @@ function checkInvokeResult(r: InvokeResult, tracking: TrackingMode): void {
     `invalid InvokeResult.status "${r.status}"`,
   );
   if (tracking !== 'sync') {
-    assert(r.status !== 'completed', 'only sync executors may return status "completed"');
+    assert(r.status !== 'completed', 'only sync destinations may return status "completed"');
   }
   if (r.retryAfterSeconds !== undefined) {
     assert(r.retryAfterSeconds >= 0, 'retryAfterSeconds must be ≥ 0');
   }
 }
 
-export function executorConformanceChecks(
-  type: ExecutorType,
-  fixtures: ExecutorFixtures,
+export function destinationConformanceChecks(
+  type: DestinationType,
+  fixtures: DestinationFixtures,
 ): ConformanceCheck[] {
   const example = type.examples?.[0];
   const target = fixtures.target ?? example?.target;
   const input = fixtures.input ?? example?.input;
-  const make = (): Executor => {
+  const make = (): Destination => {
     const stub = createStubHttp(fixtures.http);
     return type.create(
       fixtures.settings,
@@ -379,7 +379,7 @@ export function executorConformanceChecks(
       name: 'manifest validates',
       run: () => {
         const errors = validatePlugin(
-          definePlugin({ id: 'conformance', displayName: 'Conformance', executors: [type] }),
+          definePlugin({ id: 'conformance', displayName: 'Conformance', destinations: [type] }),
         );
         assert(errors.length === 0, errors.join('\n'));
         return Promise.resolve();
@@ -448,7 +448,7 @@ export function executorConformanceChecks(
         if (tracking() !== 'callback' && !ex.verifyCallback) return Promise.resolve();
         assert(
           fixtures.unsignedCallback,
-          'callback executors must provide an unsignedCallback fixture',
+          'callback destinations must provide an unsignedCallback fixture',
         );
         assert(typeof ex.verifyCallback === 'function', 'verifyCallback missing');
         assert(

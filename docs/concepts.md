@@ -3,18 +3,18 @@
 Ten nouns cover the whole system. The UI, the API, the SDK, the logs and these docs use exactly
 these words and no synonyms.
 
-| Term         | Meaning                                                                                                                                                                              | Where it comes from                                         |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| **Plugin**   | An npm package that contributes one or more source types, executor types, notifier types or secret-provider types                                                                    | Installed by an admin                                       |
-| **Source**   | An _instance_ of a source type, configured with credentials and settings: "GitHub — acme org", "Datadog — prod". A source emits events                                               | Created in the UI from an installed source type             |
-| **Event**    | One normalised occurrence from a source: a type, a time, the artifact it is about, flat attributes, a dedupe key                                                                     | Produced by a source's `parse` or `poll`                    |
-| **Process**  | A user-defined unit of automation: triggers, filter, batching, gates, budgets, schedules, an executor binding and an input mapping                                                   | Created in the UI                                           |
-| **Trigger**  | One subscription inside a process: a source, one or more event types, a filter expression                                                                                            | Part of a process                                           |
-| **Executor** | An _instance_ of an executor type, configured with credentials: "Claude Routines — automation seat". It invokes work, tracks runs and reports what they consumed                     | Created in the UI from an installed executor type           |
-| **Run**      | One invocation of a process through its executor, from the moment budget is reserved to a terminal status, with the executor's external reference (a session URL, a workflow run id) | Produced by the pipeline                                    |
-| **Usage**    | What one run consumed, in dimensions the executor type declares (tokens, billable minutes, dollars, seconds), budgetable per process                                                 | Declared by executor types, reported per run                |
-| **Meter**    | A gauge an executor exposes about its remaining capacity: a rolling usage window, a daily allowance, a spend counter, with a reset time                                              | Declared by executor types, read per instance on a schedule |
-| **Action**   | A side effect a source or executor can perform on request (add a label, mark ready, post a comment), usable as a step before or after a run                                          | Declared by plugins                                         |
+| Term            | Meaning                                                                                                                                                                                    | Where it comes from                                            |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| **Plugin**      | An npm package that contributes one or more source types, destination types, notifier types or secret-provider types                                                                       | Installed by an admin                                          |
+| **Source**      | An _instance_ of a source type, configured with credentials and settings: "GitHub — acme org", "Datadog — prod". A source emits events                                                     | Created in the UI from an installed source type                |
+| **Event**       | One normalised occurrence from a source: a type, a time, the artifact it is about, flat attributes, a dedupe key                                                                           | Produced by a source's `parse` or `poll`                       |
+| **Process**     | A user-defined unit of automation: triggers, filter, batching, gates, budgets, schedules, a destination binding and an input mapping                                                       | Created in the UI                                              |
+| **Trigger**     | One subscription inside a process: a source, one or more event types, a filter expression                                                                                                  | Part of a process                                              |
+| **Destination** | An _instance_ of a destination type, configured with credentials: "Claude Routines — automation seat". It invokes work, tracks runs and reports what they consumed                         | Created in the UI from an installed destination type           |
+| **Run**         | One invocation of a process through its destination, from the moment budget is reserved to a terminal status, with the destination's external reference (a session URL, a workflow run id) | Produced by the pipeline                                       |
+| **Usage**       | What one run consumed, in dimensions the destination type declares (tokens, billable minutes, dollars, seconds), budgetable per process                                                    | Declared by destination types, reported per run                |
+| **Meter**       | A gauge a destination exposes about its remaining capacity: a rolling usage window, a daily allowance, a spend counter, with a reset time                                                  | Declared by destination types, read per instance on a schedule |
+| **Action**      | A side effect a source or destination can perform on request (add a label, mark ready, post a comment), usable as a step before or after a run                                             | Declared by plugins                                            |
 
 A few more words have one meaning each:
 
@@ -30,7 +30,7 @@ A few more words have one meaning each:
   runs and holds everything until it is reset by hand or its cooldown passes.
 - **Approval**: a person with the operator role releases or rejects a batch the approval rule
   stopped.
-- **Budget** and **ceiling**: a budget caps runs or usage per process or executor instance per
+- **Budget** and **ceiling**: a budget caps runs or usage per process or destination per
   hour or day. A ceiling is a utilization percentage on one meter above which batches are
   throttled, set separately for event batches and sweeps.
 
@@ -40,7 +40,7 @@ aggressively.
 
 ## Types and instances
 
-A plugin contributes _types_ (the `github` source type, the `claude-routines` executor type). A
+A plugin contributes _types_ (the `github` source type, the `claude-routines` destination type). A
 person creates _instances_ of them (the source "GitHub — acme org" with its own credentials).
 Instances are rows. The core builds one live object per enabled instance by resolving its
 `secret://` references and calling the type's `create(settings)`. Changing an instance's settings
@@ -81,8 +81,8 @@ A process is one JSON document a person edits. There is no process code anywhere
 | `batching`                | `debounceSeconds`, `maxSize`, `maxAgeSeconds`, optional `groupBy` expression (one batch per key); `maxSize: 1` is "off" (one run per event; the UI writes `0 / 1 / 0`) |
 | `gates`                   | `quietHours`, `approval` (`none`, `always` or an expression), `breaker` (`threshold`, `cooldownMinutes`)                                                               |
 | `budgets`                 | `runsPerHour`, `runsPerDay`, `usagePerDay` per budgetable dimension, `meterCeilings` per meter (`events`, `sweeps` %)                                                  |
-| `executor`                | The executor instance and a `target` validated by the executor type's `targetSchema`                                                                                   |
-| `input`                   | JSONata over `{ events, process, run, mode }` producing the executor type's `inputSchema`                                                                              |
+| `destination`             | The destination and a `target` validated by the destination type's `targetSchema`                                                                                      |
+| `input`                   | JSONata over `{ events, process, run, mode }` producing the destination type's `inputSchema`                                                                           |
 | `before`, `after`         | Action steps with argument expressions and a `when` condition                                                                                                          |
 | `notify`                  | Notifier instance, template, and `on: ok \| error \| held \| throttled`                                                                                                |
 | `trackingDeadlineMinutes` | When an open run becomes `unknown`                                                                                                                                     |
@@ -90,7 +90,7 @@ A process is one JSON document a person edits. There is no process code anywhere
 JSONata is the one expression language, for filters, batch keys, input mappings, step arguments,
 step conditions and notification templates. It has a small bound library: `$resolve(ref)` and
 `$linked(ref)` (live reads through the event's source), `$now()`, `$env(name)` for non-secret
-deployment values, and `$secretRef(name)`, which yields a _reference_ the executor bridge
+deployment values, and `$secretRef(name)`, which yields a _reference_ the destination bridge
 resolves after evaluation. Secret values never pass through an expression. Every evaluation has a
 2-second limit and a bounded number of `$resolve` calls. A failing filter is `false` and is
 recorded. A failing mapping fails the run before any budget is spent.
@@ -134,20 +134,20 @@ stateDiagram-v2
 4. **Batch.** The dispatch joins the process's open batch for its key and pushes the debounce
    out. The batch closes at `maxSize`, at `maxAgeSeconds` since it opened, or when the debounce
    elapses.
-5. **Gate.** In order: process enabled; every source in the batch enabled; executor instance
+5. **Gate.** In order: process enabled; every source in the batch enabled; destination
    enabled and healthy; breaker closed; outside quiet hours; approval satisfied. A failed gate is
    `held` with the reason.
-6. **Budget.** In one transaction: per-process hourly and daily caps; per-executor caps; meter
+6. **Budget.** In one transaction: per-process hourly and daily caps; per-destination caps; meter
    ceilings against the latest reading while it is fresher than the staleness limit; usage caps on
-   budgetable dimensions; the executor's soft-hold from a recent `retryAfterSeconds`. A failure is
+   budgetable dimensions; the destination's soft-hold from a recent `retryAfterSeconds`. A failure is
    `throttled` with the binding limit named.
 7. **Invoke and track.** `before` steps run, the input mapping is evaluated and validated, and
    the run row is written with `status=invoking`. That write is the budget reservation. Then
    `invoke` is called, and tracking closes the run: at once for `sync`, on a backoff for `poll`,
-   on a verified `POST /callbacks/<executorId>` for `callback`, on a 2xx for `none`. `after` steps
+   on a verified `POST /callbacks/<destinationId>` for `callback`, on a 2xx for `none`. `after` steps
    and notifications run on the terminal state.
 
-**Never a second invoke.** When an executor is not idempotent, a request that may have reached
+**Never a second invoke.** When a destination is not idempotent, a request that may have reached
 the backend (timeout, reset, 5xx after send) leaves the run `uncertain`. Tracking settles it, or
 the deadline marks it `unknown`. Only a connection failure before the request was sent, or a 503,
 is retried.
@@ -189,19 +189,19 @@ process), `filter_error` (the filter threw; treated as false and recorded).
 
 **Run statuses**
 
-| Status      | Terminal | Meaning                                                                    |
-| ----------- | -------- | -------------------------------------------------------------------------- |
-| `invoking`  | no       | Budget reserved, `invoke` in flight                                        |
-| `running`   | no       | The executor started it; tracking is open                                  |
-| `uncertain` | no       | The response was lost and the executor is not idempotent; never re-invoked |
-| `ok`        | yes      | Finished successfully                                                      |
-| `error`     | yes      | Finished with errors; counts toward the breaker                            |
-| `failed`    | yes      | Definitive failure at invoke (bad input, 4xx, before-step failure)         |
-| `unknown`   | yes      | The tracking deadline passed; counts toward the breaker                    |
-| `held`      | yes      | The backend refused because the target is paused on its side               |
+| Status      | Terminal | Meaning                                                                       |
+| ----------- | -------- | ----------------------------------------------------------------------------- |
+| `invoking`  | no       | Budget reserved, `invoke` in flight                                           |
+| `running`   | no       | The destination started it; tracking is open                                  |
+| `uncertain` | no       | The response was lost and the destination is not idempotent; never re-invoked |
+| `ok`        | yes      | Finished successfully                                                         |
+| `error`     | yes      | Finished with errors; counts toward the breaker                               |
+| `failed`    | yes      | Definitive failure at invoke (bad input, 4xx, before-step failure)            |
+| `unknown`   | yes      | The tracking deadline passed; counts toward the breaker                       |
+| `held`      | yes      | The backend refused because the target is paused on its side                  |
 
 **Hold reasons** (stored as `<reason>` or `<reason>:<detail>`): `process_disabled`,
-`source_disabled`, `executor_disabled`, `executor_unhealthy`, `plugin_unavailable`,
+`source_disabled`, `destination_disabled`, `destination_unhealthy`, `plugin_unavailable`,
 `breaker_open`, `quiet_hours`, `awaiting_approval`, `paused`.
 
 ## Status colours

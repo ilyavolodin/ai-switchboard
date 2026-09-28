@@ -1,7 +1,7 @@
-/** Pure helpers for the source and executor Settings tabs. */
+/** Pure helpers for the source and destination Settings tabs. */
 import { sameValue, withoutUndefined } from '../../lib/instances.js';
 
-/** The editable part of a source or executor instance. */
+/** The editable part of a source or destination instance. */
 export interface InstanceSettingsDraft<C> {
   name: string;
   settings: Record<string, unknown>;

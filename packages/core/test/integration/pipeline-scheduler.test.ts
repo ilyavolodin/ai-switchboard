@@ -8,7 +8,7 @@ import {
   deliver,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   type Harness,
@@ -40,7 +40,7 @@ async function tickEveryMinute(harness: Harness, until: string): Promise<void> {
 describe('scheduler', () => {
   it('a cron fires once across the DST fall-back (01:30 happens twice)', async () => {
     h = await createHarness(tdb.db, '2026-11-01T04:00:05Z'); // 00:00 EDT
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, null, {
       schedules: [
         {
@@ -61,7 +61,7 @@ describe('scheduler', () => {
 
   it('a cron in a spring-forward gap fires once, right after the gap', async () => {
     h = await createHarness(tdb.db, '2026-03-08T06:00:05Z'); // 01:00 EST
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, null, {
       schedules: [
         {
@@ -81,7 +81,7 @@ describe('scheduler', () => {
 
   it("a restart at 07:20 runs the missed 07:00 sweep once (catchUp 'once')", async () => {
     h = await createHarness(tdb.db, '2026-01-05T06:59:30Z');
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const once = await seedProcess(h, ex.id, null, {
       schedules: [{ id: 's1', cron: '0 7 * * *', timezone: 'UTC', catchUp: 'once', enabled: true }],
     });
@@ -122,7 +122,7 @@ describe('scheduler', () => {
   it('a sweep merges the open event batch into one run', async () => {
     h = await createHarness(tdb.db, '2026-01-05T08:59:50Z');
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       batching: { debounceSeconds: 120 },
       schedules: [{ id: 's1', cron: '0 9 * * *', timezone: 'UTC', catchUp: 'skip', enabled: true }],
@@ -146,7 +146,7 @@ describe('scheduler', () => {
 
   it('two replicas ticking at once fire the sweep once', async () => {
     h = await createHarness(tdb.db, '2026-01-05T08:59:00Z');
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, null, {
       schedules: [{ id: 's1', cron: '0 9 * * *', timezone: 'UTC', catchUp: 'skip', enabled: true }],
     });

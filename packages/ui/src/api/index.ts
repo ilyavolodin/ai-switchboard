@@ -8,7 +8,7 @@ export * from './mutation.js';
 export * from './hooks/auth.js';
 export * from './hooks/board.js';
 export * from './hooks/sources.js';
-export * from './hooks/executors.js';
+export * from './hooks/destinations.js';
 export * from './hooks/processes.js';
 export * from './hooks/activity.js';
 export * from './hooks/approvals.js';

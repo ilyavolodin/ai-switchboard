@@ -138,7 +138,7 @@ const UNFINISHED_BATCHES = ['open', 'closed', 'awaiting_approval'] as const;
  * the Approvals queue never shows a request nobody can act on. Runs, events, versions, schedule
  * ticks and decided batches stay for the trace and the audit log. A run already reserved goes
  * on to its terminal state. The dispatch stage re-checks `outcome = 'closed'` under a row lock,
- * so a batch dropped here never reaches the executor. Returns null when there is no such process.
+ * so a batch dropped here never reaches the destination. Returns null when there is no such process.
  */
 export async function deleteProcess(
   db: Db,

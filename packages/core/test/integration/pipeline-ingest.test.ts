@@ -22,7 +22,7 @@ import {
   eventsOf,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   type Harness,
@@ -45,7 +45,7 @@ beforeEach(async () => {
 describe('receive → match → dedupe → batch → run', () => {
   it('a webhook event fires one process once through redeliveries', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, { batching: { debounceSeconds: 30 } });
 
     // The same delivery three times, and the same change under a new delivery id.
@@ -82,7 +82,7 @@ describe('receive → match → dedupe → batch → run', () => {
 
   it('two processes on one event each run once', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const a = await seedProcess(h, ex.id, src.id);
     const b = await seedProcess(h, ex.id, src.id);
     await deliver(h, src.id, [{ id: '1', version: 'v1' }]);
@@ -95,7 +95,7 @@ describe('receive → match → dedupe → batch → run', () => {
 
   it('a batch key splits a burst by repository', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       batching: { groupBy: 'attributes.repository' },
     });
@@ -119,7 +119,7 @@ describe('receive → match → dedupe → batch → run', () => {
 
   it('500 events in a minute produce one run per key', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       batching: {
         debounceSeconds: 30,
@@ -148,7 +148,7 @@ describe('receive → match → dedupe → batch → run', () => {
 
   it('closes a batch at maxSize without waiting for the debounce', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, { batching: { maxSize: 2 } });
     await deliver(h, src.id, [
       { id: '1', version: 'a' },
@@ -163,7 +163,7 @@ describe('receive → match → dedupe → batch → run', () => {
 
   it('a filter decides, a failing filter is false and recorded', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const ok = await seedProcess(h, ex.id, src.id, {
       triggers: [
         {
@@ -207,7 +207,7 @@ describe('receive → match → dedupe → batch → run', () => {
 
   it('$resolve reads live state through the event source', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     src.state.resolved.set('fake.pr:7', {
       ref: { kind: 'fake.pr', id: '7' },
       labels: ['complexity:simple'],
@@ -239,7 +239,7 @@ describe('receive → match → dedupe → batch → run', () => {
 describe('the door', () => {
   it('events for a disabled source are stored with source_disabled and return 200', async () => {
     const src = await seedSource(h, { enabled: false });
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     expect(await deliver(h, src.id, [{ id: '1', version: 'a' }])).toBe(200);
     await h.drain();
@@ -261,7 +261,7 @@ describe('the door', () => {
 
   it('invalid events are rejected, stored as event_invalid and counted against the plugin', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     const body = {
       deliveryId: 'bad',
@@ -366,7 +366,7 @@ describe('the door', () => {
 
   it('replays a stored body through the same parse; the replay dedupes onto the same run', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     await deliver(h, src.id, [{ id: '9', version: 'a' }]);
     await h.drain();
@@ -384,7 +384,7 @@ describe('the door', () => {
 
   it('injects a test event from the first example', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     const out = await h.pipeline.injectTestEvent(src.id, undefined, 'op@example.com', 'smoke test');
     expect(out.eventIds).toHaveLength(1);

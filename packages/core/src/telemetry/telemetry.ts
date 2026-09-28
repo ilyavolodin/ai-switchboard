@@ -37,7 +37,7 @@ export const GAUGES = [
   'switchboard.budget.used',
   'switchboard.breaker',
   'switchboard.source.health',
-  'switchboard.executor.health',
+  'switchboard.destination.health',
 ] as const;
 export type GaugeName = (typeof GAUGES)[number];
 

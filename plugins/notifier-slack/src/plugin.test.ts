@@ -21,7 +21,7 @@ const message: NotificationMessage = {
   title: 'Triage run failed',
   text: 'Run for acme/api#42 ended in error',
   url: 'https://switchboard.example.com/runs/1',
-  fields: { Process: 'Triage', Executor: 'Claude Routines' },
+  fields: { Process: 'Triage', Destination: 'Claude Routines' },
 };
 
 function setup(
@@ -49,7 +49,7 @@ describe('slack: Block Kit message', () => {
         type: 'section',
         fields: [
           { type: 'mrkdwn', text: '*Process*\nTriage' },
-          { type: 'mrkdwn', text: '*Executor*\nClaude Routines' },
+          { type: 'mrkdwn', text: '*Destination*\nClaude Routines' },
         ],
       },
       {

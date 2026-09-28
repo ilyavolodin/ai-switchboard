@@ -26,7 +26,7 @@ describe('Plugins', () => {
     expect(within(row).getByText('loaded')).toHaveAttribute('data-tone', 'ok');
     expect(within(row).getByText('linear')).toBeInTheDocument();
 
-    const routines = within(table).getByRole('row', { name: /executor-claude-routines/ });
+    const routines = within(table).getByRole('row', { name: /destination-claude-routines/ });
     expect(within(routines).getByText('0 errors · 2 invalid events · 24 h')).toBeInTheDocument();
     // Baked-in plugins cannot be removed from the UI; installed ones can.
     expect(within(routines).queryByRole('button', { name: /Remove/ })).toBeNull();
@@ -71,7 +71,7 @@ describe('Plugins', () => {
     expect(within(manifest).getByText('sentry.io')).toBeInTheDocument();
     expect(within(manifest).getByText('SENTRY_*')).toBeInTheDocument();
     expect(within(manifest).getByText('Sentry source')).toBeInTheDocument();
-    expect(within(manifest).getByText('sdk ^1.4.0 ok')).toBeInTheDocument();
+    expect(within(manifest).getByText('sdk ^2.0.0 ok')).toBeInTheDocument();
     expect(api.callsTo('POST /plugins/inspect')[0]?.body).toEqual({
       package: '@ai-switchboard/source-sentry',
       range: '^1',
@@ -177,9 +177,9 @@ describe('Plugins', () => {
     expect(within(jira).queryByText('reviewed')).toBeNull();
     expect(within(jira).getByText(/by acme-dev/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('radio', { name: 'Executors' }));
+    await user.click(screen.getByRole('radio', { name: 'Destinations' }));
     expect(
-      await screen.findByRole('listitem', { name: 'ai-switchboard-executor-n8n' }),
+      await screen.findByRole('listitem', { name: 'ai-switchboard-destination-n8n' }),
     ).toBeInTheDocument();
     expect(screen.queryByRole('listitem', { name: '@ai-switchboard/source-sentry' })).toBeNull();
 

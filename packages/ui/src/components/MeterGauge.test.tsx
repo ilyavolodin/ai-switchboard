@@ -8,7 +8,7 @@ import { TEST_NOW } from '../test/constants.js';
 import { MeterGauge } from './MeterGauge.js';
 
 const f = buildFixtures(TEST_NOW);
-const [fiveHour, weekly, dailyRuns] = f.executors[0]!.meters as [
+const [fiveHour, weekly, dailyRuns] = f.destinations[0]!.meters as [
   MeterGaugeDTO,
   MeterGaugeDTO,
   MeterGaugeDTO,

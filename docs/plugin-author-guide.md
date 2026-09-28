@@ -1,6 +1,6 @@
 # Plugin author guide
 
-A plugin is an npm package that contributes source types, executor types, notifier types or
+A plugin is an npm package that contributes source types, destination types, notifier types or
 secret-provider types. Installing it registers it: its event types, settings forms, actions,
 usage dimensions and meters appear in the UI without a line of code in the core. This guide
 walks through the package format, the interfaces, and the conformance kit every plugin runs.
@@ -20,11 +20,11 @@ test kit). The SDK is the contract and follows semver strictly.
   "switchboard": {
     "entry": "./dist/plugin.js",
     "source": "./src/plugin.ts",
-    "sdk": "^1.0.0"
+    "sdk": "^2.0.0"
   },
   "exports": { ".": { "types": "./dist/plugin.d.ts", "default": "./dist/plugin.js" } },
-  "peerDependencies": { "@ai-switchboard/sdk": "^1.0.0" },
-  "devDependencies": { "@ai-switchboard/sdk": "^1.0.0", "vitest": "^5.0.0" }
+  "peerDependencies": { "@ai-switchboard/sdk": "^2.0.0" },
+  "devDependencies": { "@ai-switchboard/sdk": "^2.0.0", "vitest": "^5.0.0" }
 }
 ```
 
@@ -41,15 +41,15 @@ test kit). The SDK is the contract and follows semver strictly.
 ### Naming
 
 Name the package so admins can find it from the UI (Plugins → Browse npm, and "Find more on npm"
-in Add source / Add executor):
+in Add source / Add destination):
 
 | Pattern                               | Example                                                    |
 | ------------------------------------- | ---------------------------------------------------------- |
 | `ai-switchboard-{kind}-{name}`        | `ai-switchboard-source-jira`                               |
-| `@scope/ai-switchboard-{kind}-{name}` | `@acme/ai-switchboard-executor-n8n`                        |
+| `@scope/ai-switchboard-{kind}-{name}` | `@acme/ai-switchboard-destination-n8n`                     |
 | `@ai-switchboard/{kind}-{name}`       | `@ai-switchboard/source-webhook` (the project's own scope) |
 
-`{kind}` is `source`, `executor`, `notifier` or `secrets` — the kind of types the package mainly
+`{kind}` is `source`, `destination`, `notifier` or `secrets` — the kind of types the package mainly
 contributes. The pattern is `PLUGIN_NAME_PATTERN` in `packages/core/src/plugins/naming.ts`. Search
 unions the name prefix with `keywords:switchboard-plugin` and shows only packages that match the
 pattern, so keep the keyword too. A package with another name still installs by name with Add
@@ -61,14 +61,14 @@ plugin or `switchboard plugins add`.
 import { definePlugin } from '@ai-switchboard/sdk';
 
 import { deploysSource } from './source.js';
-import { jobsExecutor } from './executor.js';
+import { jobsDestination } from './destination.js';
 
 export default definePlugin({
   id: 'acme-deploys', // globally unique, kebab-case
   displayName: 'Acme deploys',
   description: 'Deploy events from the Acme pipeline and the Acme job runner.',
   sources: [deploysSource],
-  executors: [jobsExecutor],
+  destinations: [jobsDestination],
   notifiers: [],
   secretProviders: [],
   capabilities: { network: ['api.acme.example', '*.jobs.acme.example'], secrets: ['api-token'] },
@@ -77,12 +77,12 @@ export default definePlugin({
 
 `validatePlugin(plugin)` returns the manifest problems the host would refuse: kebab-case unique
 ids per kind, valid JSON Schemas, event types that start with the source type id, flat
-attributes, examples that conform, at most one primary meter per executor type, and example
+attributes, examples that conform, at most one primary meter per destination type, and example
 targets and inputs that validate, and well-formed icons.
 
 ### Icons
 
-Every source, executor, notifier and secret provider type may declare an `icon` (since SDK
+Every source, destination, notifier and secret provider type may declare an `icon` (since SDK
 1.3). The UI shows it on instance cards and in the _Add_ dialogs; a type without one gets the
 kind's generic icon.
 
@@ -431,10 +431,10 @@ export const deploysSource: SourceType = {
 - A source type without `verify` is refused for anything but the generic `webhook` source's
   explicit evaluation mode.
 
-## Executors
+## Destinations
 
 ```typescript
-interface ExecutorType {
+interface DestinationType {
   id: string;
   displayName: string;
   settingsSchema: JSONSchema; // per instance: credentials, base URL
@@ -452,10 +452,10 @@ interface ExecutorType {
   meters?: MeterSpec[];
   metersFor?(settings: Settings): MeterSpec[];
   actions?: ActionSpec[];
-  create(settings: Settings, ctx: PluginContext): Executor;
+  create(settings: Settings, ctx: PluginContext): Destination;
 }
 
-interface Executor {
+interface Destination {
   invoke(target: unknown, input: unknown, run: RunHandle): Promise<InvokeResult>;
   poll?(run: RunHandle): Promise<RunStatus>; // tracking = 'poll'
   verifyCallback?(req: RawRequest): { runId: string; status: RunStatus } | null; // 'callback'
@@ -470,12 +470,12 @@ work), `mode` (`event`, `sweep` or `manual`), `dryRun`, `callbackUrl` and the tr
 
 ### Tracking modes
 
-| Mode       | `invoke` returns                                   | How the run closes                                                                                                         |
-| ---------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `sync`     | `completed` or `failed`, with `result` and `usage` | At once                                                                                                                    |
-| `poll`     | `started` with `externalId`                        | The core calls `poll(run)` on a backoff (30 s, 1, 2, 5 min, then every 5 min) until a terminal state or the deadline       |
-| `callback` | `started` with `externalId`                        | The backend POSTs to `run.callbackUrl` (`/callbacks/<executorId>`); `verifyCallback` authenticates it and maps it to a run |
-| `none`     | `started`                                          | A 2xx closes the run `ok`; the UI says the outcome is not tracked                                                          |
+| Mode       | `invoke` returns                                   | How the run closes                                                                                                            |
+| ---------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `sync`     | `completed` or `failed`, with `result` and `usage` | At once                                                                                                                       |
+| `poll`     | `started` with `externalId`                        | The core calls `poll(run)` on a backoff (30 s, 1, 2, 5 min, then every 5 min) until a terminal state or the deadline          |
+| `callback` | `started` with `externalId`                        | The backend POSTs to `run.callbackUrl` (`/callbacks/<destinationId>`); `verifyCallback` authenticates it and maps it to a run |
+| `none`     | `started`                                          | A 2xx closes the run `ok`; the UI says the outcome is not tracked                                                             |
 
 A run still open at its deadline becomes `unknown`, which counts toward the process's breaker.
 `status: 'held'` with a `reason` means the backend refused because the target is paused on its
@@ -493,7 +493,7 @@ flaky network. Declare it honestly:
   send) leaves the run `uncertain`. The core never calls `invoke` again; tracking settles the run
   or the deadline marks it `unknown`.
 
-Only two failures are retried for a non-idempotent executor: a connection that was never
+Only two failures are retried for a non-idempotent destination: a connection that was never
 established, and a 503. Tell the core which one happened:
 
 - `ctx.http` throws `TransportError` with `sent: false` when nothing was sent (connection refused,
@@ -512,7 +512,7 @@ copies.
 ### Invoke timeout
 
 The core waits a limited time for `invoke` to answer. The effective timeout is, in order: the
-executor instance's `invokeTimeoutSeconds` cap (set by an admin in the UI), else the type's
+destination's `invokeTimeoutSeconds` cap (set by an admin in the UI), else the type's
 `invokeTimeoutFor(target)`, else the type's `invokeTimeoutSeconds`, else 300 s. It is clamped to
 1–3600 s.
 
@@ -529,13 +529,13 @@ covers what `invoke` really does:
 - One HTTP request: the `HttpClient` timeout (30 s by default) plus room to read the answer, for
   example `invokeTimeoutSeconds: 60`.
 - Several requests in one invoke (a token exchange, then the dispatch, then a lookup): the sum.
-- A timeout the target chooses (the `http` executor's `timeoutSeconds`): implement
+- A timeout the target chooses (the `http` destination's `timeoutSeconds`): implement
   `invokeTimeoutFor(target)` and return the request timeout plus a margin.
 
 Keep your own request timeouts **below** the invoke timeout, so a slow backend surfaces as your
 `TransportError` (with its accurate `sent` flag) before the core gives up on the answer.
 
-### Example: an executor with callback tracking
+### Example: a destination with callback tracking
 
 ```typescript
 import {
@@ -543,7 +543,7 @@ import {
   parseRetryAfter,
   verifyHmac,
   type CallbackResult,
-  type ExecutorType,
+  type DestinationType,
   type PluginContext,
   type RawRequest,
   type RunHandle,
@@ -559,7 +559,7 @@ interface JobsTarget {
   queue: string;
 }
 
-function createJobsExecutor(raw: Settings, ctx: PluginContext) {
+function createJobsDestination(raw: Settings, ctx: PluginContext) {
   const s = raw as unknown as JobsSettings;
   const auth = { authorization: `Bearer ${s.apiToken}` };
 
@@ -631,7 +631,7 @@ function createJobsExecutor(raw: Settings, ctx: PluginContext) {
   };
 }
 
-export const jobsExecutor: ExecutorType = {
+export const jobsDestination: DestinationType = {
   id: 'acme-jobs',
   displayName: 'Acme jobs',
   settingsSchema: {
@@ -665,7 +665,7 @@ export const jobsExecutor: ExecutorType = {
   meters: [
     { id: 'daily_jobs', title: 'Daily jobs', kind: 'allowance', unit: 'count', primary: true },
   ],
-  create: createJobsExecutor,
+  create: createJobsDestination,
 };
 ```
 
@@ -673,11 +673,11 @@ export const jobsExecutor: ExecutorType = {
 
 **Usage** is what one run consumed. Declare the dimensions once (`id`, `title`, `unit`,
 `aggregate: 'sum' | 'max'`, `budgetable`) and report a `UsageReport` keyed by those ids: in the
-`InvokeResult` for sync executors, in the `RunStatus` from `poll` or `verifyCallback` for the
+`InvokeResult` for sync destinations, in the `RunStatus` from `poll` or `verifyCallback` for the
 rest. The core drops (and counts against your plugin) any undeclared key, aggregates usage into
 hourly statistics, enforces per-process daily caps on budgetable dimensions, and renders each one
 with its unit. Report nothing rather than a guess: the core never estimates per-run usage.
-Executors whose dimensions depend on the instance (the `http` executor) implement `usageFor`.
+Destinations whose dimensions depend on the instance (the `http` destination) implement `usageFor`.
 
 **Meters** are the backend's remaining capacity, read on a schedule through `readMeters()`:
 
@@ -697,7 +697,7 @@ types in (`caps.estimatedLimits`), and the UI labels it _estimated_.
 
 ## Actions
 
-Sources and executors can declare actions (`ActionSpec`: `id`, `title`, `argsSchema`, an
+Sources and destinations can declare actions (`ActionSpec`: `id`, `title`, `argsSchema`, an
 optional `describe` sentence such as `Add label {{label}}`, and since 1.3 `idempotent`) and
 implement `act(action, args)`. Processes use them as `before` and `after` steps. The core
 validates `args` against `argsSchema` before calling, records every call in `steps` with the run
@@ -806,7 +806,7 @@ The checks encode the contracts above:
   for the same change and different across changes; no attribute contains the raw body or a
   secret; `parseWithNotes`, when present, returns `parse`'s events and notes without the raw body
   or a secret; `resolve` handles a 404; `poll` advances the watermark and never re-emits.
-- **Executor:** manifest validates; `targetSchema` and `inputSchema` are valid with examples;
+- **Destination:** manifest validates; `targetSchema` and `inputSchema` are valid with examples;
   `idempotentInvoke` is declared; the tracking mode's method exists; `invoke` with the example
   target and input against your stub returns a well-formed `InvokeResult`; `verifyCallback`
   rejects an unsigned request; `readMeters` returns readings for the declared meters; every usage
@@ -822,7 +822,7 @@ import { readFileSync } from 'node:fs';
 
 import { signHmac } from '@ai-switchboard/sdk';
 import {
-  executorConformanceChecks,
+  destinationConformanceChecks,
   pluginConformanceChecks,
   rawRequest,
   runConformance,
@@ -830,7 +830,7 @@ import {
 } from '@ai-switchboard/sdk/testing';
 import { describe, expect, it } from 'vitest';
 
-import plugin, { deploysSource, jobsExecutor } from './plugin.js';
+import plugin, { deploysSource, jobsDestination } from './plugin.js';
 
 const SECRET = 'fixture-secret';
 
@@ -879,8 +879,8 @@ runConformance(
 );
 
 runConformance(
-  'acme-jobs executor',
-  executorConformanceChecks(jobsExecutor, {
+  'acme-jobs destination',
+  destinationConformanceChecks(jobsDestination, {
     settings: {
       baseUrl: 'https://jobs.acme.example',
       apiToken: 'fixture-token',
@@ -899,10 +899,10 @@ runConformance(
   { describe, it },
 );
 
-describe('acme-jobs executor', () => {
+describe('acme-jobs destination', () => {
   it('maps a 400 to a definitive failure', async () => {
     // plugin-specific tests go here, next to the conformance checks
-    expect(jobsExecutor.idempotentInvoke).toBe(false);
+    expect(jobsDestination.idempotentInvoke).toBe(false);
   });
 });
 ```
@@ -958,7 +958,7 @@ with a real token.
 - Document the credentials and scopes each action needs, the capabilities you declare and why,
   and how usage numbers are obtained.
 - Admins install from the UI (Plugins → Browse npm, or "Find more on npm" when adding a source or
-  executor), which shows your capabilities and SDK compatibility, pins the exact version and
+  destination), which shows your capabilities and SDK compatibility, pins the exact version and
   integrity, and loads the plugin at once on every replica. For images, `switchboard plugins add
 @acme/ai-switchboard-source-deploys@^1` does the same at build time.
 - To be listed in the catalogue of reviewed plugins, open an issue on the Switchboard repository
@@ -969,13 +969,17 @@ with a real token.
 - `@ai-switchboard/sdk` follows semver strictly. Additive fields are minor releases; any change
   to an interface method is a major.
 - The host loads any plugin whose `switchboard.sdk` range includes the running SDK major. Declare
-  `^1.0.0` and you will load on every 1.x host. The host checks the full range, so if you use an
-  export added in a later minor (`parseWith`, `invokeErrorForStatus` and the custom event type
-  helpers arrived in 1.2.0; `icon`, `ICON_NAMES`, `invokeTimeoutSeconds`, `invokeTimeoutFor` and
-  `ActionSpec.idempotent` in 1.3.0; `Source.parseWithNotes`, `openAttributesSchema`,
-  `flattenAttributes`, `attributeKey`, `x-effectiveDefault`, `x-docs` and `x-widget: 'path'` in
-  1.4.0), declare that minor (`^1.4.0`) in both `switchboard.sdk` and
+  `^2.0.0` and you will load on every 2.x host. The host checks the full range, so if you use an
+  export added in a later 2.x minor, declare that minor in both `switchboard.sdk` and
   `peerDependencies`. An older host ignores the optional fields.
+- SDK 2.0.0 renamed the "executor" concept to **destination** (`DestinationType`, `Destination`,
+  `definePlugin({ destinations })`, `destinationConformanceChecks`, plugin kind `destination`).
+  The plugin contract changed, so a plugin built against SDK 1.x is reported `incompatible` and
+  is not loaded: rebuild it against `^2.0.0`. Everything that arrived during 1.x (`parseWith`,
+  `invokeErrorForStatus`, the custom event type helpers, `icon`, `ICON_NAMES`,
+  `invokeTimeoutSeconds`, `invokeTimeoutFor`, `ActionSpec.idempotent`, `Source.parseWithNotes`,
+  `openAttributesSchema`, `flattenAttributes`, `attributeKey`, `x-effectiveDefault`, `x-docs`,
+  `x-widget: 'path'`) is part of 2.0.0.
 - Your plugin's own version is yours, but treat event type ids, attribute names and action ids as
   public API: people's filters and processes depend on them. Removing or renaming one is a major.
 - SDK majors are announced through the `switchboard-plugin` topic on the repository.

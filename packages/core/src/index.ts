@@ -5,7 +5,12 @@ export type { DoctorCheck } from './doctor.js';
 export { createSwitchboard } from './app.js';
 export type { Switchboard, CreateOptions } from './app.js';
 export { PluginHost } from './plugins/host.js';
-export type { PluginRuntime, LiveSource, LiveExecutor, LiveNotifier } from './plugins/runtime.js';
+export type {
+  PluginRuntime,
+  LiveSource,
+  LiveDestination,
+  LiveNotifier,
+} from './plugins/runtime.js';
 export { FakeClock, systemClock } from './clock.js';
 export type { Clock } from './clock.js';
 export {

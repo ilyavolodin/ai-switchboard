@@ -23,7 +23,7 @@ export function runStatusLabel(status: RunStatusValue): StatusLabel {
   return RUN_STATUS_LABELS[status];
 }
 
-/** Source or executor instance status. */
+/** Source or destination instance status. */
 export function instanceStatus(input: {
   enabled: boolean;
   health: Health | null;

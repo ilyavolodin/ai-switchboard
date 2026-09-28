@@ -31,7 +31,7 @@ async function writePlugin(name: string, options: { sdk?: string; body: string }
       name,
       version: '2.3.4',
       type: 'module',
-      switchboard: { entry: './plugin.js', sdk: options.sdk ?? '^1.0.0' },
+      switchboard: { entry: './plugin.js', sdk: options.sdk ?? '^2.0.0' },
     }),
   );
   await writeFile(join(dir, 'plugin.js'), options.body);
@@ -61,7 +61,8 @@ export default definePlugin({ id: 'acme-good', displayName: 'Good', capabilities
   notifiers: [{ id: 'acme-notify', displayName: 'Acme notify', settingsSchema: { type: 'object' },
     create: () => ({ send: async () => {}, health: async () => ({ status: 'healthy', checkedAt: new Date().toISOString() }) }) }] });`,
   });
-  await writePlugin('@acme/incompatible', { sdk: '^2.0.0', body: 'export default {};' });
+  // Built against SDK 1.x (before executor became destination): refused, not loaded.
+  await writePlugin('@acme/incompatible', { sdk: '^1.0.0', body: 'export default {};' });
   await writePlugin('@acme/broken', { body: `throw new Error('boom at import');` });
   await writePlugin('@acme/invalid', {
     body: `import { definePlugin } from '@ai-switchboard/sdk';
@@ -101,7 +102,7 @@ describe('plugin host', () => {
     expect(byName['@acme/good']).toMatchObject({ status: 'loaded' });
     expect(byName['@acme/incompatible']).toMatchObject({
       status: 'incompatible',
-      message: expect.stringMatching(/\^2\.0\.0/),
+      message: expect.stringMatching(/\^1\.0\.0; running SDK is 2\.0\.0/),
     });
     expect(byName['@acme/broken']).toMatchObject({
       status: 'failed',

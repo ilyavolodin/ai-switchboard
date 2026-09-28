@@ -6,7 +6,7 @@
 import type { ProcessDetail } from '@ai-switchboard/core/contract';
 
 import { expect, open, test } from './fixtures.js';
-import { BREAKER_PROCESS, EXECUTOR, HEALTHY_PROCESS } from './seed.js';
+import { BREAKER_PROCESS, DESTINATION, HEALTHY_PROCESS } from './seed.js';
 import { sendAlert, waitFor } from './stack.js';
 
 test('the Board shows an open breaker, and Reset closes it', async ({ page, api, state }) => {
@@ -56,15 +56,15 @@ test("`/` then an artifact id opens the artifact's trace", async ({ page, state 
   await expect(timeline.getByText('Filter matched')).toBeVisible();
   await expect(timeline.getByText('Gate breaker_closed: pass')).toBeVisible();
   await expect(timeline.getByText('Budget: within limits')).toBeVisible();
-  await expect(timeline.getByText(`Invoked ${EXECUTOR}`)).toBeVisible();
+  await expect(timeline.getByText(`Invoked ${DESTINATION}`)).toBeVisible();
   await expect(timeline.getByRole('link', { name: HEALTHY_PROCESS }).first()).toBeVisible();
 });
 
-test('the executor shows its meter with a value and a reset countdown, and so does the top bar', async ({
+test('the destination shows its meter with a value and a reset countdown, and so does the top bar', async ({
   page,
   state,
 }) => {
-  await open(page, `/executors/${state.executorId}`);
+  await open(page, `/destinations/${state.destinationId}`);
   const meters = page.getByRole('list', { name: 'Meters now' });
   const gauge = meters.getByRole('img', { name: /^Endpoint capacity 30% used/ });
   await expect(gauge).toBeVisible();
@@ -72,7 +72,7 @@ test('the executor shows its meter with a value and a reset countdown, and so do
   await expect(meters.getByText('30%')).toBeVisible();
   await expect(meters.getByText(/resets in/)).toBeVisible();
 
-  const strip = page.getByLabel('Executor capacity');
+  const strip = page.getByLabel('Destination capacity');
   const link = strip.getByRole('link', { name: /Stub HTTP · Endpoint capacity 30%.*resets in/ });
   await expect(link).toBeVisible();
   await expect(link).toContainText('30%');

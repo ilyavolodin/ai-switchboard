@@ -5,10 +5,10 @@ import { NodeCard } from '../../components/NodeCard.js';
 import styles from './Board.module.css';
 
 /**
- * The Board's first-run state: three steps (add a source, add an executor, draw your first
+ * The Board's first-run state: three steps (add a source, add a destination, draw your first
  * process) over a canvas of ghost nodes. Steps already done are ticked.
  */
-export function BoardEmpty({ sources, executors }: { sources: number; executors: number }) {
+export function BoardEmpty({ sources, destinations }: { sources: number; destinations: number }) {
   const steps = [
     {
       done: sources > 0,
@@ -18,16 +18,16 @@ export function BoardEmpty({ sources, executors }: { sources: number; executors:
       cta: 'Add a source',
     },
     {
-      done: executors > 0,
-      title: 'Add an executor',
+      done: destinations > 0,
+      title: 'Add a destination',
       body: 'Point at the automation you already have: a Claude Routine, an HTTP endpoint, a GitHub Actions workflow.',
-      to: '/executors',
-      cta: 'Add an executor',
+      to: '/destinations',
+      cta: 'Add a destination',
     },
     {
       done: false,
       title: 'Draw your first process',
-      body: 'Pick the events that matter, set batching, gates and budgets, and bind it to the executor.',
+      body: 'Pick the events that matter, set batching, gates and budgets, and bind it to the destination.',
       to: '/processes/new',
       cta: 'New process',
     },
@@ -44,7 +44,7 @@ export function BoardEmpty({ sources, executors }: { sources: number; executors:
           matched › batched › gated › invoked › ok
         </NodeCard>
         <span className={styles.ghostEdge} />
-        <NodeCard tone="off" title="Your executor" meta="callback" ghost width={170}>
+        <NodeCard tone="off" title="Your destination" meta="callback" ghost width={170}>
           meters
         </NodeCard>
       </div>

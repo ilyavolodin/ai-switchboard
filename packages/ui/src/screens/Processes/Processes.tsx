@@ -121,8 +121,9 @@ export function Processes() {
       ) : all.length === 0 && !processes.isError ? (
         <Card>
           <EmptyState title="No processes yet" illustration="ghost" actions={newButton}>
-            A process connects the events of a source to an executor, under budgets, schedules and
-            approvals. Start with one trigger and one executor; you can add sweeps and gates later.
+            A process connects the events of a source to a destination, under budgets, schedules and
+            approvals. Start with one trigger and one destination; you can add sweeps and gates
+            later.
           </EmptyState>
         </Card>
       ) : shown.length === 0 ? (

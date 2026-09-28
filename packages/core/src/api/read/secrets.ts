@@ -1,7 +1,7 @@
 import type { SecretListing } from '@ai-switchboard/sdk';
 import { eq } from 'drizzle-orm';
 
-import { executors, notifiers, processes, secretProviders, sources } from '../../db/schema.js';
+import { destinations, notifiers, processes, secretProviders, sources } from '../../db/schema.js';
 import { instanceStatus } from '../../domain/labels.js';
 import {
   collectDocumentSecretRefs,
@@ -36,7 +36,7 @@ async function usersByName(
   }[] = [];
   const tables = [
     ['source', sources],
-    ['executor', executors],
+    ['destination', destinations],
     ['notifier', notifiers],
     ['secret_provider', secretProviders],
   ] as const;
@@ -90,7 +90,7 @@ export async function providerUsers(
   const order: SecretUserDTO['kind'][] = [
     'process',
     'source',
-    'executor',
+    'destination',
     'notifier',
     'secret_provider',
   ];
@@ -100,7 +100,7 @@ export async function providerUsers(
 }
 
 /**
- * The sources, executors and notifiers whose settings reference each provider name, with the
+ * The sources, destinations and notifiers whose settings reference each provider name, with the
  * status they have now (so right after a rebuild, the result of it).
  */
 export async function providerDependents(
@@ -111,7 +111,7 @@ export async function providerDependents(
   if (providerNames.length === 0) return out;
   const tables = [
     ['source', sources],
-    ['executor', executors],
+    ['destination', destinations],
     ['notifier', notifiers],
   ] as const;
   for (const [kind, table] of tables) {

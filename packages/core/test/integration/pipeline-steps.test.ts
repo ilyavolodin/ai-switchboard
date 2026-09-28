@@ -13,7 +13,7 @@ import {
   deliver,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   type DocPatch,
@@ -65,7 +65,7 @@ async function reservedRun(s: Seeded, opts: { inFlight?: boolean } = {}): Promis
       batchId,
       processId: s.pid,
       processVersion: 1,
-      executorId: s.ex.id,
+      destinationId: s.ex.id,
       kind: 'manual',
       status: 'invoking',
       input: { runId: 'x', mode: 'sweep', artifacts: [] },
@@ -131,9 +131,9 @@ function withSource(patch: DocPatch, sourceId: string): DocPatch {
   };
 }
 
-async function seedWith(patch: DocPatch, executor: { idempotent?: boolean } = {}) {
+async function seedWith(patch: DocPatch, destination: { idempotent?: boolean } = {}) {
   const src = await seedSource(h);
-  const ex = await seedExecutor(h, { tracking: 'callback', ...executor });
+  const ex = await seedDestination(h, { tracking: 'callback', ...destination });
   const pid = await seedProcess(h, ex.id, src.id, withSource(patch, src.id));
   return { src, ex, pid };
 }
@@ -144,7 +144,7 @@ describe('before steps resume from the journal', () => {
     const runId = await reservedRun(s);
     await journal(runId, 'before', 0, 'addLabel', 'ok', s.src.id);
     await recover();
-    // The first step is not repeated; the second runs; only then is the executor invoked.
+    // The first step is not repeated; the second runs; only then is the destination invoked.
     expect(s.src.state.actions).toEqual([{ action: 'comment', args: { text: 'started' } }]);
     expect(s.ex.state.invocations).toHaveLength(1);
     expect(await stepRows(runId)).toEqual([
@@ -189,7 +189,7 @@ describe('before steps resume from the journal', () => {
   });
 
   it('an attempt that stopped in its steps is resumed, not made uncertain', async () => {
-    // Non-idempotent executor: an attempt past its deadline is normally `uncertain`. This one
+    // Non-idempotent destination: an attempt past its deadline is normally `uncertain`. This one
     // never got past its first step, so invoke was certainly not called.
     const s = await seedWith(labelThenComment, { idempotent: false });
     const runId = await reservedRun(s, { inFlight: true });

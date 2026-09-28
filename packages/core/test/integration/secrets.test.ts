@@ -37,7 +37,7 @@ async function tokenFor(role: 'viewer' | 'operator'): Promise<string> {
 describe('GET /secret-providers/:id/secrets', () => {
   let vault: InstanceSummary;
   let source: SourceDetail;
-  let executorId: string;
+  let destinationId: string;
   let processId: string;
 
   beforeAll(async () => {
@@ -51,15 +51,15 @@ describe('GET /secret-providers/:id/secrets', () => {
       name: 'Vault source',
       settings: { secret: 'secret://vault/SOURCE_SECRET' },
     });
-    executorId = (
-      await post<{ id: string }>('/api/v1/executors', {
-        typeId: 'test-executor',
-        name: 'Vault executor',
+    destinationId = (
+      await post<{ id: string }>('/api/v1/destinations', {
+        typeId: 'test-destination',
+        name: 'Vault destination',
         settings: { url: 'secret://vault/GONE_TOKEN' },
       })
     ).id;
-    const doc = defaultProcessDocument('Vault process', executorId);
-    doc.executor.target = { path: '/x', token: 'secret://vault/SOURCE_SECRET' };
+    const doc = defaultProcessDocument('Vault process', destinationId);
+    doc.destination.target = { path: '/x', token: 'secret://vault/SOURCE_SECRET' };
     processId = (await post<{ id: string }>('/api/v1/processes', { document: doc })).id;
   });
 
@@ -81,7 +81,12 @@ describe('GET /secret-providers/:id/secrets', () => {
     expect(used?.usedBy).toEqual(
       expect.arrayContaining([
         { kind: 'source', id: source.id, name: 'Vault source', field: 'secret' },
-        { kind: 'process', id: processId, name: 'Vault process', field: 'executor.target.token' },
+        {
+          kind: 'process',
+          id: processId,
+          name: 'Vault process',
+          field: 'destination.target.token',
+        },
       ]),
     );
     expect(body.secrets.find((s) => s.name === 'UNUSED_TOKEN')?.usedBy).toEqual([]);
@@ -90,7 +95,9 @@ describe('GET /secret-providers/:id/secrets', () => {
       {
         name: 'GONE_TOKEN',
         ref: 'secret://vault/GONE_TOKEN',
-        usedBy: [{ kind: 'executor', id: executorId, name: 'Vault executor', field: 'url' }],
+        usedBy: [
+          { kind: 'destination', id: destinationId, name: 'Vault destination', field: 'url' },
+        ],
       },
     ]);
   });

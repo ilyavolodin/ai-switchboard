@@ -1,6 +1,6 @@
 import type { ProcessDocument } from '@ai-switchboard/core/contract';
 
-import { useExecutors, useNotifiers, useSources } from '../../api/index.js';
+import { useDestinations, useNotifiers, useSources } from '../../api/index.js';
 import { Card } from '../../components/Card.js';
 import { CodeBlock } from '../../components/CodeBlock.js';
 import { KeyValueList } from '../../components/KeyValueList.js';
@@ -22,15 +22,16 @@ function Expr({ value }: { value: string | undefined }) {
 /** A read-only rendering of the stored process document, section by section, with Edit. */
 export function DefinitionTab({ processId, doc }: { processId: string; doc: ProcessDocument }) {
   const sources = useSources();
-  const executors = useExecutors();
+  const destinations = useDestinations();
   const notifiers = useNotifiers();
   const sourceName = (id: string) => sources.data?.find((s) => s.id === id)?.name ?? id;
-  const executorName =
-    executors.data?.find((x) => x.id === doc.executor.instanceId)?.name ?? doc.executor.instanceId;
+  const destinationName =
+    destinations.data?.find((x) => x.id === doc.destination.instanceId)?.name ??
+    doc.destination.instanceId;
   const g = doc.gates;
   const target =
-    typeof doc.executor.target === 'object' && doc.executor.target !== null
-      ? (doc.executor.target as Record<string, unknown>)
+    typeof doc.destination.target === 'object' && doc.destination.target !== null
+      ? (doc.destination.target as Record<string, unknown>)
       : {};
 
   return (
@@ -138,7 +139,7 @@ export function DefinitionTab({ processId, doc }: { processId: string; doc: Proc
         </Card>
       </div>
 
-      <Card title="Executor" meta={executorName}>
+      <Card title="Destination" meta={destinationName}>
         <KeyValueList label="Target" data={target} />
         <span className="t-overline">input mapping</span>
         <CodeBlock value={doc.input} label="Input mapping" />

@@ -6,7 +6,7 @@ Switchboard is configured in three layers:
    at start (`packages/core/src/config.ts`).
 2. **Global settings** for the installation: timezone, staleness, retention, the system notifier.
    Edited on the Settings page or through `PUT /api/v1/settings`, stored in Postgres, audited.
-3. **Instances and processes**: secret providers, sources, executors, notifiers and processes.
+3. **Instances and processes**: secret providers, sources, destinations, notifiers and processes.
    Edited in the UI, or kept in git as one YAML file and applied with `switchboard apply`.
 
 Secret values are never in any of the stored layers. Settings hold `secret://<provider>/<name>`
@@ -40,7 +40,7 @@ references, and a secret provider resolves them when an instance is built.
 | `SWITCHBOARD_DEV_SOURCE`            | `false`                                                         | Load plugins from their `switchboard.source` TypeScript entry (development under tsx)                                                                                                      |
 | `SWITCHBOARD_NPM_REGISTRY`          | `https://registry.npmjs.org`                                    | npm registry that Plugins → Browse npm searches (`GET /api/v1/plugins/search`). Installs use npm itself, so they honour `.npmrc`                                                           |
 | `SWITCHBOARD_PLUGIN_SYNC_SECONDS`   | `60`                                                            | How often each replica installs and loads plugins that an admin installed through the API on another replica (also done at boot)                                                           |
-| `SWITCHBOARD_INSTANCE_SYNC_SECONDS` | `10`                                                            | How often each replica rebuilds the sources, executors, notifiers and secret providers changed, reloaded or deleted through another replica (also done at boot). Minimum 1                 |
+| `SWITCHBOARD_INSTANCE_SYNC_SECONDS` | `10`                                                            | How often each replica rebuilds the sources, destinations, notifiers and secret providers changed, reloaded or deleted through another replica (also done at boot). Minimum 1              |
 | `SWITCHBOARD_WORKERS`               | `true`                                                          | Run pipeline workers and the scheduler in this process. `false` for an API-and-ingress-only replica                                                                                        |
 | `SWITCHBOARD_SECURE_COOKIES`        | `true` when the public URL is `https://`                        | Mark the session cookie `Secure`                                                                                                                                                           |
 | `SWITCHBOARD_TRUST_PROXY`           | `false`                                                         | Trust `X-Forwarded-For`/`-Proto` from a reverse proxy (set `true` behind an ingress or load balancer; the Helm chart does). Client addresses in logs and the sign-in throttle come from it |
@@ -131,7 +131,7 @@ sources:
       webhookSecret: secret://env/GITHUB_WEBHOOK_SECRET
     caps: { eventCapPerHour: 500 }
 
-executors:
+destinations:
   - name: Claude Routines — automation seat
     type: claude-routines
     enabled: true
@@ -168,7 +168,7 @@ processes:
     budgets:
       runsPerDay: 20
       meterCeilings: { five_hour: { events: 85, sweeps: 95 } }
-    executor:
+    destination:
       instance: Claude Routines — automation seat # instead of instanceId
       target: { routineId: trig_autofix_0000000000 }
     input: '{ "text": "switchboard run " & run.id & " mode=" & mode }'
@@ -193,12 +193,15 @@ More complete files are in [examples/](../examples/README.md).
 | `settings`        | Partial global settings without `oidc`. `systemNotifierId` and `export.sourceId` hold instance names                                                                                                                                       |
 | `secretProviders` | `[{ name, type, enabled?, settings? }]`                                                                                                                                                                                                    |
 | `sources`         | `[{ name, type, enabled?, settings?, caps? }]`. `caps`: `eventCapPerHour`, `eventCapPerDay`, `eventTypesEnabled`, `pollIntervalSeconds` (`unauthenticated` is derived from the plugin's settings, e.g. the webhook's `verification: none`) |
-| `executors`       | `[{ name, type, enabled?, settings?, targetDefaults?, caps? }]`. `caps`: `runsPerHour`, `runsPerDay`, `usagePerDay`, `meterPollSeconds`, `meterStalenessMinutes`, `estimatedLimits`, `invokeTimeoutSeconds`                                |
+| `destinations`    | `[{ name, type, enabled?, settings?, targetDefaults?, caps? }]`. `caps`: `runsPerHour`, `runsPerDay`, `usagePerDay`, `meterPollSeconds`, `meterStalenessMinutes`, `estimatedLimits`, `invokeTimeoutSeconds`                                |
 | `notifiers`       | `[{ name, type, enabled?, settings? }]`                                                                                                                                                                                                    |
 | `processes`       | Process documents with instance names in place of ids (below)                                                                                                                                                                              |
 
 Every section is optional. `type` is the plugin type id (`github`, `webhook`, `http`,
 `claude-routines`, `env`). Other top-level keys are not part of the format; apply ignores them.
+Deprecated: apply still accepts the names from before "executor" was renamed "destination" (a
+top-level `executors:` list and a process `executor:` binding); export always writes
+`destinations:` and `destination:`.
 
 A process is the stored `ProcessDocument` (see [concepts](concepts.md#the-process)) with every
 instance id replaced by the instance's name:
@@ -206,16 +209,16 @@ instance id replaced by the instance's name:
 | In the stored document      | In YAML                      |
 | --------------------------- | ---------------------------- |
 | `triggers[].sourceId`       | `triggers[].source`          |
-| `executor.instanceId`       | `executor.instance`          |
+| `destination.instanceId`    | `destination.instance`       |
 | `before[].provider` (an id) | `before[].provider` (a name) |
 | `after[].provider` (an id)  | `after[].provider` (a name)  |
 | `notify[].notifierId`       | `notify[].notifier`          |
 
 Everything else is verbatim, including trigger and schedule `id`s, which dispatches refer to. A
-step's `provider` is looked up among sources first, then executors. After the names are
+step's `provider` is looked up among sources first, then destinations. After the names are
 translated, the document is validated exactly like a save in the editor, so every key is
 required: `name`, `description`, `enabled`, `triggers`, `schedules`, `batching`, `gates`
-(`approval`, `breaker`), `budgets` (`meterCeilings`), `executor`, `input`, `before`, `after`,
+(`approval`, `breaker`), `budgets` (`meterCeilings`), `destination`, `input`, `before`, `after`,
 `notify`, `trackingDeadlineMinutes`.
 
 ### How apply works
@@ -230,7 +233,7 @@ required: `name`, `description`, `enabled`, `triggers`, `schedules`, `batching`,
   `targetDefaults` replace the stored ones (omitted means `{}`), and an omitted `enabled` means
   `true`. Settings are partial: only the keys present change, and `retention` and `export` merge
   key by key.
-- **Order.** Secret providers → sources → executors → notifiers → settings → processes, so
+- **Order.** Secret providers → sources → destinations → notifiers → settings → processes, so
   settings and processes may name instances created by the same file.
 - **Validation.** Each instance's `settings` are validated against its plugin type's
   `settingsSchema` (a type no loaded plugin provides is an error). Each process is validated
@@ -241,7 +244,7 @@ required: `name`, `description`, `enabled`, `triggers`, `schedules`, `batching`,
 - **Dry run.** `dryRun: true` (`--dry-run`) runs the same apply and rolls it back, so the change
   list and errors are exactly what a real apply would produce.
 - **Changes.** The response lists `{ kind, name, action }`, where `kind` is `secret_provider`,
-  `source`, `executor`, `notifier`, `settings` (name `global`) or `process`, and `action` is
+  `source`, `destination`, `notifier`, `settings` (name `global`) or `process`, and `action` is
   `create`, `update` or `unchanged`. The CLI prints the list and the errors and exits 1 when
   there are errors.
 - **Audit and versions.** Every change writes an audit row with the token owner as actor and the

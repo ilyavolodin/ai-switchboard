@@ -5,7 +5,7 @@ import {
   batches,
   dispatches,
   events,
-  executors,
+  destinations,
   processes,
   runs,
   runUpdates,
@@ -75,16 +75,16 @@ export async function batchArtifacts(
 export async function runSummaries(ctx: ApiContext, rows: RunRow[]): Promise<RunSummary[]> {
   if (rows.length === 0) return [];
   const procIds = [...new Set(rows.map((r) => r.processId))];
-  const exIds = [...new Set(rows.map((r) => r.executorId))];
+  const exIds = [...new Set(rows.map((r) => r.destinationId))];
   const [procs, exs, arts] = await Promise.all([
     ctx.db
       .select({ id: processes.id, name: processes.name })
       .from(processes)
       .where(inArray(processes.id, procIds)),
     ctx.db
-      .select({ id: executors.id, name: executors.name })
-      .from(executors)
-      .where(inArray(executors.id, exIds)),
+      .select({ id: destinations.id, name: destinations.name })
+      .from(destinations)
+      .where(inArray(destinations.id, exIds)),
     batchArtifacts(
       ctx,
       rows.map((r) => r.batchId),
@@ -96,8 +96,8 @@ export async function runSummaries(ctx: ApiContext, rows: RunRow[]): Promise<Run
       id: r.id,
       processId: r.processId,
       processName: procs.find((p) => p.id === r.processId)?.name ?? '(deleted process)',
-      executorId: r.executorId,
-      executorName: exs.find((e) => e.id === r.executorId)?.name ?? '(deleted executor)',
+      destinationId: r.destinationId,
+      destinationName: exs.find((e) => e.id === r.destinationId)?.name ?? '(deleted destination)',
       kind: r.kind,
       status: r.status,
       statusLabel: runStatusLabel(r.status),
@@ -123,7 +123,7 @@ export async function listRuns(ctx: ApiContext, q: RunsQuery): Promise<Page<RunS
   const cursor = decodeCursor(q.cursor);
   const where: SQL[] = [];
   if (q.process) where.push(eq(runs.processId, q.process));
-  if (q.executor) where.push(eq(runs.executorId, q.executor));
+  if (q.destination) where.push(eq(runs.destinationId, q.destination));
   if (q.status) where.push(inArray(runs.status, q.status.split(',') as RunStatusValue[]));
   if (cursor) where.push(afterCursor(runs.createdAt, runs.id, cursor));
   const rows = await ctx.db

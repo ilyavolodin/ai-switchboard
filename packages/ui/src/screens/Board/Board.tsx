@@ -45,7 +45,7 @@ const COLUMN_LABELS: ColumnLabelNode[] = (
   [
     ['source', 'sources'],
     ['process', 'processes'],
-    ['executor', 'executors'],
+    ['destination', 'destinations'],
   ] as const
 ).map(([kind, label]) => ({
   id: `column:${kind}`,
@@ -68,7 +68,7 @@ const LEGEND_DOTS = {
 } as const satisfies Parameters<typeof PipelineDots>[0]['dots'];
 
 /**
- * The Board: the system's picture. Sources → processes → executors on a React Flow canvas
+ * The Board: the system's picture. Sources → processes → destinations on a React Flow canvas
  * (edge width = 24 h volume, animated dots = live flow, border = status), a filter row (hide
  * disabled, focus one process), and the "Needs attention" panel with one-click actions.
  * Polls `GET /board` every 10 s.
@@ -106,7 +106,10 @@ export function Board() {
         </Banner>
       ) : board.data.processes.length === 0 ? (
         <div className={styles.grid}>
-          <BoardEmpty sources={board.data.sources.length} executors={board.data.executors.length} />
+          <BoardEmpty
+            sources={board.data.sources.length}
+            destinations={board.data.destinations.length}
+          />
           <AttentionPanel items={board.data.attention} />
         </div>
       ) : (
@@ -158,8 +161,8 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
               ...common,
             }
           : {
-              kind: 'executor' as const,
-              executor: n.node as BoardResponse['executors'][number],
+              kind: 'destination' as const,
+              destination: n.node as BoardResponse['destinations'][number],
               ...common,
             };
     return {
@@ -224,7 +227,7 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
               count:
                 data.sources.filter((s) => !s.enabled).length +
                 data.processes.filter((p) => !p.enabled).length +
-                data.executors.filter((x) => !x.enabled).length,
+                data.destinations.filter((x) => !x.enabled).length,
             },
           ]}
           onChange={(v) => {
@@ -293,7 +296,7 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
                 maxZoom={1.5}
                 fitView
                 fitViewOptions={{ padding: 0.06, maxZoom: 1 }}
-                aria-label="Sources, processes and executors"
+                aria-label="Sources, processes and destinations"
               >
                 <Controls showInteractive={false} position="bottom-right" />
                 <FitView layoutKey={layout.nodes.map((n) => n.id).join(',')} />

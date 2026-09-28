@@ -8,7 +8,7 @@ import type { Tx } from '../../db/client.js';
 import {
   approvals,
   batches,
-  executors,
+  destinations,
   processes,
   runs,
   sources,
@@ -24,7 +24,7 @@ import {
 import { budget, type BudgetResult } from '../../pipeline/budget.js';
 import { gate } from '../../pipeline/gate.js';
 import { trackingDeadline } from '../../pipeline/tracking.js';
-import type { LiveExecutor } from '../../plugins/runtime.js';
+import type { LiveDestination } from '../../plugins/runtime.js';
 import { getSettings } from '../settings.js';
 
 import {
@@ -85,9 +85,12 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
   const settings = await getSettings(ctx.db);
   const events = await batchEvents(ctx.db, batch);
   const mode = modeFor(batch, events);
-  const executorId = doc.executor.instanceId;
-  const [exRow] = await ctx.db.select().from(executors).where(eq(executors.id, executorId));
-  const live = ctx.runtime.executor(executorId);
+  const destinationId = doc.destination.instanceId;
+  const [exRow] = await ctx.db
+    .select()
+    .from(destinations)
+    .where(eq(destinations.id, destinationId));
+  const live = ctx.runtime.destination(destinationId);
   const sourceIds = [...new Set(events.map((e) => e.sourceId))];
   const sourceRows =
     sourceIds.length > 0
@@ -103,7 +106,7 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
     mode: batch.kind === 'manual' ? 'manual' : mode,
     processId: proc.id,
     processName: proc.name,
-    callbackUrl: `${ctx.config.publicUrl}/callbacks/${executorId}`,
+    callbackUrl: `${ctx.config.publicUrl}/callbacks/${destinationId}`,
     deadline: trackingDeadline(now, doc.trackingDeadlineMinutes).toISOString(),
   };
   const fallbackSources = doc.triggers.map((t) => t.sourceId);
@@ -135,12 +138,12 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
         id,
         enabled: sourceRows.find((s) => s.id === id)?.enabled ?? false,
       })),
-      executor: {
+      destination: {
         exists: exRow !== undefined,
         enabled: exRow?.enabled ?? false,
-        pluginAvailable: exRow ? ctx.runtime.executorType(exRow.typeId) !== undefined : false,
+        pluginAvailable: exRow ? ctx.runtime.destinationType(exRow.typeId) !== undefined : false,
         live: live !== undefined,
-        instanceError: ctx.runtime.instanceError(executorId),
+        instanceError: ctx.runtime.instanceError(destinationId),
         health: exRow?.health ?? null,
       },
       breaker: {
@@ -196,7 +199,7 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
   }
   if (!live || !exRow) {
     // The gate guarantees both; this keeps the types honest.
-    await hold(ctx, batch, proc, 'executor_unhealthy', 'no live instance', gateRecords, events);
+    await hold(ctx, batch, proc, 'destination_unhealthy', 'no live instance', gateRecords, events);
     return { batchId, runId: null, outcome: 'held' };
   }
 
@@ -218,7 +221,7 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
         batchId,
         processId: proc.id,
         processVersion: proc.version,
-        executorId,
+        destinationId,
         kind: batch.kind,
         status: 'failed',
         statusReason: 'input_invalid',
@@ -244,7 +247,7 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
       signalBatch(ctx, proc.id, batch, 'invoked', 'input_invalid', runId);
       ctx.telemetry.decision(
         'switchboard.runs',
-        { process: proc.id, executor: executorId, status: 'failed' },
+        { process: proc.id, destination: destinationId, status: 'failed' },
         { process_id: proc.id, batch_id: batchId, run_id: runId },
       );
       await ctx.queue.send(JOBS.finish, { runId });
@@ -252,9 +255,9 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
     return { batchId, runId: created ? runId : null, outcome: 'failed' };
   }
 
-  // Budget check and reservation in one transaction, serialised per executor instance.
+  // Budget check and reservation in one transaction, serialised per destination.
   const reservation = await withTx(ctx.db, async (tx) => {
-    await lockKey(tx, `executor:${executorId}`);
+    await lockKey(tx, `destination:${destinationId}`);
     const [b] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('update');
     if (b?.outcome !== 'closed') return { outcome: 'gone' as const, result: null };
     const checked = batch.dryRun
@@ -263,7 +266,7 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
           kind: batch.kind,
           budgets: doc.budgets,
           processId: proc.id,
-          executorId,
+          destinationId,
           live,
           defaultStalenessMinutes: settings.meterStalenessMinutes,
           now,
@@ -285,7 +288,7 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
       batchId,
       processId: proc.id,
       processVersion: proc.version,
-      executorId,
+      destinationId,
       kind: batch.kind,
       status: 'invoking',
       input: mapping.input,
@@ -360,21 +363,21 @@ async function checkBudget(
     kind: BatchRow['kind'];
     budgets: ProcessRow['document']['budgets'];
     processId: string;
-    executorId: string;
-    live: LiveExecutor;
+    destinationId: string;
+    live: LiveDestination;
     defaultStalenessMinutes: number;
     now: Date;
   },
 ): Promise<{ result: BudgetResult; record: GateDecisionRecord }> {
-  const { executorId, live, now } = input;
-  const [ex] = await tx.select().from(executors).where(eq(executors.id, executorId));
+  const { destinationId, live, now } = input;
+  const [ex] = await tx.select().from(destinations).where(eq(destinations.id, destinationId));
   const caps = ex?.caps ?? {};
   const counters = await countersFor(
     tx,
-    { processId: input.processId, executorId, dimensions: live.usage },
+    { processId: input.processId, destinationId, dimensions: live.usage },
     now,
   );
-  const meters = await meterSnapshots(tx, executorId, live.meters, caps, now);
+  const meters = await meterSnapshots(tx, destinationId, live.meters, caps, now);
   const result = budget(
     {
       kind: input.kind,
@@ -384,7 +387,7 @@ async function checkBudget(
         usagePerDay: input.budgets.usagePerDay,
         meterCeilings: input.budgets.meterCeilings,
       },
-      executor: {
+      destination: {
         runsPerHour: caps.runsPerHour,
         runsPerDay: caps.runsPerDay,
         usagePerDay: caps.usagePerDay,

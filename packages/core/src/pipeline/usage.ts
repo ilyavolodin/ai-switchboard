@@ -1,7 +1,7 @@
 import type { UsageDimension, UsageReport } from '@ai-switchboard/sdk';
 
 /**
- * Validate a plugin's usage report against the executor's declared dimensions. Undeclared keys
+ * Validate a plugin's usage report against the destination's declared dimensions. Undeclared keys
  * and non-numeric values are dropped (and counted against the plugin by the caller).
  */
 export function sanitizeUsage(

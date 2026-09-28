@@ -17,7 +17,7 @@ export function isPackageName(name: string): boolean {
   return /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i.test(name);
 }
 
-/** "source", "executor", "notifier", "secret provider". */
+/** "source", "destination", "notifier", "secret provider". */
 export function kindLabel(kind: PluginKind): string {
   return kind === 'secret_provider' ? 'secret provider' : kind;
 }

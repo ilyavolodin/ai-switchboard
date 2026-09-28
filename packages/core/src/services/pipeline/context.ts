@@ -159,7 +159,7 @@ export function evalFunctions(
 
 /**
  * Default time limit for a plugin call (poll, readMeters, a notifier send, an action). An invoke
- * has its own, per-executor limit (`effectiveInvokeTimeoutSeconds`); an attempt's recovery
+ * has its own, per-destination limit (`effectiveInvokeTimeoutSeconds`); an attempt's recovery
  * deadline budgets this limit for each `before` step.
  */
 export const PLUGIN_CALL_TIMEOUT_MS = 45_000;

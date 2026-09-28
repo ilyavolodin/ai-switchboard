@@ -45,7 +45,7 @@ const id = () => uuid('id').primaryKey().defaultRandom();
  */
 const configVersion = () => integer('config_version').notNull().default(1);
 
-export type PluginKindColumn = 'source' | 'executor' | 'notifier' | 'secret_provider';
+export type PluginKindColumn = 'source' | 'destination' | 'notifier' | 'secret_provider';
 
 /** Core-added per-instance caps for sources. */
 export interface SourceCaps {
@@ -57,8 +57,8 @@ export interface SourceCaps {
   unauthenticated?: boolean;
 }
 
-/** Core-added per-instance caps for executors. */
-export interface ExecutorCaps {
+/** Core-added per-instance caps for destinations. */
+export interface DestinationCaps {
   runsPerHour?: number;
   runsPerDay?: number;
   usagePerDay?: Record<string, number>;
@@ -67,7 +67,7 @@ export interface ExecutorCaps {
   /** Typed-in limits for estimated meters, keyed by meter id. */
   estimatedLimits?: Record<string, number>;
   /**
-   * How long to wait for `invoke` to answer (1–3600 s); overrides the executor type's
+   * How long to wait for `invoke` to answer (1–3600 s); overrides the destination type's
    * per-target and default timeouts.
    */
   invokeTimeoutSeconds?: number;
@@ -158,14 +158,14 @@ export const sources = pgTable('sources', {
   updatedAt: ts('updated_at').notNull().defaultNow(),
 });
 
-export const executors = pgTable('executors', {
+export const destinations = pgTable('destinations', {
   id: id(),
   typeId: text('type_id').notNull(),
   name: text('name').notNull(),
   settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
   targetDefaults: jsonb('target_defaults').$type<Record<string, unknown>>().notNull().default({}),
   enabled: boolean('enabled').notNull().default(true),
-  caps: jsonb('caps').$type<ExecutorCaps>().notNull().default({}),
+  caps: jsonb('caps').$type<DestinationCaps>().notNull().default({}),
   softHoldUntil: ts('soft_hold_until'),
   softHoldReason: text('soft_hold_reason'),
   health: jsonb('health').$type<Health>(),
@@ -180,7 +180,7 @@ export const meterReadings = pgTable(
   'meter_readings',
   {
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-    executorId: uuid('executor_id').notNull(),
+    destinationId: uuid('destination_id').notNull(),
     meterId: text('meter_id').notNull(),
     observedAt: ts('observed_at').notNull(),
     used: doublePrecision('used'),
@@ -189,7 +189,7 @@ export const meterReadings = pgTable(
     resetsAt: ts('resets_at'),
     estimated: boolean('estimated').notNull().default(false),
   },
-  (t) => [index('meter_readings_latest').on(t.executorId, t.meterId, t.observedAt.desc())],
+  (t) => [index('meter_readings_latest').on(t.destinationId, t.meterId, t.observedAt.desc())],
 );
 
 export const notifiers = pgTable('notifiers', {
@@ -433,7 +433,7 @@ export const runs = pgTable(
     batchId: uuid('batch_id').notNull(),
     processId: uuid('process_id').notNull(),
     processVersion: integer('process_version').notNull(),
-    executorId: uuid('executor_id').notNull(),
+    destinationId: uuid('destination_id').notNull(),
     kind: text('kind').$type<BatchKind>().notNull(),
     status: text('status').$type<RunStatusValue>().notNull(),
     statusReason: text('status_reason'),
@@ -464,11 +464,11 @@ export const runs = pgTable(
   (t) => [
     uniqueIndex('runs_batch').on(t.batchId),
     index('runs_process_invoked').on(t.processId, t.invokedAt.desc()),
-    index('runs_executor_invoked').on(t.executorId, t.invokedAt.desc()),
+    index('runs_destination_invoked').on(t.destinationId, t.invokedAt.desc()),
     index('runs_open')
       .on(t.status)
       .where(sql`${t.status} IN ('invoking','running','uncertain')`),
-    index('runs_external').on(t.executorId, t.externalId),
+    index('runs_external').on(t.destinationId, t.externalId),
   ],
 );
 
@@ -593,7 +593,7 @@ export const auditLog = pgTable(
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     actor: text('actor').notNull(),
     at: ts('at').notNull().defaultNow(),
-    /** `process` | `source` | `executor` | `plugin` | `user` | `settings` | `approval` | `run` | ... */
+    /** `process` | `source` | `destination` | `plugin` | `user` | `settings` | `approval` | `run` | ... */
     scope: text('scope').notNull(),
     targetId: text('target_id'),
     field: text('field'),
@@ -614,7 +614,7 @@ export const settings = pgTable('settings', {
 export const statsHourly = pgTable(
   'stats_hourly',
   {
-    /** `source` | `event_type` | `process` | `executor` | `meter` | `plugin` */
+    /** `source` | `event_type` | `process` | `destination` | `meter` | `plugin` */
     dimension: text('dimension').notNull(),
     key: text('key').notNull(),
     hour: ts('hour').notNull(),

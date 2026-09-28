@@ -1,14 +1,14 @@
 import { and, count, eq, gte, inArray } from 'drizzle-orm';
 
-import { executors, events, processes, runs, sources } from '../../db/schema.js';
+import { destinations, events, processes, runs, sources } from '../../db/schema.js';
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import { instanceStatus } from '../../domain/labels.js';
 import type { ProcessDocument } from '../../domain/process.js';
 import { collectSecretRefs } from '../../secrets/refs.js';
 import type { ApiContext } from '../context.js';
 import type {
-  ExecutorDetail,
-  ExecutorSummary,
+  DestinationDetail,
+  DestinationSummary,
   SecretRefDTO,
   SourceDetail,
   SourceSummary,
@@ -17,7 +17,7 @@ import { notFound } from '../errors.js';
 import { meterGauges } from './meters.js';
 
 type SourceRow = typeof sources.$inferSelect;
-type ExecutorRow = typeof executors.$inferSelect;
+type DestinationRow = typeof destinations.$inferSelect;
 
 export function secretRefsOf(
   ctx: ApiContext,
@@ -139,27 +139,27 @@ export async function sourceDetail(ctx: ApiContext, id: string): Promise<SourceD
   };
 }
 
-export async function executorSummaries(
+export async function destinationSummaries(
   ctx: ApiContext,
-  rows?: ExecutorRow[],
+  rows?: DestinationRow[],
   processList?: ProcessRef[],
-): Promise<ExecutorSummary[]> {
-  const list = rows ?? (await ctx.db.select().from(executors).orderBy(executors.name));
+): Promise<DestinationSummary[]> {
+  const list = rows ?? (await ctx.db.select().from(destinations).orderBy(destinations.name));
   if (list.length === 0) return [];
   const ids = list.map((e) => e.id);
   const since = new Date(ctx.clock.now().getTime() - 24 * 3_600_000);
   const runCounts = await ctx.db
-    .select({ executorId: runs.executorId, n: count() })
+    .select({ destinationId: runs.destinationId, n: count() })
     .from(runs)
-    .where(and(inArray(runs.executorId, ids), gte(runs.createdAt, since)))
-    .groupBy(runs.executorId);
+    .where(and(inArray(runs.destinationId, ids), gte(runs.createdAt, since)))
+    .groupBy(runs.destinationId);
   const procs = processList ?? (await allProcesses(ctx));
   const gauges = await meterGauges(ctx, ids, procs);
   const now = ctx.clock.now().getTime();
   return list.map((row) => {
-    const typeEntry = ctx.runtime.executorType(row.typeId);
+    const typeEntry = ctx.runtime.destinationType(row.typeId);
     const error = ctx.runtime.instanceError(row.id);
-    const mine = gauges.filter((g) => g.executorId === row.id);
+    const mine = gauges.filter((g) => g.destinationId === row.id);
     const softHold = row.softHoldUntil !== null && row.softHoldUntil.getTime() > now;
     return {
       id: row.id,
@@ -180,20 +180,20 @@ export async function executorSummaries(
       softHoldUntil: softHold ? (row.softHoldUntil?.toISOString() ?? null) : null,
       softHoldReason: softHold ? row.softHoldReason : null,
       pluginAvailable: typeEntry !== undefined,
-      runs24h: runCounts.find((c) => c.executorId === row.id)?.n ?? 0,
-      processCount: procs.filter((p) => p.document.executor.instanceId === row.id).length,
+      runs24h: runCounts.find((c) => c.destinationId === row.id)?.n ?? 0,
+      processCount: procs.filter((p) => p.document.destination.instanceId === row.id).length,
     };
   });
 }
 
-export async function executorDetail(ctx: ApiContext, id: string): Promise<ExecutorDetail> {
-  const [row] = await ctx.db.select().from(executors).where(eq(executors.id, id));
-  if (!row) throw notFound('Executor');
+export async function destinationDetail(ctx: ApiContext, id: string): Promise<DestinationDetail> {
+  const [row] = await ctx.db.select().from(destinations).where(eq(destinations.id, id));
+  if (!row) throw notFound('Destination');
   const procs = await allProcesses(ctx);
-  const [summary] = await executorSummaries(ctx, [row], procs);
-  if (!summary) throw notFound('Executor');
-  const typeEntry = ctx.runtime.executorType(row.typeId);
-  const live = ctx.runtime.executor(id);
+  const [summary] = await destinationSummaries(ctx, [row], procs);
+  if (!summary) throw notFound('Destination');
+  const typeEntry = ctx.runtime.destinationType(row.typeId);
+  const live = ctx.runtime.destination(id);
   const type = typeEntry?.type;
   return {
     ...summary,
@@ -212,7 +212,7 @@ export async function executorDetail(ctx: ApiContext, id: string): Promise<Execu
     secretRefs: secretRefsOf(ctx, row.id, row.settings, row.secretsResolvedAt),
     instanceError: ctx.runtime.instanceError(row.id) ?? null,
     processes: procs
-      .filter((p) => p.document.executor.instanceId === row.id)
+      .filter((p) => p.document.destination.instanceId === row.id)
       .map((p) => ({ id: p.id, name: p.name })),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -228,7 +228,7 @@ export async function processesUsing(
   return procs
     .filter(
       (p) =>
-        p.document.executor.instanceId === instanceId ||
+        p.document.destination.instanceId === instanceId ||
         p.document.triggers.some((t) => t.sourceId === instanceId) ||
         [...p.document.before, ...p.document.after].some((s) => s.provider === instanceId) ||
         p.document.notify.some((n) => n.notifierId === instanceId),

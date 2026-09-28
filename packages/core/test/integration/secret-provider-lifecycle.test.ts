@@ -37,7 +37,7 @@ async function call<T>(
 
 describe('secret provider lifecycle', () => {
   let source: SourceDetail;
-  let executorId: string;
+  let destinationId: string;
   let provider: InstanceSummary;
 
   beforeAll(async () => {
@@ -52,11 +52,11 @@ describe('secret provider lifecycle', () => {
       },
       201,
     );
-    executorId = (
+    destinationId = (
       await call<{ id: string }>(
         'POST',
-        '/api/v1/executors',
-        { typeId: 'test-executor', name: 'Unrelated executor', settings: {} },
+        '/api/v1/destinations',
+        { typeId: 'test-destination', name: 'Unrelated destination', settings: {} },
         201,
       )
     ).id;
@@ -135,8 +135,8 @@ describe('secret provider lifecycle', () => {
   });
 
   it('refuses to delete a provider still referenced, naming who uses it', async () => {
-    const doc = defaultProcessDocument('Uses late', executorId);
-    doc.executor.target = { path: '/x' };
+    const doc = defaultProcessDocument('Uses late', destinationId);
+    doc.destination.target = { path: '/x' };
     doc.input = "{ 'token': $secretRef('late/SOURCE_SECRET') }";
     const processId = (
       await call<{ id: string }>('POST', '/api/v1/processes', { document: doc }, 201)

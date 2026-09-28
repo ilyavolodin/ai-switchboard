@@ -13,7 +13,7 @@ import {
   deliver,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   type Harness,
@@ -61,9 +61,9 @@ function errorsOf(plugin: string) {
 describe('plugin calls', () => {
   it('a poll that never settles times out, is counted and scheduled again', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'poll' });
+    const ex = await seedDestination(h, { tracking: 'poll' });
     const pid = await seedProcess(h, ex.id, src.id);
-    h.runtime.executors.get(ex.id)!.executor.poll = () => new Promise(() => undefined);
+    h.runtime.destinations.get(ex.id)!.destination.poll = () => new Promise(() => undefined);
     await fireOne(src.id, '1');
     const [run] = await runsOf(h.db, pid);
     h.clock.advanceSeconds(30);
@@ -78,10 +78,10 @@ describe('plugin calls', () => {
 
   it('two replicas handling the same poll job at once poll the backend once', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'poll' });
+    const ex = await seedDestination(h, { tracking: 'poll' });
     const pid = await seedProcess(h, ex.id, src.id);
     let polls = 0;
-    h.runtime.executors.get(ex.id)!.executor.poll = async () => {
+    h.runtime.destinations.get(ex.id)!.destination.poll = async () => {
       polls++;
       await new Promise((r) => setTimeout(r, 30));
       return { state: 'running' };
@@ -108,13 +108,13 @@ describe('plugin calls', () => {
 
   it('a parse or verifyCallback that throws is counted once, by the runtime wrapper', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const ex = await seedDestination(h, { tracking: 'callback' });
     h.runtime.sources.get(src.id)!.source.parse = () => {
       throw new Error('unexpected payload');
     };
     expect(await deliver(h, src.id, [{ id: '1' }])).toBe(200);
     expect(errorsOf(HOOK_PLUGIN)).toHaveLength(1);
-    h.runtime.executors.get(ex.id)!.executor.verifyCallback = () => {
+    h.runtime.destinations.get(ex.id)!.destination.verifyCallback = () => {
       throw new Error('bad token format');
     };
     const res = await h.pipeline.handleCallback(
@@ -129,7 +129,7 @@ describe('plugin calls', () => {
 describe('breaker cooldown', () => {
   it('never closes a breaker that re-opened while the batch was being gated', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       gates: {
         breaker: { threshold: 2, cooldownMinutes: 30 },

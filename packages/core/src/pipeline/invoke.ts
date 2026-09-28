@@ -9,7 +9,7 @@ import {
  * Stage 7a, invoke classification: the idempotency rule. A non-idempotent invoke is retried only
  * when the request never left (`TransportError.sent === false`) or the backend answered 503.
  * Anything that may have reached the backend leaves the run `uncertain` for tracking to settle,
- * never a second invoke. Idempotent executors retry a lost response with the same run id.
+ * never a second invoke. Idempotent destinations retry a lost response with the same run id.
  */
 
 export const MAX_INVOKE_ATTEMPTS = 5;
@@ -31,7 +31,7 @@ function usableSeconds(n: unknown): number | undefined {
 }
 
 /**
- * The effective invoke timeout, in seconds: the executor instance's `invokeTimeoutSeconds` cap,
+ * The effective invoke timeout, in seconds: the destination's `invokeTimeoutSeconds` cap,
  * else the type's per-target value (`invokeTimeoutFor`), else the type's default
  * (`invokeTimeoutSeconds`), else 300 s; clamped to 1–3600 s. A value that is not a positive
  * finite number is ignored at its level.
@@ -101,7 +101,7 @@ export type InvokeClassification =
       reason: string;
       errors: string[];
       softHoldSeconds?: number;
-      /** 401/403: the credentials were refused; mark the executor unhealthy. */
+      /** 401/403: the credentials were refused; mark the destination unhealthy. */
       unhealthy?: boolean;
     }
   | { action: 'uncertain'; reason: string };

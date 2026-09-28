@@ -16,7 +16,7 @@ interface ListQuery<T> {
 }
 
 /**
- * The Sources and Executors card grids: skeletons while loading, an error with Retry, the
+ * The Sources and Destinations card grids: skeletons while loading, an error with Retry, the
  * teaching empty state, and an amber banner naming the instances whose plugin did not load.
  */
 export function InstanceGrid<T extends { id: string; name: string; pluginAvailable: boolean }>({
@@ -28,7 +28,7 @@ export function InstanceGrid<T extends { id: string; name: string; pluginAvailab
   footer,
 }: {
   query: ListQuery<T>;
-  /** "Sources", "Executors". */
+  /** "Sources", "Destinations". */
   title: string;
   empty: ReactNode;
   /** Finishes "<names> stay configured, but their plugin did not load at start; …". */

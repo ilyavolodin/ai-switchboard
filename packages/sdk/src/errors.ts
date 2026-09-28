@@ -20,11 +20,11 @@ export class CapabilityError extends Error {
 }
 
 /**
- * Thrown by an executor's `invoke` to describe a backend refusal precisely.
+ * Thrown by a destination's `invoke` to describe a backend refusal precisely.
  *
  * - `status: 503` or `sent: false` → the core may retry.
  * - `definitive: true` (a 4xx the backend will repeat) → the run is `failed`.
- * - anything else → `uncertain` for non-idempotent executors.
+ * - anything else → `uncertain` for non-idempotent destinations.
  */
 export class InvokeError extends Error {
   override readonly name = 'InvokeError';

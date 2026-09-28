@@ -14,10 +14,10 @@ const PLUGINS = [
   'source-github',
   'source-linear',
   'source-datadog',
-  'executor-http',
-  'executor-claude-routines',
-  'executor-github-actions',
-  'executor-log',
+  'destination-http',
+  'destination-claude-routines',
+  'destination-github-actions',
+  'destination-log',
   'notifier-slack',
   'notifier-webhook',
   'secrets-env',
@@ -40,13 +40,13 @@ interface ExampleInstance {
 
 interface ExampleFile {
   sources?: ExampleInstance[];
-  executors?: ExampleInstance[];
+  destinations?: ExampleInstance[];
   notifiers?: ExampleInstance[];
   secretProviders?: ExampleInstance[];
   processes?: {
     name: string;
     triggers?: { source: string; eventTypes: string[] }[];
-    executor?: { instance: string; target: unknown };
+    destination?: { instance: string; target: unknown };
   }[];
 }
 
@@ -59,7 +59,7 @@ async function loadTypes(): Promise<Map<string, AnyType>> {
     const def = mod.default;
     const lists = {
       sources: def.sources,
-      executors: def.executors,
+      destinations: def.destinations,
       notifiers: def.notifiers,
       secretProviders: def.secretProviders,
     };
@@ -77,7 +77,7 @@ describe('examples/*.yaml', async () => {
   it.each(files)('%s matches the reference plugins and the process schema', async (file) => {
     const doc = parse(await readFile(`${examplesDir}/${file}`, 'utf8')) as ExampleFile;
     const problems: string[] = [];
-    for (const kind of ['sources', 'executors', 'notifiers', 'secretProviders'] as const) {
+    for (const kind of ['sources', 'destinations', 'notifiers', 'secretProviders'] as const) {
       for (const inst of doc[kind] ?? []) {
         const t = types.get(`${kind}:${inst.type}`);
         if (!t) {
@@ -103,19 +103,24 @@ describe('examples/*.yaml', async () => {
           }
         }
       }
-      const ex = doc.executors?.find((e) => e.name === p.executor?.instance);
-      const t = ex ? types.get(`executors:${ex.type}`) : undefined;
+      const ex = doc.destinations?.find((e) => e.name === p.destination?.instance);
+      const t = ex ? types.get(`destinations:${ex.type}`) : undefined;
       if (!t?.targetSchema)
-        problems.push(`process ${p.name}: executor ${p.executor?.instance ?? '?'} not in the file`);
+        problems.push(
+          `process ${p.name}: destination ${p.destination?.instance ?? '?'} not in the file`,
+        );
       else {
-        const c = validateAgainst(t.targetSchema, structuredClone(p.executor?.target));
+        const c = validateAgainst(t.targetSchema, structuredClone(p.destination?.target));
         if (!c.valid) problems.push(`process ${p.name} target: ${c.errors.join('; ')}`);
       }
       // Structural check with ids standing in for names.
       const structural = validateAgainst(processDocumentSchema, {
         ...p,
         triggers: (p.triggers ?? []).map(({ source, ...rest }) => ({ ...rest, sourceId: source })),
-        executor: { instanceId: p.executor?.instance ?? '', target: p.executor?.target ?? {} },
+        destination: {
+          instanceId: p.destination?.instance ?? '',
+          target: p.destination?.target ?? {},
+        },
         notify: ((p as { notify?: { notifier: string }[] }).notify ?? []).map(
           ({ notifier, ...n }) => ({ ...n, notifierId: notifier }),
         ),

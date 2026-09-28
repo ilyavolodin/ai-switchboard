@@ -4,11 +4,11 @@ import { Icon } from './Icon.js';
 import styles from './TypeIcon.module.css';
 
 /** The instance kinds a type icon can stand for. */
-export type TypeIconKind = 'source' | 'executor' | 'notifier' | 'secret_provider';
+export type TypeIconKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
 
 const GENERIC = {
   source: 'sources',
-  executor: 'executors',
+  destination: 'destinations',
   notifier: 'info',
   secret_provider: 'key',
 } as const;

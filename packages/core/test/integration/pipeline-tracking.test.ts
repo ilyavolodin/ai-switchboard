@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { executors, runUpdates, runs } from '../../src/db/schema.js';
+import { destinations, runUpdates, runs } from '../../src/db/schema.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import { EXEC_PLUGIN, callbackRequest } from '../helpers/fake-runtime.js';
 import {
@@ -10,7 +10,7 @@ import {
   deliver,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   type Harness,
@@ -45,7 +45,7 @@ async function onlyRun(pid: string) {
 describe('tracking', () => {
   it('a callback closes a run with its usage', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const ex = await seedDestination(h, { tracking: 'callback' });
     const pid = await seedProcess(h, ex.id, src.id);
     await fireOne(src.id, '1');
     const run = await onlyRun(pid);
@@ -98,7 +98,7 @@ describe('tracking', () => {
 
   it('a missing callback hits the deadline and the run is unknown', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const ex = await seedDestination(h, { tracking: 'callback' });
     const pid = await seedProcess(h, ex.id, src.id, { trackingDeadlineMinutes: 60 });
     await fireOne(src.id, '1');
     expect((await onlyRun(pid)).status).toBe('running');
@@ -109,9 +109,9 @@ describe('tracking', () => {
     expect(run).toMatchObject({ status: 'unknown', statusReason: 'deadline' });
   });
 
-  it('polls on backoff until the executor reports a terminal state', async () => {
+  it('polls on backoff until the destination reports a terminal state', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'poll' });
+    const ex = await seedDestination(h, { tracking: 'poll' });
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.pollScript.push(
       { state: 'running' },
@@ -132,9 +132,9 @@ describe('tracking', () => {
     expect(run).toMatchObject({ status: 'error', errors: ['boom'], usage: { tokens: 5 } });
   });
 
-  it('a lost response on a non-idempotent executor is uncertain and never re-invoked', async () => {
+  it('a lost response on a non-idempotent destination is uncertain and never re-invoked', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback', idempotent: false });
+    const ex = await seedDestination(h, { tracking: 'callback', idempotent: false });
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push('timeout');
     await fireOne(src.id, '1');
@@ -153,9 +153,9 @@ describe('tracking', () => {
     expect(ex.state.invocations).toHaveLength(1);
   });
 
-  it('an idempotent executor retries a lost response with the same run id', async () => {
+  it('an idempotent destination retries a lost response with the same run id', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { idempotent: true });
+    const ex = await seedDestination(h, { idempotent: true });
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push('timeout');
     await fireOne(src.id, '1');
@@ -168,7 +168,7 @@ describe('tracking', () => {
 
   it('connection refused and 503 are retried; the run completes once', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push('refused', '503');
     await fireOne(src.id, '1');
@@ -183,23 +183,23 @@ describe('tracking', () => {
     ).toHaveLength(2);
   });
 
-  it('401 fails the run, marks the executor unhealthy and holds the next batch', async () => {
+  it('401 fails the run, marks the destination unhealthy and holds the next batch', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push('401');
     await fireOne(src.id, '1');
     expect((await onlyRun(pid)).status).toBe('failed');
-    const [row] = await h.db.select().from(executors).where(eq(executors.id, ex.id));
+    const [row] = await h.db.select().from(destinations).where(eq(destinations.id, ex.id));
     expect(row?.health?.status).toBe('unhealthy');
     await fireOne(src.id, '2');
     const batches = await batchesOf(h.db, pid);
-    expect(batches[1]).toMatchObject({ outcome: 'held', outcomeReason: 'executor_unhealthy' });
+    expect(batches[1]).toMatchObject({ outcome: 'held', outcomeReason: 'destination_unhealthy' });
   });
 
   it('a paused target is a held run (terminal)', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push('paused');
     await fireOne(src.id, '1');
@@ -208,7 +208,7 @@ describe('tracking', () => {
 
   it('tracking none closes ok on start; a sync failure is error', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'none' });
+    const ex = await seedDestination(h, { tracking: 'none' });
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push('started', 'failed');
     await fireOne(src.id, '1');
@@ -218,7 +218,7 @@ describe('tracking', () => {
 
   it('after a restart, an invoking run past its invoke deadline becomes uncertain', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const ex = await seedDestination(h, { tracking: 'callback' });
     const pid = await seedProcess(h, ex.id, src.id);
     // The invoke never returns (the replica died mid-call).
     ex.state.script.push(() => new Promise(() => undefined));
@@ -242,7 +242,7 @@ describe('tracking', () => {
   it('recovery leaves an invoke alone while it is inside its own deadline', async () => {
     const src = await seedSource(h);
     // A slow backend: the type allows 10 minutes for invoke to answer.
-    const ex = await seedExecutor(h, { tracking: 'callback', invokeTimeoutSeconds: 600 });
+    const ex = await seedDestination(h, { tracking: 'callback', invokeTimeoutSeconds: 600 });
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push(() => new Promise(() => undefined));
     await deliver(h, src.id, [{ id: '1', version: 'v1' }]);
@@ -267,9 +267,9 @@ describe('tracking', () => {
     expect(ex.state.invocations).toHaveLength(1);
   });
 
-  it('a hung invoke times out: uncertain for a non-idempotent executor, not a plugin error', async () => {
+  it('a hung invoke times out: uncertain for a non-idempotent destination, not a plugin error', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, {
+    const ex = await seedDestination(h, {
       tracking: 'callback',
       idempotent: false,
       caps: { invokeTimeoutSeconds: 1 },
@@ -288,9 +288,9 @@ describe('tracking', () => {
     expect(ex.state.invocations).toHaveLength(1);
   });
 
-  it('a hung invoke on an idempotent executor is retried with the same run id', async () => {
+  it('a hung invoke on an idempotent destination is retried with the same run id', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { idempotent: true, invokeTimeoutSeconds: 1 });
+    const ex = await seedDestination(h, { idempotent: true, invokeTimeoutSeconds: 1 });
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push(() => new Promise(() => undefined));
     await fireOne(src.id, '1');
@@ -304,7 +304,7 @@ describe('tracking', () => {
 
   it('closeRun by hand settles an uncertain run and is audited', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const ex = await seedDestination(h, { tracking: 'callback' });
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push('timeout');
     await fireOne(src.id, '1');

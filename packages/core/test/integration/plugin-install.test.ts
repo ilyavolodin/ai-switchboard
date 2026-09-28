@@ -53,7 +53,7 @@ async function writeFixture(name: string, version: string, typeId: string): Prom
       version,
       type: 'module',
       keywords: ['switchboard-plugin'],
-      switchboard: { entry: './plugin.js', sdk: '^1.0.0' },
+      switchboard: { entry: './plugin.js', sdk: '^2.0.0' },
     }),
   );
   await writeFile(
@@ -247,7 +247,7 @@ describe('hot install and replica convergence', () => {
       pluginId: 'gone',
       displayName: 'gone',
       version: '9.9.9',
-      sdkRange: '^1.0.0',
+      sdkRange: '^2.0.0',
       status: 'unavailable',
       origin: 'installed',
       installSpec: 'ai-switchboard-source-gone',

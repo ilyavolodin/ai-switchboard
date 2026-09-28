@@ -38,7 +38,7 @@ export interface CoreConfig {
   /** How often each replica installs plugins recorded in the database but missing locally. */
   pluginSyncSeconds: number;
   /**
-   * How often each replica rebuilds the source, executor, notifier and secret provider instances
+   * How often each replica rebuilds the source, destination, notifier and secret provider instances
    * changed on another replica (`SWITCHBOARD_INSTANCE_SYNC_SECONDS`).
    */
   instanceSyncSeconds: number;

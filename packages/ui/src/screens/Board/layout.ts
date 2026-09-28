@@ -1,11 +1,11 @@
 /**
  * Deterministic left-to-right layout for the Board: three columns (sources, processes,
- * executors), rows ordered by the barycentre of their neighbours to reduce crossings, columns
+ * destinations), rows ordered by the barycentre of their neighbours to reduce crossings, columns
  * centred on the tallest. Pure, so it is unit-tested and stable between polls.
  */
 import type {
   BoardEdge,
-  BoardExecutorNode,
+  BoardDestinationNode,
   BoardProcessNode,
   BoardResponse,
   BoardSourceNode,
@@ -15,7 +15,7 @@ import type {
 export const COLUMNS = {
   source: { x: 0, width: 200, row: 100 },
   process: { x: 300, width: 240, row: 72 },
-  executor: { x: 600, width: 220, row: 150 },
+  destination: { x: 600, width: 220, row: 150 },
 } as const;
 
 export type BoardNodeKind = keyof typeof COLUMNS;
@@ -27,7 +27,7 @@ export interface LaidOutNode {
   x: number;
   y: number;
   width: number;
-  node: BoardSourceNode | BoardProcessNode | BoardExecutorNode;
+  node: BoardSourceNode | BoardProcessNode | BoardDestinationNode;
 }
 
 /** A styled edge. */
@@ -56,9 +56,9 @@ export interface BoardLayout {
 }
 
 export interface LayoutOptions {
-  /** Drop disabled sources, processes, executors and edges. */
+  /** Drop disabled sources, processes, destinations and edges. */
   hideDisabled?: boolean;
-  /** Keep only this process, the sources that trigger it and the executor it binds to. */
+  /** Keep only this process, the sources that trigger it and the destination it binds to. */
   focusProcessId?: string | null;
 }
 
@@ -87,12 +87,12 @@ function sortByBarycentre<T extends { id: string }>(
 
 /** Lays the board out. */
 export function layoutBoard(board: BoardResponse, options: LayoutOptions = {}): BoardLayout {
-  let { sources, processes, executors, edges } = board;
+  let { sources, processes, destinations, edges } = board;
 
   if (options.hideDisabled) {
     sources = sources.filter((s) => s.enabled);
     processes = processes.filter((p) => p.enabled);
-    executors = executors.filter((x) => x.enabled);
+    destinations = destinations.filter((x) => x.enabled);
     edges = edges.filter((e) => e.enabled);
   }
 
@@ -101,16 +101,16 @@ export function layoutBoard(board: BoardResponse, options: LayoutOptions = {}): 
     const keepSources = new Set(
       edges.filter((e) => e.kind === 'trigger' && e.to === pid).map((e) => e.from),
     );
-    const keepExecutors = new Set(
+    const keepDestinations = new Set(
       edges.filter((e) => e.kind === 'binding' && e.from === pid).map((e) => e.to),
     );
     processes = processes.filter((p) => p.id === pid);
     sources = sources.filter((s) => keepSources.has(s.id));
-    executors = executors.filter((x) => keepExecutors.has(x.id));
+    destinations = destinations.filter((x) => keepDestinations.has(x.id));
     edges = edges.filter((e) => (e.kind === 'trigger' ? e.to === pid : e.from === pid));
   }
 
-  const present = new Set([...sources, ...processes, ...executors].map((n) => n.id));
+  const present = new Set([...sources, ...processes, ...destinations].map((n) => n.id));
   edges = edges.filter((e) => present.has(e.from) && present.has(e.to));
 
   const sourceOrder = new Map(sources.map((s, i) => [s.id, i]));
@@ -120,19 +120,20 @@ export function layoutBoard(board: BoardResponse, options: LayoutOptions = {}): 
     sourceOrder,
   );
   const processOrder = new Map(orderedProcesses.map((p, i) => [p.id, i]));
-  const orderedExecutors = sortByBarycentre(
-    executors,
+  const orderedDestinations = sortByBarycentre(
+    destinations,
     (id) => edges.filter((e) => e.kind === 'binding' && e.to === id).map((e) => e.from),
     processOrder,
   );
 
-  const executorRow = (x: BoardExecutorNode) => (x.meters.length > 0 ? COLUMNS.executor.row : 110);
+  const destinationRow = (x: BoardDestinationNode) =>
+    x.meters.length > 0 ? COLUMNS.destination.row : 110;
   const heights = {
     source: sources.length * COLUMNS.source.row,
     process: orderedProcesses.length * COLUMNS.process.row,
-    executor: orderedExecutors.reduce((h, x) => h + executorRow(x), 0),
+    destination: orderedDestinations.reduce((h, x) => h + destinationRow(x), 0),
   };
-  const height = Math.max(heights.source, heights.process, heights.executor, 1);
+  const height = Math.max(heights.source, heights.process, heights.destination, 1);
   const offset = (kind: BoardNodeKind) => Math.round((height - heights[kind]) / 2);
 
   const nodes: LaidOutNode[] = [
@@ -153,17 +154,17 @@ export function layoutBoard(board: BoardResponse, options: LayoutOptions = {}): 
       node: p,
     })),
   ];
-  let y = offset('executor');
-  for (const x of orderedExecutors) {
+  let y = offset('destination');
+  for (const x of orderedDestinations) {
     nodes.push({
       id: x.id,
-      kind: 'executor',
-      x: COLUMNS.executor.x,
+      kind: 'destination',
+      x: COLUMNS.destination.x,
       y,
-      width: COLUMNS.executor.width,
+      width: COLUMNS.destination.width,
       node: x,
     });
-    y += executorRow(x);
+    y += destinationRow(x);
   }
 
   const maxTrigger = Math.max(
@@ -190,7 +191,7 @@ export function layoutBoard(board: BoardResponse, options: LayoutOptions = {}): 
       volume24h: e.volume24h,
       eventTypes: e.eventTypes,
     })),
-    width: COLUMNS.executor.x + COLUMNS.executor.width,
+    width: COLUMNS.destination.x + COLUMNS.destination.width,
     height,
   };
 }

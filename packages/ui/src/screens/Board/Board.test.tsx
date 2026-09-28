@@ -7,7 +7,7 @@ import { renderWithProviders } from '../../test/render.js';
 import { Board } from './Board.js';
 
 describe('Board', () => {
-  it('draws every source, process and executor as a node that links to it', async () => {
+  it('draws every source, process and destination as a node that links to it', async () => {
     renderWithProviders(<Board />);
     const source = await screen.findByRole('link', {
       name: /^Source GitHub — acme org, auth failure, 141 events/,
@@ -18,8 +18,8 @@ describe('Board', () => {
       '/processes/p-autofix',
     );
     expect(
-      screen.getByRole('link', { name: /^Executor Claude Routines — automation seat, healthy/ }),
-    ).toHaveAttribute('href', '/executors/ex-routines');
+      screen.getByRole('link', { name: /^Destination Claude Routines — automation seat, healthy/ }),
+    ).toHaveAttribute('href', '/destinations/ex-routines');
     expect(screen.getAllByRole('link', { name: /^Process / })).toHaveLength(11);
     expect(screen.getAllByRole('link', { name: /^Source / })).toHaveLength(5);
   });
@@ -124,9 +124,9 @@ describe('Board', () => {
     renderWithProviders(<Board />, { overrides: { 'GET /board': () => emptyBoard(TEST_NOW) } });
     expect(await screen.findByText('Nothing is wired yet')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Add a source' })).toHaveAttribute('href', '/sources');
-    expect(screen.getByRole('link', { name: 'Add an executor' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Add a destination' })).toHaveAttribute(
       'href',
-      '/executors',
+      '/destinations',
     );
     expect(screen.getByRole('link', { name: 'New process' })).toHaveAttribute(
       'href',

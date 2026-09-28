@@ -10,7 +10,7 @@ import { redactSecretValues } from '../../secrets/refs.js';
 import { callPlugin, errorMessage, evalFunctions, type Ctx, type ProcessRow } from './context.js';
 
 /**
- * `before` and `after` steps: actions on a source or executor instance, with arguments and an
+ * `before` and `after` steps: actions on a source or destination instance, with arguments and an
  * optional `when`, each journaled in `steps` (unique per run, phase and index). A failing
  * `before` step fails the run before invoke; `after` steps run on the terminal state and never
  * change it. Dry runs record every step as skipped (actions have side effects).
@@ -22,7 +22,7 @@ export function runView(run: RunRow): Record<string, unknown> {
   return {
     id: run.id,
     processId: run.processId,
-    executorId: run.executorId,
+    destinationId: run.destinationId,
     status: run.status,
     reason: run.statusReason,
     mode: run.kind,
@@ -44,7 +44,7 @@ type StepValues = Pick<StepRow, 'status'> & Partial<Pick<StepRow, 'args' | 'erro
 /** Whether the provider declares the action idempotent (`ActionSpec.idempotent`). */
 function actionIdempotent(ctx: Ctx, provider: string, action: string): boolean {
   const source = ctx.runtime.source(provider);
-  const actions = source ? source.type.actions : ctx.runtime.executor(provider)?.type.actions;
+  const actions = source ? source.type.actions : ctx.runtime.destination(provider)?.type.actions;
   return actions?.find((a) => a.id === action)?.idempotent === true;
 }
 
@@ -193,9 +193,10 @@ export async function runSteps(
     }
 
     const source = ctx.runtime.source(step.provider);
-    const executor = source ? undefined : ctx.runtime.executor(step.provider);
+    const destination = source ? undefined : ctx.runtime.destination(step.provider);
     const act =
-      source?.source.act?.bind(source.source) ?? executor?.executor.act?.bind(executor.executor);
+      source?.source.act?.bind(source.source) ??
+      destination?.destination.act?.bind(destination.destination);
     if (!act) {
       await settleWithoutAction({
         status: 'error',
@@ -218,14 +219,14 @@ export async function runSteps(
 
     let status: 'ok' | 'error' = 'ok';
     let error: string | null = null;
-    const secretValues: string[] = [...(source?.secretValues ?? executor?.secretValues ?? [])];
+    const secretValues: string[] = [...(source?.secretValues ?? destination?.secretValues ?? [])];
     try {
       const resolved = await resolveSecretRefs(args.value, async (ref) => {
         const value = await ctx.secrets.resolve(ref);
         secretValues.push(value);
         return value;
       });
-      const plugin = source?.pluginName ?? executor?.pluginName ?? step.provider;
+      const plugin = source?.pluginName ?? destination?.pluginName ?? step.provider;
       const out = await callPlugin(ctx, plugin, `act ${step.action}`, () =>
         act(step.action, resolved),
       );

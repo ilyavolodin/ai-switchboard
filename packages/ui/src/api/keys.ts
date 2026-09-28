@@ -33,12 +33,12 @@ export const qk = {
     lastDelivery: (id: string) => ['sources', 'last-delivery', id] as const,
   },
 
-  executors: {
-    all: ['executors'] as const,
-    list: () => ['executors', 'list'] as const,
-    detail: (id: string) => ['executors', 'detail', id] as const,
-    meters: (id: string, window: StatsWindow) => ['executors', 'meters', id, window] as const,
-    usage: (id: string, window: StatsWindow) => ['executors', 'usage', id, window] as const,
+  destinations: {
+    all: ['destinations'] as const,
+    list: () => ['destinations', 'list'] as const,
+    detail: (id: string) => ['destinations', 'detail', id] as const,
+    meters: (id: string, window: StatsWindow) => ['destinations', 'meters', id, window] as const,
+    usage: (id: string, window: StatsWindow) => ['destinations', 'usage', id, window] as const,
   },
 
   processes: {
@@ -106,7 +106,7 @@ export const qk = {
 export const POLL = {
   /** Board and top-bar status strip. */
   live: 10_000,
-  /** Lists that change with the fleet (sources, executors, processes, approvals). */
+  /** Lists that change with the fleet (sources, destinations, processes, approvals). */
   lists: 30_000,
   /** The activity stream. */
   activity: 15_000,

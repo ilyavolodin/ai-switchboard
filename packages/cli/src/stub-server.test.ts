@@ -49,7 +49,7 @@ afterEach(async () => {
   await stub.close();
 });
 
-describe('stub server: http executor target', () => {
+describe('stub server: http destination target', () => {
   it('echoes the body with usage', async () => {
     const res = await fetch(`${base}/exec?cost=0.5`, {
       method: 'POST',
@@ -182,7 +182,7 @@ describe('stub server: fake Claude Routines', () => {
   });
 });
 
-describe('stub server: http executor meter', () => {
+describe('stub server: http destination meter', () => {
   it('reports { used, limit, resetsAt } for a meterEndpoint', async () => {
     const reading = (await (await fetch(`${base}/meter`)).json()) as {
       used: number;

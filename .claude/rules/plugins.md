@@ -9,7 +9,7 @@ paths:
   `package.json` has `"keywords": ["switchboard-plugin"]` and a `switchboard` field
   (`entry`, `source`, `sdk`), and the SDK is a peer dependency.
 - `src/plugin.ts` default-exports `definePlugin({...})`. Put types in their own files
-  (`src/source.ts`, `src/executor.ts`, `src/events.ts`) once they grow.
+  (`src/source.ts`, `src/destination.ts`, `src/events.ts`) once they grow.
 - Declare `capabilities.network` with the exact hosts you call. Use `ctx.http` (the SDK's
   `HttpClient`), never raw `fetch`, so the capability check and tracing apply.
 - Settings schemas are JSON Schema 2020-12. Mark every credential with `"x-secret": true`. The
@@ -25,7 +25,7 @@ paths:
   - Build dedupe keys with `dedupeKey(type, artifact, deliveryId)`. Set `artifact.version` from the
     source's updated-at or etag when there is one.
   - `resolve` reads live state (no caching) and returns `null` on 404.
-- Executors:
+- Destinations:
   - Declare `tracking`, `idempotentInvoke`, `usage` dimensions (with units) and `meters`
     truthfully. Provide `examples: [{ target, input }]` that validate against the schemas.
   - Let `HttpClient` throw `TransportError` for network failures. Map a backend refusal to

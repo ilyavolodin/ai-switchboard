@@ -5,7 +5,7 @@ import {
   dispatches,
   eventRaw,
   events,
-  executors,
+  destinations,
   meterReadings,
   processes,
   runs,
@@ -105,11 +105,11 @@ export async function sourceStats(
 
 export async function meterHistory(
   ctx: ApiContext,
-  executorId: string,
+  destinationId: string,
   window: StatsWindow,
 ): Promise<MeterHistoryResponse> {
-  const [ex] = await ctx.db.select().from(executors).where(eq(executors.id, executorId));
-  if (!ex) throw notFound('Executor');
+  const [ex] = await ctx.db.select().from(destinations).where(eq(destinations.id, destinationId));
+  if (!ex) throw notFound('Destination');
   const now = ctx.clock.now();
   const from = new Date(now.getTime() - windowMs(window));
   const specs = meterSpecsFor(ctx, ex.id, ex.typeId);
@@ -117,7 +117,7 @@ export async function meterHistory(
     ctx.db
       .select()
       .from(meterReadings)
-      .where(and(eq(meterReadings.executorId, ex.id), gte(meterReadings.observedAt, from)))
+      .where(and(eq(meterReadings.destinationId, ex.id), gte(meterReadings.observedAt, from)))
       .orderBy(meterReadings.observedAt),
     ctx.db
       .select({
@@ -129,7 +129,9 @@ export async function meterHistory(
       })
       .from(runs)
       .leftJoin(processes, eq(processes.id, runs.processId))
-      .where(and(eq(runs.executorId, ex.id), gte(runs.createdAt, from), isNotNull(runs.invokedAt)))
+      .where(
+        and(eq(runs.destinationId, ex.id), gte(runs.createdAt, from), isNotNull(runs.invokedAt)),
+      )
       .orderBy(runs.invokedAt)
       .limit(2000),
     meterGauges(ctx, [ex.id]),
@@ -162,19 +164,19 @@ export async function meterHistory(
 
 export async function usageHistory(
   ctx: ApiContext,
-  executorId: string,
+  destinationId: string,
   window: StatsWindow,
 ): Promise<UsageHistoryResponse> {
-  const [ex] = await ctx.db.select().from(executors).where(eq(executors.id, executorId));
-  if (!ex) throw notFound('Executor');
+  const [ex] = await ctx.db.select().from(destinations).where(eq(destinations.id, destinationId));
+  if (!ex) throw notFound('Destination');
   const now = ctx.clock.now();
   const from = new Date(now.getTime() - windowMs(window === '24h' ? '7d' : window));
-  const live = ctx.runtime.executor(ex.id);
-  const dims = live?.usage ?? ctx.runtime.executorType(ex.typeId)?.type.usage ?? [];
+  const live = ctx.runtime.destination(ex.id);
+  const dims = live?.usage ?? ctx.runtime.destinationType(ex.typeId)?.type.usage ?? [];
   const rows = await ctx.db
     .select({ day: dayExpr(runs.createdAt), status: runs.status, usage: runs.usage })
     .from(runs)
-    .where(and(eq(runs.executorId, ex.id), gte(runs.createdAt, from)));
+    .where(and(eq(runs.destinationId, ex.id), gte(runs.createdAt, from)));
   const days = daysBetween(from, now);
   return {
     window,
@@ -340,7 +342,7 @@ export async function processStats(
       .groupBy(sql`1`, batches.outcome),
   ]);
   const days = daysBetween(from, now);
-  const live = ctx.runtime.executor(proc.document.executor.instanceId);
+  const live = ctx.runtime.destination(proc.document.destination.instanceId);
   const dims = live?.usage ?? [];
   return {
     window,

@@ -84,19 +84,22 @@ export async function registerIngressRoutes(
       },
     );
 
-    scope.post<{ Params: { executorId: string } }>(
-      '/callbacks/:executorId',
+    scope.post<{ Params: { destinationId: string } }>(
+      '/callbacks/:destinationId',
       rateLimit,
       async (req, reply) => {
-        if (!UUID.test(req.params.executorId)) return reply.code(404).send();
+        if (!UUID.test(req.params.destinationId)) return reply.code(404).send();
         const result = await ctx.pipeline
-          .handleCallback(req.params.executorId, toRawRequest(req, ctx.clock.now()))
+          .handleCallback(req.params.destinationId, toRawRequest(req, ctx.clock.now()))
           .catch((err: unknown) => {
-            req.log.error({ err, executor_id: req.params.executorId }, 'callback failed');
+            req.log.error({ err, destination_id: req.params.destinationId }, 'callback failed');
             return { status: 503 };
           });
         if (result.status === 401)
-          req.log.warn({ executor_id: req.params.executorId, remote: req.ip }, 'callback rejected');
+          req.log.warn(
+            { destination_id: req.params.destinationId, remote: req.ip },
+            'callback rejected',
+          );
         if (result.status >= 400) return reply.code(result.status).send();
         return reply.code(result.status).send({ ok: true });
       },

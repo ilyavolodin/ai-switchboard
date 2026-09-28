@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
+import { parse, stringify } from 'yaml';
 
 import type {
   ActivityRow,
   ApiError,
   EventDetail,
-  ExecutorDetail,
+  DestinationDetail,
   MeResponse,
   Page,
   ProcessDetail,
@@ -61,17 +61,17 @@ async function createSource(name = 'Test — acme'): Promise<SourceDetail> {
   return res.json<SourceDetail>();
 }
 
-async function createExecutor(name = 'Exec — one'): Promise<ExecutorDetail> {
-  const res = await h.request('POST', '/api/v1/executors', {
+async function createDestination(name = 'Dest — one'): Promise<DestinationDetail> {
+  const res = await h.request('POST', '/api/v1/destinations', {
     cookie: h.adminCookie,
-    body: { typeId: 'test-executor', name, settings: {}, reason },
+    body: { typeId: 'test-destination', name, settings: {}, reason },
   });
   expect(res.statusCode, res.body).toBe(201);
-  return res.json<ExecutorDetail>();
+  return res.json<DestinationDetail>();
 }
 
-function processDoc(sourceId: string, executorId: string, name = 'Autofix'): ProcessDocument {
-  const doc = defaultProcessDocument(name, executorId);
+function processDoc(sourceId: string, destinationId: string, name = 'Autofix'): ProcessDocument {
+  const doc = defaultProcessDocument(name, destinationId);
   doc.triggers = [
     {
       id: 't1',
@@ -82,7 +82,7 @@ function processDoc(sourceId: string, executorId: string, name = 'Autofix'): Pro
       enabled: true,
     },
   ];
-  doc.executor.target = { path: '/run' };
+  doc.destination.target = { path: '/run' };
   doc.schedules = [
     { id: 's1', cron: '0 7 * * *', timezone: 'Europe/London', catchUp: 'once', enabled: true },
   ];
@@ -165,7 +165,38 @@ describe('plugin types', () => {
   });
 });
 
-describe('sources and executors', () => {
+describe('deprecated executor aliases', () => {
+  it('serves /api/v1/executors… and kind=executor from the destination routes', async () => {
+    const created = await h.request('POST', '/api/v1/executors', {
+      cookie: h.adminCookie,
+      body: { typeId: 'test-destination', name: 'Legacy alias', settings: {}, reason },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const dest = created.json<DestinationDetail>();
+    const viaNew = await h.request('GET', `/api/v1/destinations/${dest.id}`, {
+      cookie: h.adminCookie,
+    });
+    const viaOld = await h.request('GET', `/api/v1/executors/${dest.id}`, {
+      cookie: h.adminCookie,
+    });
+    expect(viaOld.statusCode).toBe(200);
+    expect(viaOld.json<DestinationDetail>().name).toBe(viaNew.json<DestinationDetail>().name);
+    const list = await h.request('GET', '/api/v1/executors', { cookie: h.adminCookie });
+    expect(list.json<{ id: string }[]>().map((d) => d.id)).toContain(dest.id);
+
+    const oldKind = await h.request('GET', '/api/v1/plugin-types?kind=executor', {
+      cookie: h.adminCookie,
+    });
+    const newKind = await h.request('GET', '/api/v1/plugin-types?kind=destination', {
+      cookie: h.adminCookie,
+    });
+    expect(oldKind.statusCode).toBe(200);
+    expect(oldKind.json<{ typeId: string }[]>().map((t) => t.typeId)).toContain('test-destination');
+    expect(oldKind.json()).toEqual(newKind.json());
+  });
+});
+
+describe('sources and destinations', () => {
   it('requires a reason for every change', async () => {
     const res = await h.request('POST', '/api/v1/sources', {
       cookie: h.adminCookie,
@@ -251,7 +282,7 @@ describe('sources and executors', () => {
 
   it('refuses to delete an instance a process still uses', async () => {
     const src = await createSource('In use');
-    const ex = await createExecutor('In use exec');
+    const ex = await createDestination('In use exec');
     const proc = await h.request('POST', '/api/v1/processes', {
       cookie: h.adminCookie,
       body: { document: processDoc(src.id, ex.id, 'Uses them'), reason },
@@ -283,8 +314,8 @@ describe('sources and executors', () => {
   });
 
   it('delegates pipeline actions with the actor and reason', async () => {
-    const ex = await createExecutor('Meters');
-    const res = await h.request('POST', `/api/v1/executors/${ex.id}/meters/read`, {
+    const ex = await createDestination('Meters');
+    const res = await h.request('POST', `/api/v1/destinations/${ex.id}/meters/read`, {
       cookie: h.adminCookie,
       body: { reason },
     });
@@ -298,11 +329,11 @@ describe('sources and executors', () => {
 describe('processes', () => {
   it('validates references and expressions semantically', async () => {
     const src = await createSource('Semantic');
-    const ex = await createExecutor('Semantic exec');
+    const ex = await createDestination('Semantic exec');
     const doc = processDoc(src.id, ex.id, 'Broken');
     doc.triggers[0]!.eventTypes = ['test-source.item.deleted'];
     doc.triggers[0]!.filter = 'attributes.label = ';
-    doc.executor.target = {};
+    doc.destination.target = {};
     doc.budgets.meterCeilings = { nope: { events: 80, sweeps: 95 } };
     const res = await h.request('POST', '/api/v1/processes', {
       cookie: h.adminCookie,
@@ -312,13 +343,13 @@ describe('processes', () => {
     const details = res.json<{ details: string[] }>().details.join('\n');
     expect(details).toMatch(/does not declare event type test-source\.item\.deleted/);
     expect(details).toMatch(/filter/);
-    expect(details).toMatch(/executor\.target/);
+    expect(details).toMatch(/destination\.target/);
     expect(details).toMatch(/no meter "nope"/);
   });
 
   it('versions every save, guards concurrent edits, and restores', async () => {
     const src = await createSource('Versioned');
-    const ex = await createExecutor('Versioned exec');
+    const ex = await createDestination('Versioned exec');
     const created = await h.request('POST', '/api/v1/processes', {
       cookie: h.adminCookie,
       body: { document: processDoc(src.id, ex.id, 'Versioned'), reason },
@@ -387,7 +418,7 @@ describe('board and status', () => {
 
   it('flags a never-run disabled process that turned events away, and explains the event', async () => {
     const src = await createSource('Test — forgotten');
-    const ex = await createExecutor('Exec — forgotten');
+    const ex = await createDestination('Exec — forgotten');
     const doc = { ...processDoc(src.id, ex.id, 'Forgotten'), enabled: false };
     const created = await h.request('POST', '/api/v1/processes', {
       cookie: h.adminCookie,
@@ -494,6 +525,40 @@ describe('configuration export and apply', () => {
       await fresh.destroy();
     }
   });
+
+  it('applies a file that uses the deprecated executor names, and exports the new ones', async () => {
+    const yaml = (await h.request('GET', '/api/v1/export', { cookie: h.adminCookie })).body;
+    const current = parse(yaml) as {
+      destinations: unknown[];
+      processes: { destination: unknown }[];
+    };
+    const { destinations: list, processes: procs, ...rest } = current;
+    const legacy = {
+      ...rest,
+      executors: list,
+      processes: procs.map(({ destination, ...p }) => ({ ...p, executor: destination })),
+    };
+    expect(stringify(legacy)).not.toMatch(/^\s*(- )?destinations?:/m);
+
+    const fresh = await createTestDatabase();
+    const other = await createApiHarness(fresh);
+    try {
+      const applied = await other.request('POST', '/api/v1/apply', {
+        cookie: other.adminCookie,
+        body: { yaml: stringify(legacy), reason },
+      });
+      expect(applied.statusCode, applied.body).toBe(200);
+      expect(applied.json<{ errors: string[] }>().errors).toEqual([]);
+      const reexported = await other.request('GET', '/api/v1/export', {
+        cookie: other.adminCookie,
+      });
+      expect(parse(reexported.body)).toEqual(current);
+      expect(reexported.body).not.toMatch(/^\s*(- )?executors?:/m);
+    } finally {
+      await other.close();
+      await fresh.destroy();
+    }
+  });
 });
 
 describe('ingress surfaces', () => {
@@ -527,7 +592,7 @@ describe('ingress surfaces', () => {
 describe('read models over pipeline rows', () => {
   it('interpret merged sweeps and count only budget-counted runs', async () => {
     const src = await createSource('Rows source');
-    const ex = await createExecutor('Rows exec');
+    const ex = await createDestination('Rows exec');
     const created = await h.request('POST', '/api/v1/processes', {
       cookie: h.adminCookie,
       body: {
@@ -545,7 +610,7 @@ describe('read models over pipeline rows', () => {
       batchId,
       processId: pid,
       processVersion: 1,
-      executorId: ex.id,
+      destinationId: ex.id,
       kind: 'event' as const,
       status: 'ok' as const,
       attempts: 1,
@@ -629,10 +694,10 @@ describe('read models over pipeline rows', () => {
     expect(sweepRun).toMatchObject({ kind: 'sweep', eventCount: 1 });
     expect(sweepRun?.artifacts).toEqual([{ kind: 'test.item', id: 'MERGED-1' }]);
 
-    const byExecutor = await h.request('GET', `/api/v1/events?executor=${ex.id}`, {
+    const byDestination = await h.request('GET', `/api/v1/events?destination=${ex.id}`, {
       cookie: h.adminCookie,
     });
-    expect(byExecutor.json<Page<{ eventId: string }>>().items.map((i) => i.eventId)).toContain(
+    expect(byDestination.json<Page<{ eventId: string }>>().items.map((i) => i.eventId)).toContain(
       eventId,
     );
   });
@@ -722,7 +787,7 @@ describe('edge cases', () => {
 
   async function processWithBatches(name: string, n: number) {
     const src = await createSource(`${name} source`);
-    const ex = await createExecutor(`${name} exec`);
+    const ex = await createDestination(`${name} exec`);
     const created = await h.request('POST', '/api/v1/processes', {
       cookie: h.adminCookie,
       body: { document: processDoc(src.id, ex.id, name), reason },
@@ -751,7 +816,7 @@ describe('edge cases', () => {
         batchId,
         processId: pid,
         processVersion: 1,
-        executorId: ex.id,
+        destinationId: ex.id,
         kind: 'event' as const,
         status: 'ok' as const,
         attempts: 1,
@@ -860,7 +925,7 @@ describe('edge cases', () => {
 
   it('refuses an enable request that does not say enabled or disabled', async () => {
     const src = await createSource('Enable body');
-    const ex = await createExecutor('Enable body exec');
+    const ex = await createDestination('Enable body exec');
     const created = await h.request('POST', '/api/v1/processes', {
       cookie: h.adminCookie,
       body: { document: processDoc(src.id, ex.id, 'Enable body'), reason },
@@ -868,7 +933,7 @@ describe('edge cases', () => {
     const proc = created.json<ProcessDetail>();
     for (const url of [
       `/api/v1/sources/${src.id}/enable`,
-      `/api/v1/executors/${ex.id}/enable`,
+      `/api/v1/destinations/${ex.id}/enable`,
       `/api/v1/processes/${proc.id}/enable`,
     ]) {
       const res = await h.request('POST', url, { cookie: h.adminCookie, body: { reason } });

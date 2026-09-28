@@ -5,7 +5,7 @@ import { parse, stringify } from 'yaml';
 import type { ApplyResponse, GlobalSettings } from '../api/contract.js';
 import type { Db, DbOrTx } from '../db/client.js';
 import {
-  executors,
+  destinations,
   notifiers,
   processes,
   processVersions,
@@ -28,7 +28,7 @@ export interface ConfigurationFile {
   settings?: Partial<Omit<GlobalSettings, 'oidc'>>;
   secretProviders?: InstanceSpec[];
   sources?: (InstanceSpec & { caps?: Record<string, unknown> })[];
-  executors?: (InstanceSpec & {
+  destinations?: (InstanceSpec & {
     caps?: Record<string, unknown>;
     targetDefaults?: Record<string, unknown>;
   })[];
@@ -46,10 +46,10 @@ export interface InstanceSpec {
 /** A ProcessDocument with instance ids replaced by names. */
 export type PortableProcess = Omit<
   ProcessDocument,
-  'triggers' | 'executor' | 'before' | 'after' | 'notify'
+  'triggers' | 'destination' | 'before' | 'after' | 'notify'
 > & {
   triggers: (Omit<ProcessDocument['triggers'][number], 'sourceId'> & { source: string })[];
-  executor: { instance: string; target: unknown };
+  destination: { instance: string; target: unknown };
   before: (Omit<ProcessDocument['before'][number], 'provider'> & { provider: string })[];
   after: (Omit<ProcessDocument['after'][number], 'provider'> & { provider: string })[];
   notify: (Omit<ProcessDocument['notify'][number], 'notifierId'> & { notifier: string })[];
@@ -77,7 +77,7 @@ const fileSchema: JSONSchema = {
     settings: { type: 'object' },
     secretProviders: { type: 'array', items: instanceSpecSchema },
     sources: { type: 'array', items: instanceSpecSchema },
-    executors: { type: 'array', items: instanceSpecSchema },
+    destinations: { type: 'array', items: instanceSpecSchema },
     notifiers: { type: 'array', items: instanceSpecSchema },
     processes: { type: 'array', items: { type: 'object', required: ['name'] } },
   },
@@ -100,12 +100,41 @@ export function canonical(value: unknown): string {
   return JSON.stringify(norm(value));
 }
 
+/**
+ * Accept the names a file used before "executor" became "destination" (SDK 2.0.0): a top-level
+ * `executors:` list and a process `executor:` binding. Export writes only the new names.
+ * These deprecated spellings will be removed in a future major.
+ */
+export function upgradeLegacyConfiguration(file: unknown): { file: unknown; errors: string[] } {
+  if (file === null || typeof file !== 'object' || Array.isArray(file)) return { file, errors: [] };
+  const errors: string[] = [];
+  const out: Record<string, unknown> = { ...(file as Record<string, unknown>) };
+  if ('executors' in out) {
+    if ('destinations' in out)
+      errors.push('use either destinations or executors (deprecated), not both');
+    else out.destinations = out.executors;
+    delete out.executors;
+  }
+  if (Array.isArray(out.processes)) {
+    out.processes = out.processes.map((p: unknown, i) => {
+      if (p === null || typeof p !== 'object' || !('executor' in p)) return p;
+      const { executor, ...rest } = p as Record<string, unknown>;
+      if ('destination' in rest) {
+        errors.push(`processes[${i}]: use either destination or executor (deprecated), not both`);
+        return rest;
+      }
+      return { ...rest, destination: executor };
+    });
+  }
+  return { file: out, errors };
+}
+
 export async function exportConfiguration(db: DbOrTx): Promise<string> {
   const [settings, sp, src, ex, nt, procs] = await Promise.all([
     getSettings(db),
     db.select().from(secretProviders).orderBy(secretProviders.name),
     db.select().from(sources).orderBy(sources.name),
-    db.select().from(executors).orderBy(executors.name),
+    db.select().from(destinations).orderBy(destinations.name),
     db.select().from(notifiers).orderBy(notifiers.name),
     db.select().from(processes).orderBy(processes.name),
   ]);
@@ -139,7 +168,7 @@ export async function exportConfiguration(db: DbOrTx): Promise<string> {
       settings: r.settings,
       caps: r.caps as Record<string, unknown>,
     })),
-    executors: ex.map((r) => ({
+    destinations: ex.map((r) => ({
       name: r.name,
       type: r.typeId,
       enabled: r.enabled,
@@ -158,7 +187,7 @@ export async function exportConfiguration(db: DbOrTx): Promise<string> {
       return {
         ...d,
         triggers: d.triggers.map(({ sourceId, ...t }) => ({ ...t, source: name(sourceId) })),
-        executor: { instance: name(d.executor.instanceId), target: d.executor.target },
+        destination: { instance: name(d.destination.instanceId), target: d.destination.target },
         before: d.before.map((s) => ({ ...s, provider: name(s.provider) })),
         after: d.after.map((s) => ({ ...s, provider: name(s.provider) })),
         notify: d.notify.map(({ notifierId, ...n }) => ({ ...n, notifier: name(notifierId) })),
@@ -175,7 +204,7 @@ export interface ApplyOptions {
   dryRun: boolean;
   /** Validate plugin settings for a type (throws with messages), or undefined when the type is not installed. */
   validateSettings: (
-    kind: 'source' | 'executor' | 'notifier' | 'secret_provider',
+    kind: 'source' | 'destination' | 'notifier' | 'secret_provider',
     typeId: string,
     settings: Record<string, unknown>,
   ) => string[] | undefined;
@@ -205,6 +234,11 @@ export async function applyConfiguration(
       errors: [`YAML: ${err instanceof Error ? err.message : String(err)}`],
     };
   }
+  const upgraded = upgradeLegacyConfiguration(file);
+  if (upgraded.errors.length > 0) {
+    return { dryRun: opts.dryRun, changes: [], errors: upgraded.errors };
+  }
+  file = upgraded.file as ConfigurationFile;
   const check = validateAgainst(fileSchema, file);
   if (!check.valid) return { dryRun: opts.dryRun, changes: [], errors: check.errors };
 
@@ -226,7 +260,7 @@ export async function applyConfiguration(
         });
 
       const upsert = async (
-        kind: 'secret_provider' | 'source' | 'executor' | 'notifier',
+        kind: 'secret_provider' | 'source' | 'destination' | 'notifier',
         specs:
           | (InstanceSpec & {
               caps?: Record<string, unknown>;
@@ -237,7 +271,7 @@ export async function applyConfiguration(
         const table = {
           secret_provider: secretProviders,
           source: sources,
-          executor: executors,
+          destination: destinations,
           notifier: notifiers,
         }[kind];
         const existing = await tx.select().from(table);
@@ -259,8 +293,8 @@ export async function applyConfiguration(
             enabled: spec.enabled ?? true,
             updatedAt: opts.now,
           };
-          if (kind === 'source' || kind === 'executor') values.caps = spec.caps ?? {};
-          if (kind === 'executor') values.targetDefaults = spec.targetDefaults ?? {};
+          if (kind === 'source' || kind === 'destination') values.caps = spec.caps ?? {};
+          if (kind === 'destination') values.targetDefaults = spec.targetDefaults ?? {};
           if (!row) {
             await tx.insert(table).values({ ...values, createdAt: opts.now } as never);
             changes.push({ kind, name: spec.name, action: 'create' });
@@ -302,14 +336,16 @@ export async function applyConfiguration(
 
       await upsert('secret_provider', file.secretProviders);
       await upsert('source', file.sources);
-      await upsert('executor', file.executors);
+      await upsert('destination', file.destinations);
       await upsert('notifier', file.notifiers);
 
       const ids = new Map<string, string>();
       for (const r of await tx.select({ id: sources.id, name: sources.name }).from(sources))
         ids.set(`source:${r.name}`, r.id);
-      for (const r of await tx.select({ id: executors.id, name: executors.name }).from(executors))
-        ids.set(`executor:${r.name}`, r.id);
+      for (const r of await tx
+        .select({ id: destinations.id, name: destinations.name })
+        .from(destinations))
+        ids.set(`destination:${r.name}`, r.id);
       for (const r of await tx.select({ id: notifiers.id, name: notifiers.name }).from(notifiers))
         ids.set(`notifier:${r.name}`, r.id);
       const idOf = (kind: string, name: string, where: string): string => {
@@ -322,8 +358,8 @@ export async function applyConfiguration(
       };
       const providerId = (name: string, where: string): string =>
         ids.get(`source:${name}`) ??
-        ids.get(`executor:${name}`) ??
-        idOf('source or executor', name, where);
+        ids.get(`destination:${name}`) ??
+        idOf('source or destination', name, where);
 
       if (file.settings) {
         const current = await getSettings(tx);
@@ -365,9 +401,9 @@ export async function applyConfiguration(
             ...t,
             sourceId: idOf('source', source, where),
           })),
-          executor: {
-            instanceId: idOf('executor', p.executor?.instance ?? '', where),
-            target: p.executor?.target ?? {},
+          destination: {
+            instanceId: idOf('destination', p.destination?.instance ?? '', where),
+            target: p.destination?.target ?? {},
           },
           before: (p.before ?? []).map((s) => ({ ...s, provider: providerId(s.provider, where) })),
           after: (p.after ?? []).map((s) => ({ ...s, provider: providerId(s.provider, where) })),

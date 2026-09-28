@@ -72,8 +72,8 @@ export function isTerminalRunStatus(s: RunStatusValue): boolean {
 export const HOLD_REASONS = [
   'process_disabled',
   'source_disabled',
-  'executor_disabled',
-  'executor_unhealthy',
+  'destination_disabled',
+  'destination_unhealthy',
   'plugin_unavailable',
   'breaker_open',
   'quiet_hours',
@@ -86,10 +86,10 @@ export type HoldReason = (typeof HOLD_REASONS)[number];
 export type BindingLimit =
   | 'runs_per_hour'
   | 'runs_per_day'
-  | 'executor_runs_per_hour'
-  | 'executor_runs_per_day'
+  | 'destination_runs_per_hour'
+  | 'destination_runs_per_day'
   | `usage_per_day:${string}`
-  | `executor_usage_per_day:${string}`
+  | `destination_usage_per_day:${string}`
   | `meter:${string}`
   | 'soft_hold';
 

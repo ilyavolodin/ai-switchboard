@@ -91,7 +91,7 @@ describe('Batch events switch', () => {
 });
 
 describe('Limit runs switch', () => {
-  it('off drops every cap of the process and says the executor caps still apply', async () => {
+  it('off drops every cap of the process and says the destination caps still apply', async () => {
     const { api, user } = renderWithProviders(<ProcessEditor />, editAutofix);
     const section = await open(user, 'Budgets');
     const toggle = within(section).getByRole('switch', { name: 'Limit runs' });

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { InstanceSummary, SourceDetail } from '../../src/api/contract.js';
 import { FakeClock } from '../../src/clock.js';
 import { testConfig } from '../../src/config.js';
-import { executors, secretProviders, sources } from '../../src/db/schema.js';
+import { destinations, secretProviders, sources } from '../../src/db/schema.js';
 import { silentLogger } from '../../src/logger.js';
 import { PluginHost, type ReconcileResult } from '../../src/plugins/host.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
@@ -65,7 +65,7 @@ async function expectNothingOnA(): Promise<void> {
   expect(own).toEqual({ built: [], rebuilt: [], dropped: [], dependents: [] });
 }
 
-async function versionOf(table: typeof sources | typeof executors, id: string): Promise<number> {
+async function versionOf(table: typeof sources | typeof destinations, id: string): Promise<number> {
   const [row] = await tdb.db.select({ v: table.configVersion }).from(table).where(eq(table.id, id));
   return row?.v ?? -1;
 }
@@ -73,7 +73,7 @@ async function versionOf(table: typeof sources | typeof executors, id: string): 
 describe('instance convergence across replicas', () => {
   let provider: InstanceSummary;
   let source: SourceDetail;
-  let executorId: string;
+  let destinationId: string;
 
   it('builds instances created on another replica', async () => {
     provider = await call<InstanceSummary>(
@@ -92,11 +92,11 @@ describe('instance convergence across replicas', () => {
       },
       201,
     );
-    executorId = (
+    destinationId = (
       await call<{ id: string }>(
         'POST',
-        '/api/v1/executors',
-        { typeId: 'test-executor', name: 'Replica executor', settings: {} },
+        '/api/v1/destinations',
+        { typeId: 'test-destination', name: 'Replica destination', settings: {} },
         201,
       )
     ).id;
@@ -105,12 +105,12 @@ describe('instance convergence across replicas', () => {
 
     const result = await b.reconcile();
     // The source references the new provider, so it is built as one of its dependents.
-    expect(ids(result.built).sort()).toEqual([provider.id, executorId].sort());
+    expect(ids(result.built).sort()).toEqual([provider.id, destinationId].sort());
     expect(ids(result.dependents)).toEqual([source.id]);
     expect(b.secretProvider(provider.id)?.name).toBe('vault');
     expect(b.source(source.id)?.name).toBe('Replica source');
     expect(b.instanceError(source.id)).toBeUndefined();
-    expect(b.executor(executorId)).toBeDefined();
+    expect(b.destination(destinationId)).toBeDefined();
     await expectNothingOnA();
     // A second pass with nothing changed rebuilds nothing.
     expect(await b.reconcile()).toEqual({ built: [], rebuilt: [], dropped: [], dependents: [] });
@@ -130,41 +130,43 @@ describe('instance convergence across replicas', () => {
   });
 
   it('a caps-only change needs no rebuild beyond the version bump of the write', async () => {
-    await call('PUT', `/api/v1/executors/${executorId}`, { caps: { invokeTimeoutSeconds: 30 } });
+    await call('PUT', `/api/v1/destinations/${destinationId}`, {
+      caps: { invokeTimeoutSeconds: 30 },
+    });
     await expectNothingOnA();
-    expect(ids((await b.reconcile()).rebuilt)).toEqual([executorId]);
+    expect(ids((await b.reconcile()).rebuilt)).toEqual([destinationId]);
   });
 
   it('follows disable and enable', async () => {
-    await call('POST', `/api/v1/executors/${executorId}/enable`, { enabled: false });
+    await call('POST', `/api/v1/destinations/${destinationId}/enable`, { enabled: false });
     await expectNothingOnA();
     await b.reconcile();
-    expect(b.instanceError(executorId)).toBe('disabled');
+    expect(b.instanceError(destinationId)).toBe('disabled');
 
-    await call('POST', `/api/v1/executors/${executorId}/enable`, { enabled: true });
+    await call('POST', `/api/v1/destinations/${destinationId}/enable`, { enabled: true });
     await expectNothingOnA();
     await b.reconcile();
-    expect(b.instanceError(executorId)).toBeUndefined();
+    expect(b.instanceError(destinationId)).toBeUndefined();
   });
 
   it('propagates an explicit reload (credential rotation)', async () => {
-    const before = await versionOf(executors, executorId);
-    const old = b.executor(executorId);
-    await call('POST', `/api/v1/executors/${executorId}/reload`, {});
-    expect(await versionOf(executors, executorId)).toBe(before + 1);
+    const before = await versionOf(destinations, destinationId);
+    const old = b.destination(destinationId);
+    await call('POST', `/api/v1/destinations/${destinationId}/reload`, {});
+    expect(await versionOf(destinations, destinationId)).toBe(before + 1);
     await expectNothingOnA();
-    expect(ids((await b.reconcile()).rebuilt)).toEqual([executorId]);
-    expect(b.executor(executorId)).not.toBe(old);
+    expect(ids((await b.reconcile()).rebuilt)).toEqual([destinationId]);
+    expect(b.destination(destinationId)).not.toBe(old);
   });
 
   it('picks up changes made by apply', async () => {
-    const old = b.executor(executorId);
+    const old = b.destination(destinationId);
     const yaml = [
       'apiVersion: switchboard/v1',
       'kind: Configuration',
-      'executors:',
-      '  - name: Replica executor',
-      '    type: test-executor',
+      'destinations:',
+      '  - name: Replica destination',
+      '    type: test-destination',
       '    settings: { url: "https://applied.test" }',
     ].join('\n');
     const res = await a.request('POST', '/api/v1/apply', {
@@ -173,8 +175,8 @@ describe('instance convergence across replicas', () => {
     });
     expect(res.json<{ errors: string[] }>().errors).toEqual([]);
     await expectNothingOnA();
-    expect(ids((await b.reconcile()).rebuilt)).toEqual([executorId]);
-    expect(b.executor(executorId)).not.toBe(old);
+    expect(ids((await b.reconcile()).rebuilt)).toEqual([destinationId]);
+    expect(b.destination(destinationId)).not.toBe(old);
   });
 
   it('rebuilds the dependents of a secret provider changed on another replica', async () => {
@@ -228,12 +230,12 @@ describe('instance convergence across replicas', () => {
   });
 
   it('drops instances deleted on another replica', async () => {
-    await call('DELETE', `/api/v1/executors/${executorId}`, {}, 204);
+    await call('DELETE', `/api/v1/destinations/${destinationId}`, {}, 204);
     await expectNothingOnA();
     const result = await b.reconcile();
-    expect(ids(result.dropped)).toEqual([executorId]);
-    expect(b.executor(executorId)).toBeUndefined();
-    expect(b.instanceError(executorId)).toBeUndefined();
+    expect(ids(result.dropped)).toEqual([destinationId]);
+    expect(b.destination(destinationId)).toBeUndefined();
+    expect(b.instanceError(destinationId)).toBeUndefined();
   });
 
   it('a provider deleted elsewhere rebuilds what still named it', async () => {
@@ -255,11 +257,11 @@ describe('instance convergence across replicas', () => {
       c.startReconcile(0.05);
       const created = await call<{ id: string }>(
         'POST',
-        '/api/v1/executors',
-        { typeId: 'test-executor', name: 'Timed executor', settings: {} },
+        '/api/v1/destinations',
+        { typeId: 'test-destination', name: 'Timed destination', settings: {} },
         201,
       );
-      await vi.waitFor(() => expect(c.executor(created.id)).toBeDefined(), {
+      await vi.waitFor(() => expect(c.destination(created.id)).toBeDefined(), {
         timeout: 5000,
         interval: 20,
       });

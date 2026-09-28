@@ -272,7 +272,7 @@ function summarise(plugin: unknown): {
     }
   };
   add('source', plugin.sources);
-  add('executor', plugin.executors);
+  add('destination', plugin.destinations);
   add('notifier', plugin.notifiers);
   add('secret_provider', plugin.secretProviders);
   return {

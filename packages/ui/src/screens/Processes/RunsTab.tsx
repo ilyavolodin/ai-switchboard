@@ -28,7 +28,7 @@ function ExternalLink({ run }: { run: RunSummary }) {
       target="_blank"
       rel="noreferrer"
       className={styles.external}
-      aria-label={`Open run ${run.id} in ${run.executorName} (new tab)`}
+      aria-label={`Open run ${run.id} in ${run.destinationName} (new tab)`}
     >
       {run.externalId ?? 'open'} ↗
     </a>
@@ -63,7 +63,7 @@ function RunDrawerBody({ runId }: { runId: string }) {
             </span>,
           ],
           ['kind', r.kind],
-          ['executor', r.executorName],
+          ['destination', r.destinationName],
           ['invoked', <Time key="inv" value={r.invokedAt} format="clock-seconds" />],
           ['finished', <Time key="fin" value={r.finishedAt} format="clock-seconds" />],
           ['duration', r.durationSeconds != null ? formatSeconds(r.durationSeconds) : '—'],
@@ -200,7 +200,7 @@ export function RunsTab({ processId }: { processId: string }) {
         );
       },
     },
-    { key: 'external', header: 'Executor', cell: (r) => <ExternalLink run={r} /> },
+    { key: 'external', header: 'Destination', cell: (r) => <ExternalLink run={r} /> },
     {
       key: 'details',
       header: <span className="visually-hidden">Details</span>,

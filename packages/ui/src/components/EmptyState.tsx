@@ -8,7 +8,7 @@ export interface EmptyStateProps {
   /** Teach the next step: what to do and why. */
   children?: ReactNode;
   actions?: ReactNode;
-  /** `ghost` draws a dashed source → process → executor sketch above the text. */
+  /** `ghost` draws a dashed source → process → destination sketch above the text. */
   illustration?: 'ghost' | 'none';
   compact?: boolean;
   className?: string;

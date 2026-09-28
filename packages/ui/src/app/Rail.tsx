@@ -21,7 +21,7 @@ function initials(email: string): string {
 }
 
 /**
- * The left rail: brand, the eight sections (Board · Processes · Sources · Executors · Activity ·
+ * The left rail: brand, the eight sections (Board · Processes · Sources · Destinations · Activity ·
  * Approvals · Plugins · Settings) with counts and badges, keyboard hints and the signed-in user.
  * Collapses to icons at tablet width and to a bottom bar on phones.
  */

@@ -29,7 +29,7 @@ export interface Schedule {
 }
 
 export interface Step {
-  /** A source or executor instance id. */
+  /** A source or destination instance id. */
   provider: string;
   action: string;
   args: Expr;
@@ -71,8 +71,8 @@ export interface ProcessDocument {
     /** Keyed by meter id. */
     meterCeilings: Record<string, MeterCeiling>;
   };
-  executor: { instanceId: string; target: unknown };
-  /** JSONata over the batch context → the executor's inputSchema. */
+  destination: { instanceId: string; target: unknown };
+  /** JSONata over the batch context → the destination's inputSchema. */
   input: Expr;
   before: Step[];
   after: Step[];
@@ -86,7 +86,10 @@ export interface Process extends ProcessDocument {
   id: string;
 }
 
-export function defaultProcessDocument(name: string, executorInstanceId: string): ProcessDocument {
+export function defaultProcessDocument(
+  name: string,
+  destinationInstanceId: string,
+): ProcessDocument {
   return {
     name,
     description: '',
@@ -96,7 +99,7 @@ export function defaultProcessDocument(name: string, executorInstanceId: string)
     batching: { debounceSeconds: 30, maxSize: 20, maxAgeSeconds: 600 },
     gates: { approval: 'none', breaker: { threshold: 3, cooldownMinutes: 60 } },
     budgets: { runsPerDay: 20, meterCeilings: {} },
-    executor: { instanceId: executorInstanceId, target: {} },
+    destination: { instanceId: destinationInstanceId, target: {} },
     input: '{ "mode": mode, "runId": run.id, "artifacts": events.artifact }',
     before: [],
     after: [],
@@ -127,7 +130,7 @@ export const processDocumentSchema: JSONSchema = {
     'batching',
     'gates',
     'budgets',
-    'executor',
+    'destination',
     'input',
     'before',
     'after',
@@ -230,7 +233,7 @@ export const processDocumentSchema: JSONSchema = {
         },
       },
     },
-    executor: {
+    destination: {
       type: 'object',
       additionalProperties: false,
       required: ['instanceId', 'target'],

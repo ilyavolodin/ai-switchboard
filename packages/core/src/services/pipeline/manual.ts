@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import {
   approvals,
   batches,
-  executors,
+  destinations,
   processes,
   runs,
   type GateDecisionRecord,
@@ -33,7 +33,7 @@ function notFound(what: string, id: string): PipelineError {
 /**
  * *Run now* / *Test run*: a manual batch that enters at the gate. With `batchId` it replays that
  * batch's events. Dry runs pass every gate except approval, are not counted toward budgets, and
- * reach the executor with `run.dryRun = true`.
+ * reach the destination with `run.dryRun = true`.
  */
 export async function runNow(
   ctx: Ctx,
@@ -234,24 +234,28 @@ export async function resetBreaker(
 
 export async function clearSoftHold(
   ctx: Ctx,
-  executorId: string,
+  destinationId: string,
   actor: string,
   reason: string,
 ): Promise<void> {
   requireReason(reason);
-  if (!isUuid(executorId)) throw notFound('executor', executorId);
+  if (!isUuid(destinationId)) throw notFound('destination', destinationId);
   const now = ctx.clock.now();
   await withTx(ctx.db, async (tx) => {
-    const [e] = await tx.select().from(executors).where(eq(executors.id, executorId)).for('update');
-    if (!e) throw notFound('executor', executorId);
+    const [e] = await tx
+      .select()
+      .from(destinations)
+      .where(eq(destinations.id, destinationId))
+      .for('update');
+    if (!e) throw notFound('destination', destinationId);
     await tx
-      .update(executors)
+      .update(destinations)
       .set({ softHoldUntil: null, softHoldReason: null })
-      .where(eq(executors.id, executorId));
+      .where(eq(destinations.id, destinationId));
     await recordAudit(tx, {
       actor,
-      scope: 'executor',
-      targetId: executorId,
+      scope: 'destination',
+      targetId: destinationId,
       field: 'soft_hold_until',
       before: e.softHoldUntil?.toISOString() ?? null,
       after: null,
@@ -261,15 +265,15 @@ export async function clearSoftHold(
   });
 }
 
-export async function readMetersNow(ctx: Ctx, executorId: string): Promise<void> {
-  if (!isUuid(executorId)) throw notFound('executor', executorId);
+export async function readMetersNow(ctx: Ctx, destinationId: string): Promise<void> {
+  if (!isUuid(destinationId)) throw notFound('destination', destinationId);
   const [e] = await ctx.db
-    .select({ id: executors.id })
-    .from(executors)
-    .where(eq(executors.id, executorId));
-  if (!e) throw notFound('executor', executorId);
-  if (!ctx.runtime.executor(executorId)) {
-    throw new PipelineError('unavailable', `executor ${executorId} has no live instance`);
+    .select({ id: destinations.id })
+    .from(destinations)
+    .where(eq(destinations.id, destinationId));
+  if (!e) throw notFound('destination', destinationId);
+  if (!ctx.runtime.destination(destinationId)) {
+    throw new PipelineError('unavailable', `destination ${destinationId} has no live instance`);
   }
-  await readMeters(ctx, executorId);
+  await readMeters(ctx, destinationId);
 }

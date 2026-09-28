@@ -15,7 +15,7 @@ describe('TypeIcon', () => {
   });
 
   it('renders an SVG data URI through <img>, never inline', () => {
-    const { container } = render(<TypeIcon icon={svg} kind="executor" />);
+    const { container } = render(<TypeIcon icon={svg} kind="destination" />);
     const img = container.querySelector('img');
     expect(img).toHaveAttribute('src', svg);
     expect(img).toHaveAttribute('alt', '');
@@ -28,8 +28,8 @@ describe('TypeIcon', () => {
     ['an SVG URI whose payload is not SVG', `data:image/svg+xml;base64,${btoa('<b>x</b>')}`],
     ['nothing', undefined],
   ])('falls back to the generic icon for %s', (_label, icon) => {
-    const { container } = render(<TypeIcon icon={icon} kind="executor" />);
-    const generic = render(<TypeIcon icon="executors" kind="executor" />).container;
+    const { container } = render(<TypeIcon icon={icon} kind="destination" />);
+    const generic = render(<TypeIcon icon="destinations" kind="destination" />).container;
     expect(container.querySelector('img')).toBeNull();
     expect(container.innerHTML).toBe(generic.innerHTML);
   });

@@ -32,7 +32,7 @@ export interface InstanceDraft<C> {
 export interface AddInstanceDialogProps<C> {
   open: boolean;
   onClose: () => void;
-  kind: 'source' | 'executor';
+  kind: 'source' | 'destination';
   /** Installed types of this kind (`usePluginTypes(kind)`). */
   types: PluginTypeDTO[] | undefined;
   loading?: boolean;
@@ -47,7 +47,7 @@ export interface AddInstanceDialogProps<C> {
 }
 
 /**
- * "Add source" / "Add executor": pick an installed type — or find one on npm, review what it
+ * "Add source" / "Add destination": pick an installed type — or find one on npm, review what it
  * asks for and install it (admins), which continues straight into its form — then name the
  * instance and fill the plugin's settings form (rendered from its `settingsSchema`, secrets as
  * `secret://` references) plus the core's caps. The form is kept while the reason prompt is
@@ -146,7 +146,7 @@ export function AddInstanceDialog<C>({
   const errors = type ? validateAgainstSchema(type.settingsSchema, settings) : {};
   const pushSource = kind === 'source' && type !== null && type.mode !== 'pull';
   const invalid = Object.keys(errors).length > 0 || name.trim() === '';
-  const noun = kind === 'source' ? 'source' : 'executor';
+  const noun = kind === 'source' ? 'source' : 'destination';
 
   const submit = async () => {
     if (!type || caps === null) return;
@@ -172,7 +172,7 @@ export function AddInstanceDialog<C>({
           ? `New ${type.displayName} ${noun}`
           : review
             ? `Install ${review.package}`
-            : `Add ${kind === 'source' ? 'a' : 'an'} ${noun}`
+            : `Add a ${noun}`
       }
       footer={
         <div className={styles.footer}>
@@ -254,8 +254,8 @@ export function AddInstanceDialog<C>({
             <Skeleton lines={3} height={48} label={`Loading ${noun} types`} />
           ) : installed.length === 0 ? (
             <EmptyState title={`No ${noun} types are installed`} compact>
-              {kind === 'source' ? 'Source' : 'Executor'} types come from plugins. Find one on npm
-              below, or an admin can add any package on the Plugins page.
+              {kind === 'source' ? 'Source' : 'Destination'} types come from plugins. Find one on
+              npm below, or an admin can add any package on the Plugins page.
             </EmptyState>
           ) : (
             <>

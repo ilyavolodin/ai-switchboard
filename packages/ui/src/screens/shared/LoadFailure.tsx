@@ -13,7 +13,7 @@ export function LoadFailure({
   listLabel,
 }: {
   error: unknown;
-  /** "source", "executor", "process". */
+  /** "source", "destination", "process". */
   noun: string;
   listTo: string;
   listLabel: string;

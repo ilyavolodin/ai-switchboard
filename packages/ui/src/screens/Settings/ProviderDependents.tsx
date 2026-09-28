@@ -6,13 +6,13 @@ import styles from './Settings.module.css';
 
 const KIND_LABEL: Record<SecretProviderDependentDTO['kind'], string> = {
   source: 'source',
-  executor: 'executor',
+  destination: 'destination',
   notifier: 'notifier',
 };
 
 function hrefOf(d: SecretProviderDependentDTO): string {
   if (d.kind === 'source') return `/sources/${encodeURIComponent(d.id)}`;
-  if (d.kind === 'executor') return `/executors/${encodeURIComponent(d.id)}`;
+  if (d.kind === 'destination') return `/destinations/${encodeURIComponent(d.id)}`;
   return '/settings/notifiers';
 }
 
@@ -29,7 +29,9 @@ export function ProviderDependents({
 }) {
   if (dependents.length === 0) {
     return (
-      <span className="t-caption">No source, executor or notifier references {provider} yet.</span>
+      <span className="t-caption">
+        No source, destination or notifier references {provider} yet.
+      </span>
     );
   }
   return (

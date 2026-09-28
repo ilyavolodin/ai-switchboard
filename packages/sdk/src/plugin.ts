@@ -1,7 +1,7 @@
 import { iconProblem } from './icons.js';
 import { isValidSchema, validateAgainst } from './schema.js';
 import type { Capabilities, JSONSchema } from './types/common.js';
-import type { ExecutorType } from './types/executor.js';
+import type { DestinationType } from './types/destination.js';
 import type { NotifierType, SecretProviderType } from './types/notifier.js';
 import type { SourceType } from './types/source.js';
 import { SDK_MAJOR, SDK_VERSION } from './version.js';
@@ -12,7 +12,7 @@ export interface PluginSpec {
   displayName: string;
   description?: string;
   sources?: SourceType[];
-  executors?: ExecutorType[];
+  destinations?: DestinationType[];
   notifiers?: NotifierType[];
   secretProviders?: SecretProviderType[];
   capabilities?: Capabilities;
@@ -24,7 +24,7 @@ export interface PluginDefinition extends Required<Omit<PluginSpec, 'description
   readonly switchboardSdk: { major: number; version: string };
 }
 
-export type PluginKind = 'source' | 'executor' | 'notifier' | 'secret_provider';
+export type PluginKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
 
 /** Build a plugin's default export. */
 export function definePlugin(spec: PluginSpec): PluginDefinition {
@@ -33,7 +33,7 @@ export function definePlugin(spec: PluginSpec): PluginDefinition {
     displayName: spec.displayName,
     ...(spec.description !== undefined ? { description: spec.description } : {}),
     sources: spec.sources ?? [],
-    executors: spec.executors ?? [],
+    destinations: spec.destinations ?? [],
     notifiers: spec.notifiers ?? [],
     secretProviders: spec.secretProviders ?? [],
     capabilities: spec.capabilities ?? {},
@@ -131,9 +131,9 @@ export function validatePlugin(plugin: PluginDefinition): string[] {
       checkSchema(errors, `source ${s.id} action ${a.id} argsSchema`, a.argsSchema);
   }
 
-  for (const e of plugin.executors) {
-    unique('executor', e.id);
-    checkIcon(`executor ${e.id}`, e.icon);
+  for (const e of plugin.destinations) {
+    unique('destination', e.id);
+    checkIcon(`destination ${e.id}`, e.icon);
     if (
       e.invokeTimeoutSeconds !== undefined &&
       !(
@@ -144,32 +144,34 @@ export function validatePlugin(plugin: PluginDefinition): string[] {
       )
     ) {
       errors.push(
-        `executor ${e.id}: invokeTimeoutSeconds must be a number from 1 to ${MAX_INVOKE_TIMEOUT_SECONDS}`,
+        `destination ${e.id}: invokeTimeoutSeconds must be a number from 1 to ${MAX_INVOKE_TIMEOUT_SECONDS}`,
       );
     }
-    checkSchema(errors, `executor ${e.id} settingsSchema`, e.settingsSchema);
-    checkSchema(errors, `executor ${e.id} targetSchema`, e.targetSchema);
-    checkSchema(errors, `executor ${e.id} inputSchema`, e.inputSchema);
+    checkSchema(errors, `destination ${e.id} settingsSchema`, e.settingsSchema);
+    checkSchema(errors, `destination ${e.id} targetSchema`, e.targetSchema);
+    checkSchema(errors, `destination ${e.id} inputSchema`, e.inputSchema);
     if (!['sync', 'poll', 'callback', 'none'].includes(e.tracking))
-      errors.push(`executor ${e.id}: invalid tracking`);
+      errors.push(`destination ${e.id}: invalid tracking`);
     if (typeof e.idempotentInvoke !== 'boolean')
-      errors.push(`executor ${e.id}: idempotentInvoke must be declared`);
+      errors.push(`destination ${e.id}: idempotentInvoke must be declared`);
     const dims = new Set<string>();
     for (const d of e.usage) {
-      if (d.unit === '') errors.push(`executor ${e.id} usage ${d.id}: unit is required`);
-      if (dims.has(d.id)) errors.push(`executor ${e.id} usage ${d.id}: duplicate dimension`);
+      if (d.unit === '') errors.push(`destination ${e.id} usage ${d.id}: unit is required`);
+      if (dims.has(d.id)) errors.push(`destination ${e.id} usage ${d.id}: duplicate dimension`);
       dims.add(d.id);
     }
     const primaries = (e.meters ?? []).filter((m) => m.primary === true).length;
-    if (primaries > 1) errors.push(`executor ${e.id}: at most one primary meter`);
+    if (primaries > 1) errors.push(`destination ${e.id}: at most one primary meter`);
     for (const ex of e.examples ?? []) {
       const t = validateAgainst(e.targetSchema, ex.target);
-      if (!t.valid) errors.push(`executor ${e.id}: example target invalid: ${t.errors.join('; ')}`);
+      if (!t.valid)
+        errors.push(`destination ${e.id}: example target invalid: ${t.errors.join('; ')}`);
       const i = validateAgainst(e.inputSchema, ex.input);
-      if (!i.valid) errors.push(`executor ${e.id}: example input invalid: ${i.errors.join('; ')}`);
+      if (!i.valid)
+        errors.push(`destination ${e.id}: example input invalid: ${i.errors.join('; ')}`);
     }
     for (const a of e.actions ?? [])
-      checkSchema(errors, `executor ${e.id} action ${a.id} argsSchema`, a.argsSchema);
+      checkSchema(errors, `destination ${e.id} action ${a.id} argsSchema`, a.argsSchema);
   }
 
   for (const n of plugin.notifiers) {

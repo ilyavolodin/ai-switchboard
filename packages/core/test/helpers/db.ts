@@ -11,8 +11,13 @@ export interface TestDatabase extends Database {
   destroy(): Promise<void>;
 }
 
-/** A fresh, migrated database for one test file. */
-export async function createTestDatabase(): Promise<TestDatabase> {
+/**
+ * A fresh, migrated database for one test file. `migrate: false` leaves it empty, for a test that
+ * applies migrations itself (e.g. an upgrade from an earlier schema).
+ */
+export async function createTestDatabase(
+  options: { migrate?: boolean } = {},
+): Promise<TestDatabase> {
   const baseUrl = inject('databaseUrl');
   const name = `sb_test_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
   const admin = new pg.Client({ connectionString: baseUrl });
@@ -22,7 +27,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   const url = new URL(baseUrl);
   url.pathname = `/${name}`;
   const database = connect(url.toString(), { max: 5 });
-  await runMigrations(database.db);
+  if (options.migrate !== false) await runMigrations(database.db);
   return {
     ...database,
     url: url.toString(),

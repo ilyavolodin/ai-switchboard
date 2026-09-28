@@ -23,13 +23,13 @@ type KindFilter = PluginSearchKind | 'all';
 const KIND_OPTIONS: { value: KindFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'source', label: 'Sources' },
-  { value: 'executor', label: 'Executors' },
+  { value: 'destination', label: 'Destinations' },
   { value: 'notifier', label: 'Notifiers' },
   { value: 'secrets', label: 'Secret providers' },
 ];
 
 export interface NpmSearchProps {
-  /** A fixed kind (the add-source / add-executor pickers); otherwise a kind filter is shown. */
+  /** A fixed kind (the add-source / add-destination pickers); otherwise a kind filter is shown. */
   kind?: PluginSearchKind;
   /** Starts the inspect → review → reason → install flow for a package. */
   onInstall: (result: PluginSearchResult) => void;

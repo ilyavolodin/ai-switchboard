@@ -9,7 +9,7 @@ import styles from './ProcessDetail.module.css';
 
 /**
  * The three small charts under the funnel: runs and throttles per day, latency and duration
- * medians, and usage per run for each dimension the executor reports.
+ * medians, and usage per run for each dimension the destination reports.
  */
 export function DetailCharts({
   stats,
@@ -92,7 +92,7 @@ export function DetailCharts({
       </Card>
       <Card title="Usage per run" meta={windowLabel(window)}>
         {stats.usagePerRun.length === 0 ? (
-          <p className="t-caption">The executor reports no usage for these runs.</p>
+          <p className="t-caption">The destination reports no usage for these runs.</p>
         ) : (
           <ul className={styles.usage} aria-label="Usage per run">
             {stats.usagePerRun.map((u) => {

@@ -27,7 +27,7 @@ const PATHS = {
       <path d="M8 12v2.5" />
     </>
   ),
-  executors: <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />,
+  destinations: <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />,
   activity: <path d="M1.5 8h3l2-5 3 10 2-5h3" />,
   approvals: (
     <>

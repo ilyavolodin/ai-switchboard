@@ -11,7 +11,7 @@ function input(patch: Partial<GateInput> = {}): GateInput {
     dryRun: false,
     process: { enabled: true },
     sources: [{ id: 's1', enabled: true }],
-    executor: {
+    destination: {
       exists: true,
       enabled: true,
       pluginAvailable: true,
@@ -35,9 +35,9 @@ describe('gate order and reasons', () => {
     expect(out.checks.map((c) => c.check)).toEqual([
       'process_enabled',
       'sources_enabled',
-      'executor_enabled',
+      'destination_enabled',
       'plugin_available',
-      'executor_healthy',
+      'destination_healthy',
       'breaker_closed',
       'outside_quiet_hours',
       'approval',
@@ -56,27 +56,35 @@ describe('gate order and reasons', () => {
       },
       'source_disabled',
     ],
-    ['executor missing', { executor: { ...base.executor, exists: false } }, 'executor_disabled'],
-    ['executor disabled', { executor: { ...base.executor, enabled: false } }, 'executor_disabled'],
+    [
+      'destination missing',
+      { destination: { ...base.destination, exists: false } },
+      'destination_disabled',
+    ],
+    [
+      'destination disabled',
+      { destination: { ...base.destination, enabled: false } },
+      'destination_disabled',
+    ],
     [
       'plugin unavailable',
-      { executor: { ...base.executor, pluginAvailable: false, live: false } },
+      { destination: { ...base.destination, pluginAvailable: false, live: false } },
       'plugin_unavailable',
     ],
     [
       'no live object (secret error)',
-      { executor: { ...base.executor, live: false, instanceError: 'secret_error: x' } },
-      'executor_unhealthy',
+      { destination: { ...base.destination, live: false, instanceError: 'secret_error: x' } },
+      'destination_unhealthy',
     ],
     [
-      'executor unhealthy',
+      'destination unhealthy',
       {
-        executor: {
-          ...base.executor,
+        destination: {
+          ...base.destination,
           health: { status: 'unhealthy', checkedAt: '', message: '401' },
         },
       },
-      'executor_unhealthy',
+      'destination_unhealthy',
     ],
     [
       'breaker open',

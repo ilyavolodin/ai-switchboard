@@ -198,7 +198,7 @@ describe('Sources', () => {
     const results = await within(npm).findByRole('list', { name: 'npm packages' });
     // Only source plugins are offered here.
     expect(
-      within(results).queryByRole('listitem', { name: 'ai-switchboard-executor-n8n' }),
+      within(results).queryByRole('listitem', { name: 'ai-switchboard-destination-n8n' }),
     ).toBeNull();
     await user.click(
       within(results).getByRole('button', { name: 'Install @ai-switchboard/source-sentry' }),
@@ -208,7 +208,7 @@ describe('Sources', () => {
       name: 'Install @ai-switchboard/source-sentry',
     });
     expect(await within(review).findByText('sentry.io')).toBeInTheDocument();
-    expect(within(review).getByText('sdk ^1.4.0 ok')).toBeInTheDocument();
+    expect(within(review).getByText('sdk ^2.0.0 ok')).toBeInTheDocument();
     await user.click(within(review).getByRole('button', { name: 'Install and continue' }));
 
     const reason = await screen.findByRole('dialog', {

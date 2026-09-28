@@ -10,7 +10,7 @@ import {
   SDK_MAJOR,
   SDK_VERSION,
   validatePlugin,
-  type ExecutorType,
+  type DestinationType,
   type Health,
   type NotifierType,
   type PluginContext,
@@ -26,7 +26,7 @@ import type { Clock } from '../clock.js';
 import type { CoreConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
-  executors,
+  destinations,
   instanceState,
   notifiers,
   plugins,
@@ -51,14 +51,14 @@ import {
 import { diffInstances } from './reconcile.js';
 import {
   typeInvokeTimeout,
-  type LiveExecutor,
+  type LiveDestination,
   type LiveNotifier,
   type LiveSecretProvider,
   type LiveSource,
   type PluginRuntime,
 } from './runtime.js';
 
-export type InstanceKind = 'source' | 'executor' | 'notifier' | 'secret_provider';
+export type InstanceKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
 
 export interface LoadedPlugin {
   name: string;
@@ -133,7 +133,7 @@ export interface ReconcileResult {
 
 const INSTANCE_TABLES = {
   source: sources,
-  executor: executors,
+  destination: destinations,
   notifier: notifiers,
   secret_provider: secretProviders,
 } as const;
@@ -161,7 +161,7 @@ async function exists(path: string): Promise<boolean> {
 /** The serializable part of a type, stored in `plugin_types.manifest` and served to the UI. */
 export function serializeType(
   kind: InstanceKind,
-  type: SourceType | ExecutorType | NotifierType | SecretProviderType,
+  type: SourceType | DestinationType | NotifierType | SecretProviderType,
 ): Record<string, unknown> {
   const base = {
     displayName: type.displayName,
@@ -180,8 +180,8 @@ export function serializeType(
       allowsUnauthenticated: t.allowsUnauthenticated ?? false,
     };
   }
-  if (kind === 'executor') {
-    const t = type as ExecutorType;
+  if (kind === 'destination') {
+    const t = type as DestinationType;
     return {
       ...base,
       targetSchema: t.targetSchema,
@@ -233,12 +233,12 @@ export class PluginHost implements PluginRuntime {
   readonly loaded: LoadedPlugin[] = [];
   private readonly types = {
     source: new Map<string, TypeEntry<SourceType>>(),
-    executor: new Map<string, TypeEntry<ExecutorType>>(),
+    destination: new Map<string, TypeEntry<DestinationType>>(),
     notifier: new Map<string, TypeEntry<NotifierType>>(),
     secret_provider: new Map<string, TypeEntry<SecretProviderType>>(),
   };
   private readonly liveSources = new Map<string, LiveSource>();
-  private readonly liveExecutors = new Map<string, LiveExecutor>();
+  private readonly liveDestinations = new Map<string, LiveDestination>();
   private readonly liveNotifiers = new Map<string, LiveNotifier>();
   private readonly liveProviders = new Map<string, LiveSecretProvider>();
   private readonly providersByName = new Map<string, LiveSecretProvider>();
@@ -363,7 +363,7 @@ export class PluginHost implements PluginRuntime {
   /** The `plugin_types` rows of every type a plugin registered. */
   private typeRows(pluginName: string | undefined, now: Date) {
     const rows = [];
-    for (const kind of ['source', 'executor', 'notifier', 'secret_provider'] as const) {
+    for (const kind of ['source', 'destination', 'notifier', 'secret_provider'] as const) {
       for (const [typeId, entry] of this.types[kind]) {
         if (pluginName !== undefined && entry.pluginName !== pluginName) continue;
         rows.push({
@@ -528,13 +528,13 @@ export class PluginHost implements PluginRuntime {
     if (sourceTypes.length > 0)
       for (const row of await db.select().from(sources).where(inArray(sources.typeId, sourceTypes)))
         await this.buildSource(row, ticket);
-    const executorTypes = ids('executor');
-    if (executorTypes.length > 0)
+    const destinationTypes = ids('destination');
+    if (destinationTypes.length > 0)
       for (const row of await db
         .select()
-        .from(executors)
-        .where(inArray(executors.typeId, executorTypes)))
-        await this.buildExecutor(row, ticket);
+        .from(destinations)
+        .where(inArray(destinations.typeId, destinationTypes)))
+        await this.buildDestination(row, ticket);
     const notifierTypes = ids('notifier');
     if (notifierTypes.length > 0)
       for (const row of await db
@@ -621,7 +621,7 @@ export class PluginHost implements PluginRuntime {
     const { db, clock, logger } = this.opts;
     const record = this.loaded.find((p) => p.name === name);
     const dropped: { kind: InstanceKind; typeId: string }[] = [];
-    for (const kind of ['source', 'executor', 'notifier', 'secret_provider'] as const) {
+    for (const kind of ['source', 'destination', 'notifier', 'secret_provider'] as const) {
       for (const [typeId, entry] of this.types[kind]) {
         if (entry.pluginName !== name) continue;
         this.types[kind].delete(typeId);
@@ -764,7 +764,7 @@ export class PluginHost implements PluginRuntime {
   private findClash(def: PluginDefinition): string | undefined {
     const pairs: [InstanceKind, { id: string }[]][] = [
       ['source', def.sources],
-      ['executor', def.executors],
+      ['destination', def.destinations],
       ['notifier', def.notifiers],
       ['secret_provider', def.secretProviders],
     ];
@@ -779,7 +779,7 @@ export class PluginHost implements PluginRuntime {
 
   private registerTypes(pluginName: string, def: PluginDefinition): void {
     for (const t of def.sources) this.types.source.set(t.id, { type: t, pluginName });
-    for (const t of def.executors) this.types.executor.set(t.id, { type: t, pluginName });
+    for (const t of def.destinations) this.types.destination.set(t.id, { type: t, pluginName });
     for (const t of def.notifiers) this.types.notifier.set(t.id, { type: t, pluginName });
     for (const t of def.secretProviders)
       this.types.secret_provider.set(t.id, { type: t, pluginName });
@@ -814,7 +814,8 @@ export class PluginHost implements PluginRuntime {
     for (const row of await db.select().from(secretProviders))
       this.buildSecretProvider(row, ticket);
     for (const row of await db.select().from(sources)) await this.buildSource(row, ticket);
-    for (const row of await db.select().from(executors)) await this.buildExecutor(row, ticket);
+    for (const row of await db.select().from(destinations))
+      await this.buildDestination(row, ticket);
     for (const row of await db.select().from(notifiers)) await this.buildNotifier(row, ticket);
   }
 
@@ -901,7 +902,7 @@ export class PluginHost implements PluginRuntime {
 
   private clearInstance(id: string): void {
     this.liveSources.delete(id);
-    this.liveExecutors.delete(id);
+    this.liveDestinations.delete(id);
     this.liveNotifiers.delete(id);
     const provider = this.liveProviders.get(id);
     if (provider) this.providersByName.delete(provider.name);
@@ -953,8 +954,8 @@ export class PluginHost implements PluginRuntime {
     }
   }
 
-  private async markResolved(kind: 'source' | 'executor', id: string): Promise<void> {
-    const table = kind === 'source' ? sources : executors;
+  private async markResolved(kind: 'source' | 'destination', id: string): Promise<void> {
+    const table = kind === 'source' ? sources : destinations;
     try {
       await this.opts.db
         .update(table)
@@ -1126,9 +1127,12 @@ export class PluginHost implements PluginRuntime {
     }
   }
 
-  private async buildExecutor(row: typeof executors.$inferSelect, ticket: number): Promise<void> {
-    const from: BuiltInstance = { kind: 'executor', version: row.configVersion, name: row.name };
-    const entry = this.types.executor.get(row.typeId);
+  private async buildDestination(
+    row: typeof destinations.$inferSelect,
+    ticket: number,
+  ): Promise<void> {
+    const from: BuiltInstance = { kind: 'destination', version: row.configVersion, name: row.name };
+    const entry = this.types.destination.get(row.typeId);
     if (!entry) {
       this.fail(row.id, ticket, 'plugin_unavailable', from);
       return;
@@ -1140,7 +1144,7 @@ export class PluginHost implements PluginRuntime {
       this.fail(row.id, ticket, `secret_error: ${errorText(err)}`, from);
       return;
     }
-    let live: LiveExecutor;
+    let live: LiveDestination;
     try {
       const type = entry.type;
       const ctx = this.context(
@@ -1149,7 +1153,7 @@ export class PluginHost implements PluginRuntime {
         entry.pluginName,
         this.pluginCapabilities(entry.pluginName),
       );
-      const executor = attribute(
+      const destination = attribute(
         type.create(resolved.settings, ctx),
         this.attributeFor(entry.pluginName, row.id),
       );
@@ -1159,7 +1163,7 @@ export class PluginHost implements PluginRuntime {
         typeId: row.typeId,
         pluginName: entry.pluginName,
         type,
-        executor,
+        destination,
         usage: type.usageFor ? type.usageFor(resolved.settings) : type.usage,
         meters: type.metersFor ? type.metersFor(resolved.settings) : (type.meters ?? []),
         trackingFor: (target) => (type.trackingFor ? type.trackingFor(target) : type.tracking),
@@ -1177,12 +1181,12 @@ export class PluginHost implements PluginRuntime {
       row.id,
       ticket,
       () => {
-        this.liveExecutors.set(row.id, live);
+        this.liveDestinations.set(row.id, live);
         if (!row.enabled) this.errors.set(row.id, 'disabled');
       },
       from,
     );
-    if (committed) await this.markResolved('executor', row.id);
+    if (committed) await this.markResolved('destination', row.id);
   }
 
   private async buildNotifier(row: typeof notifiers.$inferSelect, ticket: number): Promise<void> {
@@ -1234,8 +1238,8 @@ export class PluginHost implements PluginRuntime {
   sourceType(typeId: string): TypeEntry<SourceType> | undefined {
     return this.types.source.get(typeId);
   }
-  executorType(typeId: string): TypeEntry<ExecutorType> | undefined {
-    return this.types.executor.get(typeId);
+  destinationType(typeId: string): TypeEntry<DestinationType> | undefined {
+    return this.types.destination.get(typeId);
   }
   notifierType(typeId: string): TypeEntry<NotifierType> | undefined {
     return this.types.notifier.get(typeId);
@@ -1247,7 +1251,7 @@ export class PluginHost implements PluginRuntime {
   typesOf(kind: InstanceKind): {
     typeId: string;
     pluginName: string;
-    type: SourceType | ExecutorType | NotifierType | SecretProviderType;
+    type: SourceType | DestinationType | NotifierType | SecretProviderType;
   }[] {
     return [...this.types[kind].entries()].map(([typeId, e]) => ({
       typeId,
@@ -1259,8 +1263,8 @@ export class PluginHost implements PluginRuntime {
   source(id: string): LiveSource | undefined {
     return this.liveSources.get(id);
   }
-  executor(id: string): LiveExecutor | undefined {
-    return this.liveExecutors.get(id);
+  destination(id: string): LiveDestination | undefined {
+    return this.liveDestinations.get(id);
   }
   notifier(id: string): LiveNotifier | undefined {
     return this.liveNotifiers.get(id);
@@ -1294,9 +1298,9 @@ export class PluginHost implements PluginRuntime {
         else this.commit(id, ticket, () => undefined, undefined);
         return;
       }
-      case 'executor': {
-        const [row] = await db.select().from(executors).where(eq(executors.id, id));
-        if (row) await this.buildExecutor(row, ticket);
+      case 'destination': {
+        const [row] = await db.select().from(destinations).where(eq(destinations.id, id));
+        if (row) await this.buildDestination(row, ticket);
         else this.commit(id, ticket, () => undefined, undefined);
         return;
       }
@@ -1316,7 +1320,7 @@ export class PluginHost implements PluginRuntime {
   }
 
   /**
-   * Rebuild every source, executor and notifier whose settings reference
+   * Rebuild every source, destination and notifier whose settings reference
    * `secret://<provider>/…` for one of these provider names, so they re-resolve against the
    * provider as it is now: created, enabled, disabled, re-configured, renamed (pass the old and
    * the new name: instances still naming the old one fail with a `secret_error`) or deleted.
@@ -1324,35 +1328,35 @@ export class PluginHost implements PluginRuntime {
    */
   async reloadDependentsOf(
     providerNames: string | readonly string[],
-  ): Promise<{ kind: 'source' | 'executor' | 'notifier'; id: string; name: string }[]> {
+  ): Promise<{ kind: 'source' | 'destination' | 'notifier'; id: string; name: string }[]> {
     const { db } = this.opts;
     const names = new Set(typeof providerNames === 'string' ? [providerNames] : providerNames);
     if (names.size === 0) return [];
     // Claim before reading the rows, like reload(): an older build finishing later cannot win.
     const ticket = this.ticket();
-    const rebuilt: { kind: 'source' | 'executor' | 'notifier'; id: string; name: string }[] = [];
+    const rebuilt: { kind: 'source' | 'destination' | 'notifier'; id: string; name: string }[] = [];
     const claim = (id: string): void => {
       this.claims.set(id, ticket);
     };
     const sourceRows = (await db.select().from(sources)).filter((r) =>
       referencesProvider(r.settings, names),
     );
-    const executorRows = (await db.select().from(executors)).filter((r) =>
+    const destinationRows = (await db.select().from(destinations)).filter((r) =>
       referencesProvider(r.settings, names),
     );
     const notifierRows = (await db.select().from(notifiers)).filter((r) =>
       referencesProvider(r.settings, names),
     );
-    const ids = [...sourceRows, ...executorRows, ...notifierRows].map((r) => r.id);
+    const ids = [...sourceRows, ...destinationRows, ...notifierRows].map((r) => r.id);
     for (const id of ids) claim(id);
     await this.withPending(ids, async () => {
       for (const row of sourceRows) {
         await this.buildSource(row, ticket);
         rebuilt.push({ kind: 'source', id: row.id, name: row.name });
       }
-      for (const row of executorRows) {
-        await this.buildExecutor(row, ticket);
-        rebuilt.push({ kind: 'executor', id: row.id, name: row.name });
+      for (const row of destinationRows) {
+        await this.buildDestination(row, ticket);
+        rebuilt.push({ kind: 'destination', id: row.id, name: row.name });
       }
       for (const row of notifierRows) {
         await this.buildNotifier(row, ticket);
@@ -1400,7 +1404,7 @@ export class PluginHost implements PluginRuntime {
         result.dependents = await this.reloadDependentsOf([...names]);
         for (const d of result.dependents) this.countRebuild(d.kind, 'dependent');
       }
-      for (const kind of ['source', 'executor', 'notifier'] as const)
+      for (const kind of ['source', 'destination', 'notifier'] as const)
         await this.reconcileKind(kind, result);
     } catch (err) {
       this.opts.logger.error({ err }, 'could not reconcile instances with the database');
@@ -1501,9 +1505,9 @@ export class PluginHost implements PluginRuntime {
         for (const row of rows) await this.buildSource(row, ticket);
         return rows.map(head);
       }
-      case 'executor': {
-        const rows = await db.select().from(executors).where(inArray(executors.id, ids));
-        for (const row of rows) await this.buildExecutor(row, ticket);
+      case 'destination': {
+        const rows = await db.select().from(destinations).where(inArray(destinations.id, ids));
+        for (const row of rows) await this.buildDestination(row, ticket);
         return rows.map(head);
       }
       case 'notifier': {
@@ -1605,16 +1609,16 @@ export class PluginHost implements PluginRuntime {
         instance: live.name,
       });
     }
-    for (const live of this.liveExecutors.values()) {
+    for (const live of this.liveDestinations.values()) {
       const [row] = await db
-        .select({ health: executors.health })
-        .from(executors)
-        .where(eq(executors.id, live.id));
-      const health = await this.probe(() => live.executor.health());
-      // An executor marked unhealthy by the pipeline (401/403) stays so until a reload or a healthy probe.
+        .select({ health: destinations.health })
+        .from(destinations)
+        .where(eq(destinations.id, live.id));
+      const health = await this.probe(() => live.destination.health());
+      // A destination marked unhealthy by the pipeline (401/403) stays so until a reload or a healthy probe.
       if (row?.health?.status === 'unhealthy' && health.status === 'unknown') continue;
-      await db.update(executors).set({ health }).where(eq(executors.id, live.id));
-      telemetry.gauge('switchboard.executor.health', health.status === 'healthy' ? 1 : 0, {
+      await db.update(destinations).set({ health }).where(eq(destinations.id, live.id));
+      telemetry.gauge('switchboard.destination.health', health.status === 'healthy' ? 1 : 0, {
         instance: live.name,
       });
     }

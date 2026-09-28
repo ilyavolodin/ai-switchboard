@@ -23,7 +23,7 @@ import { unsavedLabel } from './unsavedLabel.js';
 import { LeaveGuardDialog } from './LeaveGuardDialog.js';
 import { useLeaveGuard } from './useLeaveGuard.js';
 
-/** The saved instance the form edits (a source or an executor detail). */
+/** The saved instance the form edits (a source or a destination detail). */
 export interface InstanceSettingsEntity<C> {
   id: string;
   name: string;
@@ -36,8 +36,8 @@ export interface InstanceSettingsEntity<C> {
 
 export interface InstanceSettingsFormProps<C extends object> {
   entity: InstanceSettingsEntity<C>;
-  /** "source" / "executor", for the delete card's copy. */
-  kind: 'source' | 'executor';
+  /** "source" / "destination", for the delete card's copy. */
+  kind: 'source' | 'destination';
   /** The core caps block; `baseline` is the saved caps, for the changed markers. */
   renderCaps: (caps: C, onChange: (next: C) => void, disabled: boolean, baseline: C) => ReactNode;
   /**
@@ -62,7 +62,7 @@ export interface InstanceSettingsFormProps<C extends object> {
 }
 
 /**
- * A source's or executor's Settings tab: name and the plugin's schema form, the core's caps, a
+ * A source's or destination's Settings tab: name and the plugin's schema form, the core's caps, a
  * save bar that asks for a reason, and Delete at the bottom. Viewers see every field disabled.
  * Leaving the tab with unsaved changes asks first. Re-mount it (`key`) per instance.
  */

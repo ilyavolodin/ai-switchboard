@@ -127,7 +127,7 @@ describe('the idempotency rule', () => {
     expect(classifyInvoke({ idempotent, attempt: 1 }, outcome).action).toBe(action);
   });
 
-  it('a lost response is never retried for a non-idempotent executor, at any attempt', () => {
+  it('a lost response is never retried for a non-idempotent destination, at any attempt', () => {
     for (let attempt = 1; attempt <= MAX_INVOKE_ATTEMPTS; attempt++) {
       const out = classifyInvoke(
         { idempotent: false, attempt },
@@ -151,7 +151,7 @@ describe('the idempotency rule', () => {
     });
   });
 
-  it('401/403 fails and marks the executor unhealthy', () => {
+  it('401/403 fails and marks the destination unhealthy', () => {
     for (const status of [401, 403]) {
       const out = classifyInvoke(
         { idempotent: false, attempt: 1 },

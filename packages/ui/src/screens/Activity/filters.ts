@@ -1,12 +1,19 @@
 /**
- * The Activity stream's filters live in the URL (`?source=&process=&executor=&stage=&artifact=
+ * The Activity stream's filters live in the URL (`?source=&process=&destination=&stage=&artifact=
  * &range=`) so a filtered view can be shared. These helpers read them and turn them into the
  * `GET /events` query.
  */
 import type { ActivityQuery, ActivityRow, StatusTone } from '@ai-switchboard/core/contract';
 
 /** The filter keys kept in the URL. */
-export const FILTER_KEYS = ['source', 'process', 'executor', 'stage', 'artifact', 'range'] as const;
+export const FILTER_KEYS = [
+  'source',
+  'process',
+  'destination',
+  'stage',
+  'artifact',
+  'range',
+] as const;
 export type FilterKey = (typeof FILTER_KEYS)[number];
 export type ActivityFilters = Partial<Record<FilterKey, string>>;
 
@@ -62,7 +69,7 @@ export function toActivityQuery(
   const q: Omit<ActivityQuery, 'cursor'> = {};
   if (filters.source) q.source = filters.source;
   if (filters.process) q.process = filters.process;
-  if (filters.executor) q.executor = filters.executor;
+  if (filters.destination) q.destination = filters.destination;
   if (filters.stage) q.stage = filters.stage;
   if (filters.artifact) q.artifact = filters.artifact;
   if (range.ms != null) {

@@ -70,7 +70,7 @@ export interface ApiError {
   /** Field-level problems, e.g. schema validation messages. */
   details?: string[];
   /**
-   * 409 on deleting a source, executor or notifier that processes still use: those processes,
+   * 409 on deleting a source, destination or notifier that processes still use: those processes,
    * so a client can link to them.
    */
   usedBy?: { id: string; name: string }[];
@@ -170,8 +170,8 @@ export interface SetPasswordRequest extends Reasoned {
 // ---------------------------------------------------------------------------------------------
 
 export interface MeterGaugeDTO {
-  executorId: string;
-  executorName: string;
+  destinationId: string;
+  destinationName: string;
   meterId: string;
   title: string;
   kind: MeterSpec['kind'];
@@ -235,7 +235,7 @@ export interface BoardProcessNode {
   lastRunAt: Iso | null;
 }
 
-export interface BoardExecutorNode {
+export interface BoardDestinationNode {
   id: string;
   name: string;
   typeId: string;
@@ -277,7 +277,7 @@ export interface AttentionItem {
   tone: StatusTone;
   title: string;
   detail: string;
-  targetKind: 'process' | 'source' | 'executor' | 'plugin' | 'approval';
+  targetKind: 'process' | 'source' | 'destination' | 'plugin' | 'approval';
   targetId: string;
   /** The one-click action, e.g. `reset_breaker`, `approve`, `reload`, `read_meters`, `open`. */
   action: { id: string; label: string };
@@ -287,7 +287,7 @@ export interface AttentionItem {
 export interface BoardResponse {
   sources: BoardSourceNode[];
   processes: BoardProcessNode[];
-  executors: BoardExecutorNode[];
+  destinations: BoardDestinationNode[];
   edges: BoardEdge[];
   attention: AttentionItem[];
   generatedAt: Iso;
@@ -297,7 +297,7 @@ export interface BoardResponse {
 // Plugin types (for creating instances)
 // ---------------------------------------------------------------------------------------------
 
-export type PluginKind = 'source' | 'executor' | 'notifier' | 'secret_provider';
+export type PluginKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
 
 export interface PluginTypeDTO {
   kind: PluginKind;
@@ -318,7 +318,7 @@ export interface PluginTypeDTO {
   dynamicEventTypes?: boolean;
   provisionSupported?: boolean;
   allowsUnauthenticated?: boolean;
-  // executors
+  // destinations
   targetSchema?: JSONSchema;
   inputSchema?: JSONSchema;
   tracking?: TrackingMode;
@@ -418,10 +418,10 @@ export interface SourceStatsResponse {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Executors
+// Destinations
 // ---------------------------------------------------------------------------------------------
 
-export interface ExecutorCapsDTO {
+export interface DestinationCapsDTO {
   runsPerHour?: number;
   runsPerDay?: number;
   usagePerDay?: Record<string, number>;
@@ -435,7 +435,7 @@ export interface ExecutorCapsDTO {
   invokeTimeoutSeconds?: number;
 }
 
-export interface ExecutorSummary {
+export interface DestinationSummary {
   id: string;
   name: string;
   typeId: string;
@@ -453,10 +453,10 @@ export interface ExecutorSummary {
   processCount: number;
 }
 
-export interface ExecutorDetail extends ExecutorSummary {
+export interface DestinationDetail extends DestinationSummary {
   settings: Record<string, unknown>;
   targetDefaults: Record<string, unknown>;
-  caps: ExecutorCapsDTO;
+  caps: DestinationCapsDTO;
   settingsSchema: JSONSchema;
   targetSchema: JSONSchema;
   inputSchema: JSONSchema;
@@ -473,20 +473,20 @@ export interface ExecutorDetail extends ExecutorSummary {
   updatedAt: Iso;
 }
 
-export interface CreateExecutorRequest extends Reasoned {
+export interface CreateDestinationRequest extends Reasoned {
   typeId: string;
   name: string;
   settings: Record<string, unknown>;
   targetDefaults?: Record<string, unknown>;
-  caps?: ExecutorCapsDTO;
+  caps?: DestinationCapsDTO;
   enabled?: boolean;
 }
 
-export interface UpdateExecutorRequest extends Reasoned {
+export interface UpdateDestinationRequest extends Reasoned {
   name?: string;
   settings?: Record<string, unknown>;
   targetDefaults?: Record<string, unknown>;
-  caps?: ExecutorCapsDTO;
+  caps?: DestinationCapsDTO;
 }
 
 export interface MeterHistoryResponse {
@@ -527,7 +527,7 @@ export interface ProcessSummary {
   nextSweepAt: Iso | null;
   dailyCap: { used: number; limit: number | null };
   lastRunAt: Iso | null;
-  executor: { id: string; name: string } | null;
+  destination: { id: string; name: string } | null;
   triggers: { sourceId: string; sourceName: string; describe: string; eventTypes: string[] }[];
   updatedAt: Iso;
 }
@@ -768,7 +768,7 @@ export interface ActivityRow {
 export interface ActivityQuery {
   source?: string;
   process?: string;
-  executor?: string;
+  destination?: string;
   stage?: string;
   /** Exact event type, e.g. `github.pull_request.labeled`. */
   type?: string;
@@ -854,8 +854,8 @@ export interface RunSummary {
   id: string;
   processId: string;
   processName: string;
-  executorId: string;
-  executorName: string;
+  destinationId: string;
+  destinationName: string;
   kind: BatchKind;
   status: RunStatusValue;
   statusLabel: StatusLabel;
@@ -897,7 +897,7 @@ export interface RunDetail extends RunSummary {
 
 export interface RunsQuery {
   process?: string;
-  executor?: string;
+  destination?: string;
   status?: string;
   cursor?: string;
   limit?: number;
@@ -980,7 +980,7 @@ export interface InstallPluginRequest extends Reasoned {
  * The `{kind}` segment of the plugin naming convention (`ai-switchboard-{kind}-{name}`), used as
  * `GET /plugins/search?kind=`.
  */
-export type PluginSearchKind = 'source' | 'executor' | 'notifier' | 'secrets';
+export type PluginSearchKind = 'source' | 'destination' | 'notifier' | 'secrets';
 
 /** One npm package that follows the naming convention. */
 export interface PluginSearchResult {
@@ -1039,7 +1039,7 @@ export interface InstanceSummary {
   settingsSchema: JSONSchema;
   instanceError: string | null;
   /**
-   * Secret providers only: the sources, executors and notifiers whose settings reference
+   * Secret providers only: the sources, destinations and notifiers whose settings reference
    * `secret://<this name>/…`, with their status now. Creating, enabling, disabling, editing or
    * reloading a provider rebuilds them first, so a mutation's response shows the outcome.
    */
@@ -1048,7 +1048,7 @@ export interface InstanceSummary {
 
 /** An instance that resolves secrets through a provider (see `InstanceSummary.dependents`). */
 export interface SecretProviderDependentDTO {
-  kind: 'source' | 'executor' | 'notifier';
+  kind: 'source' | 'destination' | 'notifier';
   id: string;
   name: string;
   status: StatusLabel;
@@ -1070,10 +1070,10 @@ export interface UpdateInstanceRequest extends Reasoned {
 
 /** Something whose settings (or, for a process, whose document) hold a `secret://` reference. */
 export interface SecretUserDTO {
-  kind: 'source' | 'executor' | 'notifier' | 'secret_provider' | 'process';
+  kind: 'source' | 'destination' | 'notifier' | 'secret_provider' | 'process';
   id: string;
   name: string;
-  /** Dotted path of the field holding the reference (`apiKey`, `executor.target.token`). */
+  /** Dotted path of the field holding the reference (`apiKey`, `destination.target.token`). */
   field: string;
 }
 

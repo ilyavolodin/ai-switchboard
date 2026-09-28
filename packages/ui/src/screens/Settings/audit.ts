@@ -4,7 +4,7 @@
 export const AUDIT_SCOPES = [
   'process',
   'source',
-  'executor',
+  'destination',
   'notifier',
   'secret_provider',
   'plugin',

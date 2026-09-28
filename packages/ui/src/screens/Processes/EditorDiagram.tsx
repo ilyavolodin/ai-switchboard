@@ -1,11 +1,11 @@
 import type {
-  ExecutorSummary,
+  DestinationSummary,
   ProcessDocument,
   SourceSummary,
   StatusLabel,
 } from '@ai-switchboard/core/contract';
 
-import { ExecutorNode } from '../../components/ExecutorNode.js';
+import { DestinationNode } from '../../components/DestinationNode.js';
 import { Icon } from '../../components/Icon.js';
 import { NodeCard } from '../../components/NodeCard.js';
 import { SourceNode } from '../../components/SourceNode.js';
@@ -18,7 +18,7 @@ import styles from './ProcessEditor.module.css';
 export interface EditorDiagramProps {
   doc: ProcessDocument;
   sources: SourceSummary[];
-  executor: ExecutorSummary | undefined;
+  destination: DestinationSummary | undefined;
   /** The saved process's id (for its ceiling marks); undefined while creating. */
   processId: string | undefined;
   status: StatusLabel | undefined;
@@ -41,10 +41,16 @@ function Connector() {
 /**
  * The editor's persistent picture: the triggers' sources on the left (event types beneath,
  * dimmed when the trigger is off), the process in the middle with its batching, gate, budget and
- * sweep badges, and the bound executor on the right with this process's ceilings on its meters.
+ * sweep badges, and the bound destination on the right with this process's ceilings on its meters.
  * Redraws on every edit.
  */
-export function EditorDiagram({ doc, sources, executor, processId, status }: EditorDiagramProps) {
+export function EditorDiagram({
+  doc,
+  sources,
+  destination,
+  processId,
+  status,
+}: EditorDiagramProps) {
   const pid = processId ?? 'draft';
   const bySource = new Map<string, { on: boolean; types: string[] }>();
   for (const t of doc.triggers) {
@@ -69,9 +75,9 @@ export function EditorDiagram({ doc, sources, executor, processId, status }: Edi
   const sweep = doc.schedules.find((s) => s.enabled);
   const sweepText = sweep ? describeCron(sweep.cron) : null;
 
-  const executorWithDraft = executor && {
-    ...executor,
-    meters: executor.meters.map((m) => {
+  const destinationWithDraft = destination && {
+    ...destination,
+    meters: destination.meters.map((m) => {
       const c = doc.budgets.meterCeilings[m.meterId];
       return {
         ...m,
@@ -150,11 +156,11 @@ export function EditorDiagram({ doc, sources, executor, processId, status }: Edi
       </NodeCard>
       <Connector />
       <div className={styles.diagramColumn}>
-        {executorWithDraft ? (
-          <ExecutorNode executor={executorWithDraft} width={300} processId={pid} />
+        {destinationWithDraft ? (
+          <DestinationNode destination={destinationWithDraft} width={300} processId={pid} />
         ) : (
-          <NodeCard tone="off" title="no executor" ghost width={300}>
-            choose one in Executor
+          <NodeCard tone="off" title="no destination" ghost width={300}>
+            choose one in Destination
           </NodeCard>
         )}
       </div>

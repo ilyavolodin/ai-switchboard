@@ -30,7 +30,7 @@ test.describe('every screen renders against the real API', () => {
     ['/processes', 'Processes'],
     ['/processes/new', /New process/],
     ['/sources', 'Sources'],
-    ['/executors', 'Executors'],
+    ['/destinations', 'Destinations'],
     ['/activity', 'Activity'],
     ['/approvals', 'Approvals'],
     ['/plugins', 'Plugins'],
@@ -91,8 +91,8 @@ test.describe('every screen renders against the real API', () => {
   }
 
   for (const tab of ['', '/settings', '/runs']) {
-    test(`executor detail${tab || ' overview'}`, async ({ page, state }) => {
-      await open(page, `/executors/${state.executorId}${tab}`);
+    test(`destination detail${tab || ' overview'}`, async ({ page, state }) => {
+      await open(page, `/destinations/${state.destinationId}${tab}`);
       await expect(page.getByRole('heading', { level: 1, name: 'Stub HTTP' })).toBeVisible();
       await expectNoErrorState(page);
     });

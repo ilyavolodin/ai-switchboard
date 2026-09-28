@@ -52,11 +52,11 @@ reset-password <email>` (and `users create-admin <email>` to break glass) run on
   a 12-hour sliding lifetime.
 - **Roles**, enforced by the API:
 
-  | Role       | Can                                                                         |
-  | ---------- | --------------------------------------------------------------------------- |
-  | `viewer`   | Read everything (users: email and role only, via `GET /users/directory`)    |
-  | `operator` | Also sources, executors, processes, approvals, manual runs, replays, export |
-  | `admin`    | Also plugins, users, secret providers, notifiers, settings, apply           |
+  | Role       | Can                                                                            |
+  | ---------- | ------------------------------------------------------------------------------ |
+  | `viewer`   | Read everything (users: email and role only, via `GET /users/directory`)       |
+  | `operator` | Also sources, destinations, processes, approvals, manual runs, replays, export |
+  | `admin`    | Also plugins, users, secret providers, notifiers, settings, apply              |
 
 - **API tokens** (for the CLI and CI) are personal, scoped to a role no higher than their
   owner's, shown once, and revocable. Use a dedicated admin token for CI that applies
@@ -70,12 +70,12 @@ reset-password <email>` (and `users create-admin <email>` to break glass) run on
 
 Exactly these routes answer without a session or token:
 
-| Route                         | Authenticated by                                    |
-| ----------------------------- | --------------------------------------------------- |
-| `POST /hooks/:sourceId`       | The source's `verify` (signature or shared secret)  |
-| `POST /callbacks/:executorId` | The executor's `verifyCallback`                     |
-| `GET /healthz`, `GET /readyz` | Nothing; they return no configuration               |
-| `GET /metrics`                | Nothing, when Prometheus is enabled (see hardening) |
+| Route                            | Authenticated by                                    |
+| -------------------------------- | --------------------------------------------------- |
+| `POST /hooks/:sourceId`          | The source's `verify` (signature or shared secret)  |
+| `POST /callbacks/:destinationId` | The destination's `verifyCallback`                  |
+| `GET /healthz`, `GET /readyz`    | Nothing; they return no configuration               |
+| `GET /metrics`                   | Nothing, when Prometheus is enabled (see hardening) |
 
 Hooks and callbacks are rate-limited per instance at the HTTP layer, above each source's own
 event caps. A rejected request gets an empty 401 and is logged with the remote address. A source
@@ -90,16 +90,16 @@ _unauthenticated (evaluation)_, which the UI shows with a red chip.
   Manager and AWS Secrets Manager.
 - Values live only in the built instance's memory. No API endpoint returns one; the UI shows
   reference names and last-resolved times.
-- Expressions cannot read secret values. `$secretRef(name)` yields a reference the executor
+- Expressions cannot read secret values. `$secretRef(name)` yields a reference the destination
   bridge resolves after evaluation.
 - `switchboard export` writes instance settings as stored, which means references, never values.
 - Rotation is a change in the provider plus **Reload instance** ([runbook](runbook.md#credential-rotation)).
 
 ## Payload safety
 
-An executor receives only what the process's input mapping produces from declared attributes and
+A destination receives only what the process's input mapping produces from declared attributes and
 artifact references. The recommended mapping style is references plus a mode and a run id, so the
-started process re-reads real state instead of trusting the event. Executors that take free text
+started process re-reads real state instead of trusting the event. Destinations that take free text
 (Claude Routines) receive it as untrusted data: the routine's prompt must treat it that way and
 opt in to acting on it.
 
@@ -161,7 +161,7 @@ requires end-user personal data, and source plugins map only documented attribut
 - [ ] `/metrics` is not exposed through the public ingress (scrape it inside the cluster), or
       `SWITCHBOARD_PROMETHEUS=false` with OTLP instead.
 - [ ] Plugins baked into the image at build time from pinned versions; the lockfile is kept.
-- [ ] Credentials for sources and executors are scoped to the actions they perform.
+- [ ] Credentials for sources and destinations are scoped to the actions they perform.
 - [ ] A system notifier is configured, so breaker openings, plugin load failures and failed
       callback verifications reach a person.
 - [ ] API tokens are per person or per CI pipeline, with the lowest role that works; unused ones

@@ -5,7 +5,7 @@ export const NAV_ITEMS: { to: string; label: string; icon: IconName; end?: boole
   { to: '/', label: 'Board', icon: 'board', end: true },
   { to: '/processes', label: 'Processes', icon: 'processes' },
   { to: '/sources', label: 'Sources', icon: 'sources' },
-  { to: '/executors', label: 'Executors', icon: 'executors' },
+  { to: '/destinations', label: 'Destinations', icon: 'destinations' },
   { to: '/activity', label: 'Activity', icon: 'activity' },
   { to: '/approvals', label: 'Approvals', icon: 'approvals' },
   { to: '/plugins', label: 'Plugins', icon: 'plugins' },

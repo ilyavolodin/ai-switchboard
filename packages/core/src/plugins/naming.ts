@@ -10,7 +10,7 @@ import type { PluginKind } from '@ai-switchboard/sdk';
  * where `{kind}` is one of {@link PLUGIN_NAME_KINDS}. Any package with a `switchboard` field can
  * still be installed by name; the convention only decides what search shows.
  */
-export const PLUGIN_NAME_KINDS = ['source', 'executor', 'notifier', 'secrets'] as const;
+export const PLUGIN_NAME_KINDS = ['source', 'destination', 'notifier', 'secrets'] as const;
 
 /** The `{kind}` segment of a discoverable package name. */
 export type PluginNameKind = (typeof PLUGIN_NAME_KINDS)[number];

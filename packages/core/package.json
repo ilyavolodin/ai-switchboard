@@ -42,10 +42,10 @@
     "testcontainers": "^12.1.0"
   },
   "dependencies": {
-    "@ai-switchboard/executor-claude-routines": "workspace:*",
-    "@ai-switchboard/executor-github-actions": "workspace:*",
-    "@ai-switchboard/executor-http": "workspace:*",
-    "@ai-switchboard/executor-log": "workspace:*",
+    "@ai-switchboard/destination-claude-routines": "workspace:*",
+    "@ai-switchboard/destination-github-actions": "workspace:*",
+    "@ai-switchboard/destination-http": "workspace:*",
+    "@ai-switchboard/destination-log": "workspace:*",
     "@ai-switchboard/notifier-slack": "workspace:*",
     "@ai-switchboard/notifier-webhook": "workspace:*",
     "@ai-switchboard/sdk": "workspace:*",

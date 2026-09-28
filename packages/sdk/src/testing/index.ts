@@ -19,7 +19,7 @@ export type { RecordedRequest, ScrubOptions } from './fixtures.js';
 
 export {
   sourceConformanceChecks,
-  executorConformanceChecks,
+  destinationConformanceChecks,
   pluginConformanceChecks,
   secretProviderConformanceChecks,
   runConformance,
@@ -28,6 +28,6 @@ export {
 export type {
   ConformanceCheck,
   SourceFixtures,
-  ExecutorFixtures,
+  DestinationFixtures,
   SecretProviderFixtures,
 } from './conformance.js';

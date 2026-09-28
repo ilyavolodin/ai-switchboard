@@ -1,7 +1,7 @@
 # Quick start
 
 Ten minutes from a clean machine to a webhook starting a run. You need Docker with Compose and
-nothing else: no external account and no mapping to write. The built-in **log executor** stands in
+nothing else: no external account and no mapping to write. The built-in **log destination** stands in
 for a real backend and writes every run to the server log.
 
 What you will build:
@@ -10,7 +10,7 @@ What you will build:
 flowchart LR
   CURL[curl<br/>any JSON] -->|POST /hooks/:sourceId| SRC[Source<br/>Test hook]
   SRC -->|webhook.request.received| PROC[Process<br/>Critical deliveries]
-  PROC --> EXE[Executor<br/>Log]
+  PROC --> EXE[Destination<br/>Log]
   EXE --> LOG[server log]
 ```
 
@@ -79,9 +79,9 @@ and the panel shows the event it produces: type, artifact `1`, and attributes `i
 
 Save. The source page shows its webhook URL, `http://localhost:8080/hooks/<sourceId>`.
 
-## 4. Add the log executor
+## 4. Add the log destination
 
-**Executors → Add executor → Log (test executor).**
+**Destinations → Add destination → Log (test destination).**
 
 - **Name:** `Log`
 - Keep the defaults. Optionally set **Simulated hourly limit** to `20` to get an "Hourly runs"
@@ -99,8 +99,8 @@ Save.
    exist, the editor shows the filter's result on the last 20 of them.
 3. **Batching.** Keep **Batch events** on and set the debounce to 5 seconds, so a burst becomes
    one run. (Switched off, every event is its own run, started at once.)
-4. **Executor.** Pick `Log`. Target: label `quick-start`, outcome `ok`. Keep the default input
-   mapping; the preview shows what the executor will receive.
+4. **Destination.** Pick `Log`. Target: label `quick-start`, outcome `ok`. Keep the default input
+   mapping; the preview shows what the destination will receive.
 5. **Save.**
 
 The Board now shows `Test hook` → `Critical deliveries` → `Log`.
@@ -124,10 +124,10 @@ Open **Activity**. Within a few seconds (the debounce is 5 s) the event's indica
 received → matched → batched → gated → invoked → ok. Click it for the trace: the filter decision
 with its expression, the batch, each gate check, the budget check, the invoke and the result.
 
-The log executor wrote the run to the server log:
+The log destination wrote the run to the server log:
 
 ```bash
-docker compose -f deploy/docker-compose.yml logs switchboard | grep "log executor"
+docker compose -f deploy/docker-compose.yml logs switchboard | grep "log destination"
 ```
 
 ## 8. Try the rest
@@ -141,28 +141,28 @@ docker compose -f deploy/docker-compose.yml logs switchboard | grep "log executo
   runs, nothing waits.
 - **Throttled:** keep **Budgets › Limit runs** on, set **Runs per hour** to 1 and send two events a minute apart. The
   second batch is `throttled`, with the binding limit named.
-- **Failures:** set the executor target's **Simulated outcome** to `error` and send three events.
+- **Failures:** set the destination target's **Simulated outcome** to `error` and send three events.
   The breaker opens after the threshold and the Board shows it under **Needs attention** with a
-  Reset button. `rate_limited` opens a soft-hold on the executor instead; `delayMs` shows a run in
+  Reset button. `rate_limited` opens a soft-hold on the destination instead; `delayMs` shows a run in
   flight.
 - **Meters:** with a simulated hourly limit, the top bar shows the "Hourly runs" gauge filling up,
   and a meter ceiling in the process's budgets throttles event runs above it.
 
 ## The same thing as a file
 
-Everything above is in [examples/log-executor.yaml](../examples/log-executor.yaml). Create an API
+Everything above is in [examples/log-destination.yaml](../examples/log-destination.yaml). Create an API
 token (**Settings › API tokens**, role admin), then:
 
 ```bash
 docker compose -f deploy/docker-compose.yml exec -T \
   -e SWITCHBOARD_TOKEN=<token> switchboard \
-  switchboard apply -f /dev/stdin --reason "quick start" < examples/log-executor.yaml
+  switchboard apply -f /dev/stdin --reason "quick start" < examples/log-destination.yaml
 ```
 
 ## Going further: signed webhooks and a real HTTP call
 
 The Compose file has an optional `stub` service: a small fake "outside world" used by the
-integration and end-to-end tests. Start it only when you want to try what the log executor can't
+integration and end-to-end tests. Start it only when you want to try what the log destination can't
 show:
 
 ```bash
@@ -175,9 +175,9 @@ It listens on <http://localhost:9090> (`http://stub:9090` inside Compose) and of
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /send?target=&secret=`                   | Signs a sample alert (`x-signature-256: sha256=<hex>`) and posts it to `target`: try a webhook source with **HMAC** verification |
 | `POST /burst?n=500&keys=5&target=&secret=`     | Posts `n` signed alerts spread across `keys` services                                                                            |
-| `POST /exec`                                   | An endpoint for the **HTTP** executor: 200 `{ ok, echo, usage: { cost_usd } }`; `?status=`, `?latency=` (ms), `?cost=`           |
+| `POST /exec`                                   | An endpoint for the **HTTP** destination: 200 `{ ok, echo, usage: { cost_usd } }`; `?status=`, `?latency=` (ms), `?cost=`        |
 | `POST /exec/callback`                          | Answers 202, then posts a signed callback to `x-switchboard-callback-url`: try **callback** tracking (`?outcome=error` to fail)  |
-| `GET /meter`                                   | `{ used, limit, resetsAt }` for the HTTP executor's meter endpoint                                                               |
+| `GET /meter`                                   | `{ used, limit, resetsAt }` for the HTTP destination's meter endpoint                                                            |
 | `POST /v1/claude_code/routines/:id/fire`       | A fake Claude Routines API, including 429 rate limits (`STUB_ROUTINES_429=1`)                                                    |
 | `GET /api/oauth/usage`, `POST /v1/oauth/token` | Fake Routines usage windows and OAuth tokens                                                                                     |
 | `GET /requests`, `DELETE /requests`            | Every request the stub received; reset                                                                                           |

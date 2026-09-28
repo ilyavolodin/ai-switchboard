@@ -4,7 +4,7 @@ import { approvals, dispatches, events, plugins, processes, runs } from '../../d
 import { getSettings } from '../../services/settings.js';
 import type { ApiContext } from '../context.js';
 import type { AttentionItem, BoardEdge, BoardResponse, StatusStripResponse } from '../contract.js';
-import { executorSummaries, sourceSummaries } from './instances.js';
+import { destinationSummaries, sourceSummaries } from './instances.js';
 import { meterGauges } from './meters.js';
 import { processSummaries } from './processes.js';
 
@@ -32,7 +32,7 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
   const [srcs, procs, exs, settings] = await Promise.all([
     sourceSummaries(ctx, undefined, procRows),
     processSummaries(ctx, procRows),
-    executorSummaries(ctx, undefined, procRows),
+    destinationSummaries(ctx, undefined, procRows),
     getSettings(ctx.db),
   ]);
   const procIds = procRows.map((p) => p.id);
@@ -97,12 +97,12 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
         enabled: e.enabled && p.enabled,
       });
     }
-    if (p.document.executor.instanceId) {
+    if (p.document.destination.instanceId) {
       edges.push({
-        id: `b:${p.id}:${p.document.executor.instanceId}`,
+        id: `b:${p.id}:${p.document.destination.instanceId}`,
         kind: 'binding',
         from: p.id,
-        to: p.document.executor.instanceId,
+        to: p.document.destination.instanceId,
         eventTypes: [],
         label: '',
         volume24h: bind24.find((x) => x.processId === p.id)?.n ?? 0,
@@ -195,7 +195,7 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
         tone: 'warn',
         title: `${e.name}: plugin unavailable`,
         detail: `The ${e.typeId} plugin is not loaded; processes bound to it are held.`,
-        targetKind: 'executor',
+        targetKind: 'destination',
         targetId: e.id,
         action: { id: 'open', label: 'Open' },
         since: null,
@@ -207,7 +207,7 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
         tone: 'error',
         title: `${e.name}: ${e.status.label}`,
         detail: e.health?.message ?? 'Processes bound to it are held.',
-        targetKind: 'executor',
+        targetKind: 'destination',
         targetId: e.id,
         action: { id: 'reload', label: 'Reload' },
         since: e.health?.checkedAt ?? null,
@@ -223,7 +223,7 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
           detail: m.observedAt
             ? 'Ceilings fall back to run counters until a fresh reading.'
             : 'Never read.',
-          targetKind: 'executor',
+          targetKind: 'destination',
           targetId: e.id,
           action: { id: 'read_meters', label: 'Read now' },
           since: m.observedAt,
@@ -340,7 +340,7 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
       runs24h: p.dailyCap.used,
       lastRunAt: p.lastRunAt,
     })),
-    executors: exs.map((e) => ({
+    destinations: exs.map((e) => ({
       id: e.id,
       name: e.name,
       typeId: e.typeId,

@@ -1,4 +1,8 @@
-import type { ExecutorDetail, MeterCeiling, ProcessDocument } from '@ai-switchboard/core/contract';
+import type {
+  DestinationDetail,
+  MeterCeiling,
+  ProcessDocument,
+} from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 
 import { Field } from '../../components/Field.js';
@@ -50,7 +54,7 @@ function withUsageCap(
 /**
  * Budgets: a "Limit runs" switch (off = no caps of the process's own; derived from the
  * document, see `budgetsOn`), then runs per hour and per day, a daily cap per budgetable usage dimension the bound
- * executor declares (with its unit), and per-meter ceilings drawn as marks on each meter's gauge
+ * destination declares (with its unit), and per-meter ceilings drawn as marks on each meter's gauge
  * — the dark tick is the event ceiling, the light one the sweep ceiling.
  */
 export function BudgetsFields({
@@ -59,30 +63,30 @@ export function BudgetsFields({
   set,
   errors,
   disabled,
-  executor,
-  executorLoading,
+  destination,
+  destinationLoading,
   processId,
 }: SectionProps & {
-  executor: ExecutorDetail | undefined;
-  executorLoading: boolean;
+  destination: DestinationDetail | undefined;
+  destinationLoading: boolean;
   processId: string;
 }) {
   const b = doc.budgets;
-  const dims = executor?.usage.filter((u) => u.budgetable) ?? [];
+  const dims = destination?.usage.filter((u) => u.budgetable) ?? [];
   // The switch is derived from the document (`budgetsOn`); `keepOpen` holds it on while every
   // field is being cleared in this visit, so emptying the last cap does not hide the fields.
   const [keepOpen, setKeepOpen] = useState(false);
   const [previous, setPrevious] = useState<ProcessDocument['budgets'] | undefined>(undefined);
   const on = budgetsOn(b) || keepOpen;
-  const executorCaps = executor ? `${executor.name}'s` : "the executor's";
+  const destinationCaps = destination ? `${destination.name}'s` : "the destination's";
   return (
     <div className={styles.stack}>
       <Field
         label="Limit runs"
         help={
           on
-            ? `this process's own caps; ${executorCaps} caps apply as well`
-            : `off: no runs-per-hour or per-day caps, usage caps or meter ceilings for this process — ${executorCaps} own caps still apply`
+            ? `this process's own caps; ${destinationCaps} caps apply as well`
+            : `off: no runs-per-hour or per-day caps, usage caps or meter ceilings for this process — ${destinationCaps} own caps still apply`
         }
         layout="row"
         changed={budgetsOn(b) !== budgetsOn(baseline.budgets)}
@@ -110,7 +114,17 @@ export function BudgetsFields({
       </Field>
       {on && (
         <BudgetLimits
-          {...{ doc, baseline, set, errors, disabled, executor, executorLoading, processId, dims }}
+          {...{
+            doc,
+            baseline,
+            set,
+            errors,
+            disabled,
+            destination,
+            destinationLoading,
+            processId,
+            dims,
+          }}
         />
       )}
     </div>
@@ -124,15 +138,15 @@ function BudgetLimits({
   set,
   errors,
   disabled,
-  executor,
-  executorLoading,
+  destination,
+  destinationLoading,
   processId,
   dims,
 }: SectionProps & {
-  executor: ExecutorDetail | undefined;
-  executorLoading: boolean;
+  destination: DestinationDetail | undefined;
+  destinationLoading: boolean;
   processId: string;
-  dims: ExecutorDetail['usage'];
+  dims: DestinationDetail['usage'];
 }) {
   const b = doc.budgets;
   return (
@@ -190,11 +204,13 @@ function BudgetLimits({
             />
           )}
         </Field>
-        <span className="t-overline">usage caps · budgetable dimensions the executor declares</span>
-        {executorLoading ? (
+        <span className="t-overline">
+          usage caps · budgetable dimensions the destination declares
+        </span>
+        {destinationLoading ? (
           <Skeleton lines={2} label="Loading usage dimensions" />
         ) : dims.length === 0 ? (
-          <span className="t-caption">The bound executor declares no budgetable usage.</span>
+          <span className="t-caption">The bound destination declares no budgetable usage.</span>
         ) : (
           dims.map((u) => (
             <Field
@@ -224,14 +240,16 @@ function BudgetLimits({
         )}
       </div>
       <div className={styles.stack}>
-        <span className="t-overline">meter ceilings{executor ? ` · ${executor.name}` : ''}</span>
-        {executorLoading ? (
+        <span className="t-overline">
+          meter ceilings{destination ? ` · ${destination.name}` : ''}
+        </span>
+        {destinationLoading ? (
           <Skeleton lines={3} label="Loading meters" />
-        ) : !executor || executor.meters.length === 0 ? (
-          <span className="t-caption">The bound executor reports no meters.</span>
+        ) : !destination || destination.meters.length === 0 ? (
+          <span className="t-caption">The bound destination reports no meters.</span>
         ) : (
           <ul className={styles.meters} aria-label="Meter ceilings">
-            {executor.meters.map((m) => {
+            {destination.meters.map((m) => {
               const c = b.meterCeilings[m.meterId];
               const gauge = {
                 ...m,

@@ -116,7 +116,7 @@ function trim(v: number): string {
   return Math.abs(v) >= 100 ? String(Math.round(v)) : v.toFixed(1).replace(/\.0$/, '');
 }
 
-/** Value with its unit as executors declare it: tokens, seconds, usd, count. */
+/** Value with its unit as destinations declare it: tokens, seconds, usd, count. */
 export function formatUsage(value: number, unit: string): string {
   switch (unit) {
     case 'usd':

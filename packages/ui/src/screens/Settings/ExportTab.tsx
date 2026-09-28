@@ -39,7 +39,7 @@ function ExportCard() {
   return (
     <Card title="Export" subtitle="the whole configuration as YAML">
       <p className={styles.hint}>
-        Sources, executors, processes, notifiers and secret providers. Secret references stay as
+        Sources, destinations, processes, notifiers and secret providers. Secret references stay as
         secret://… and no value is ever included, so the file is safe to commit.
       </p>
       <div>

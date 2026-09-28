@@ -3,7 +3,7 @@
 # Alerts from the same service within a two-minute window join one batch (`groupBy` the
 # service tag), so a flapping monitor or a noisy deploy starts one triage run, not twenty.
 #
-# Plugins: @ai-switchboard/source-datadog, executor-github-actions, secrets-env (all baked into
+# Plugins: @ai-switchboard/source-datadog, destination-github-actions, secrets-env (all baked into
 # the image).
 apiVersion: switchboard/v1
 kind: Configuration
@@ -25,7 +25,7 @@ sources:
       eventCapPerHour: 300
       eventTypesEnabled: [datadog.monitor.triggered, datadog.monitor.recovered]
 
-executors:
+destinations:
   - name: GitHub Actions — acme org
     type: github-actions
     enabled: true
@@ -64,7 +64,7 @@ processes:
       usagePerDay: { billable_minutes: 300 }
       meterCeilings:
         api_rate_limit: { events: 90, sweeps: 95 }
-    executor:
+    destination:
       instance: GitHub Actions — acme org
       target:
         owner: acme

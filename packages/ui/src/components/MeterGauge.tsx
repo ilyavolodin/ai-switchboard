@@ -31,7 +31,7 @@ export type GaugeMeter = Pick<
 
 export interface MeterGaugeProps {
   meter: GaugeMeter;
-  /** sm 24 px (top bar), node 38 px (canvas), md 44 px, lg 110 px (executor detail). */
+  /** sm 24 px (top bar), node 38 px (canvas), md 44 px, lg 110 px (destination detail). */
   size?: 'sm' | 'node' | 'md' | 'lg';
   /** Only draw this process's ceiling marks (the editor); default: every bound process. */
   processId?: string;

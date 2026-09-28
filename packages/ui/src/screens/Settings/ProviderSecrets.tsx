@@ -18,7 +18,7 @@ import styles from './ProviderSecrets.module.css';
 
 const KIND_LABEL: Record<SecretUserDTO['kind'], string> = {
   source: 'source',
-  executor: 'executor',
+  destination: 'destination',
   notifier: 'notifier',
   secret_provider: 'secret provider',
   process: 'process',
@@ -28,8 +28,8 @@ function hrefFor(user: SecretUserDTO): string {
   switch (user.kind) {
     case 'source':
       return `/sources/${encodeURIComponent(user.id)}`;
-    case 'executor':
-      return `/executors/${encodeURIComponent(user.id)}`;
+    case 'destination':
+      return `/destinations/${encodeURIComponent(user.id)}`;
     case 'process':
       return `/processes/${encodeURIComponent(user.id)}`;
     case 'notifier':

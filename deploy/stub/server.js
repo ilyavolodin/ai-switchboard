@@ -1,11 +1,11 @@
 // AI Switchboard integration stub. Dependency-free Node (>= 22): run with `node server.js`.
 //
 // One HTTP server that plays every external system the integration and e2e suites need:
-//   (a) an `http` executor target        POST /exec, POST /exec/callback
+//   (a) an `http` destination target        POST /exec, POST /exec/callback
 //   (b) a webhook sender                 POST /send, POST /burst
 //   (c) a fake Claude Routines API       POST /v1/claude_code/routines/:id/fire,
 //                                        GET /api/oauth/usage, POST /v1/oauth/token
-//   (e) an `http` executor meter         GET /meter ({ used, limit, resetsAt } for `meterEndpoint`)
+//   (e) an `http` destination meter         GET /meter ({ used, limit, resetsAt } for `meterEndpoint`)
 //   (d) a request recorder               GET /requests, DELETE /requests
 // plus GET /healthz and POST /stub/config (change the Routines behaviour at runtime).
 //

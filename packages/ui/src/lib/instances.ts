@@ -1,5 +1,5 @@
 /**
- * Helpers shared by the source and executor screens: secret provider ids for
+ * Helpers shared by the source and destination screens: secret provider ids for
  * `secret://` references, the colours of per-type charts, and small form-value utilities.
  */
 import type { InstanceSummary, StatusTone } from '@ai-switchboard/core/contract';

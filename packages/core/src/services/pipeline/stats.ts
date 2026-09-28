@@ -16,8 +16,8 @@ import { countedRun } from './counters.js';
  * - `process` (key: process id): `dispatch:<outcome>`, `batches:<kind>:<outcome>`,
  *   `runs:<status>`, `runs_kind:<kind>:<status>`, `budget:runs` (runs counted toward budgets),
  *   `latency_p50|p90|count`, `duration_p50|p90|count` (seconds), `usage:<dim>`, `usage_runs:<dim>`
- * - `executor` (key: executor id): `runs:<status>`, `budget:runs`, `usage:<dim>`, `duration_p50`
- * - `meter` (key: `<executorId>|<meterId>`): `utilization_max`, `utilization_last`, `readings`,
+ * - `destination` (key: destination id): `runs:<status>`, `budget:runs`, `usage:<dim>`, `duration_p50`
+ * - `meter` (key: `<destinationId>|<meterId>`): `utilization_max`, `utilization_last`, `readings`,
  *   `estimated` (1 when any reading was estimated)
  */
 
@@ -121,18 +121,18 @@ export async function materialiseStats(
   }
   for (const r of await rows(
     ctx,
-    sql`SELECT process_id, executor_id, kind, status, date_trunc('hour', created_at) AS h,
+    sql`SELECT process_id, destination_id, kind, status, date_trunc('hour', created_at) AS h,
                count(*) AS n, count(*) FILTER (WHERE ${countedRun()}) AS counted
         FROM runs WHERE created_at >= ${start} AND created_at < ${end}
         GROUP BY 1, 2, 3, 4, 5`,
   )) {
     const p = s(r.process_id);
-    const e = s(r.executor_id);
+    const e = s(r.destination_id);
     b.add('process', p, h(r.h), `runs:${s(r.status)}`, n(r.n));
     b.add('process', p, h(r.h), `runs_kind:${s(r.kind)}:${s(r.status)}`, n(r.n));
     b.add('process', p, h(r.h), 'budget:runs', n(r.counted));
-    b.add('executor', e, h(r.h), `runs:${s(r.status)}`, n(r.n));
-    b.add('executor', e, h(r.h), 'budget:runs', n(r.counted));
+    b.add('destination', e, h(r.h), `runs:${s(r.status)}`, n(r.n));
+    b.add('destination', e, h(r.h), 'budget:runs', n(r.counted));
   }
   for (const r of await rows(
     ctx,
@@ -160,15 +160,15 @@ export async function materialiseStats(
   }
   for (const r of await rows(
     ctx,
-    sql`SELECT executor_id, date_trunc('hour', created_at) AS h,
+    sql`SELECT destination_id, date_trunc('hour', created_at) AS h,
           percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM finished_at - invoked_at))
             FILTER (WHERE invoked_at IS NOT NULL AND finished_at IS NOT NULL) AS dur50
         FROM runs WHERE created_at >= ${start} AND created_at < ${end}
         GROUP BY 1, 2`,
   )) {
     b.set(
-      'executor',
-      s(r.executor_id),
+      'destination',
+      s(r.destination_id),
       h(r.h),
       'duration_p50',
       r.dur50 === null ? null : n(r.dur50),
@@ -176,7 +176,7 @@ export async function materialiseStats(
   }
   for (const r of await rows(
     ctx,
-    sql`SELECT process_id, executor_id, date_trunc('hour', created_at) AS h, u.key AS dim,
+    sql`SELECT process_id, destination_id, date_trunc('hour', created_at) AS h, u.key AS dim,
                sum(u.value::float8) AS total, count(*) AS n
         FROM runs, jsonb_each_text(usage) AS u(key, value)
         WHERE usage IS NOT NULL AND created_at >= ${start} AND created_at < ${end}
@@ -185,17 +185,17 @@ export async function materialiseStats(
   )) {
     b.add('process', s(r.process_id), h(r.h), `usage:${s(r.dim)}`, n(r.total));
     b.add('process', s(r.process_id), h(r.h), `usage_runs:${s(r.dim)}`, n(r.n));
-    b.add('executor', s(r.executor_id), h(r.h), `usage:${s(r.dim)}`, n(r.total));
+    b.add('destination', s(r.destination_id), h(r.h), `usage:${s(r.dim)}`, n(r.total));
   }
   for (const r of await rows(
     ctx,
-    sql`SELECT executor_id, meter_id, date_trunc('hour', observed_at) AS h,
+    sql`SELECT destination_id, meter_id, date_trunc('hour', observed_at) AS h,
                max(utilization) AS umax, count(*) AS n, bool_or(estimated) AS est,
                (array_agg(utilization ORDER BY observed_at DESC))[1] AS ulast
         FROM meter_readings WHERE observed_at >= ${start} AND observed_at < ${end}
         GROUP BY 1, 2, 3`,
   )) {
-    const key = `${s(r.executor_id)}|${s(r.meter_id)}`;
+    const key = `${s(r.destination_id)}|${s(r.meter_id)}`;
     b.set('meter', key, h(r.h), 'utilization_max', n(r.umax));
     b.set('meter', key, h(r.h), 'utilization_last', n(r.ulast));
     b.set('meter', key, h(r.h), 'readings', n(r.n));

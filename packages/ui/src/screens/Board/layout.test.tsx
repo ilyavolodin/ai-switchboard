@@ -7,14 +7,14 @@ import { COLUMNS, edgeWidth, layoutBoard } from './layout.js';
 const f = buildFixtures(TEST_NOW);
 
 describe('layoutBoard', () => {
-  it('puts sources, processes and executors in three columns', () => {
+  it('puts sources, processes and destinations in three columns', () => {
     const { nodes } = layoutBoard(f.board);
     const xs = (kind: string) => [...new Set(nodes.filter((n) => n.kind === kind).map((n) => n.x))];
     expect(xs('source')).toEqual([COLUMNS.source.x]);
     expect(xs('process')).toEqual([COLUMNS.process.x]);
-    expect(xs('executor')).toEqual([COLUMNS.executor.x]);
+    expect(xs('destination')).toEqual([COLUMNS.destination.x]);
     expect(nodes).toHaveLength(
-      f.board.sources.length + f.board.processes.length + f.board.executors.length,
+      f.board.sources.length + f.board.processes.length + f.board.destinations.length,
     );
   });
 
@@ -56,7 +56,7 @@ describe('layoutBoard', () => {
   it('focuses one process and its neighbourhood', () => {
     const { nodes, edges } = layoutBoard(f.board, { focusProcessId: IDS.processes.autofix });
     expect(nodes.map((n) => n.id).sort()).toEqual(
-      [IDS.sources.linear, IDS.processes.autofix, IDS.executors.routines].sort(),
+      [IDS.sources.linear, IDS.processes.autofix, IDS.destinations.routines].sort(),
     );
     expect(edges).toHaveLength(2);
   });

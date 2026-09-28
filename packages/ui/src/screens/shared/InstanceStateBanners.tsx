@@ -2,7 +2,7 @@ import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 
 /**
- * The two states a source or executor instance can be stuck in: its plugin did not load (amber)
+ * The two states a source or destination instance can be stuck in: its plugin did not load (amber)
  * or the live instance failed to start (coral, with Reload).
  */
 export function InstanceStateBanners({
@@ -13,7 +13,7 @@ export function InstanceStateBanners({
   heldProcesses,
   onReload,
 }: {
-  /** "source" / "executor". */
+  /** "source" / "destination". */
   noun: string;
   typeName: string;
   pluginAvailable: boolean;

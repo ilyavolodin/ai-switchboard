@@ -4,7 +4,7 @@ AI Switchboard is an open-source service that turns events from the systems a te
 (GitHub, Linear, Datadog, any webhook) into controlled invocations of the automations they
 already have (Claude Routines, HTTP endpoints, GitHub Actions workflows). A person wires event
 types to processes on a canvas, and every process runs through one pipeline under the budgets,
-meter ceilings, schedules and approval gates the same UI controls. Sources, executors, notifiers
+meter ceilings, schedules and approval gates the same UI controls. Sources, destinations, notifiers
 and secret providers are npm packages. Installing one registers it, and its event types and
 settings forms appear in the UI. It runs as one container plus Postgres.
 
@@ -21,7 +21,7 @@ flowchart LR
     P2[Datadog triage]
     P3[Alert to HTTP]
   end
-  subgraph Executors
+  subgraph Destinations
     CR[Claude Routines — automation seat]
     GA[GitHub Actions — acme org]
     HT[HTTP — job runner]
@@ -37,7 +37,7 @@ flowchart LR
 
 Sources emit **events**. A **process** subscribes to event types through **triggers**, filters,
 batches and gates them, checks **budgets** and **meter** ceilings, and starts one **run** through
-an **executor**. A batch that a gate stops is **held**. A batch that a budget or ceiling stops is
+an **destination**. A batch that a gate stops is **held**. A batch that a budget or ceiling stops is
 **throttled**. Neither is a failure: the process's next **sweep** (a scheduled run) does the work.
 
 ## Quick start
@@ -56,9 +56,9 @@ docker compose -f deploy/docker-compose.yml logs switchboard | grep -i password
 2. **Sources → Add source → Webhook.** Name it `Test hook`, set **Verification** to _None_
    (evaluation only) and keep **How deliveries become events** on _Quick_: every delivery becomes one event whose
    attributes are the body's top-level fields. Set **Artifact id path** to `body.id`.
-3. **Executors → Add executor → Log (test executor).** It writes every run to the server log.
+3. **Destinations → Add destination → Log (test destination).** It writes every run to the server log.
 4. **Processes → New process.** Add a trigger on `Test hook` / `webhook.request.received` with
-   the filter `attributes.severity = 'critical'`, pick the `Log` executor, and save.
+   the filter `attributes.severity = 'critical'`, pick the `Log` destination, and save.
 5. Send it anything:
 
    ```bash
@@ -67,11 +67,11 @@ docker compose -f deploy/docker-compose.yml logs switchboard | grep -i password
    ```
 
 6. **Activity** shows the event walk received → matched → batched → gated → invoked → ok; the
-   run is in the log (`docker compose -f deploy/docker-compose.yml logs switchboard | grep "log executor"`).
+   run is in the log (`docker compose -f deploy/docker-compose.yml logs switchboard | grep "log destination"`).
    Send `"severity": "warning"` and the trace tells you why nothing ran.
 
-Prefer files to clicking? `switchboard apply -f examples/log-executor.yaml --reason "quick start"`
-creates the same source, executor and process (see [examples/](examples/README.md)). To try signed
+Prefer files to clicking? `switchboard apply -f examples/log-destination.yaml --reason "quick start"`
+creates the same source, destination and process (see [examples/](examples/README.md)). To try signed
 webhooks and real HTTP calls, the optional `stub` Compose profile provides a fake backend
 ([quick start › going further](docs/quick-start.md#going-further-signed-webhooks-and-a-real-http-call)).
 
@@ -83,7 +83,7 @@ webhooks and real HTTP calls, the optional `stub` Compose profile provides a fak
 | [Concepts](docs/concepts.md)                       | The ten nouns, held and throttled, the pipeline stages and the outcome vocabulary    |
 | [Architecture](docs/architecture.md)               | Components, runtime, deployment shape, exactly-once, replicas                        |
 | [Configuration](docs/configuration.md)             | Environment variables, the YAML format for `export`/`apply`, global settings         |
-| [Plugin author guide](docs/plugin-author-guide.md) | Writing a source, executor, notifier or secret provider; the conformance kit         |
+| [Plugin author guide](docs/plugin-author-guide.md) | Writing a source, destination, notifier or secret provider; the conformance kit      |
 | [REST API](docs/api.md)                            | Every route, role and body                                                           |
 | [Runbook](docs/runbook.md)                         | Why did this not run, breakers, rotation, replay, CI apply, doctor, backups, scaling |
 | [Security](docs/security.md)                       | Sign-in, roles, secrets, plugin trust, hardening checklist                           |
@@ -112,7 +112,7 @@ Server commands take `--url` (`SWITCHBOARD_URL`, default `http://localhost:8080`
 ## Plugins and naming
 
 Admins install plugins from the UI: **Plugins → Browse npm** searches the registry
-(`SWITCHBOARD_NPM_REGISTRY`), and **Add source / Add executor** offer "Find more on npm". Each
+(`SWITCHBOARD_NPM_REGISTRY`), and **Add source / Add destination** offer "Find more on npm". Each
 install shows the package's capabilities and SDK compatibility first, asks for a reason, and loads
 the plugin at once on every replica; only upgrading or removing a loaded plugin waits for a
 restart. Search finds packages named
@@ -120,7 +120,7 @@ restart. Search finds packages named
 - `ai-switchboard-{kind}-{name}` or `@scope/ai-switchboard-{kind}-{name}`, or
 - `@ai-switchboard/{kind}-{name}` (the project's own scope),
 
-where `{kind}` is `source`, `executor`, `notifier` or `secrets`. See the
+where `{kind}` is `source`, `destination`, `notifier` or `secrets`. See the
 [plugin author guide](docs/plugin-author-guide.md#naming).
 
 ## Deploying
@@ -141,7 +141,7 @@ packages/sdk      @ai-switchboard/sdk     plugin interfaces, definePlugin, HttpC
 packages/core     @ai-switchboard/core    Fastify server: plugin host, pipeline, scheduler, REST API, auth, telemetry
 packages/ui       @ai-switchboard/ui      React + Vite SPA, built into packages/core/public
 packages/cli      @ai-switchboard/cli     the switchboard command
-plugins/*         reference plugins       source-*, executor-*, notifier-*, secrets-*
+plugins/*         reference plugins       source-*, destination-*, notifier-*, secrets-*
 deploy/           Dockerfile, Compose files, Helm chart, Grafana dashboard, stub server
 docs/             quick start, concepts, architecture, configuration, API, plugin author guide, runbook
 examples/         YAML configurations

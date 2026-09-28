@@ -36,14 +36,14 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: ApiContext): voi
     async (req) => {
       const reason = requireReason(req.body);
       const typeSchema = (
-        kind: 'source' | 'executor' | 'notifier' | 'secret_provider',
+        kind: 'source' | 'destination' | 'notifier' | 'secret_provider',
         typeId: string,
       ) => {
         switch (kind) {
           case 'source':
             return ctx.runtime.sourceType(typeId)?.type.settingsSchema;
-          case 'executor':
-            return ctx.runtime.executorType(typeId)?.type.settingsSchema;
+          case 'destination':
+            return ctx.runtime.destinationType(typeId)?.type.settingsSchema;
           case 'notifier':
             return ctx.runtime.notifierType(typeId)?.type.settingsSchema;
           case 'secret_provider':

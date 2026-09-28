@@ -19,8 +19,8 @@ import type {
   CatalogueEntry,
   CronPreviewResponse,
   EventDetail,
-  ExecutorDetail,
-  ExecutorSummary,
+  DestinationDetail,
+  DestinationSummary,
   FilterPreviewResponse,
   FunnelResponse,
   GlobalSettings,
@@ -68,7 +68,7 @@ export const IDS = {
     braintrust: 'src-braintrust',
     slack: 'src-slack',
   },
-  executors: { routines: 'ex-routines', actions: 'ex-actions', http: 'ex-http' },
+  destinations: { routines: 'ex-routines', actions: 'ex-actions', http: 'ex-http' },
   processes: {
     triage: 'p-triage',
     sizer: 'p-sizer',
@@ -85,7 +85,7 @@ export const IDS = {
 } as const;
 
 const S = IDS.sources;
-const E = IDS.executors;
+const E = IDS.destinations;
 const P = IDS.processes;
 
 const st = (tone: StatusTone, label: string): StatusLabel => ({ tone, label });
@@ -395,8 +395,8 @@ export function buildFixtures(now: number) {
 
   // ---- Meters ---------------------------------------------------------------------------
   const fiveHour: MeterGaugeDTO = {
-    executorId: E.routines,
-    executorName: 'Claude Routines — automation seat',
+    destinationId: E.routines,
+    destinationName: 'Claude Routines — automation seat',
     meterId: 'five_hour',
     title: '5-hour window',
     kind: 'window',
@@ -440,8 +440,8 @@ export function buildFixtures(now: number) {
     primary: false,
   };
   const apiRate: MeterGaugeDTO = {
-    executorId: E.actions,
-    executorName: 'GitHub Actions — lola org',
+    destinationId: E.actions,
+    destinationName: 'GitHub Actions — lola org',
     meterId: 'api_rate_limit',
     title: 'API rate limit',
     kind: 'window',
@@ -657,8 +657,8 @@ export function buildFixtures(now: number) {
     updatedAt: iso(-3 * DAY),
   });
 
-  // ---- Executors ------------------------------------------------------------------------
-  const executors: ExecutorSummary[] = [
+  // ---- Destinations ------------------------------------------------------------------------
+  const destinations: DestinationSummary[] = [
     {
       id: E.routines,
       name: 'Claude Routines — automation seat',
@@ -709,7 +709,7 @@ export function buildFixtures(now: number) {
     },
   ];
 
-  const executorDetail = (x: ExecutorSummary): ExecutorDetail => ({
+  const destinationDetail = (x: DestinationSummary): DestinationDetail => ({
     ...x,
     settings:
       x.typeId === 'claude-routines'
@@ -763,7 +763,7 @@ export function buildFixtures(now: number) {
 
   // ---- Processes ------------------------------------------------------------------------
   const exRef = (id: string) => {
-    const x = executors.find((e) => e.id === id);
+    const x = destinations.find((e) => e.id === id);
     return x ? { id: x.id, name: x.name } : null;
   };
   const trig = (sourceId: string, describe: string, eventTypes: string[]) => ({
@@ -795,7 +795,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: nextAt(10),
       dailyCap: { used: 6, limit: 8 },
       lastRunAt: iso(-12 * MIN),
-      executor: exRef(E.routines),
+      destination: exRef(E.routines),
       triggers: [
         trig(S.linear, 'Linear issue created in LOL', ['issue.created', 'issue.label_added']),
         trig(S.datadog, 'New Datadog error issue in prod', ['error.issue_new']),
@@ -811,7 +811,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: iso(40 * MIN),
       dailyCap: { used: 3, limit: 6 },
       lastRunAt: iso(-25 * MIN),
-      executor: exRef(E.routines),
+      destination: exRef(E.routines),
       triggers: [trig(S.linear, 'Issue moved to Triage', ['issue.state_changed'])],
     }),
     summary({
@@ -827,7 +827,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: nextAt(7),
       dailyCap: { used: 3, limit: 4 },
       lastRunAt: iso(-18 * MIN),
-      executor: exRef(E.routines),
+      destination: exRef(E.routines),
       triggers: [
         trig(S.linear, "Linear issue labelled autofix where it's complexity:simple", [
           'issue.label_added',
@@ -845,7 +845,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: null,
       dailyCap: { used: 4, limit: null },
       lastRunAt: iso(-15 * MIN),
-      executor: exRef(E.actions),
+      destination: exRef(E.actions),
       triggers: [trig(S.github, 'Pull request opened in acme/app', ['pull_request.opened'])],
     }),
     summary({
@@ -859,7 +859,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: iso(22 * MIN),
       dailyCap: { used: 1, limit: 3 },
       lastRunAt: iso(-5 * HOUR),
-      executor: exRef(E.http),
+      destination: exRef(E.http),
       triggers: [
         trig(S.github, 'Checks green on a PR with 2 approvals', ['check_suite.completed']),
       ],
@@ -874,7 +874,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: nextAt(7),
       dailyCap: { used: 1, limit: 2 },
       lastRunAt: iso(-1 * HOUR),
-      executor: exRef(E.routines),
+      destination: exRef(E.routines),
       triggers: [trig(S.datadog, 'New error issue in checkout', ['error.issue_new'])],
     }),
     summary({
@@ -887,7 +887,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: iso(2 * DAY),
       dailyCap: { used: 0, limit: 1 },
       lastRunAt: iso(-6 * DAY),
-      executor: exRef(E.routines),
+      destination: exRef(E.routines),
       triggers: [trig(S.braintrust, 'Session scored below 0.4', ['session.low_score'])],
     }),
     summary({
@@ -900,7 +900,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: nextAt(12),
       dailyCap: { used: 2, limit: 2 },
       lastRunAt: iso(-3 * HOUR),
-      executor: exRef(E.actions),
+      destination: exRef(E.actions),
       triggers: [trig(S.github, 'A check failed twice on main', ['check_suite.completed'])],
     }),
     summary({
@@ -913,7 +913,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: null,
       dailyCap: { used: 0, limit: 2 },
       lastRunAt: iso(-18 * DAY),
-      executor: exRef(E.actions),
+      destination: exRef(E.actions),
       triggers: [trig(S.github, 'Dependabot PR opened', ['pull_request.opened'])],
     }),
     summary({
@@ -926,7 +926,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: iso(4 * DAY),
       dailyCap: { used: 0, limit: 1 },
       lastRunAt: null,
-      executor: exRef(E.routines),
+      destination: exRef(E.routines),
       triggers: [],
     }),
     summary({
@@ -940,7 +940,7 @@ export function buildFixtures(now: number) {
       nextSweepAt: nextAt(2),
       dailyCap: { used: 1, limit: 1 },
       lastRunAt: iso(-20 * HOUR),
-      executor: exRef(E.routines),
+      destination: exRef(E.routines),
       triggers: [],
     }),
   ];
@@ -984,7 +984,7 @@ export function buildFixtures(now: number) {
         weekly: { events: 80, sweeps: 95 },
       },
     },
-    executor: {
+    destination: {
       instanceId: E.routines,
       target: { routineId: 'autofix-v3', token: 'secret://env/LOOPS_ROUTINE_TOKEN_AUTOFIX' },
     },
@@ -1020,8 +1020,8 @@ export function buildFixtures(now: number) {
     id,
     processId: P.autofix,
     processName: 'Autofix',
-    executorId: E.routines,
-    executorName: 'Claude Routines — automation seat',
+    destinationId: E.routines,
+    destinationName: 'Claude Routines — automation seat',
     kind: 'event',
     status,
     statusLabel: st(tone, label),
@@ -1074,7 +1074,7 @@ export function buildFixtures(now: number) {
             description: p.description,
             enabled: p.enabled,
             triggers: [],
-            executor: { instanceId: p.executor?.id ?? E.routines, target: {} },
+            destination: { instanceId: p.destination?.id ?? E.routines, target: {} },
           },
     enabled: p.enabled,
     status: p.status,
@@ -1624,7 +1624,7 @@ export function buildFixtures(now: number) {
       runs24h: p.dailyCap.used,
       lastRunAt: p.lastRunAt,
     })),
-    executors: executors.map((x) => ({
+    destinations: destinations.map((x) => ({
       id: x.id,
       name: x.name,
       typeId: x.typeId,
@@ -1698,7 +1698,7 @@ export function buildFixtures(now: number) {
         tone: 'warn',
         title: 'Claude Routines · weekly window stale',
         detail: 'last read 42 min ago',
-        targetKind: 'executor',
+        targetKind: 'destination',
         targetId: E.routines,
         action: { id: 'read_meters', label: 'Read meters' },
         since: iso(-42 * MIN),
@@ -1729,7 +1729,7 @@ export function buildFixtures(now: number) {
     generatedAt: iso(0),
   };
 
-  // ---- Stats for sources / executors -----------------------------------------------------
+  // ---- Stats for sources / destinations -----------------------------------------------------
   const hours = Array.from({ length: 24 }, (_, i) => iso(-(23 - i) * HOUR));
   const shape = [
     20, 12, 8, 6, 6, 10, 30, 55, 70, 85, 100, 80, 65, 75, 90, 70, 60, 40, 25, 15, 10, 8, 12, 45,
@@ -1887,25 +1887,25 @@ export function buildFixtures(now: number) {
       eventTypes: [],
     },
     {
-      kind: 'executor',
+      kind: 'destination',
       typeId: 'claude-routines',
       displayName: 'Claude Routines',
       icon: 'run',
-      plugin: '@ai-switchboard/executor-claude-routines',
+      plugin: '@ai-switchboard/destination-claude-routines',
       available: true,
       settingsSchema: routinesSettingsSchema,
       targetSchema: routinesTargetSchema,
       inputSchema: routinesInputSchema,
       tracking: 'callback',
       idempotentInvoke: false,
-      meters: executorDetail(at(executors, 0)).meterSpecs,
+      meters: destinationDetail(at(destinations, 0)).meterSpecs,
     },
     {
-      kind: 'executor',
+      kind: 'destination',
       typeId: 'http',
       displayName: 'HTTP',
       icon: 'link',
-      plugin: '@ai-switchboard/executor-http',
+      plugin: '@ai-switchboard/destination-http',
       available: true,
       settingsSchema: { type: 'object', properties: {} },
       targetSchema: httpTargetSchema,
@@ -1961,7 +1961,7 @@ export function buildFixtures(now: number) {
     statusLabel: st('ok', 'loaded'),
     statusMessage: null,
     origin: 'baked',
-    sdkRange: '^1.4.0',
+    sdkRange: '^2.0.0',
     capabilities: { network: [], secrets: [] },
     types,
     errorCount: 0,
@@ -1986,12 +1986,12 @@ export function buildFixtures(now: number) {
       { capabilities: { network: ['api.linear.app'], secrets: ['LINEAR_*'] } },
     ),
     plugin(
-      '@ai-switchboard/executor-claude-routines',
+      '@ai-switchboard/destination-claude-routines',
       'Claude Routines',
       '0.9.1',
       [
         {
-          kind: 'executor',
+          kind: 'destination',
           typeId: 'claude-routines',
           displayName: 'Claude Routines',
           instanceCount: 1,
@@ -2097,8 +2097,8 @@ export function buildFixtures(now: number) {
       },
     ),
     searchResult(
-      'ai-switchboard-executor-n8n',
-      'executor',
+      'ai-switchboard-destination-n8n',
+      'destination',
       '2.0.0',
       'Start n8n executions and track them.',
       {
@@ -2141,7 +2141,7 @@ export function buildFixtures(now: number) {
       instanceError: null,
       dependents: [
         {
-          kind: 'executor',
+          kind: 'destination',
           id: E.routines,
           name: 'Claude Routines — automation seat',
           status: st('ok', 'ok'),
@@ -2177,7 +2177,7 @@ export function buildFixtures(now: number) {
           ref: 'secret://env/CLAUDE_API_KEY',
           usedBy: [
             {
-              kind: 'executor',
+              kind: 'destination',
               id: E.routines,
               name: 'Claude Routines — automation seat',
               field: 'apiKey',
@@ -2208,7 +2208,7 @@ export function buildFixtures(now: number) {
           name: 'LOOPS_ROUTINE_TOKEN_AUTOFIX',
           ref: 'secret://env/LOOPS_ROUTINE_TOKEN_AUTOFIX',
           usedBy: [
-            { kind: 'process', id: P.autofix, name: 'Autofix', field: 'executor.target.token' },
+            { kind: 'process', id: P.autofix, name: 'Autofix', field: 'destination.target.token' },
           ],
         },
       ],
@@ -2393,8 +2393,8 @@ export function buildFixtures(now: number) {
     sourceDetail,
     sourceStats,
     lastDelivery,
-    executors,
-    executorDetail,
+    destinations,
+    destinationDetail,
     meterHistory,
     usageHistory,
     processes,
@@ -2434,12 +2434,12 @@ export function buildFixtures(now: number) {
 /** The fixture bundle type. */
 export type Fixtures = ReturnType<typeof buildFixtures>;
 
-/** An empty installation: no sources, executors or processes (the Board's first-run state). */
+/** An empty installation: no sources, destinations or processes (the Board's first-run state). */
 export function emptyBoard(now: number): BoardResponse {
   return {
     sources: [],
     processes: [],
-    executors: [],
+    destinations: [],
     edges: [],
     attention: [],
     generatedAt: new Date(now).toISOString(),

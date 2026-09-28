@@ -22,14 +22,14 @@ function input(patch: Partial<BudgetInput> = {}): BudgetInput {
   return {
     kind: 'event',
     process: { runsPerHour: 5, runsPerDay: 20, meterCeilings: {} },
-    executor: { softHoldUntil: null, stalenessMinutes: 30 },
+    destination: { softHoldUntil: null, stalenessMinutes: 30 },
     counters: {
       processRunsHour: 0,
       processRunsDay: 0,
-      executorRunsHour: 0,
-      executorRunsDay: 0,
+      destinationRunsHour: 0,
+      destinationRunsDay: 0,
       processUsageDay: {},
-      executorUsageDay: {},
+      destinationUsageDay: {},
     },
     dimensions: dims,
     meters: {},
@@ -49,20 +49,20 @@ describe('budget checks', () => {
     ['hourly cap reached', { counters: { ...counters, processRunsHour: 5 } }, 'runs_per_hour'],
     ['daily cap reached', { counters: { ...counters, processRunsDay: 20 } }, 'runs_per_day'],
     [
-      'executor hourly cap',
+      'destination hourly cap',
       {
-        executor: { runsPerHour: 2, softHoldUntil: null, stalenessMinutes: 30 },
-        counters: { ...counters, executorRunsHour: 2 },
+        destination: { runsPerHour: 2, softHoldUntil: null, stalenessMinutes: 30 },
+        counters: { ...counters, destinationRunsHour: 2 },
       },
-      'executor_runs_per_hour',
+      'destination_runs_per_hour',
     ],
     [
-      'executor daily cap',
+      'destination daily cap',
       {
-        executor: { runsPerDay: 2, softHoldUntil: null, stalenessMinutes: 30 },
-        counters: { ...counters, executorRunsDay: 3 },
+        destination: { runsPerDay: 2, softHoldUntil: null, stalenessMinutes: 30 },
+        counters: { ...counters, destinationRunsDay: 3 },
       },
-      'executor_runs_per_day',
+      'destination_runs_per_day',
     ],
     [
       'usage cap on a budgetable dimension',
@@ -73,16 +73,16 @@ describe('budget checks', () => {
       'usage_per_day:tokens',
     ],
     [
-      'executor usage cap',
+      'destination usage cap',
       {
-        executor: { usagePerDay: { tokens: 10 }, softHoldUntil: null, stalenessMinutes: 30 },
-        counters: { ...counters, executorUsageDay: { tokens: 11 } },
+        destination: { usagePerDay: { tokens: 10 }, softHoldUntil: null, stalenessMinutes: 30 },
+        counters: { ...counters, destinationUsageDay: { tokens: 11 } },
       },
-      'executor_usage_per_day:tokens',
+      'destination_usage_per_day:tokens',
     ],
     [
       'soft-hold from a recent retryAfterSeconds',
-      { executor: { softHoldUntil: new Date(now.getTime() + 60_000), stalenessMinutes: 30 } },
+      { destination: { softHoldUntil: new Date(now.getTime() + 60_000), stalenessMinutes: 30 } },
       'soft_hold',
     ],
   ])('%s → throttled %s', (_name, patch, binding) => {
@@ -112,7 +112,7 @@ describe('budget checks', () => {
 
   it('an expired soft-hold does not throttle', () => {
     const out = budget(
-      input({ executor: { softHoldUntil: minutesAgo(1), stalenessMinutes: 30 } }),
+      input({ destination: { softHoldUntil: minutesAgo(1), stalenessMinutes: 30 } }),
       now,
     );
     expect(out.ok).toBe(true);
@@ -122,7 +122,7 @@ describe('budget checks', () => {
     const out = budget(
       input({
         counters: { ...counters, processRunsDay: 99 },
-        executor: { softHoldUntil: new Date(now.getTime() + 1000), stalenessMinutes: 30 },
+        destination: { softHoldUntil: new Date(now.getTime() + 1000), stalenessMinutes: 30 },
       }),
       now,
     );
@@ -177,11 +177,11 @@ describe('meter ceilings with fresh and stale readings', () => {
     expect(out).toMatchObject({ ok: true, meterStale: ['five_hour'] });
   });
 
-  it('uses the executor staleness override', () => {
+  it('uses the destination staleness override', () => {
     const out = budget(
       input({
         process: { meterCeilings: ceilings },
-        executor: { softHoldUntil: null, stalenessMinutes: 60 },
+        destination: { softHoldUntil: null, stalenessMinutes: 60 },
         meters: { five_hour: reading(99, 45) },
       }),
       now,

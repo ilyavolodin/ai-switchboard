@@ -27,7 +27,7 @@ export interface StackState {
   stubUrl: string;
   token: string;
   sourceId: string;
-  executorId: string;
+  destinationId: string;
   breakerProcessId: string;
   healthyProcessId: string;
   approvalProcessId: string;

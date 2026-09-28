@@ -10,9 +10,9 @@ import {
 describe('plugin naming convention', () => {
   it.each([
     ['ai-switchboard-source-jira', 'source', 'jira'],
-    ['@acme/ai-switchboard-executor-n8n', 'executor', 'n8n'],
+    ['@acme/ai-switchboard-destination-n8n', 'destination', 'n8n'],
     ['@ai-switchboard/source-webhook', 'source', 'webhook'],
-    ['@ai-switchboard/executor-log', 'executor', 'log'],
+    ['@ai-switchboard/destination-log', 'destination', 'log'],
     ['@ai-switchboard/source-poll-http', 'source', 'poll-http'],
     ['@ai-switchboard/secrets-env', 'secrets', 'env'],
     ['ai-switchboard-notifier-teams', 'notifier', 'teams'],
@@ -40,7 +40,7 @@ describe('plugin naming convention', () => {
 
   it('filters by kind and maps secrets to secret providers', () => {
     expect(isDiscoverablePluginName('@acme/ai-switchboard-source-jira', 'source')).toBe(true);
-    expect(isDiscoverablePluginName('@acme/ai-switchboard-source-jira', 'executor')).toBe(false);
+    expect(isDiscoverablePluginName('@acme/ai-switchboard-source-jira', 'destination')).toBe(false);
     expect(pluginKindOf('secrets')).toBe('secret_provider');
     expect(pluginKindOf('source')).toBe('source');
   });

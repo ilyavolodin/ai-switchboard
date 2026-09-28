@@ -2,7 +2,7 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, sql } from 'drizzle
 
 import type { RawRequest, RunHandle, RunStatus } from '@ai-switchboard/sdk';
 
-import { batches, executors, processes, runUpdates, runs } from '../../db/schema.js';
+import { batches, destinations, processes, runUpdates, runs } from '../../db/schema.js';
 import {
   OPEN_RUN_STATUSES,
   TERMINAL_RUN_STATUSES,
@@ -48,7 +48,7 @@ function isOpen(status: RunStatusValue): boolean {
   return OPEN_RUN_STATUSES.includes(status);
 }
 
-/** The RunHandle executor methods receive for an existing run. */
+/** The RunHandle destination methods receive for an existing run. */
 export function runHandle(ctx: Ctx, run: RunRow, processName: string): RunHandle {
   return {
     id: run.id,
@@ -59,7 +59,7 @@ export function runHandle(ctx: Ctx, run: RunRow, processName: string): RunHandle
     ...(run.externalId !== null ? { externalId: run.externalId } : {}),
     ...(run.externalUrl !== null ? { externalUrl: run.externalUrl } : {}),
     ...(run.invokedAt !== null ? { invokedAt: run.invokedAt.toISOString() } : {}),
-    callbackUrl: `${ctx.config.publicUrl}/callbacks/${run.executorId}`,
+    callbackUrl: `${ctx.config.publicUrl}/callbacks/${run.destinationId}`,
     deadline: (run.deadlineAt ?? ctx.clock.now()).toISOString(),
   };
 }
@@ -70,7 +70,7 @@ export function runHandle(ctx: Ctx, run: RunRow, processName: string): RunHandle
  */
 export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Promise<boolean> {
   const now = ctx.clock.now();
-  const live = (executorId: string) => ctx.runtime.executor(executorId);
+  const live = (destinationId: string) => ctx.runtime.destination(destinationId);
   let dropped: { plugin: string; keys: string[] } | null = null;
   let opened: { processId: string; name: string; failures: number } | null = null;
 
@@ -79,7 +79,7 @@ export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Prom
     opened = null;
     const [run] = await tx.select().from(runs).where(eq(runs.id, runId)).for('update');
     if (!run || isTerminalRunStatus(run.status)) return null;
-    const ex = live(run.executorId);
+    const ex = live(run.destinationId);
     let usage = run.usage;
     if (input.usage !== undefined) {
       const clean = sanitizeUsage(input.usage, ex?.usage ?? []);
@@ -163,7 +163,7 @@ export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Prom
       'invalid_usage',
       `undeclared usage keys: ${d.keys.join(', ')}`,
     );
-  const attrs = { process: closed.processId, executor: closed.executorId };
+  const attrs = { process: closed.processId, destination: closed.destinationId };
   ctx.telemetry.decision(
     'switchboard.runs',
     { ...attrs, status: closed.status },
@@ -181,7 +181,7 @@ export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Prom
       attrs,
     );
   }
-  const ex = live(closed.executorId);
+  const ex = live(closed.destinationId);
   for (const [dim, value] of Object.entries(closed.usage ?? {})) {
     const unit = ex?.usage.find((u) => u.id === dim)?.unit ?? 'count';
     ctx.telemetry.counter('switchboard.run.usage', { ...attrs, unit, dimension: dim }, value);
@@ -307,10 +307,10 @@ export async function markUncertain(
 export async function scheduleTracking(ctx: Ctx, run: RunRow, pollCount: number): Promise<void> {
   const now = ctx.clock.now();
   const deadline = run.deadlineAt ?? now;
-  const live = ctx.runtime.executor(run.executorId);
+  const live = ctx.runtime.destination(run.destinationId);
   const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, run.processId));
-  const tracking = live && proc ? live.trackingFor(proc.document.executor.target) : 'none';
-  if (tracking === 'poll' && live?.executor.poll) {
+  const tracking = live && proc ? live.trackingFor(proc.document.destination.target) : 'none';
+  if (tracking === 'poll' && live?.destination.poll) {
     const next = nextPollAt(now, pollCount, deadline);
     await ctx.db.update(runs).set({ nextPollAt: next.at }).where(eq(runs.id, run.id));
     await ctx.queue.send(JOBS.poll, { runId: run.id }, { startAfter: next.at });
@@ -335,7 +335,7 @@ async function applyTracking(
 ): Promise<void> {
   const next = statusFromTracking(status.state);
   if (next === 'running') {
-    const live = ctx.runtime.executor(run.executorId);
+    const live = ctx.runtime.destination(run.destinationId);
     const usage =
       status.usage !== undefined
         ? mergeUsage(
@@ -389,10 +389,14 @@ export async function pollRun(ctx: Ctx, runId: string): Promise<void> {
     return;
   }
   const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, run.processId));
-  const live = ctx.runtime.executor(run.executorId);
-  if (!proc || !live?.executor.poll || live.trackingFor(proc.document.executor.target) !== 'poll')
+  const live = ctx.runtime.destination(run.destinationId);
+  if (
+    !proc ||
+    !live?.destination.poll ||
+    live.trackingFor(proc.document.destination.target) !== 'poll'
+  )
     return;
-  const poll = live.executor.poll.bind(live.executor);
+  const poll = live.destination.poll.bind(live.destination);
   const next = nextPollAt(now, run.pollCount + 1, run.deadlineAt ?? now);
   // Claim this poll by moving `next_poll_at` on from the value read: a duplicate job running on
   // another replica at the same moment finds it moved and stops.
@@ -453,34 +457,37 @@ export async function deadlineRun(ctx: Ctx, runId: string): Promise<void> {
   await closeRun(ctx, runId, { status: 'unknown', source: 'deadline', reason: 'deadline' });
 }
 
-/** POST /callbacks/:executorId */
+/** POST /callbacks/:destinationId */
 export async function handleCallback(
   ctx: Ctx,
-  executorId: string,
+  destinationId: string,
   req: RawRequest,
 ): Promise<{ status: number }> {
-  if (!isUuid(executorId)) return { status: 404 };
+  if (!isUuid(destinationId)) return { status: 404 };
   try {
-    const [row] = await ctx.db.select().from(executors).where(eq(executors.id, executorId));
+    const [row] = await ctx.db
+      .select()
+      .from(destinations)
+      .where(eq(destinations.id, destinationId));
     if (!row) return { status: 404 };
-    const live = ctx.runtime.executor(executorId);
+    const live = ctx.runtime.destination(destinationId);
     // No live instance right now (plugin unavailable, secret error): let the backend retry.
     if (!live) return { status: 503 };
-    if (!live.executor.verifyCallback) return { status: 404 };
+    if (!live.destination.verifyCallback) return { status: 404 };
     let verified: { runId: string; status: unknown } | null = null;
     try {
-      verified = live.executor.verifyCallback(req);
+      verified = live.destination.verifyCallback(req);
     } catch {
       // Counted against the plugin by the runtime's attribution wrapper; a rejection here.
       verified = null;
     }
     if (!verified) {
       ctx.log.warn(
-        { executor_id: executorId, remote_address: req.remoteAddress },
+        { destination_id: destinationId, remote_address: req.remoteAddress },
         'callback rejected by verifyCallback',
       );
       await sendSystemAlert(ctx, {
-        key: `callback_verification:${executorId}`,
+        key: `callback_verification:${destinationId}`,
         title: `Callback verification failed: ${row.name}`,
         text: `A callback to ${row.name} from ${req.remoteAddress ?? 'an unknown address'} failed verification and was rejected.`,
         severity: 'warning',
@@ -491,7 +498,7 @@ export async function handleCallback(
     const [run] = await ctx.db
       .select()
       .from(runs)
-      .where(and(eq(runs.id, verified.runId), eq(runs.executorId, executorId)));
+      .where(and(eq(runs.id, verified.runId), eq(runs.destinationId, destinationId)));
     if (!run) return { status: 404 };
     const status = validStatus(verified.status);
     if (!status) {
@@ -506,7 +513,7 @@ export async function handleCallback(
     await applyTracking(ctx, run, status, 'callback');
     return { status: 200 };
   } catch (err) {
-    ctx.log.error({ err, executor_id: executorId }, 'callback handling failed');
+    ctx.log.error({ err, destination_id: destinationId }, 'callback handling failed');
     return { status: 503 };
   }
 }
@@ -524,8 +531,8 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
   const invoking = await ctx.db.select().from(runs).where(eq(runs.status, 'invoking'));
   for (const run of invoking) {
     const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, run.processId));
-    const live = ctx.runtime.executor(run.executorId);
-    const idempotent = live && proc ? live.idempotentFor(proc.document.executor.target) : false;
+    const live = ctx.runtime.destination(run.destinationId);
+    const idempotent = live && proc ? live.idempotentFor(proc.document.destination.target) : false;
     let action = recoverInvoking(
       {
         status: run.status,

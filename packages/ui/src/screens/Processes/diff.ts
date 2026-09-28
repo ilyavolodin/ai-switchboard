@@ -75,7 +75,7 @@ const LABELS: Record<string, string> = {
   meterCeilings: 'ceiling',
   events: 'events',
   sweeps: 'sweeps',
-  executor: 'executor',
+  destination: 'destination',
   instanceId: 'instance',
   target: 'target',
   input: 'input mapping',

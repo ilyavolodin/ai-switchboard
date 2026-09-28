@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 #
-# The integration stub: an `http` executor target, a webhook sender, a fake Claude Routines API
+# The integration stub: an `http` destination target, a webhook sender, a fake Claude Routines API
 # and a request recorder. Dependency-free; see deploy/stub/server.js.
 #
 #   docker build -t ghcr.io/ai-switchboard/switchboard-stub:1.0.0 deploy/stub
 FROM node:24-alpine
 LABEL org.opencontainers.image.title="AI Switchboard stub" \
-      org.opencontainers.image.description="Test stub for AI Switchboard: executor target, webhook sender, fake Routines API." \
+      org.opencontainers.image.description="Test stub for AI Switchboard: destination target, webhook sender, fake Routines API." \
       org.opencontainers.image.source="https://github.com/ai-switchboard/switchboard" \
       org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /stub

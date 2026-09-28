@@ -18,7 +18,7 @@ import {
   deliver,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   setSystemNotifier,
@@ -42,7 +42,7 @@ beforeEach(async () => {
 describe('trace', () => {
   it('the trace for an artifact contains every stage in time order', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { tracking: 'callback' });
+    const ex = await seedDestination(h, { tracking: 'callback' });
     h.runtime.addNotifier('n1', 'Slack');
     const pid = await seedProcess(h, ex.id, src.id, {
       triggers: [
@@ -112,7 +112,7 @@ describe('trace', () => {
 describe('why nothing ran', () => {
   it('records at match time why each process on the source did not take the event', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const trig = (extra = {}) => ({
       id: 't1',
       sourceId: src.id,
@@ -174,7 +174,7 @@ describe('why nothing ran', () => {
 describe('previews', () => {
   it('evaluates a filter against the last real events and an input mapping against a batch', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     await deliver(h, src.id, [
       { id: '1', version: 'a' },
@@ -217,7 +217,7 @@ describe('previews', () => {
 describe('stats, retention and maintenance', () => {
   it('materialises hourly statistics', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     ex.state.usageOnComplete = { tokens: 100 };
     const pid = await seedProcess(h, ex.id, src.id);
     await deliver(h, src.id, [
@@ -265,7 +265,7 @@ describe('stats, retention and maintenance', () => {
 
   it('a short dispatch retention never shortens the 7-day dedupe window', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, { batching: { debounceSeconds: 0 } });
     await putSettings(
       h.db,
@@ -285,7 +285,7 @@ describe('stats, retention and maintenance', () => {
 
   it('recovers an event whose match job was lost, polls pull sources and alerts on silence', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, { batching: { debounceSeconds: 0 } });
     await deliver(h, src.id, [{ id: '1', version: 'a' }]);
     h.queue.jobs.length = 0; // the match job is lost

@@ -7,8 +7,8 @@ Each file is a complete configuration in the `switchboard/v1` YAML format
 export SWITCHBOARD_URL=http://localhost:8080
 export SWITCHBOARD_TOKEN=<an admin API token from Settings → API tokens>
 
-switchboard apply -f examples/log-executor.yaml --dry-run --reason "try the example"
-switchboard apply -f examples/log-executor.yaml --reason "try the example"
+switchboard apply -f examples/log-destination.yaml --dry-run --reason "try the example"
+switchboard apply -f examples/log-destination.yaml --reason "try the example"
 ```
 
 `--dry-run` prints the change list (`create`, `update`, `unchanged`) without writing anything.
@@ -19,8 +19,8 @@ switchboard container.
 
 | File                                                       | What it wires                                                                                        | Needs                                                                                                            |
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [`log-executor.yaml`](log-executor.yaml)                   | A quick-mode `webhook` (no mapping, no secrets) → one process → the built-in `log` executor          | Nothing: the plain Compose stack. The end state of the [quick start](../docs/quick-start.md)                     |
-| [`webhook-to-http.yaml`](webhook-to-http.yaml)             | A signed `webhook` source → one process → the `http` executor calling the stub's `/exec`             | The Compose stack with the `stub` profile. `WEBHOOK_SECRET` is already set there                                 |
+| [`log-destination.yaml`](log-destination.yaml)             | A quick-mode `webhook` (no mapping, no secrets) → one process → the built-in `log` destination       | Nothing: the plain Compose stack. The end state of the [quick start](../docs/quick-start.md)                     |
+| [`webhook-to-http.yaml`](webhook-to-http.yaml)             | A signed `webhook` source → one process → the `http` destination calling the stub's `/exec`          | The Compose stack with the `stub` profile. `WEBHOOK_SECRET` is already set there                                 |
 | [`github-linear-autofix.yaml`](github-linear-autofix.yaml) | GitHub PR labeled + Linear issue filter → Claude Routines, with meters, quiet hours, approval, steps | `GITHUB_TOKEN`, `GITHUB_WEBHOOK_SECRET`, `LINEAR_API_KEY`, `LINEAR_WEBHOOK_SECRET`, `ROUTINE_*`, `SLACK_WEBHOOK` |
 | [`datadog-triage.yaml`](datadog-triage.yaml)               | Datadog monitor triggered → a GitHub Actions workflow, one run per service tag                       | `DATADOG_WEBHOOK_SECRET`, `DATADOG_API_KEY`, `DATADOG_APP_KEY`, `GITHUB_APP_PRIVATE_KEY`                         |
 
@@ -46,7 +46,7 @@ The loop Switchboard was first built for. A GitHub `github.pr.labeled` event wit
 `auto:fix-candidate` matches only when the Linear issue linked from the PR carries
 `complexity:simple` (`$linked` then `$resolve`, both live reads). A Linear `linear.issue.labeled`
 trigger covers the other order of events. Batches group by artifact, wait out quiet hours at
-night, and need an approval when a PR also carries `auto:needs-approval`. The Claude Routines executor enforces meter
+night, and need an approval when a PR also carries `auto:needs-approval`. The Claude Routines destination enforces meter
 ceilings: event-driven runs stop at 85 % of the five-hour window while the 02:00 sweep may use
 up to 95 %, and the daily run allowance (`daily_runs`) is estimated from the typed-in limit of 22.
 When a run ends `ok`, an `after` step labels the PR `auto:fix-started`.

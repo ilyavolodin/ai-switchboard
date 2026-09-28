@@ -2,13 +2,13 @@ import type { MeterSpec } from '@ai-switchboard/sdk';
 import { desc, inArray } from 'drizzle-orm';
 
 import type { DbOrTx } from '../../db/client.js';
-import { executors, meterReadings, processes } from '../../db/schema.js';
+import { destinations, meterReadings, processes } from '../../db/schema.js';
 import type { ApiContext } from '../context.js';
 import type { MeterGaugeDTO } from '../contract.js';
 import { getSettings } from '../../services/settings.js';
 
 interface LatestReading {
-  executorId: string;
+  destinationId: string;
   meterId: string;
   observedAt: Date;
   used: number | null;
@@ -18,12 +18,15 @@ interface LatestReading {
   estimated: boolean;
 }
 
-/** The newest reading per (executor, meter). */
-export async function latestReadings(db: DbOrTx, executorIds: string[]): Promise<LatestReading[]> {
-  if (executorIds.length === 0) return [];
+/** The newest reading per (destination, meter). */
+export async function latestReadings(
+  db: DbOrTx,
+  destinationIds: string[],
+): Promise<LatestReading[]> {
+  if (destinationIds.length === 0) return [];
   return db
-    .selectDistinctOn([meterReadings.executorId, meterReadings.meterId], {
-      executorId: meterReadings.executorId,
+    .selectDistinctOn([meterReadings.destinationId, meterReadings.meterId], {
+      destinationId: meterReadings.destinationId,
       meterId: meterReadings.meterId,
       observedAt: meterReadings.observedAt,
       used: meterReadings.used,
@@ -33,33 +36,33 @@ export async function latestReadings(db: DbOrTx, executorIds: string[]): Promise
       estimated: meterReadings.estimated,
     })
     .from(meterReadings)
-    .where(inArray(meterReadings.executorId, executorIds))
-    .orderBy(meterReadings.executorId, meterReadings.meterId, desc(meterReadings.observedAt));
+    .where(inArray(meterReadings.destinationId, destinationIds))
+    .orderBy(meterReadings.destinationId, meterReadings.meterId, desc(meterReadings.observedAt));
 }
 
-/** Meter specs for an executor: from its live object, else from the stored type manifest. */
-export function meterSpecsFor(ctx: ApiContext, executorId: string, typeId: string): MeterSpec[] {
-  const live = ctx.runtime.executor(executorId);
+/** Meter specs for a destination: from its live object, else from the stored type manifest. */
+export function meterSpecsFor(ctx: ApiContext, destinationId: string, typeId: string): MeterSpec[] {
+  const live = ctx.runtime.destination(destinationId);
   if (live) return live.meters;
-  return ctx.runtime.executorType(typeId)?.type.meters ?? [];
+  return ctx.runtime.destinationType(typeId)?.type.meters ?? [];
 }
 
-/** Gauges for the given executors, with process ceilings as marks and staleness applied. */
+/** Gauges for the given destinations, with process ceilings as marks and staleness applied. */
 export async function meterGauges(
   ctx: ApiContext,
-  executorIds?: string[],
+  destinationIds?: string[],
   processList?: Pick<typeof processes.$inferSelect, 'id' | 'name' | 'document'>[],
 ): Promise<MeterGaugeDTO[]> {
-  if (executorIds?.length === 0) return [];
+  if (destinationIds?.length === 0) return [];
   const rows = await ctx.db
     .select({
-      id: executors.id,
-      name: executors.name,
-      typeId: executors.typeId,
-      caps: executors.caps,
+      id: destinations.id,
+      name: destinations.name,
+      typeId: destinations.typeId,
+      caps: destinations.caps,
     })
-    .from(executors)
-    .where(executorIds ? inArray(executors.id, executorIds) : undefined);
+    .from(destinations)
+    .where(destinationIds ? inArray(destinations.id, destinationIds) : undefined);
   if (rows.length === 0) return [];
   const settings = await getSettings(ctx.db);
   const readings = await latestReadings(
@@ -77,19 +80,20 @@ export async function meterGauges(
     const specs = meterSpecsFor(ctx, ex.id, ex.typeId);
     const stalenessMs = (ex.caps.meterStalenessMinutes ?? settings.meterStalenessMinutes) * 60_000;
     specs.forEach((spec, index) => {
-      const r = readings.find((x) => x.executorId === ex.id && x.meterId === spec.id);
+      const r = readings.find((x) => x.destinationId === ex.id && x.meterId === spec.id);
       const ceilings = procs
         .filter(
           (p) =>
-            p.document.executor.instanceId === ex.id && p.document.budgets.meterCeilings[spec.id],
+            p.document.destination.instanceId === ex.id &&
+            p.document.budgets.meterCeilings[spec.id],
         )
         .map((p) => {
           const c = p.document.budgets.meterCeilings[spec.id] ?? { events: 100, sweeps: 100 };
           return { processId: p.id, processName: p.name, events: c.events, sweeps: c.sweeps };
         });
       out.push({
-        executorId: ex.id,
-        executorName: ex.name,
+        destinationId: ex.id,
+        destinationName: ex.name,
         meterId: spec.id,
         title: spec.title,
         kind: spec.kind,

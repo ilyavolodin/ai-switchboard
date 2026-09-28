@@ -1,6 +1,6 @@
 /**
  * The simpler editor sections (batching, schedules, gates, notifications). Triggers, budgets,
- * executor and steps live in their own files.
+ * destination and steps live in their own files.
  */
 import type { InstanceSummary, ProcessDocument } from '@ai-switchboard/core/contract';
 import { useState } from 'react';

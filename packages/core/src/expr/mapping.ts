@@ -8,7 +8,7 @@ export type MappingOutcome =
   | { ok: false; input?: unknown; stage: 'evaluate' | 'validate'; errors: string[] };
 
 /**
- * Evaluate an input mapping and validate the result against the executor type's `inputSchema`.
+ * Evaluate an input mapping and validate the result against the destination type's `inputSchema`.
  * This runs before any budget is spent: an invalid input fails the run with no reservation.
  *
  * Secret markers stay in the returned input; for validation they stand in as their
@@ -39,7 +39,7 @@ export async function evaluateMapping(
         input: out.value,
         stage: 'validate',
         errors: [
-          `executor inputSchema is invalid: ${err instanceof Error ? err.message : String(err)}`,
+          `destination inputSchema is invalid: ${err instanceof Error ? err.message : String(err)}`,
         ],
       };
     }

@@ -14,7 +14,7 @@
   `DATABASE_URL` when set). Each test file creates its own schema or truncates the tables it
   uses. Files run serially.
 - Every reference plugin has `src/plugin.test.ts` that runs the SDK conformance kit
-  (`sourceConformanceChecks` / `executorConformanceChecks` via `runConformance`) plus
+  (`sourceConformanceChecks` / `destinationConformanceChecks` via `runConformance`) plus
   plugin-specific tests. Fixtures live in `src/__fixtures__/`. Fixture secrets are obviously fake
   (`fixture-secret`).
 - UI component tests use Testing Library (`@testing-library/react`, `user-event`) in jsdom.

@@ -16,7 +16,7 @@ export const ENV_PREFIX = 'SWITCHBOARD_VAR_';
 
 const SECRET_REF_KEY = '$secretRef';
 
-/** What `$secretRef(name)` returns: a reference the executor bridge resolves after evaluation. */
+/** What `$secretRef(name)` returns: a reference the destination bridge resolves after evaluation. */
 export interface SecretRefMarker {
   $secretRef: string;
 }
@@ -141,7 +141,7 @@ export function replaceSecretRefs(value: unknown, replace: (ref: string) => unkn
 }
 
 /**
- * Resolve every secret marker to its value through `resolve`. Used by the executor bridge after
+ * Resolve every secret marker to its value through `resolve`. Used by the destination bridge after
  * validation, immediately before `invoke`; the resolved value is never stored.
  */
 export async function resolveSecretRefs(
@@ -155,7 +155,7 @@ export async function resolveSecretRefs(
 }
 
 /**
- * Data an expression reads (event context, `$resolve`/`$linked` results, an executor's result)
+ * Data an expression reads (event context, `$resolve`/`$linked` results, a destination's result)
  * comes from outside. A marker in it is forged: only `$secretRef` inside the expression may make
  * one, so the bridge never resolves a secret that a payload asked for. Forged markers become null.
  */

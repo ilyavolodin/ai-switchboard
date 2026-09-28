@@ -175,37 +175,37 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'GET /sources/:id/last-delivery': (r) =>
       byId(f.sources, r.params.id) ? f.lastDelivery : notFound('source'),
 
-    'GET /executors': () => f.executors,
-    'POST /executors': reasoned(() => f.executorDetail(at(f.executors, 0))),
-    'GET /executors/:id': (r) => {
-      const x = byId(f.executors, r.params.id);
-      return x ? f.executorDetail(x) : notFound('executor');
+    'GET /destinations': () => f.destinations,
+    'POST /destinations': reasoned(() => f.destinationDetail(at(f.destinations, 0))),
+    'GET /destinations/:id': (r) => {
+      const x = byId(f.destinations, r.params.id);
+      return x ? f.destinationDetail(x) : notFound('destination');
     },
-    'PUT /executors/:id': reasoned((r) => {
-      const x = byId(f.executors, r.params.id);
-      return x ? f.executorDetail(x) : notFound('executor');
+    'PUT /destinations/:id': reasoned((r) => {
+      const x = byId(f.destinations, r.params.id);
+      return x ? f.destinationDetail(x) : notFound('destination');
     }),
-    'DELETE /executors/:id': reasoned(() => mockStatus(204)),
-    'POST /executors/:id/enable': reasoned((r) => {
-      const x = byId(f.executors, r.params.id);
-      return x ? f.executorDetail(x) : notFound('executor');
+    'DELETE /destinations/:id': reasoned(() => mockStatus(204)),
+    'POST /destinations/:id/enable': reasoned((r) => {
+      const x = byId(f.destinations, r.params.id);
+      return x ? f.destinationDetail(x) : notFound('destination');
     }),
-    'POST /executors/:id/reload': reasoned((r) => {
-      const x = byId(f.executors, r.params.id);
-      return x ? f.executorDetail(x) : notFound('executor');
+    'POST /destinations/:id/reload': reasoned((r) => {
+      const x = byId(f.destinations, r.params.id);
+      return x ? f.destinationDetail(x) : notFound('destination');
     }),
-    'POST /executors/:id/meters/read': reasoned(
-      (r) => byId(f.executors, r.params.id)?.meters ?? [],
+    'POST /destinations/:id/meters/read': reasoned(
+      (r) => byId(f.destinations, r.params.id)?.meters ?? [],
     ),
-    'POST /executors/:id/soft-hold/clear': reasoned((r) => {
-      const x = byId(f.executors, r.params.id);
-      return x ? f.executorDetail(x) : notFound('executor');
+    'POST /destinations/:id/soft-hold/clear': reasoned((r) => {
+      const x = byId(f.destinations, r.params.id);
+      return x ? f.destinationDetail(x) : notFound('destination');
     }),
-    'GET /executors/:id/meters': (r) => ({
+    'GET /destinations/:id/meters': (r) => ({
       ...f.meterHistory,
       window: r.query.get('window') ?? f.meterHistory.window,
     }),
-    'GET /executors/:id/usage': (r) => ({
+    'GET /destinations/:id/usage': (r) => ({
       ...f.usageHistory,
       window: r.query.get('window') ?? f.usageHistory.window,
     }),
@@ -294,7 +294,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'POST /plugins/inspect': (r) => ({
       package: (r.body as { package?: string } | undefined)?.package ?? '',
       version: '1.2.0',
-      sdkRange: '^1.4.0',
+      sdkRange: '^2.0.0',
       compatible: true,
       capabilities: { network: ['sentry.io'], secrets: ['SENTRY_*'] },
       types: [{ kind: 'source', typeId: 'sentry', displayName: 'Sentry' }],
@@ -303,7 +303,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'POST /plugins': reasoned((r) => {
       // Installed and loaded at once: its type (named after the package) becomes available.
       const pkg = (r.body as { package?: string } | undefined)?.package ?? 'plugin';
-      const m = /(source|executor|notifier|secrets)-([a-z0-9-]+)$/.exec(pkg);
+      const m = /(source|destination|notifier|secrets)-([a-z0-9-]+)$/.exec(pkg);
       const kind = m?.[1] === 'secrets' ? 'secret_provider' : (m?.[1] ?? 'source');
       const typeId = m?.[2] ?? pkg;
       const displayName = typeId.charAt(0).toUpperCase() + typeId.slice(1);

@@ -1,6 +1,6 @@
 import type {
   AttentionItem,
-  BoardExecutorNode,
+  BoardDestinationNode,
   BoardProcessNode,
   BoardSourceNode,
 } from '@ai-switchboard/core/contract';
@@ -30,7 +30,7 @@ export function keyFacts(n: LaidOutNode, nowMs: number): string[] {
       next != null ? `next sweep ${formatWhen(next, nowMs)}` : 'no sweep scheduled',
     ];
   }
-  const x = n.node as BoardExecutorNode;
+  const x = n.node as BoardDestinationNode;
   const meters = x.meters.map((m) => `${m.title} ${meterValueText(m)}${m.stale ? ' (stale)' : ''}`);
   return [
     `${x.status.label} · ${x.typeName}`,
@@ -46,7 +46,7 @@ export function nodeHref(n: Pick<LaidOutNode, 'kind' | 'id'>): string {
   const id = encodeURIComponent(n.id);
   if (n.kind === 'source') return `/sources/${id}`;
   if (n.kind === 'process') return `/processes/${id}`;
-  return `/executors/${id}`;
+  return `/destinations/${id}`;
 }
 
 /** Where an attention item's target lives. */
@@ -57,8 +57,8 @@ export function attentionHref(item: Pick<AttentionItem, 'targetKind' | 'targetId
       return `/processes/${id}`;
     case 'source':
       return `/sources/${id}`;
-    case 'executor':
-      return `/executors/${id}`;
+    case 'destination':
+      return `/destinations/${id}`;
     case 'plugin':
       return '/plugins';
     case 'approval':

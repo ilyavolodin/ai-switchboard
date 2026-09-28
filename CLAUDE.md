@@ -18,15 +18,17 @@ Three things are fixed and everything else is a plugin:
    path every event, schedule tick and manual start walks (`packages/core/src/pipeline/`).
 3. **Process**: one JSON document a person edits (`packages/core/src/domain/process.ts`).
 
-Sources, executors, notifiers and secret providers are npm packages built with `definePlugin()`
+Sources, destinations, notifiers and secret providers are npm packages built with `definePlugin()`
 from `@ai-switchboard/sdk`.
 
 ## Vocabulary: use exactly these words
 
-_plugin, source, event, process, trigger, executor, run, usage, meter, action, batch, sweep
+_plugin, source, event, process, trigger, destination, run, usage, meter, action, batch, sweep
 (a scheduled run), held (a gate stopped it), throttled (a budget or meter ceiling stopped it),
 breaker, approval, budget, ceiling._ Don't use synonyms in code, UI copy, logs or docs: no
-"job" for run, no "adapter" for source, no "workflow" for process.
+"job" for run, no "adapter" for source, no "workflow" for process, and no "executor" for
+destination (its name before SDK 2.0; only the deprecated API/YAML aliases and the rename
+migration still say it).
 
 ## Repository layout
 
@@ -35,7 +37,7 @@ packages/sdk      @ai-switchboard/sdk     plugin interfaces, definePlugin, HttpC
 packages/core     @ai-switchboard/core    Fastify server: plugin host, pipeline, scheduler, REST API, auth, telemetry
 packages/ui       @ai-switchboard/ui      React + Vite SPA, built into packages/core/public
 packages/cli      @ai-switchboard/cli     `switchboard` command: plugins add/remove/list, export/apply, doctor
-plugins/*         reference plugins       source-*, executor-*, notifier-*, secrets-*
+plugins/*         reference plugins       source-*, destination-*, notifier-*, secrets-*
 deploy/           Dockerfile, docker-compose.yml, helm/
 docs/             architecture, API, plugin author guide, runbook
 examples/         YAML configurations
@@ -98,7 +100,7 @@ Relative imports use the `.js` extension (NodeNext): `import { x } from './batch
   mapping error fails the run before budget is spent. Every evaluation has a 2 s limit and a
   bounded `$resolve` count.
 - **Secrets never touch Postgres or expressions.** Settings store `secret://<provider>/<name>`.
-  Values live only in the live plugin object. `$secretRef(name)` yields a reference the executor
+  Values live only in the live plugin object. `$secretRef(name)` yields a reference the destination
   bridge resolves after evaluation. The API never returns a secret value.
 - **Every state-changing action carries a one-line `reason` and writes `audit_log`.** Routes reject
   an empty reason with 400, unless an admin turned `requireReasons` off (Settings › General): then

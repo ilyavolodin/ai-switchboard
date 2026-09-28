@@ -27,14 +27,14 @@ export function matchesFilter(p: ProcessSummary, filter: ProcessFilter): boolean
   }
 }
 
-/** Case-insensitive match on the name, description, trigger sentences, sources and executor. */
+/** Case-insensitive match on the name, description, trigger sentences, sources and destination. */
 export function matchesQuery(p: ProcessSummary, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   const haystack = [
     p.name,
     p.description,
-    p.executor?.name ?? '',
+    p.destination?.name ?? '',
     ...p.triggers.flatMap((t) => [t.sourceName, t.describe, ...t.eventTypes]),
   ]
     .join('\n')
@@ -78,7 +78,7 @@ export function shortInstanceName(name: string): string {
 export function flowLine(p: ProcessSummary): string {
   const sources = [...new Set(p.triggers.map((t) => shortInstanceName(t.sourceName)))];
   const from = sources.length > 0 ? sources.join(', ') : 'schedule only';
-  const to = p.executor ? shortInstanceName(p.executor.name) : 'no executor';
+  const to = p.destination ? shortInstanceName(p.destination.name) : 'no destination';
   return `${from} → ${to}`;
 }
 

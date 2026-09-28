@@ -2,7 +2,7 @@ import { hostname } from 'node:os';
 
 import { and, eq, isNull, lt, lte, or, sql } from 'drizzle-orm';
 
-import { batches, events, executors, replicas, sources } from '../../db/schema.js';
+import { batches, events, destinations, replicas, sources } from '../../db/schema.js';
 import { getSettings } from '../settings.js';
 
 import { JOBS, type Ctx } from './context.js';
@@ -76,25 +76,25 @@ async function claimSourcePolls(ctx: Ctx, now: Date): Promise<void> {
 }
 
 async function claimMeterReads(ctx: Ctx, now: Date): Promise<void> {
-  const rows = await ctx.db.select().from(executors).where(eq(executors.enabled, true));
+  const rows = await ctx.db.select().from(destinations).where(eq(destinations.enabled, true));
   for (const row of rows) {
-    const live = ctx.runtime.executor(row.id);
+    const live = ctx.runtime.destination(row.id);
     if (!live || live.meters.length === 0) continue;
     const interval = Math.max(30, row.caps.meterPollSeconds ?? DEFAULT_METER_POLL_SECONDS);
     const claimed = await ctx.db
-      .update(executors)
+      .update(destinations)
       .set({ metersReadAt: now })
       .where(
         and(
-          eq(executors.id, row.id),
+          eq(destinations.id, row.id),
           or(
-            isNull(executors.metersReadAt),
-            lte(executors.metersReadAt, new Date(now.getTime() - interval * 1000)),
+            isNull(destinations.metersReadAt),
+            lte(destinations.metersReadAt, new Date(now.getTime() - interval * 1000)),
           ),
         ),
       )
-      .returning({ id: executors.id });
-    if (claimed.length > 0) await ctx.queue.send(JOBS.metersRead, { executorId: row.id });
+      .returning({ id: destinations.id });
+    if (claimed.length > 0) await ctx.queue.send(JOBS.metersRead, { destinationId: row.id });
   }
 }
 

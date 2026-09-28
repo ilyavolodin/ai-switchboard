@@ -2,7 +2,7 @@ import { createHttpClient, type HttpClient } from '../http.js';
 import { createMemoryLogger, type MemoryLogEntry } from '../logger.js';
 import type { RawRequest } from '../types/common.js';
 import type { InstanceState, PluginContext } from '../types/context.js';
-import type { RunHandle } from '../types/executor.js';
+import type { RunHandle } from '../types/destination.js';
 
 export interface StubRequest {
   method: string;

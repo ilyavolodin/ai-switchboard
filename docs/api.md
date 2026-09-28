@@ -4,20 +4,20 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 [`packages/core/src/api/contract.ts`](../packages/core/src/api/contract.ts) (`@ai-switchboard/core/contract`).
 
 - Auth: a session cookie (`sb_session`) from sign-in, or `Authorization: Bearer <api token>`.
-- Roles: `viewer` reads; `operator` also changes sources, executors, processes, approvals, manual runs and replays; `admin` also manages plugins, users, secret providers, notifiers and settings.
+- Roles: `viewer` reads; `operator` also changes sources, destinations, processes, approvals, manual runs and replays; `admin` also manages plugins, users, secret providers, notifiers and settings.
 - Every state-changing body carries `reason` (non-empty). Every change writes `audit_log` rows. An admin can make reasons optional (`GlobalSettings.requireReasons: false`, Settings › General): then a missing or blank `reason` is accepted (a `DELETE` may omit the body) and audited as `(no reason given)`. `MeResponse.requireReasons` tells a client whether to ask. Each replica caches the setting for 5 s; the replica that saves it applies it at once, the others within the cache window.
-- Errors: `{ error, message, details?, usedBy? }` with 400 (validation, including a malformed time or cursor), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, a name already taken, or deleting a source, executor or notifier that processes still use: `usedBy` lists them as `{ id, name }`), 422 (semantic), 429 (too many sign-in attempts), 503.
+- Errors: `{ error, message, details?, usedBy? }` with 400 (validation, including a malformed time or cursor), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, a name already taken, or deleting a source, destination or notifier that processes still use: `usedBy` lists them as `{ id, name }`), 422 (semantic), 429 (too many sign-in attempts), 503.
 - Lists: `?cursor=&limit=` → `Page<T>` (`{ items, nextCursor }`). Filters apply before paging, and a cursor is keyed by time and id, so rows that share a timestamp are neither skipped nor repeated.
 
 ## Unauthenticated surfaces
 
-| Method | Path                     | Notes                                                                                                                |
-| ------ | ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/hooks/:sourceId`       | Push source ingress. Verified by the source's `verify`. Rejections return an empty 401. Disabled sources answer 200. |
-| POST   | `/callbacks/:executorId` | Run callbacks. Verified by the executor's `verifyCallback`. Rejections return an empty 401.                          |
-| GET    | `/healthz`               | Liveness.                                                                                                            |
-| GET    | `/readyz`                | Postgres reachable and plugins loaded.                                                                               |
-| GET    | `/metrics`               | Prometheus exposition (when enabled).                                                                                |
+| Method | Path                        | Notes                                                                                                                |
+| ------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/hooks/:sourceId`          | Push source ingress. Verified by the source's `verify`. Rejections return an empty 401. Disabled sources answer 200. |
+| POST   | `/callbacks/:destinationId` | Run callbacks. Verified by the destination's `verifyCallback`. Rejections return an empty 401.                       |
+| GET    | `/healthz`                  | Liveness.                                                                                                            |
+| GET    | `/readyz`                   | Postgres reachable and plugins loaded.                                                                               |
+| GET    | `/metrics`                  | Prometheus exposition (when enabled).                                                                                |
 
 ## Auth
 
@@ -82,8 +82,8 @@ paused on purpose and gets no item.
 
 `PluginTypeDTO.icon` is the icon the type declares (SDK 1.3): a built-in icon name from the
 SDK's `ICON_NAMES`, or a `data:image/svg+xml;base64,…` URI of at most 8 KB. It is absent when
-the type declares none. Instance summaries (`SourceSummary`, `ExecutorSummary`,
-`InstanceSummary`) and the board's source and executor nodes carry the same value as
+the type declares none. Instance summaries (`SourceSummary`, `DestinationSummary`,
+`InstanceSummary`) and the board's source and destination nodes carry the same value as
 `typeIcon` (`null` when there is none or the plugin is not loaded). Clients render a data URI
 through `<img>` only, never as inline markup, and fall back to the kind's generic icon.
 
@@ -119,27 +119,33 @@ are redacted from everything returned. `GET /sources/:id/last-delivery` returns 
 push delivery with a body (`{ receivedAt, body, headers }`, 404 when there is none yet); headers
 whose names suggest a credential or signature read `[redacted]`.
 
-## Executors
+## Destinations
 
-| Method | Path                             | Body → Response                            | Role     |
-| ------ | -------------------------------- | ------------------------------------------ | -------- |
-| GET    | `/executors`                     | → `ExecutorSummary[]`                      | viewer   |
-| POST   | `/executors`                     | `CreateExecutorRequest` → `ExecutorDetail` | operator |
-| GET    | `/executors/:id`                 | → `ExecutorDetail`                         | viewer   |
-| PUT    | `/executors/:id`                 | `UpdateExecutorRequest` → `ExecutorDetail` | operator |
-| DELETE | `/executors/:id`                 | `Reasoned` → 204                           | operator |
-| POST   | `/executors/:id/enable`          | `EnableRequest` → `ExecutorDetail`         | operator |
-| POST   | `/executors/:id/reload`          | `Reasoned` → `ExecutorDetail`              | operator |
-| POST   | `/executors/:id/meters/read`     | `Reasoned` → `MeterGaugeDTO[]`             | operator |
-| POST   | `/executors/:id/soft-hold/clear` | `Reasoned` → `ExecutorDetail`              | operator |
-| GET    | `/executors/:id/meters?window=`  | → `MeterHistoryResponse`                   | viewer   |
-| GET    | `/executors/:id/usage?window=`   | → `UsageHistoryResponse`                   | viewer   |
+| Method | Path                                | Body → Response                                  | Role     |
+| ------ | ----------------------------------- | ------------------------------------------------ | -------- |
+| GET    | `/destinations`                     | → `DestinationSummary[]`                         | viewer   |
+| POST   | `/destinations`                     | `CreateDestinationRequest` → `DestinationDetail` | operator |
+| GET    | `/destinations/:id`                 | → `DestinationDetail`                            | viewer   |
+| PUT    | `/destinations/:id`                 | `UpdateDestinationRequest` → `DestinationDetail` | operator |
+| DELETE | `/destinations/:id`                 | `Reasoned` → 204                                 | operator |
+| POST   | `/destinations/:id/enable`          | `EnableRequest` → `DestinationDetail`            | operator |
+| POST   | `/destinations/:id/reload`          | `Reasoned` → `DestinationDetail`                 | operator |
+| POST   | `/destinations/:id/meters/read`     | `Reasoned` → `MeterGaugeDTO[]`                   | operator |
+| POST   | `/destinations/:id/soft-hold/clear` | `Reasoned` → `DestinationDetail`                 | operator |
+| GET    | `/destinations/:id/meters?window=`  | → `MeterHistoryResponse`                         | viewer   |
+| GET    | `/destinations/:id/usage?window=`   | → `UsageHistoryResponse`                         | viewer   |
 
-`ExecutorCapsDTO` (on create and update) carries the core's caps: `runsPerHour`, `runsPerDay`,
+`DestinationCapsDTO` (on create and update) carries the core's caps: `runsPerHour`, `runsPerDay`,
 `usagePerDay`, `meterPollSeconds` (30–86 400), `meterStalenessMinutes`, `estimatedLimits` and
 `invokeTimeoutSeconds` (1–3600): how long to wait for `invoke` to answer. It overrides the type's
 per-target and default timeouts (core default 300 s); no answer in time is a lost response
 (retried when idempotent, otherwise the run is `uncertain`).
+
+**Deprecated aliases** (from before "executor" was renamed "destination"): every
+`/executors…` path is served by the matching `/destinations…` route, `kind=executor` is accepted
+on `GET /plugin-types` and `GET /plugins/search`, and an `executor=` filter is read as
+`destination=` (`packages/core/src/api/legacy.ts`). Responses use the current names
+(`destinationId`, `destinations`). The aliases will be removed in a future major.
 
 ## Processes
 
@@ -170,17 +176,17 @@ become `rejected` with reason `process_deleted` (a `batch`/`process_deleted` dec
 actor and reason), and its pending approvals become `withdrawn` (`ApprovalHistoryItem.decision`,
 one `approval` audit row each). Runs already reserved finish as usual; runs, events, versions and
 schedule ticks stay for the trace, and the `deleted` audit row keeps the last document. A source,
-executor or notifier the process used can be deleted afterwards.
+destination or notifier the process used can be deleted afterwards.
 
 ## Activity, events, trace
 
-| Method | Path                                                                          | Body → Response                                       | Role     |
-| ------ | ----------------------------------------------------------------------------- | ----------------------------------------------------- | -------- |
-| GET    | `/events?source=&process=&executor=&stage=&type=&artifact=&from=&to=&cursor=` | → `Page<ActivityRow>`                                 | viewer   |
-| GET    | `/events/:id`                                                                 | → `EventDetail`                                       | viewer   |
-| POST   | `/events/:id/replay`                                                          | `Reasoned` → `{ eventIds }`                           | operator |
-| GET    | `/trace?artifact=`                                                            | → `TraceResponse` (artifact id, `kind:id`, or `#482`) | viewer   |
-| GET    | `/events/:id/trace`                                                           | → `TraceResponse`                                     | viewer   |
+| Method | Path                                                                             | Body → Response                                       | Role     |
+| ------ | -------------------------------------------------------------------------------- | ----------------------------------------------------- | -------- |
+| GET    | `/events?source=&process=&destination=&stage=&type=&artifact=&from=&to=&cursor=` | → `Page<ActivityRow>`                                 | viewer   |
+| GET    | `/events/:id`                                                                    | → `EventDetail`                                       | viewer   |
+| POST   | `/events/:id/replay`                                                             | `Reasoned` → `{ eventIds }`                           | operator |
+| GET    | `/trace?artifact=`                                                               | → `TraceResponse` (artifact id, `kind:id`, or `#482`) | viewer   |
+| GET    | `/events/:id/trace`                                                              | → `TraceResponse`                                     | viewer   |
 
 "Why nothing ran". Match records a decision for every trigger on the event's source, including
 the ones it never evaluated (`skip`: `process_disabled`, `trigger_disabled`,
@@ -203,11 +209,11 @@ none listens.
 
 ## Runs
 
-| Method | Path                                       | Body → Response                 | Role     |
-| ------ | ------------------------------------------ | ------------------------------- | -------- |
-| GET    | `/runs?process=&executor=&status=&cursor=` | → `Page<RunSummary>`            | viewer   |
-| GET    | `/runs/:id`                                | → `RunDetail`                   | viewer   |
-| POST   | `/runs/:id/close`                          | `CloseRunRequest` → `RunDetail` | operator |
+| Method | Path                                          | Body → Response                 | Role     |
+| ------ | --------------------------------------------- | ------------------------------- | -------- |
+| GET    | `/runs?process=&destination=&status=&cursor=` | → `Page<RunSummary>`            | viewer   |
+| GET    | `/runs/:id`                                   | → `RunDetail`                   | viewer   |
+| POST   | `/runs/:id/close`                             | `CloseRunRequest` → `RunDetail` | operator |
 
 `RunDetail.steps[].status` is the step journal state: `started` (the action is running, or in
 doubt when the run moved on), `ok`, `error`, `skipped` (dry run or `when` false) or `uncertain`
@@ -246,7 +252,7 @@ event runs and sweeps.
 name prefix (`ai-switchboard-{kind}`) and `keywords:switchboard-plugin`, and keeps only packages
 that follow the naming convention — `ai-switchboard-{kind}-{name}`,
 `@scope/ai-switchboard-{kind}-{name}` or `@ai-switchboard/{kind}-{name}` — where `kind` is
-`source`, `executor`, `notifier` or `secrets` (the optional `kind` query parameter). Each result
+`source`, `destination`, `notifier` or `secrets` (the optional `kind` query parameter). Each result
 carries the latest version, description, publisher, publish date, links, weekly downloads when the
 registry reports them, `installed`/`installedVersion` on this replica, and `reviewed` (in the
 catalogue).
@@ -268,7 +274,7 @@ API. Re-installing with `POST /plugins` clears the tombstone. A removed plugin l
 
 `/notifiers` and `/secret-providers` share one shape: `GET` → `InstanceSummary[]`, `POST` `CreateInstanceRequest`, `PUT /:id` `UpdateInstanceRequest`, `POST /:id/enable` `EnableRequest`, `POST /:id/reload`, `DELETE /:id`, and for notifiers `POST /:id/test` (`Reasoned`). Role: admin for writes.
 
-Secret providers: sources, executors and notifiers resolve `secret://<provider>/…` references
+Secret providers: sources, destinations and notifiers resolve `secret://<provider>/…` references
 when they are built, so creating, enabling or disabling, editing (including renaming) or
 reloading a provider rebuilds every instance whose settings reference its name (and, after a
 rename, its old name: those instances fail with `secret_error: secret provider "<old>" is not
@@ -276,7 +282,7 @@ configured or not running` until their references are updated; nothing is rewrit
 a secret-provider plugin does the same for the providers it brings up. Each secret-provider
 `InstanceSummary` carries `dependents`: those instances with their status now, so a mutation's
 response shows the rebuild's outcome. `DELETE /secret-providers/:id` answers 409 while any source,
-executor, notifier or process (a `secret://` field, or `$secretRef('<provider>/<name>')` in an
+destination, notifier or process (a `secret://` field, or `$secretRef('<provider>/<name>')` in an
 expression) still references the provider, naming them.
 
 Every instance mutation (create, `PUT`, enable, reload, delete, `POST /apply`) rebuilds the live
@@ -287,7 +293,7 @@ it, and a provider's dependents, on their next reconcile pass, within
 `GET /secret-providers/:id/secrets` → `ProviderSecretsResponse` (role: **admin**; secret names map
 out the credentials a deployment holds, so viewers and operators get 403). It returns secret
 **names only, never values**: each listed secret has its `secret://<provider>/<name>` `ref`, the
-provider's optional `description` and `updatedAt`, and `usedBy` (every source, executor,
+provider's optional `description` and `updatedAt`, and `usedBy` (every source, destination,
 notifier, secret provider and process whose settings or document reference it, with the field
 path). `missing` holds references to this provider whose names the provider does not list
 (broken references). The core keeps only `name`, `description` and `updatedAt` from what the

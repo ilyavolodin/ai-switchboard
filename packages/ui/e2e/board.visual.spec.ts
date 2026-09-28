@@ -23,7 +23,7 @@ for (const [width, height] of [
       mask: [
         page.locator('time'),
         page.getByText(/updated .* ago|updated just now/),
-        page.getByLabel('Executor capacity'),
+        page.getByLabel('Destination capacity'),
       ],
     });
   });

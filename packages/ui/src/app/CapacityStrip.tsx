@@ -14,14 +14,14 @@ import {
 } from '../lib/meter.js';
 import styles from './CapacityStrip.module.css';
 
-function executorShortName(name: string): string {
+function destinationShortName(name: string): string {
   const base = name.split(' — ')[0] ?? name;
   const words = base.split(/\s+/);
   return words[words.length - 1] ?? base;
 }
 
 function tooltip(m: MeterGaugeDTO, nowMs: number): string {
-  const parts = [`${m.executorName} · ${m.title} ${meterValueText(m)}`];
+  const parts = [`${m.destinationName} · ${m.title} ${meterValueText(m)}`];
   const c = lowestEventCeiling(m);
   if (c != null) parts.push(`ceiling ${Math.round(c)}%`);
   if (m.estimated) parts.push('estimated');
@@ -32,26 +32,26 @@ function tooltip(m: MeterGaugeDTO, nowMs: number): string {
 }
 
 /**
- * The top bar's capacity strip: one 24 px arc per executor instance's primary meter, with value
- * and reset countdown, grouped by executor, each linking to the executor.
+ * The top bar's capacity strip: one 24 px arc per destination's primary meter, with value
+ * and reset countdown, grouped by destination, each linking to the destination.
  */
 export function CapacityStrip({ meters }: { meters: MeterGaugeDTO[] }) {
   const nowMs = useNow(30_000);
   const shown = primaryMeters(meters);
   if (shown.length === 0) return null;
   return (
-    <div className={styles.strip} aria-label="Executor capacity">
+    <div className={styles.strip} aria-label="Destination capacity">
       {shown.map((m, i) => {
         const allowance = m.kind === 'allowance' && m.used != null && m.limit != null;
         const value = allowance
           ? `${meterValueText(m)} ${m.unit}`
           : `${shortMeterLabel(m.title)} ${meterValueText(m)}`;
         return (
-          <div key={`${m.executorId}:${m.meterId}`} className={styles.group}>
+          <div key={`${m.destinationId}:${m.meterId}`} className={styles.group}>
             {i > 0 && <span className={styles.divider} aria-hidden="true" />}
-            <span className={styles.groupLabel}>{executorShortName(m.executorName)}</span>
+            <span className={styles.groupLabel}>{destinationShortName(m.destinationName)}</span>
             <Link
-              to={`/executors/${encodeURIComponent(m.executorId)}`}
+              to={`/destinations/${encodeURIComponent(m.destinationId)}`}
               className={cx(styles.meter, m.stale && styles.stale)}
               title={tooltip(m, nowMs)}
               aria-label={tooltip(m, nowMs)}

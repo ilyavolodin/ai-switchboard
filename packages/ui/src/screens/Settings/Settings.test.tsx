@@ -331,14 +331,14 @@ describe('Settings', () => {
         'DELETE /secret-providers/:id': () =>
           mockStatus(409, {
             error: 'conflict',
-            message: 'Still used by executor "Claude Routines — automation seat".',
+            message: 'Still used by destination "Claude Routines — automation seat".',
           }),
       });
       await user.click(await screen.findByRole('button', { name: 'Delete env' }));
       await giveReason(user, 'clean up', 'Delete');
       const row = screen.getByRole('listitem', { name: 'env' });
       expect(await within(row).findByText('env was not deleted')).toBeInTheDocument();
-      expect(within(row).getByText(/Still used by executor/)).toBeInTheDocument();
+      expect(within(row).getByText(/Still used by destination/)).toBeInTheDocument();
     });
 
     it('links the processes that still notify through a notifier it refused to delete', async () => {
@@ -393,7 +393,7 @@ describe('Settings', () => {
     const changes = [
       { kind: 'process', name: 'Autofix', action: 'update' },
       { kind: 'source', name: 'Sentry', action: 'create' },
-      { kind: 'executor', name: 'HTTP', action: 'unchanged' },
+      { kind: 'destination', name: 'HTTP', action: 'unchanged' },
     ];
     const { user, api } = open('export', 'admin', {
       'POST /apply': (r) => ({

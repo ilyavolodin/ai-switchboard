@@ -31,8 +31,8 @@ export interface Pipeline {
    * unavailable so the sender retries.
    */
   ingestPush(sourceId: string, req: RawRequest): Promise<{ status: number }>;
-  /** POST /callbacks/:executorId → verifyCallback → update or close the run. 401 on rejection, 404 unknown run/executor. */
-  handleCallback(executorId: string, req: RawRequest): Promise<{ status: number }>;
+  /** POST /callbacks/:destinationId → verifyCallback → update or close the run. 401 on rejection, 404 unknown run/destination. */
+  handleCallback(destinationId: string, req: RawRequest): Promise<{ status: number }>;
   runNow(
     processId: string,
     opts: { dryRun?: boolean; batchId?: string; actor: string; reason: string },
@@ -59,8 +59,8 @@ export interface Pipeline {
     reason: string,
   ): Promise<void>;
   resetBreaker(processId: string, actor: string, reason: string): Promise<void>;
-  clearSoftHold(executorId: string, actor: string, reason: string): Promise<void>;
-  readMetersNow(executorId: string): Promise<void>;
+  clearSoftHold(destinationId: string, actor: string, reason: string): Promise<void>;
+  readMetersNow(destinationId: string): Promise<void>;
   /** Register every queue worker and schedule, run startup recovery and start the heartbeat. */
   registerWorkers(): Promise<void>;
 
@@ -87,7 +87,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
   let workers: WorkerHandle | null = null;
   return {
     ingestPush: (sourceId, req) => ingestPush(ctx, sourceId, req),
-    handleCallback: (executorId, req) => handleCallback(ctx, executorId, req),
+    handleCallback: (destinationId, req) => handleCallback(ctx, destinationId, req),
     runNow: (processId, opts) => runNow(ctx, processId, opts),
     approve: (batchId, actor, reason) => approve(ctx, batchId, actor, reason),
     reject: (batchId, actor, reason) => reject(ctx, batchId, actor, reason),
@@ -96,8 +96,9 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       injectTestEvent(ctx, sourceId, type, actor, reason),
     closeRun: (runId, status, actor, reason) => closeRunByHand(ctx, runId, status, actor, reason),
     resetBreaker: (processId, actor, reason) => resetBreaker(ctx, processId, actor, reason),
-    clearSoftHold: (executorId, actor, reason) => clearSoftHold(ctx, executorId, actor, reason),
-    readMetersNow: (executorId) => readMetersNow(ctx, executorId),
+    clearSoftHold: (destinationId, actor, reason) =>
+      clearSoftHold(ctx, destinationId, actor, reason),
+    readMetersNow: (destinationId) => readMetersNow(ctx, destinationId),
     registerWorkers: async () => {
       if (workers) return;
       workers = await registerWorkers(ctx);

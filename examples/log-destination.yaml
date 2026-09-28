@@ -1,0 +1,70 @@
+# The quick start as a file: a webhook in quick mode feeds a process bound to the log destination,
+# which writes every run to the server log. Nothing external is needed.
+#
+#   switchboard apply -f examples/log-destination.yaml --reason "try it out"
+#
+# Then POST any JSON to the source's webhook URL (Sources › Test hook shows it):
+#
+#   curl -X POST http://localhost:8080/hooks/<sourceId> \
+#     -H 'content-type: application/json' \
+#     -d '{"id": 1, "title": "Deploy failed", "service": "checkout", "severity": "critical"}'
+#
+# and watch: docker compose -f deploy/docker-compose.yml logs -f switchboard | grep "log destination"
+#
+# To try failures, edit the process target: outcome error (breaker), rate_limited (soft-hold),
+# held (paused), failed (definitive), or set delayMs to see a run in flight.
+apiVersion: switchboard/v1
+kind: Configuration
+
+sources:
+  - name: Test hook
+    type: webhook
+    enabled: true
+    settings:
+      # Evaluation only: anyone who knows the URL can send events.
+      verification: none
+      # Quick mode: no mapping. Every delivery is one webhook.request.received event whose
+      # attributes are the body's top-level fields (nested objects flattened as parent_child).
+      mappingMode: quick
+      artifactIdPath: body.id
+
+destinations:
+  - name: Log
+    type: log
+    enabled: true
+    settings:
+      level: info
+      # Adds an "Hourly runs" meter so ceilings can be tried out.
+      hourlyLimit: 20
+    caps:
+      meterPollSeconds: 60
+
+processes:
+  - name: Critical deliveries
+    description: Every critical delivery becomes one logged run.
+    enabled: true
+    triggers:
+      - id: t1
+        source: Test hook
+        eventTypes: [webhook.request.received]
+        filter: attributes.severity = 'critical'
+        describe: A critical delivery arrived
+        enabled: true
+    schedules: []
+    batching: { debounceSeconds: 5, maxSize: 20, maxAgeSeconds: 60 }
+    gates:
+      approval: none
+      breaker: { threshold: 3, cooldownMinutes: 10 }
+    budgets:
+      runsPerHour: 30
+      meterCeilings:
+        hourly_runs: { events: 80, sweeps: 95 }
+    destination:
+      instance: Log
+      target: { label: quick-start, outcome: ok }
+    input: |
+      { "mode": mode, "runId": run.id, "titles": events.attributes.title }
+    before: []
+    after: []
+    notify: []
+    trackingDeadlineMinutes: 10

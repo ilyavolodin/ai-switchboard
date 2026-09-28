@@ -80,14 +80,14 @@ describe('redactSecretValues', () => {
 describe('document references', () => {
   it('finds secret:// fields and $secretRef calls in expressions', () => {
     const doc = {
-      executor: { target: { token: 'secret://vault/A' } },
+      destination: { target: { token: 'secret://vault/A' } },
       mapping: {
         input: "{ 'k': $secretRef('vault/B'), 'j': $secretRef( \"secret://env/C\" ) }",
       },
       triggers: [{ filter: "$secretRef('nopath') and $secretRef(name)" }],
     };
     expect(collectDocumentSecretRefs(doc)).toEqual([
-      { path: 'executor.target.token', ref: 'secret://vault/A' },
+      { path: 'destination.target.token', ref: 'secret://vault/A' },
       { path: 'mapping.input', ref: 'secret://vault/B' },
       { path: 'mapping.input', ref: 'secret://env/C' },
     ]);

@@ -58,7 +58,7 @@ describe('registry search', () => {
       'keywords:switchboard-plugin': [
         object('@ai-switchboard/source-webhook'),
         object('ai-switchboard-source-jira'),
-        object('@ai-switchboard/executor-http'),
+        object('@ai-switchboard/destination-http'),
         object('@ai-switchboard/sdk'),
         object('left-pad'),
       ],

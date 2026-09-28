@@ -32,12 +32,18 @@ export const useNotifiers = () => useInstances('notifiers');
 export const useSecretProviders = () => useInstances('secret-providers');
 
 /**
- * What a mutation refreshes. A secret-provider change rebuilds the sources, executors and
+ * What a mutation refreshes. A secret-provider change rebuilds the sources, destinations and
  * notifiers that reference it, so their lists (and the board) refresh too.
  */
 function refreshed(route: InstanceRoute) {
   return route === 'secret-providers'
-    ? [qk.instances(route), qk.instances('notifiers'), qk.sources.all, qk.executors.all, qk.board]
+    ? [
+        qk.instances(route),
+        qk.instances('notifiers'),
+        qk.sources.all,
+        qk.destinations.all,
+        qk.board,
+      ]
     : [qk.instances(route)];
 }
 

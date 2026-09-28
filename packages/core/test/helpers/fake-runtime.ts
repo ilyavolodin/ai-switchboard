@@ -11,8 +11,8 @@ import {
   type ArtifactSnapshot,
   type EventDraft,
   type EventTypeSpec,
-  type Executor,
-  type ExecutorType,
+  type Destination,
+  type DestinationType,
   type Health,
   type InvokeResult,
   type MeterReading,
@@ -31,7 +31,7 @@ import {
 import { rawRequest } from '@ai-switchboard/sdk/testing';
 
 import type {
-  LiveExecutor,
+  LiveDestination,
   LiveNotifier,
   LiveSource,
   PluginRuntime,
@@ -39,7 +39,7 @@ import type {
 
 /**
  * An in-memory PluginRuntime for integration tests: a webhook-like source with HMAC verify, an
- * http-like executor whose behaviour per invoke is scripted, and a recording notifier.
+ * http-like destination whose behaviour per invoke is scripted, and a recording notifier.
  */
 
 export const HOOK_TYPE = 'fake-hook';
@@ -150,7 +150,7 @@ export type Behaviour =
   | { result: InvokeResult }
   | ((run: RunHandle, input: unknown) => Promise<InvokeResult>);
 
-export interface FakeExecutorState {
+export interface FakeDestinationState {
   tracking: TrackingMode;
   idempotent: boolean;
   script: Behaviour[];
@@ -163,7 +163,7 @@ export interface FakeExecutorState {
   readings: MeterReading[];
   usageOnComplete: Record<string, number> | undefined;
   actions: { action: string; args: unknown }[];
-  /** What the type reports as its invoke timeout (`LiveExecutor.invokeTimeoutFor`). */
+  /** What the type reports as its invoke timeout (`LiveDestination.invokeTimeoutFor`). */
   invokeTimeoutSeconds: number | undefined;
 }
 
@@ -200,10 +200,10 @@ export const inputSchema = {
   },
 };
 
-function execType(): ExecutorType {
+function execType(): DestinationType {
   return {
     id: EXEC_TYPE,
-    displayName: 'Fake executor',
+    displayName: 'Fake destination',
     settingsSchema: { type: 'object' },
     targetSchema: { type: 'object' },
     inputSchema,
@@ -212,14 +212,14 @@ function execType(): ExecutorType {
     usage: usageDimensions,
     meters: meterSpecs,
     create: () => {
-      throw new Error('create through FakeRuntime.addExecutor');
+      throw new Error('create through FakeRuntime.addDestination');
     },
   };
 }
 
 async function behave(
   b: Behaviour,
-  state: FakeExecutorState,
+  state: FakeDestinationState,
   run: RunHandle,
   input: unknown,
 ): Promise<InvokeResult> {
@@ -308,10 +308,10 @@ export interface FakeNotifierState {
 
 export class FakeRuntime implements PluginRuntime {
   readonly sources = new Map<string, LiveSource>();
-  readonly executors = new Map<string, LiveExecutor>();
+  readonly destinations = new Map<string, LiveDestination>();
   readonly notifiers = new Map<string, LiveNotifier>();
   readonly sourceStates = new Map<string, FakeSourceState>();
-  readonly executorStates = new Map<string, FakeExecutorState>();
+  readonly destinationStates = new Map<string, FakeDestinationState>();
   readonly notifierStates = new Map<string, FakeNotifierState>();
   readonly errors: { plugin: string; kind: string; detail?: string }[] = [];
   readonly instanceErrors = new Map<string, string>();
@@ -324,7 +324,7 @@ export class FakeRuntime implements PluginRuntime {
       : undefined;
   }
 
-  executorType(typeId: string) {
+  destinationType(typeId: string) {
     return typeId === EXEC_TYPE && !this.unavailableTypes.has(typeId)
       ? { type: execType(), pluginName: EXEC_PLUGIN }
       : undefined;
@@ -354,8 +354,8 @@ export class FakeRuntime implements PluginRuntime {
       : undefined;
   }
 
-  executor(id: string): LiveExecutor | undefined {
-    const live = this.executors.get(id);
+  destination(id: string): LiveDestination | undefined {
+    const live = this.destinations.get(id);
     return live && !this.unavailableTypes.has(live.typeId) && !this.instanceErrors.has(id)
       ? live
       : undefined;
@@ -366,7 +366,7 @@ export class FakeRuntime implements PluginRuntime {
   }
 
   instanceError(id: string): string | undefined {
-    const live = this.sources.get(id) ?? this.executors.get(id);
+    const live = this.sources.get(id) ?? this.destinations.get(id);
     if (live && this.unavailableTypes.has(live.typeId)) return 'plugin_unavailable';
     return this.instanceErrors.get(id);
   }
@@ -446,17 +446,17 @@ export class FakeRuntime implements PluginRuntime {
     return state;
   }
 
-  addExecutor(
+  addDestination(
     id: string,
     name: string,
     options: Partial<
       Pick<
-        FakeExecutorState,
+        FakeDestinationState,
         'tracking' | 'idempotent' | 'fallback' | 'callbackToken' | 'invokeTimeoutSeconds'
       >
     > = {},
-  ): FakeExecutorState {
-    const state: FakeExecutorState = {
+  ): FakeDestinationState {
+    const state: FakeDestinationState = {
       tracking: options.tracking ?? 'sync',
       idempotent: options.idempotent ?? false,
       script: [],
@@ -473,7 +473,7 @@ export class FakeRuntime implements PluginRuntime {
       invokeTimeoutSeconds: options.invokeTimeoutSeconds,
     };
     const type = execType();
-    this.executors.set(id, {
+    this.destinations.set(id, {
       id,
       name,
       typeId: EXEC_TYPE,
@@ -484,7 +484,7 @@ export class FakeRuntime implements PluginRuntime {
       trackingFor: () => state.tracking,
       idempotentFor: () => state.idempotent,
       invokeTimeoutFor: () => state.invokeTimeoutSeconds,
-      executor: attributed<Executor>(
+      destination: attributed<Destination>(
         {
           invoke: async (target, input, run) => {
             state.invocations.push({ target, input, run });
@@ -512,7 +512,7 @@ export class FakeRuntime implements PluginRuntime {
         this,
       ),
     });
-    this.executorStates.set(id, state);
+    this.destinationStates.set(id, state);
     return state;
   }
 
@@ -542,7 +542,7 @@ export class FakeRuntime implements PluginRuntime {
   }
 }
 
-/** A callback request for the fake executor. */
+/** A callback request for the fake destination. */
 export function callbackRequest(token: string, body: Record<string, unknown>): RawRequest {
   return rawRequest({
     path: '/callbacks/x',

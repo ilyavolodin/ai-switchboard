@@ -1,6 +1,6 @@
 import type { ActionSpec, ProcessDocument, Step } from '@ai-switchboard/core/contract';
 
-import { useExecutor, useSource } from '../../api/index.js';
+import { useDestination, useSource } from '../../api/index.js';
 import { Button } from '../../components/Button.js';
 import { ExpressionEditor } from '../../components/ExpressionEditor.js';
 import { Field } from '../../components/Field.js';
@@ -11,11 +11,11 @@ import type { SectionProps } from './EditorSections.js';
 import { newStep } from './editorModel.js';
 import styles from './ProcessEditor.module.css';
 
-/** A source or executor the process is bound to, whose actions steps may call. */
+/** A source or destination the process is bound to, whose actions steps may call. */
 export interface StepProvider {
   id: string;
   name: string;
-  kind: 'source' | 'executor';
+  kind: 'source' | 'destination';
 }
 
 type Phase = 'before' | 'after';
@@ -39,9 +39,9 @@ function StepEditor({
 }) {
   const provider = providers.find((p) => p.id === step.provider);
   const source = useSource(provider?.kind === 'source' ? provider.id : undefined);
-  const executor = useExecutor(provider?.kind === 'executor' ? provider.id : undefined);
+  const destination = useDestination(provider?.kind === 'destination' ? provider.id : undefined);
   const actions: ActionSpec[] =
-    (provider?.kind === 'executor' ? executor.data?.actions : source.data?.actions) ?? [];
+    (provider?.kind === 'destination' ? destination.data?.actions : source.data?.actions) ?? [];
   const action = actions.find((a) => a.id === step.action);
   const argNames = Object.keys(asSchema(action?.argsSchema.properties) ?? {});
   const label = `${phase === 'before' ? 'Before' : 'After'} step ${index + 1}`;
@@ -61,7 +61,7 @@ function StepEditor({
             id={id}
             aria-describedby={describedBy}
             size="sm"
-            placeholder="Choose a source or executor…"
+            placeholder="Choose a source or destination…"
             value={step.provider}
             disabled={disabled}
             options={providers.map((p) => ({ value: p.id, label: `${p.name} (${p.kind})` }))}
@@ -136,7 +136,7 @@ function StepEditor({
 
 /**
  * Before and after steps: actions from the catalogue of the process's bound sources and its
- * executor, each with an argument expression and an optional condition.
+ * destination, each with an argument expression and an optional condition.
  */
 export function StepsFields({
   doc,
@@ -186,7 +186,7 @@ export function StepsFields({
                 variant="outline"
                 icon="plus"
                 disabled={disabled === true || providers.length === 0}
-                disabledReason="Bind a source or an executor first"
+                disabledReason="Bind a source or a destination first"
                 onClick={() => {
                   putList(phase, [...list, newStep(providers[0]?.id ?? '')]);
                 }}

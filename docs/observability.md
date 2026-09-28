@@ -32,25 +32,25 @@ One metric and one structured log line per pipeline decision, with the same attr
 Prometheus names follow the OpenTelemetry conversion: dots become underscores, counters get
 `_total`, and the histograms (unit seconds) get `_seconds` with `_bucket`, `_sum` and `_count`.
 
-| Signal                          | Prometheus name                           | Kind      | Attributes                             | Meaning                                                                                                                                           |
-| ------------------------------- | ----------------------------------------- | --------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `switchboard.events`            | `switchboard_events_total`                | counter   | `source`, `type`, `stage`              | Events received, per outcome at the door                                                                                                          |
-| `switchboard.dispatches`        | `switchboard_dispatches_total`            | counter   | `process`, `source`, `outcome`         | Match and dedupe results                                                                                                                          |
-| `switchboard.batches`           | `switchboard_batches_total`               | counter   | `process`, `kind`, `outcome`, `reason` | Gate and budget results (held, throttled, invoked)                                                                                                |
-| `switchboard.runs`              | `switchboard_runs_total`                  | counter   | `process`, `executor`, `status`        | Run terminal states                                                                                                                               |
-| `switchboard.run.latency`       | `switchboard_run_latency_seconds_bucket`  | histogram | `process`                              | Event `occurredAt` → invoke                                                                                                                       |
-| `switchboard.run.duration`      | `switchboard_run_duration_seconds_bucket` | histogram | `process`, `executor`                  | Invoke → terminal                                                                                                                                 |
-| `switchboard.run.usage`         | `switchboard_run_usage_total`             | counter   | `process`, `executor`, `unit`          | Usage per declared dimension, as the executor plugin reported it                                                                                  |
-| `switchboard.schedule.lag`      | `switchboard_schedule_lag_seconds_bucket` | histogram | `process`                              | Cron tick → sweep invoke                                                                                                                          |
-| `switchboard.meter.utilization` | `switchboard_meter_utilization`           | gauge     | `executor`, `meter`, `estimated`       | Latest reading, 0–100                                                                                                                             |
-| `switchboard.meter.resets_in`   | `switchboard_meter_resets_in`             | gauge     | `executor`, `meter`                    | Seconds until the meter resets                                                                                                                    |
-| `switchboard.budget.used`       | `switchboard_budget_used`                 | gauge     | `scope`, `window`                      | Counter versus cap                                                                                                                                |
-| `switchboard.breaker`           | `switchboard_breaker`                     | gauge     | `process`                              | 1 while open                                                                                                                                      |
-| `switchboard.source.health`     | `switchboard_source_health`               | gauge     | instance                               | 1 healthy                                                                                                                                         |
-| `switchboard.executor.health`   | `switchboard_executor_health`             | gauge     | instance                               | 1 healthy                                                                                                                                         |
-| `switchboard.plugin.errors`     | `switchboard_plugin_errors_total`         | counter   | `plugin`, `kind`                       | Exceptions and invalid events attributed to a plugin                                                                                              |
-| `switchboard.instance.rebuilds` | `switchboard_instance_rebuilds_total`     | counter   | `kind`, `change`                       | Instances a replica's reconcile pass built (`created`), rebuilt (`changed`, `dependent`) or dropped (`removed`) after a change on another replica |
-| `switchboard.heartbeat`         | `switchboard_heartbeat_total`             | counter   | `replica`                              | Emitted every 30 s by each live replica                                                                                                           |
+| Signal                           | Prometheus name                           | Kind      | Attributes                             | Meaning                                                                                                                                           |
+| -------------------------------- | ----------------------------------------- | --------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `switchboard.events`             | `switchboard_events_total`                | counter   | `source`, `type`, `stage`              | Events received, per outcome at the door                                                                                                          |
+| `switchboard.dispatches`         | `switchboard_dispatches_total`            | counter   | `process`, `source`, `outcome`         | Match and dedupe results                                                                                                                          |
+| `switchboard.batches`            | `switchboard_batches_total`               | counter   | `process`, `kind`, `outcome`, `reason` | Gate and budget results (held, throttled, invoked)                                                                                                |
+| `switchboard.runs`               | `switchboard_runs_total`                  | counter   | `process`, `destination`, `status`     | Run terminal states                                                                                                                               |
+| `switchboard.run.latency`        | `switchboard_run_latency_seconds_bucket`  | histogram | `process`                              | Event `occurredAt` → invoke                                                                                                                       |
+| `switchboard.run.duration`       | `switchboard_run_duration_seconds_bucket` | histogram | `process`, `destination`               | Invoke → terminal                                                                                                                                 |
+| `switchboard.run.usage`          | `switchboard_run_usage_total`             | counter   | `process`, `destination`, `unit`       | Usage per declared dimension, as the destination plugin reported it                                                                               |
+| `switchboard.schedule.lag`       | `switchboard_schedule_lag_seconds_bucket` | histogram | `process`                              | Cron tick → sweep invoke                                                                                                                          |
+| `switchboard.meter.utilization`  | `switchboard_meter_utilization`           | gauge     | `destination`, `meter`, `estimated`    | Latest reading, 0–100                                                                                                                             |
+| `switchboard.meter.resets_in`    | `switchboard_meter_resets_in`             | gauge     | `destination`, `meter`                 | Seconds until the meter resets                                                                                                                    |
+| `switchboard.budget.used`        | `switchboard_budget_used`                 | gauge     | `scope`, `window`                      | Counter versus cap                                                                                                                                |
+| `switchboard.breaker`            | `switchboard_breaker`                     | gauge     | `process`                              | 1 while open                                                                                                                                      |
+| `switchboard.source.health`      | `switchboard_source_health`               | gauge     | instance                               | 1 healthy                                                                                                                                         |
+| `switchboard.destination.health` | `switchboard_destination_health`          | gauge     | instance                               | 1 healthy                                                                                                                                         |
+| `switchboard.plugin.errors`      | `switchboard_plugin_errors_total`         | counter   | `plugin`, `kind`                       | Exceptions and invalid events attributed to a plugin                                                                                              |
+| `switchboard.instance.rebuilds`  | `switchboard_instance_rebuilds_total`     | counter   | `kind`, `change`                       | Instances a replica's reconcile pass built (`created`), rebuilt (`changed`, `dependent`) or dropped (`removed`) after a change on another replica |
+| `switchboard.heartbeat`          | `switchboard_heartbeat_total`             | counter   | `replica`                              | Emitted every 30 s by each live replica                                                                                                           |
 
 Attribute values are the outcome vocabulary from [concepts](concepts.md#outcome-vocabulary):
 event stages, dispatch outcomes, batch outcomes with hold reasons, run statuses.
@@ -58,7 +58,7 @@ event stages, dispatch outcomes, batch outcomes with hold reasons, run statuses.
 ## Traces and logs
 
 A trace spans one event from receipt to terminal run, with a child span per stage and per plugin
-call. The plugin `HttpClient` propagates W3C trace context, so an executor's outbound call
+call. The plugin `HttpClient` propagates W3C trace context, so a destination's outbound call
 appears in the same trace, and so does the backend if it is instrumented.
 
 Logs are JSON lines on stdout (pino). Decision lines carry the signal's attributes plus
@@ -76,12 +76,12 @@ queries an external observability system.
 
 `deploy/grafana/switchboard-dashboard.json` is a starting point over the Prometheus metrics:
 events by source and stage, dispatch outcomes, batches held and throttled by reason, runs by
-status, latency and duration p50/p95, meter utilization per executor and meter, budget usage,
+status, latency and duration p50/p95, meter utilization per destination and meter, budget usage,
 open breakers, plugin errors and replica heartbeats.
 
 To import it: Grafana → **Dashboards → New → Import** → upload the JSON → pick your Prometheus
 data source for the `datasource` input. Use the dashboard's template variables to narrow it to
-one process, executor or source.
+one process, destination or source.
 
 ## Example alerts
 
@@ -105,10 +105,10 @@ groups:
           summary: '{{ $labels.process }}: {{ $value }} failed runs in the last hour'
 
       - alert: SwitchboardMeterHigh
-        expr: max by (executor, meter) (switchboard_meter_utilization) > 90
+        expr: max by (destination, meter) (switchboard_meter_utilization) > 90
         for: 15m
         annotations:
-          summary: '{{ $labels.executor }} {{ $labels.meter }} at {{ $value }} %'
+          summary: '{{ $labels.destination }} {{ $labels.meter }} at {{ $value }} %'
 
       - alert: SwitchboardThrottling
         expr: sum by (process) (increase(switchboard_batches_total{outcome="throttled"}[6h])) > 10

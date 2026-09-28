@@ -24,7 +24,7 @@ import {
   validateAgainst,
   validatePlugin,
   verifyHmac,
-  type ExecutorType,
+  type DestinationType,
   type SourceType,
 } from './index.js';
 import { createStubHttp, rawRequest, scrubRequest } from './testing/index.js';
@@ -343,9 +343,9 @@ describe('validatePlugin', () => {
   });
 });
 
-const executorType = (overrides: Partial<ExecutorType> = {}): ExecutorType => ({
+const destinationType = (overrides: Partial<DestinationType> = {}): DestinationType => ({
   id: 'demo-exec',
-  displayName: 'Demo executor',
+  displayName: 'Demo destination',
   settingsSchema: { type: 'object' },
   targetSchema: { type: 'object' },
   inputSchema: { type: 'object' },
@@ -384,11 +384,11 @@ describe('icons', () => {
         id: 'demo',
         displayName: 'Demo',
         sources: [sourceType({ icon: 'rocket' })],
-        executors: [executorType({ icon: 'data:text/html;base64,PGI+' })],
+        destinations: [destinationType({ icon: 'data:text/html;base64,PGI+' })],
       }),
     );
     expect(errors.join('\n')).toMatch(/source demo: icon "rocket"/);
-    expect(errors.join('\n')).toMatch(/executor demo-exec: icon data URI must start/);
+    expect(errors.join('\n')).toMatch(/destination demo-exec: icon data URI must start/);
     expect(
       validatePlugin(
         definePlugin({
@@ -408,7 +408,7 @@ describe('invokeTimeoutSeconds', () => {
         definePlugin({
           id: 'demo',
           displayName: 'Demo',
-          executors: [executorType({ invokeTimeoutSeconds })],
+          destinations: [destinationType({ invokeTimeoutSeconds })],
         }),
       );
     expect(check(60)).toEqual([]);

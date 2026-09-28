@@ -12,7 +12,7 @@ describe('app shell', () => {
       'Board',
       'Processes',
       'Sources',
-      'Executors',
+      'Destinations',
       'Activity',
       'Approvals',
       'Plugins',
@@ -90,10 +90,10 @@ describe('app shell', () => {
       'href',
       '/approvals',
     );
-    const strip = screen.getByLabelText('Executor capacity');
+    const strip = screen.getByLabelText('Destination capacity');
     expect(
       within(strip).getByRole('link', { name: /5-hour window 62%.*resets in 2 h 10 m/ }),
-    ).toHaveAttribute('href', '/executors/ex-routines');
+    ).toHaveAttribute('href', '/destinations/ex-routines');
     expect(within(strip).getByRole('link', { name: /API rate limit 18%/ })).toBeInTheDocument();
   });
 
@@ -135,5 +135,15 @@ describe('app shell', () => {
     renderApp('/sources/src-linear/settings');
     expect(await screen.findByRole('heading', { name: 'Linear — lola', level: 1 })).toBeVisible();
     expect(await screen.findByLabelText(/Team key/)).toHaveValue('LOL');
+  });
+
+  it.each([
+    ['/executors', '/destinations', ''],
+    ['/executors/ex-routines/settings', '/destinations/ex-routines/settings', '?x=1'],
+  ])('redirects the old path %s to %s', async (from, to, search) => {
+    const { router } = renderApp(`${from}${search}`);
+    await screen.findByRole('navigation', { name: 'Sections' });
+    expect(router.state.location.pathname).toBe(to);
+    expect(router.state.location.search).toBe(search);
   });
 });

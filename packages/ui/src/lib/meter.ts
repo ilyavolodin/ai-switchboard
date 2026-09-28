@@ -51,16 +51,16 @@ export function isAboveCeiling(
   return c != null && f != null && f * 100 >= c;
 }
 
-/** Primary meters, one per executor (falls back to each executor's first meter). */
+/** Primary meters, one per destination (falls back to each destination's first meter). */
 export function primaryMeters(meters: MeterGaugeDTO[]): MeterGaugeDTO[] {
-  const byExecutor = new Map<string, MeterGaugeDTO[]>();
+  const byDestination = new Map<string, MeterGaugeDTO[]>();
   for (const m of meters) {
-    const list = byExecutor.get(m.executorId) ?? [];
+    const list = byDestination.get(m.destinationId) ?? [];
     list.push(m);
-    byExecutor.set(m.executorId, list);
+    byDestination.set(m.destinationId, list);
   }
   const out: MeterGaugeDTO[] = [];
-  for (const list of byExecutor.values()) {
+  for (const list of byDestination.values()) {
     const primary = list.find((m) => m.primary) ?? list[0];
     if (primary) out.push(primary);
   }

@@ -81,7 +81,7 @@ export async function registerWorkers(ctx: Ctx): Promise<WorkerHandle> {
   );
   await q.work(
     JOBS.metersRead,
-    withId('executorId', (v) => readMeters(ctx, v)),
+    withId('destinationId', (v) => readMeters(ctx, v)),
     { concurrency: 2 },
   );
   await q.work(JOBS.schedulerTick, async () => {

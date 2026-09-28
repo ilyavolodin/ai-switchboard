@@ -5,7 +5,7 @@ import {
   useApprove,
   useEnableProcess,
   useReadMeters,
-  useReloadExecutor,
+  useReloadDestination,
   useReloadSource,
   useResetBreaker,
   useSendTestEvent,
@@ -43,7 +43,7 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
       title: 'Approve this batch?',
       confirmLabel: 'Approve',
       consequence:
-        'The batch re-enters the gate and, if budgets allow, runs through its executor now.',
+        'The batch re-enters the gate and, if budgets allow, runs through its destination now.',
     },
     { successMessage: 'Batch approved' },
   );
@@ -57,15 +57,15 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
     },
     { successMessage: 'Source reloaded' },
   );
-  const reloadExecutor = useReasonedMutation(
-    useReloadExecutor(),
+  const reloadDestination = useReasonedMutation(
+    useReloadDestination(),
     {
-      title: 'Reload the executor?',
+      title: 'Reload the destination?',
       confirmLabel: 'Reload',
       consequence:
         'The plugin instance is recreated from its saved settings; open runs keep being tracked.',
     },
-    { successMessage: 'Executor reloaded' },
+    { successMessage: 'Destination reloaded' },
   );
   const readMeters = useReasonedMutation(
     useReadMeters(),
@@ -73,7 +73,7 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
       title: 'Read meters now?',
       confirmLabel: 'Read meters',
       consequence:
-        'Asks the executor for every meter now instead of waiting for the next scheduled read.',
+        'Asks the destination for every meter now instead of waiting for the next scheduled read.',
     },
     { successMessage: 'Meters read' },
   );
@@ -104,8 +104,8 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
     reset_breaker: (i) => reset.run({ id: i.targetId }),
     approve: (i) => approve.run({ batchId: i.targetId }),
     reload: (i) =>
-      i.targetKind === 'executor'
-        ? reloadExecutor.run({ id: i.targetId })
+      i.targetKind === 'destination'
+        ? reloadDestination.run({ id: i.targetId })
         : reloadSource.run({ id: i.targetId }),
     read_meters: (i) => readMeters.run({ id: i.targetId }),
     test_event: (i) => testEvent.run({ id: i.targetId }),

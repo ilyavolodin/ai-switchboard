@@ -28,18 +28,18 @@ const pluginSource = (caps: string): string => `export default {
   id: 'acme-jira',
   displayName: 'Jira',
   sources: [{ id: 'jira', displayName: 'Jira' }],
-  executors: [],
+  destinations: [],
   notifiers: [],
   secretProviders: [],
   capabilities: ${caps},
-  switchboardSdk: { major: 1, version: '1.0.0' },
+  switchboardSdk: { major: 2, version: '2.0.0' },
 };
 `;
 
 const jira: FakePackage = {
   name: '@acme/switchboard-source-jira',
   version: '1.2.0',
-  switchboard: { entry: './dist/plugin.js', sdk: '^1.0.0' },
+  switchboard: { entry: './dist/plugin.js', sdk: '^2.0.0' },
   entrySource: pluginSource("{ network: ['*.atlassian.net'], secrets: ['api-token'] }"),
   integrity: 'sha512-fakeintegrity==',
 };
@@ -130,7 +130,7 @@ describe('installPlugin', () => {
       name: '@acme/switchboard-source-jira',
       version: '1.2.0',
       integrity: 'sha512-fakeintegrity==',
-      sdkRange: '^1.0.0',
+      sdkRange: '^2.0.0',
       compatible: true,
       capabilities: { network: ['*.atlassian.net'], secrets: ['api-token'] },
       plugin: {
@@ -156,7 +156,7 @@ describe('installPlugin', () => {
       '@acme/switchboard-source-jira': {
         version: '1.2.0',
         integrity: 'sha512-fakeintegrity==',
-        sdk: '^1.0.0',
+        sdk: '^2.0.0',
         installedAt: '2026-09-27T12:00:00.000Z',
         spec: '@acme/switchboard-source-jira@^1',
       },
@@ -192,7 +192,7 @@ describe('installPlugin', () => {
   it('uses switchboard.source only when allowSource is set', async () => {
     const sourceOnly: FakePackage = {
       ...jira,
-      switchboard: { source: './dist/plugin.js', sdk: '^1.0.0' },
+      switchboard: { source: './dist/plugin.js', sdk: '^2.0.0' },
     };
     const without = await installPlugin({ home, spec: 'x', runNpm: fakeNpm({ x: sourceOnly }) });
     expect(without.capabilities).toBeUndefined();
@@ -211,7 +211,7 @@ describe('installPlugin', () => {
   });
 
   it('flags an incompatible SDK range', async () => {
-    const future = { ...jira, switchboard: { entry: './dist/plugin.js', sdk: '^2.0.0' } };
+    const future = { ...jira, switchboard: { entry: './dist/plugin.js', sdk: '^3.0.0' } };
     const result = await installPlugin({ home, spec: 'f', runNpm: fakeNpm({ f: future }) });
     expect(result.compatible).toBe(false);
     expect(result.warnings.join()).toMatch(/does not satisfy/);
@@ -319,7 +319,7 @@ describe('inspectPlugin', () => {
     expect(result).toMatchObject({
       name: '@acme/switchboard-source-jira',
       version: '1.2.0',
-      sdkRange: '^1.0.0',
+      sdkRange: '^2.0.0',
       compatible: true,
       integrity: 'sha512-fakeintegrity==',
       capabilities: { network: ['*.atlassian.net'], secrets: ['api-token'] },

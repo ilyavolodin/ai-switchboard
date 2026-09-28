@@ -8,7 +8,7 @@ import {
   batches,
   dispatches,
   events,
-  executors,
+  destinations,
   notificationLog,
   processes,
   runUpdates,
@@ -210,13 +210,13 @@ async function buildTrace(
           .where(inArray(processes.id, processIds))
       : [];
   const procName = new Map(procRows.map((p) => [p.id, p.name]));
-  const exIds = [...new Set(runRows.map((r) => r.executorId))];
+  const exIds = [...new Set(runRows.map((r) => r.destinationId))];
   const exRows =
     exIds.length > 0
       ? await deps.db
-          .select({ id: executors.id, name: executors.name })
-          .from(executors)
-          .where(inArray(executors.id, exIds))
+          .select({ id: destinations.id, name: destinations.name })
+          .from(destinations)
+          .where(inArray(destinations.id, exIds))
       : [];
   const exName = new Map(exRows.map((e) => [e.id, e.name]));
   const pn = (id: string) => ({ processId: id, processName: procName.get(id) ?? id });
@@ -357,7 +357,7 @@ async function buildTrace(
         at: iso(r.invokedAt),
         kind: 'invoke',
         tone: 'ok',
-        title: `Invoked ${exName.get(r.executorId) ?? r.executorId}${r.dryRun ? ' (dry run)' : ''}`,
+        title: `Invoked ${exName.get(r.destinationId) ?? r.destinationId}${r.dryRun ? ' (dry run)' : ''}`,
         data: { input: r.input, attempts: r.attempts, externalId: r.externalId },
         ...base,
         ...(r.externalUrl ? { externalUrl: r.externalUrl } : {}),

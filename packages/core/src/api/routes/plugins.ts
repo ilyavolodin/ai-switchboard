@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { actorOf, requireRole } from '../../auth/fastify.js';
 import {
-  executors,
+  destinations,
   notifiers,
   plugins,
   pluginTypes,
@@ -76,35 +76,35 @@ export const CATALOGUE: Omit<CatalogueEntry, 'installed'>[] = [
     latestVersion: '1.0.0',
   },
   {
-    package: '@ai-switchboard/executor-http',
+    package: '@ai-switchboard/destination-http',
     displayName: 'HTTP',
     description: 'Call any endpoint: sync, callback or fire-and-forget.',
-    kinds: ['executor'],
+    kinds: ['destination'],
     reviewed: true,
     latestVersion: '1.0.0',
   },
   {
-    package: '@ai-switchboard/executor-claude-routines',
+    package: '@ai-switchboard/destination-claude-routines',
     displayName: 'Claude Routines',
     description: 'Fire a routine; windows and daily allowance as meters.',
-    kinds: ['executor'],
+    kinds: ['destination'],
     reviewed: true,
     latestVersion: '1.0.0',
   },
   {
-    package: '@ai-switchboard/executor-github-actions',
+    package: '@ai-switchboard/destination-github-actions',
     displayName: 'GitHub Actions',
     description: 'workflow_dispatch with billable-minute usage.',
-    kinds: ['executor'],
+    kinds: ['destination'],
     reviewed: true,
     latestVersion: '1.0.0',
   },
   {
-    package: '@ai-switchboard/executor-log',
+    package: '@ai-switchboard/destination-log',
     displayName: 'Log (testing)',
     description:
       'Logs every invocation and simulates outcomes, delays and a meter — for trying processes out.',
-    kinds: ['executor'],
+    kinds: ['destination'],
     reviewed: true,
     latestVersion: '1.0.0',
   },
@@ -185,7 +185,7 @@ export function typeDTO(kind: PluginKind, row: typeof pluginTypes.$inferSelect):
           actions: (m.actions as PluginTypeDTO['actions']) ?? [],
         }
       : {}),
-    ...(kind === 'executor'
+    ...(kind === 'destination'
       ? {
           targetSchema: m.targetSchema as PluginTypeDTO['targetSchema'],
           inputSchema: m.inputSchema as PluginTypeDTO['inputSchema'],
@@ -225,11 +225,11 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
       await db.select({ typeId: sources.typeId, n: count() }).from(sources).groupBy(sources.typeId),
     );
     add(
-      'executor',
+      'destination',
       await db
-        .select({ typeId: executors.typeId, n: count() })
-        .from(executors)
-        .groupBy(executors.typeId),
+        .select({ typeId: destinations.typeId, n: count() })
+        .from(destinations)
+        .groupBy(destinations.typeId),
     );
     add(
       'notifier',

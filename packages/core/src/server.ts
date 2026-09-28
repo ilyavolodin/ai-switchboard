@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { registerAuth } from './auth/fastify.js';
 import type { ApiContext } from './api/context.js';
 import { registerErrorHandler } from './api/errors.js';
+import { rewriteLegacyUrl } from './api/legacy.js';
 import { createReasonPolicy, registerReasonPolicy } from './api/reasons.js';
 import { registerAdminRoutes } from './api/routes/admin.js';
 import { registerAuthRoutes } from './api/routes/auth.js';
@@ -51,6 +52,8 @@ export async function buildServer(
     loggerInstance: ctx.logger.child({ component: 'http' }),
     trustProxy: ctx.config.trustProxy,
     bodyLimit: 5 * 1024 * 1024,
+    // Deprecated `executor` URLs are served by the `destination` routes (api/legacy.ts).
+    rewriteUrl: (req) => rewriteLegacyUrl(req.url ?? '/'),
     ajv: {
       customOptions: {
         allErrors: true,

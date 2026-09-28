@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { Health, InvokeResult, TrackingMode } from '@ai-switchboard/sdk';
 
-import { batches, executors, processes, runs } from '../../db/schema.js';
+import { batches, destinations, processes, runs } from '../../db/schema.js';
 import { resolveSecretRefs } from '../../expr/index.js';
 import { redactSecretValues } from '../../secrets/refs.js';
 import {
@@ -29,16 +29,16 @@ import { closeRun, markUncertain, recordUpdate, runHandle, scheduleTracking } fr
 import { runSteps, type RunRow } from './steps.js';
 
 /**
- * The executor bridge: one invoke attempt for a reserved run. The attempt is claimed with a
+ * The destination bridge: one invoke attempt for a reserved run. The attempt is claimed with a
  * conditional update, so two replicas never invoke the same run; secret references in the input
  * are resolved immediately before the call and never stored.
  */
 
 function targetFor(
-  document: { executor: { target: unknown } },
+  document: { destination: { target: unknown } },
   defaults: Record<string, unknown>,
 ): unknown {
-  const t = document.executor.target;
+  const t = document.destination.target;
   if (t !== null && typeof t === 'object' && !Array.isArray(t)) {
     return { ...defaults, ...(t as Record<string, unknown>) };
   }
@@ -58,8 +58,11 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
   const [pending] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
   if (pending?.status !== 'invoking' || pending.invokeStartedAt !== null) return;
   const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, pending.processId));
-  const [exRow] = await ctx.db.select().from(executors).where(eq(executors.id, pending.executorId));
-  const live = ctx.runtime.executor(pending.executorId);
+  const [exRow] = await ctx.db
+    .select()
+    .from(destinations)
+    .where(eq(destinations.id, pending.destinationId));
+  const live = ctx.runtime.destination(pending.destinationId);
   const target = proc && exRow ? targetFor(proc.document, exRow.targetDefaults) : undefined;
   const timeoutSeconds = effectiveInvokeTimeoutSeconds({
     cap: exRow?.caps.invokeTimeoutSeconds,
@@ -87,14 +90,14 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
   if (!run) return;
   if (!proc || !exRow || !live) {
     // Nothing was sent: retry later, like a connection refused.
-    const reason = `executor ${run.executorId} has no live instance`;
+    const reason = `destination ${run.destinationId} has no live instance`;
     const cls: InvokeClassification =
       run.attempts < MAX_INVOKE_ATTEMPTS
         ? { action: 'retry', reason, delaySeconds: 30 }
         : {
             action: 'failed',
-            reason: 'executor_unavailable',
-            errors: [ctx.runtime.instanceError(run.executorId) ?? reason],
+            reason: 'destination_unavailable',
+            errors: [ctx.runtime.instanceError(run.destinationId) ?? reason],
           };
     await apply(ctx, run, cls, 'none');
     return;
@@ -149,7 +152,7 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
   try {
     const handle = runHandle(ctx, run, proc.name);
     const answered = await withTimeout(timeoutSeconds * 1000, () =>
-      live.executor.invoke(target, input, handle),
+      live.destination.invoke(target, input, handle),
     );
     if (answered.timedOut) {
       outcome = { kind: 'timeout', seconds: timeoutSeconds };
@@ -191,12 +194,12 @@ async function apply(
   if (soft !== undefined) {
     const until = addSeconds(now, soft);
     await ctx.db
-      .update(executors)
+      .update(destinations)
       .set({
-        softHoldUntil: sql`GREATEST(COALESCE(${executors.softHoldUntil}, ${until}), ${until})`,
+        softHoldUntil: sql`GREATEST(COALESCE(${destinations.softHoldUntil}, ${until}), ${until})`,
         softHoldReason: `retry after ${soft} s (run ${run.id})`,
       })
-      .where(eq(executors.id, run.executorId));
+      .where(eq(destinations.id, run.destinationId));
   }
   if (cls.action === 'failed' && cls.unhealthy) {
     const health: Health = {
@@ -205,15 +208,15 @@ async function apply(
       checkedAt: now.toISOString(),
     };
     const [ex] = await ctx.db
-      .update(executors)
+      .update(destinations)
       .set({ health })
-      .where(eq(executors.id, run.executorId))
-      .returning({ name: executors.name });
-    ctx.telemetry.gauge('switchboard.executor.health', 0, { executor: run.executorId });
+      .where(eq(destinations.id, run.destinationId))
+      .returning({ name: destinations.name });
+    ctx.telemetry.gauge('switchboard.destination.health', 0, { destination: run.destinationId });
     await sendSystemAlert(ctx, {
-      key: `executor_unhealthy:${run.executorId}`,
-      title: `Executor unhealthy: ${ex?.name ?? run.executorId}`,
-      text: `Invokes to ${ex?.name ?? run.executorId} are refused (${cls.reason}). Every process bound to it is held until the credentials are rotated and the instance reloaded.`,
+      key: `destination_unhealthy:${run.destinationId}`,
+      title: `Destination unhealthy: ${ex?.name ?? run.destinationId}`,
+      text: `Invokes to ${ex?.name ?? run.destinationId} are refused (${cls.reason}). Every process bound to it is held until the credentials are rotated and the instance reloaded.`,
       severity: 'error',
     });
   }

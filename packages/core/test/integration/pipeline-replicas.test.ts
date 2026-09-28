@@ -13,7 +13,7 @@ import {
   deliver,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   type Harness,
@@ -36,7 +36,7 @@ describe('two replicas on one database', () => {
     const h: Harness = await createHarness(tdb.db);
     const other = await h.replica();
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       batching: { groupBy: 'attributes.repository' },
     });
@@ -105,7 +105,7 @@ describe('two replicas on one database', () => {
       await b.pipeline.registerWorkers();
       const h = { clock, runtime, db: tdb.db };
       const src = await seedSource(h);
-      const ex = await seedExecutor(h);
+      const ex = await seedDestination(h);
       const pid = await seedProcess(h, ex.id, src.id, {
         batching: { debounceSeconds: 0, maxSize: 1 },
       });

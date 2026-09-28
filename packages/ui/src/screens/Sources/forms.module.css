@@ -1,4 +1,4 @@
-/* Shared by the source and executor forms: the core caps block and the create dialog. */
+/* Shared by the source and destination forms: the core caps block and the create dialog. */
 .caps {
   display: flex;
   flex-direction: column;

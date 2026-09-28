@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import jsonata from 'jsonata';
 
 import { actorOf, requireRole } from '../../auth/fastify.js';
-import { executors, notifiers, sources } from '../../db/schema.js';
+import { destinations, notifiers, sources } from '../../db/schema.js';
 import { processDocumentSchema, type ProcessDocument } from '../../domain/process.js';
 import {
   createProcess,
@@ -57,7 +57,7 @@ function compileError(expr: string | undefined): string | null {
 
 /**
  * Structural (JSON Schema) and semantic validation: referenced instances exist, event types are
- * declared by the source, the target matches the executor's targetSchema, expressions compile,
+ * declared by the source, the target matches the destination's targetSchema, expressions compile,
  * crons parse.
  */
 export async function validateProcessDocument(
@@ -106,21 +106,29 @@ export async function validateProcessDocument(
     if (!preview.valid) problems.push(`schedules[${i}]: ${preview.error ?? 'invalid cron'}`);
   }
 
-  const [ex] = await db.select().from(executors).where(eq(executors.id, doc.executor.instanceId));
+  const [ex] = await db
+    .select()
+    .from(destinations)
+    .where(eq(destinations.id, doc.destination.instanceId));
   if (!ex) {
-    problems.push('executor.instanceId references an executor that does not exist');
+    problems.push('destination.instanceId references a destination that does not exist');
   } else {
-    const type = ctx.runtime.executorType(ex.typeId)?.type;
+    const type = ctx.runtime.destinationType(ex.typeId)?.type;
     if (type) {
-      const target = { ...ex.targetDefaults, ...(doc.executor.target as Record<string, unknown>) };
+      const target = {
+        ...ex.targetDefaults,
+        ...(doc.destination.target as Record<string, unknown>),
+      };
       const t = validateAgainst(type.targetSchema, target);
       if (!t.valid)
         problems.push(
-          ...t.errors.map((e) => `executor.target${e.startsWith('(root)') ? e.slice(6) : ` ${e}`}`),
+          ...t.errors.map(
+            (e) => `destination.target${e.startsWith('(root)') ? e.slice(6) : ` ${e}`}`,
+          ),
         );
     }
-    const live = ctx.runtime.executor(ex.id);
-    // An executor created in the same apply has no live object yet: ask the type about this
+    const live = ctx.runtime.destination(ex.id);
+    // A destination created in the same apply has no live object yet: ask the type about this
     // instance's settings (usage and meters may be declared per instance, as http does).
     const usage = live?.usage ?? (type ? (type.usageFor?.(ex.settings) ?? type.usage) : []);
     const meterSpecs =
@@ -151,7 +159,7 @@ export async function validateProcessDocument(
     if (err) problems.push(`${label}: ${err}`);
   }
 
-  const exRows = await db.select({ id: executors.id }).from(executors);
+  const exRows = await db.select({ id: destinations.id }).from(destinations);
   const providers = new Set([...srcRows.map((s) => s.id), ...exRows.map((e) => e.id)]);
   for (const phase of ['before', 'after'] as const) {
     for (const [i, s] of doc[phase].entries()) {

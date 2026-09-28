@@ -7,7 +7,7 @@ import { breakerAtGate, breakerClosesAt, type BreakerState } from './breaker.js'
 import { inQuietHours } from './quiet-hours.js';
 
 /**
- * Stage 5, gate. In order: process enabled → every source in the batch enabled → executor
+ * Stage 5, gate. In order: process enabled → every source in the batch enabled → destination
  * instance enabled, its plugin available and healthy → breaker closed → outside quiet hours →
  * approval satisfied. The first failure holds the batch with its reason.
  */
@@ -18,11 +18,11 @@ export interface GateInput {
   process: { enabled: boolean };
   /** Distinct sources of the events in the batch. */
   sources: readonly { id: string; enabled: boolean }[];
-  executor: {
+  destination: {
     /** The row exists. */
     exists: boolean;
     enabled: boolean;
-    /** The executor type's plugin is loaded. */
+    /** The destination type's plugin is loaded. */
     pluginAvailable: boolean;
     /** A live object exists (false when secrets failed or create threw). */
     live: boolean;
@@ -77,20 +77,24 @@ export function gate(input: GateInput, now: Date): GateResult {
   if (disabled.length > 0) return hold('source_disabled', 'sources_enabled', disabled.join(','));
   pass('sources_enabled', input.sources.length === 0 ? 'no events' : undefined);
 
-  const ex = input.executor;
-  if (!ex.exists) return hold('executor_disabled', 'executor_enabled', 'executor missing');
-  if (!ex.enabled) return hold('executor_disabled', 'executor_enabled');
-  pass('executor_enabled');
+  const ex = input.destination;
+  if (!ex.exists) return hold('destination_disabled', 'destination_enabled', 'destination missing');
+  if (!ex.enabled) return hold('destination_disabled', 'destination_enabled');
+  pass('destination_enabled');
   if (!ex.pluginAvailable || ex.instanceError === 'plugin_unavailable') {
     return hold('plugin_unavailable', 'plugin_available');
   }
   pass('plugin_available');
   if (!ex.live)
-    return hold('executor_unhealthy', 'executor_healthy', ex.instanceError ?? 'no live instance');
+    return hold(
+      'destination_unhealthy',
+      'destination_healthy',
+      ex.instanceError ?? 'no live instance',
+    );
   if (ex.health?.status === 'unhealthy') {
-    return hold('executor_unhealthy', 'executor_healthy', ex.health.message ?? 'unhealthy');
+    return hold('destination_unhealthy', 'destination_healthy', ex.health.message ?? 'unhealthy');
   }
-  pass('executor_healthy');
+  pass('destination_healthy');
 
   const breaker = breakerAtGate(input.breaker, input.breaker.cooldownMinutes, now);
   breakerClosed = breaker.transition === 'closed_cooldown';

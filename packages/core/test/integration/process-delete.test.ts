@@ -10,7 +10,7 @@ import {
   deliver,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   type Harness,
@@ -35,7 +35,7 @@ const meta = () => ({ actor: 'op@example.com', reason: 'retired', now: h.clock.n
 describe('deleting a process', () => {
   it('drops its unfinished batches, withdraws pending approvals and keeps the history', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       gates: { approval: "events.attributes.repository = 'acme/prod'" },
       batching: { groupBy: 'attributes.repository' },
@@ -106,7 +106,7 @@ describe('deleting a process', () => {
 
   it('leaves other processes alone and returns null for an unknown process', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const gone = await seedProcess(h, ex.id, src.id);
     const kept = await seedProcess(h, ex.id, src.id, { name: 'Kept' });
     await deliver(h, src.id, [{ id: '1', version: 'a' }]);
@@ -131,7 +131,7 @@ describe('deleting a process', () => {
 describe('batching off', () => {
   it('debounce 0, max size 1, max age 0: every event is its own run at once', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       batching: { debounceSeconds: 0, maxSize: 1, maxAgeSeconds: 0 },
     });

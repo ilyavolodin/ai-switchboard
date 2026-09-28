@@ -35,7 +35,7 @@ export interface NodeCardProps {
 }
 
 /**
- * The canvas node shell shared by source, process and executor nodes (and the editor's diagram):
+ * The canvas node shell shared by source, process and destination nodes (and the editor's diagram):
  * a card whose 2 px border is its status colour, a title row and a body row.
  */
 export function NodeCard({

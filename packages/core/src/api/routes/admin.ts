@@ -9,7 +9,7 @@ import { createApiToken, revokeUserSessions } from '../../auth/sessions.js';
 import {
   apiTokens,
   auditLog,
-  executors,
+  destinations,
   notifiers,
   plugins,
   processes,
@@ -547,9 +547,9 @@ async function targetNames(
       .from(sources)
       .where(inArray(sources.id, ids)),
     ctx.db
-      .select({ id: executors.id, name: executors.name })
-      .from(executors)
-      .where(inArray(executors.id, ids)),
+      .select({ id: destinations.id, name: destinations.name })
+      .from(destinations)
+      .where(inArray(destinations.id, ids)),
     ctx.db
       .select({ id: notifiers.id, name: notifiers.name })
       .from(notifiers)

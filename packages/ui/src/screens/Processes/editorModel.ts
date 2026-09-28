@@ -23,7 +23,7 @@ export const SECTIONS = [
   'schedules',
   'gates',
   'budgets',
-  'executor',
+  'destination',
   'steps',
   'notifications',
 ] as const;
@@ -33,7 +33,7 @@ export type SectionId = (typeof SECTIONS)[number] | 'basics';
  * A blank document, like the core's `defaultProcessDocument` but enabled: a process made in the
  * editor is meant to run, and the Create reason prompt already says it starts enabled.
  */
-export function newProcessDocument(executorInstanceId: string): ProcessDocument {
+export function newProcessDocument(destinationInstanceId: string): ProcessDocument {
   return {
     name: '',
     description: '',
@@ -43,7 +43,7 @@ export function newProcessDocument(executorInstanceId: string): ProcessDocument 
     batching: { ...BATCHING_DEFAULTS },
     gates: { approval: 'none', breaker: { threshold: 3, cooldownMinutes: 60 } },
     budgets: { ...BUDGETS_DEFAULTS, meterCeilings: {} },
-    executor: { instanceId: executorInstanceId, target: {} },
+    destination: { instanceId: destinationInstanceId, target: {} },
     input: '{ "mode": mode, "runId": run.id, "artifacts": events.artifact }',
     before: [],
     after: [],
@@ -361,9 +361,9 @@ const SECTION_OF: Record<string, SectionId> = {
   schedules: 'schedules',
   gates: 'gates',
   budgets: 'budgets',
-  executor: 'executor',
-  input: 'executor',
-  trackingDeadlineMinutes: 'executor',
+  destination: 'destination',
+  input: 'destination',
+  trackingDeadlineMinutes: 'destination',
   before: 'steps',
   after: 'steps',
   notify: 'notifications',
@@ -398,7 +398,7 @@ export function checkDocument(doc: ProcessDocument): Record<string, string> {
     else if (t.eventTypes.length === 0)
       out[`/triggers/${i}/eventTypes`] = 'Tick at least one event type';
   });
-  if (!doc.executor.instanceId) out['/executor/instanceId'] = 'Pick an executor';
+  if (!doc.destination.instanceId) out['/destination/instanceId'] = 'Pick a destination';
   doc.schedules.forEach((s, i) => {
     if (!describeCron(s.cron).ok) out[`/schedules/${i}/cron`] = 'Fix the cron expression';
   });

@@ -1,7 +1,7 @@
 import type {
   EventTypeSpec,
-  Executor,
-  ExecutorType,
+  Destination,
+  DestinationType,
   MeterSpec,
   Notifier,
   NotifierType,
@@ -27,13 +27,13 @@ export interface LiveSource {
   secretValues: string[];
 }
 
-export interface LiveExecutor {
+export interface LiveDestination {
   id: string;
   name: string;
   typeId: string;
   pluginName: string;
-  type: ExecutorType;
-  executor: Executor;
+  type: DestinationType;
+  destination: Destination;
   usage: UsageDimension[];
   meters: MeterSpec[];
   trackingFor(target: unknown): TrackingMode;
@@ -69,7 +69,7 @@ export interface LiveSecretProvider {
  */
 export interface PluginRuntime {
   sourceType(typeId: string): { type: SourceType; pluginName: string } | undefined;
-  executorType(typeId: string): { type: ExecutorType; pluginName: string } | undefined;
+  destinationType(typeId: string): { type: DestinationType; pluginName: string } | undefined;
   notifierType(typeId: string): { type: NotifierType; pluginName: string } | undefined;
   secretProviderType(typeId: string): { type: SecretProviderType; pluginName: string } | undefined;
 
@@ -81,14 +81,17 @@ export interface PluginRuntime {
    * 'disabled'`) for gating.
    */
   source(id: string): LiveSource | undefined;
-  executor(id: string): LiveExecutor | undefined;
+  destination(id: string): LiveDestination | undefined;
   notifier(id: string): LiveNotifier | undefined;
 
   /** Why an instance has no live object (`plugin_unavailable`, `disabled`, `secret_error: ...`). */
   instanceError(id: string): string | undefined;
 
   /** Rebuild one instance from its current row (after a settings change or *Reload instance*). */
-  reload(kind: 'source' | 'executor' | 'notifier' | 'secret_provider', id: string): Promise<void>;
+  reload(
+    kind: 'source' | 'destination' | 'notifier' | 'secret_provider',
+    id: string,
+  ): Promise<void>;
 
   /** Attribute a plugin exception or an invalid event to its plugin (counted on the Plugins page). */
   recordPluginError(
@@ -103,10 +106,10 @@ function positiveSeconds(n: unknown): number | undefined {
 }
 
 /**
- * `LiveExecutor.invokeTimeoutFor` for a type: the per-target value when the type declares one
+ * `LiveDestination.invokeTimeoutFor` for a type: the per-target value when the type declares one
  * and it is a positive number (a throw counts as no value), else the type's default.
  */
-export function typeInvokeTimeout(type: ExecutorType, target: unknown): number | undefined {
+export function typeInvokeTimeout(type: DestinationType, target: unknown): number | undefined {
   let perTarget: unknown;
   try {
     perTarget = type.invokeTimeoutFor?.(target);

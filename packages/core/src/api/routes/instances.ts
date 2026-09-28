@@ -3,14 +3,14 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
 import { actorOf, requireRole } from '../../auth/fastify.js';
-import { executors, notifiers, secretProviders, sources } from '../../db/schema.js';
+import { destinations, notifiers, secretProviders, sources } from '../../db/schema.js';
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import { instanceStatus } from '../../domain/labels.js';
 import { literalSecretFields } from '../../secrets/refs.js';
 import type { InstanceKind } from '../../plugins/host.js';
 import { recordAudit, recordAuditDiff } from '../../services/audit.js';
 import {
-  clearExecutorHealth,
+  clearDestinationHealth,
   deleteInstance,
   findInstance,
   nextConfigVersion,
@@ -20,12 +20,12 @@ import {
 } from '../../services/instances.js';
 import type { ApiContext } from '../context.js';
 import type {
-  CreateExecutorRequest,
+  CreateDestinationRequest,
   CreateInstanceRequest,
   CreateSourceRequest,
   EnableRequest,
   InstanceSummary,
-  UpdateExecutorRequest,
+  UpdateDestinationRequest,
   UpdateInstanceRequest,
   UpdateSourceRequest,
 } from '../contract.js';
@@ -38,8 +38,8 @@ import {
   unprocessable,
 } from '../errors.js';
 import {
-  executorDetail,
-  executorSummaries,
+  destinationDetail,
+  destinationSummaries,
   processesUsing,
   sourceDetail,
   sourceSummaries,
@@ -71,7 +71,7 @@ const sourceCapsSchema: JSONSchema = {
   },
 };
 
-const executorCapsSchema: JSONSchema = {
+const destinationCapsSchema: JSONSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -485,39 +485,39 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
   );
 
   // ------------------------------------------------------------------------------------------
-  // Executors
+  // Destinations
   // ------------------------------------------------------------------------------------------
 
   registerLifecycle({
-    kind: 'executor',
-    base: '/api/v1/executors',
-    label: 'Executor',
+    kind: 'destination',
+    base: '/api/v1/destinations',
+    label: 'Destination',
     role: operator,
-    view: (id) => executorDetail(ctx, id),
+    view: (id) => destinationDetail(ctx, id),
     inUseHint: ' Bind those processes elsewhere first.',
     // A reload clears an "unhealthy" mark set after 401/403; the next health check re-evaluates.
-    beforeReload: (id) => clearExecutorHealth(db, id),
+    beforeReload: (id) => clearDestinationHealth(db, id),
   });
 
-  app.get('/api/v1/executors', viewer, async () => executorSummaries(ctx));
-  app.get<{ Params: { id: string } }>('/api/v1/executors/:id', viewer, async (req) =>
-    executorDetail(ctx, req.params.id),
+  app.get('/api/v1/destinations', viewer, async () => destinationSummaries(ctx));
+  app.get<{ Params: { id: string } }>('/api/v1/destinations/:id', viewer, async (req) =>
+    destinationDetail(ctx, req.params.id),
   );
 
-  app.post<{ Body: CreateExecutorRequest }>(
-    '/api/v1/executors',
+  app.post<{ Body: CreateDestinationRequest }>(
+    '/api/v1/destinations',
     { ...operator, schema: { body: reasoned } },
     async (req, reply) => {
       const reason = requireReason(req.body);
-      const typeEntry = ctx.runtime.executorType(req.body.typeId);
+      const typeEntry = ctx.runtime.destinationType(req.body.typeId);
       if (!typeEntry)
-        throw unprocessable(`No installed plugin provides executor type "${req.body.typeId}".`);
+        throw unprocessable(`No installed plugin provides destination type "${req.body.typeId}".`);
       const settings = validateSettings(typeEntry.type.settingsSchema, req.body.settings);
-      const caps = validateCaps(executorCapsSchema, req.body.caps);
+      const caps = validateCaps(destinationCapsSchema, req.body.caps);
       const name = nonEmptyName(req.body.name);
       const now = clock.now();
       const [row] = await db
-        .insert(executors)
+        .insert(destinations)
         .values({
           typeId: req.body.typeId,
           name,
@@ -530,50 +530,53 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         })
         .returning();
       if (!row) throw new HttpError(500, 'internal', 'insert failed');
-      await ctx.host.reload('executor', row.id);
+      await ctx.host.reload('destination', row.id);
       await recordAudit(db, {
         actor: actorOf(req),
-        scope: 'executor',
+        scope: 'destination',
         targetId: row.id,
         field: 'created',
         after: { name, typeId: row.typeId, settings, caps },
         reason,
         at: now,
       });
-      return reply.code(201).send(await executorDetail(ctx, row.id));
+      return reply.code(201).send(await destinationDetail(ctx, row.id));
     },
   );
 
-  app.put<{ Params: { id: string }; Body: UpdateExecutorRequest }>(
-    '/api/v1/executors/:id',
+  app.put<{ Params: { id: string }; Body: UpdateDestinationRequest }>(
+    '/api/v1/destinations/:id',
     { ...operator, schema: { body: reasoned } },
     async (req) => {
       const reason = requireReason(req.body);
-      const [before] = await db.select().from(executors).where(eq(executors.id, req.params.id));
-      if (!before) throw notFound('Executor');
-      const typeEntry = ctx.runtime.executorType(before.typeId);
+      const [before] = await db
+        .select()
+        .from(destinations)
+        .where(eq(destinations.id, req.params.id));
+      if (!before) throw notFound('Destination');
+      const typeEntry = ctx.runtime.destinationType(before.typeId);
       const settings = req.body.settings
         ? validateSettings(checkableSchema(typeEntry?.type), req.body.settings)
         : before.settings;
-      const caps = req.body.caps ? validateCaps(executorCapsSchema, req.body.caps) : before.caps;
+      const caps = req.body.caps ? validateCaps(destinationCapsSchema, req.body.caps) : before.caps;
       const name = req.body.name !== undefined ? nonEmptyName(req.body.name) : before.name;
       const targetDefaults = req.body.targetDefaults ?? before.targetDefaults;
       const now = clock.now();
       await db
-        .update(executors)
+        .update(destinations)
         .set({
           name,
           settings,
           caps,
           targetDefaults,
           updatedAt: now,
-          configVersion: nextConfigVersion(executors),
+          configVersion: nextConfigVersion(destinations),
         })
-        .where(eq(executors.id, before.id));
-      await ctx.host.reload('executor', before.id);
+        .where(eq(destinations.id, before.id));
+      await ctx.host.reload('destination', before.id);
       await recordAuditDiff(
         db,
-        { actor: actorOf(req), scope: 'executor', targetId: before.id, reason, at: now },
+        { actor: actorOf(req), scope: 'destination', targetId: before.id, reason, at: now },
         {
           name: before.name,
           ...prefix('settings', before.settings),
@@ -582,24 +585,24 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         },
         { name, ...prefix('settings', settings), ...prefix('caps', caps), targetDefaults },
       );
-      return executorDetail(ctx, before.id);
+      return destinationDetail(ctx, before.id);
     },
   );
 
   app.post<{ Params: { id: string }; Body: { reason: string } }>(
-    '/api/v1/executors/:id/meters/read',
+    '/api/v1/destinations/:id/meters/read',
     { ...operator, schema: { body: reasoned } },
     async (req) => {
       const reason = requireReason(req.body);
       const [row] = await db
-        .select({ id: executors.id })
-        .from(executors)
-        .where(eq(executors.id, req.params.id));
-      if (!row) throw notFound('Executor');
+        .select({ id: destinations.id })
+        .from(destinations)
+        .where(eq(destinations.id, req.params.id));
+      if (!row) throw notFound('Destination');
       await ctx.pipeline.readMetersNow(row.id);
       await recordAudit(db, {
         actor: actorOf(req),
-        scope: 'executor',
+        scope: 'destination',
         targetId: row.id,
         field: 'meters_read',
         reason,
@@ -610,12 +613,12 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
   );
 
   app.post<{ Params: { id: string }; Body: { reason: string } }>(
-    '/api/v1/executors/:id/soft-hold/clear',
+    '/api/v1/destinations/:id/soft-hold/clear',
     { ...operator, schema: { body: reasoned } },
     async (req) => {
       const reason = requireReason(req.body);
       await ctx.pipeline.clearSoftHold(req.params.id, actorOf(req), reason);
-      return executorDetail(ctx, req.params.id);
+      return destinationDetail(ctx, req.params.id);
     },
   );
 

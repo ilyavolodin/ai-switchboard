@@ -1,7 +1,7 @@
 export type * from './types/common.js';
 export type * from './types/events.js';
 export type * from './types/source.js';
-export type * from './types/executor.js';
+export type * from './types/destination.js';
 export type * from './types/notifier.js';
 export type * from './types/context.js';
 export { dedupeKey } from './types/events.js';

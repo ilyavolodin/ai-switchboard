@@ -9,7 +9,7 @@ Postgres.
 flowchart LR
   subgraph Plugins[Plugins - npm packages]
     SRC[Source types<br/>github · linear · datadog · webhook]
-    EXE[Executor types<br/>claude-routines · http · github-actions]
+    EXE[Destination types<br/>claude-routines · http · github-actions]
     NOT[Notifier types<br/>slack · webhook]
     SEC[Secret providers<br/>env · file]
   end
@@ -52,17 +52,17 @@ Everything except these three is a plugin:
 
 ## Components
 
-| Component         | Responsibility                                                                                                                                                                                  |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plugin host       | Discovers installed plugin packages, checks their SDK range, validates their manifests, registers their types and builds one live object per configured instance with its resolved secrets      |
-| Ingress           | One route per push source instance (`/hooks/<sourceId>`): verify, store the raw delivery, parse, answer in under a second, enqueue. One poller per pull source instance with a stored watermark |
-| Scheduler         | Every process's sweep crons and every executor instance's meter polls, on the Postgres job queue, so ticks survive restarts and fire once across replicas                                       |
-| Pipeline          | The seven stages, each a transactional step over Postgres rows, run as queue jobs so any replica can process any step                                                                           |
-| Expression engine | JSONata with a fixed function library (`$resolve`, `$linked`, `$now`, `$env`, `$secretRef`) and a time and `$resolve` limit per evaluation                                                      |
-| Executor bridge   | Calls `invoke` with the mapped input, records the run, drives tracking (sync, poll, callback or none) and records usage and meters                                                              |
-| REST API          | Everything the UI and the CLI do, OIDC and local sign-in, API tokens, run callbacks, YAML export and apply ([api.md](api.md))                                                                   |
-| Web UI            | React single-page app served by the same process from `packages/core/public`                                                                                                                    |
-| Postgres          | Configuration, events, runs, statistics, audit and the job queue (pg-boss), in one database                                                                                                     |
+| Component          | Responsibility                                                                                                                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plugin host        | Discovers installed plugin packages, checks their SDK range, validates their manifests, registers their types and builds one live object per configured instance with its resolved secrets      |
+| Ingress            | One route per push source instance (`/hooks/<sourceId>`): verify, store the raw delivery, parse, answer in under a second, enqueue. One poller per pull source instance with a stored watermark |
+| Scheduler          | Every process's sweep crons and every destination's meter polls, on the Postgres job queue, so ticks survive restarts and fire once across replicas                                             |
+| Pipeline           | The seven stages, each a transactional step over Postgres rows, run as queue jobs so any replica can process any step                                                                           |
+| Expression engine  | JSONata with a fixed function library (`$resolve`, `$linked`, `$now`, `$env`, `$secretRef`) and a time and `$resolve` limit per evaluation                                                      |
+| Destination bridge | Calls `invoke` with the mapped input, records the run, drives tracking (sync, poll, callback or none) and records usage and meters                                                              |
+| REST API           | Everything the UI and the CLI do, OIDC and local sign-in, API tokens, run callbacks, YAML export and apply ([api.md](api.md))                                                                   |
+| Web UI             | React single-page app served by the same process from `packages/core/public`                                                                                                                    |
+| Postgres           | Configuration, events, runs, statistics, audit and the job queue (pg-boss), in one database                                                                                                     |
 
 ## Runtime and libraries
 
@@ -87,7 +87,7 @@ packages/core     @ai-switchboard/core    Fastify server: plugin host, pipeline,
 packages/ui       @ai-switchboard/ui      React + Vite SPA, built into packages/core/public
 packages/cli      @ai-switchboard/cli     the switchboard command
 plugins/*         reference plugins       source-webhook, source-poll-http, source-github, source-linear, source-datadog,
-                                          executor-http, executor-claude-routines, executor-github-actions,
+                                          destination-http, destination-claude-routines, destination-github-actions,
                                           notifier-slack, notifier-webhook, secrets-env, secrets-file
 ```
 
@@ -160,10 +160,10 @@ Replicas are identical. Ingress is stateless, the pipeline is a job queue, and t
 in-memory state anywhere in the pipeline: anything that must survive a restart is a row. pg-boss
 hands each job to one replica at a time and re-delivers unfinished jobs after their visibility
 timeout, so a rollout loses time, not work. A run left `invoking` past its attempt's deadline
-(its `before` steps' budget, the executor's invoke timeout and a margin) becomes `uncertain`,
+(its `before` steps' budget, the destination's invoke timeout and a margin) becomes `uncertain`,
 which tracking then settles; steps resume from their journal.
 
-The live plugin objects (one per source, executor, notifier and secret provider instance, holding
+The live plugin objects (one per source, destination, notifier and secret provider instance, holding
 resolved secrets) are the one thing each replica builds for itself. The replica that handles a
 change rebuilds the instance immediately; every write that changes what an instance is built from
 (name, settings, enabled) or asks for a reload increments the row's `config_version`. Each
@@ -182,4 +182,4 @@ panel (`GET /api/v1/about`). Two replicas are the recommended minimum for zero-d
 Set `SWITCHBOARD_WORKERS=false` for replicas that should serve the API and ingress only.
 
 The design targets thousands of events an hour and hundreds of runs a day on a small Postgres. In
-practice the bottleneck is the executor's capacity, which is what meters make visible.
+practice the bottleneck is the destination's capacity, which is what meters make visible.

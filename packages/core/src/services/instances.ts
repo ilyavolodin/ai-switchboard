@@ -1,7 +1,7 @@
 import { eq, sql, type SQL } from 'drizzle-orm';
 
 import type { DbOrTx } from '../db/client.js';
-import { executors, notifiers, secretProviders, sources } from '../db/schema.js';
+import { destinations, notifiers, secretProviders, sources } from '../db/schema.js';
 import type { InstanceKind } from '../plugins/host.js';
 
 /** The columns every instance kind has. */
@@ -14,7 +14,7 @@ export interface InstanceHead {
 
 const TABLES = {
   source: sources,
-  executor: executors,
+  destination: destinations,
   notifier: notifiers,
   secret_provider: secretProviders,
 } as const;
@@ -78,7 +78,7 @@ export async function deleteInstance(db: DbOrTx, kind: InstanceKind, id: string)
   await db.delete(t).where(eq(t.id, id));
 }
 
-/** Forget an executor's stored health, e.g. the "unhealthy" mark a 401/403 invoke left. */
-export async function clearExecutorHealth(db: DbOrTx, id: string): Promise<void> {
-  await db.update(executors).set({ health: null }).where(eq(executors.id, id));
+/** Forget a destination's stored health, e.g. the "unhealthy" mark a 401/403 invoke left. */
+export async function clearDestinationHealth(db: DbOrTx, id: string): Promise<void> {
+  await db.update(destinations).set({ health: null }).where(eq(destinations.id, id));
 }

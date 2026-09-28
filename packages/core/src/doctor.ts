@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { systemClock } from './clock.js';
 import type { CoreConfig } from './config.js';
 import { connect, migrationsFolder } from './db/client.js';
-import { executors, notifiers, secretProviders, sources } from './db/schema.js';
+import { destinations, notifiers, secretProviders, sources } from './db/schema.js';
 import { silentLogger } from './logger.js';
 import { PluginHost } from './plugins/host.js';
 import { createRecordingTelemetry } from './telemetry/telemetry.js';
@@ -96,9 +96,9 @@ export async function runDoctor(config: CoreConfig): Promise<DoctorCheck[]> {
         live: (id: string) => host.source(id)?.source,
       },
       {
-        kind: 'executor',
-        rows: await database.db.select().from(executors),
-        live: (id: string) => host.executor(id)?.executor,
+        kind: 'destination',
+        rows: await database.db.select().from(destinations),
+        live: (id: string) => host.destination(id)?.destination,
       },
       {
         kind: 'notifier',

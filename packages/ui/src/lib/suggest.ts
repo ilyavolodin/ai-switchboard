@@ -127,7 +127,7 @@ export const EXPRESSION_VARIABLES: Record<string, string> = {
   run: 'the run: id, status, externalUrl',
   mode: '"event" or "sweep"',
   now: 'the evaluation time, ISO-8601',
-  result: 'what the executor returned (after-steps)',
+  result: 'what the destination returned (after-steps)',
 };
 
 /** Switchboard's own functions, then the JSONata built-ins people reach for most. */
@@ -139,7 +139,7 @@ export const EXPRESSION_FUNCTIONS: Suggestion[] = [
   {
     value: '$secretRef("provider/NAME")',
     hint: 'reference',
-    detail: 'A reference the executor resolves after evaluation; never the value',
+    detail: 'A reference the destination resolves after evaluation; never the value',
   },
   { value: '$count()', hint: 'number', detail: '$count(array): number of items' },
   { value: '$exists()', hint: 'boolean', detail: '$exists(value): true when it has a value' },

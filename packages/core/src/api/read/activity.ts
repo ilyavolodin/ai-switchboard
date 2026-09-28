@@ -212,7 +212,7 @@ export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<P
       ),
     );
   }
-  if (q.executor) {
+  if (q.destination) {
     where.push(
       inArray(
         events.id,
@@ -224,7 +224,7 @@ export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<P
             runs,
             or(eq(runs.batchId, dispatches.batchId), eq(runs.batchId, batches.mergedInto)),
           )
-          .where(eq(runs.executorId, q.executor)),
+          .where(eq(runs.destinationId, q.destination)),
       ),
     );
   }

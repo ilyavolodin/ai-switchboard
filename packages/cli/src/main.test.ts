@@ -81,7 +81,7 @@ const installResult: InstallResult = {
   name: '@acme/switchboard-source-jira',
   version: '1.2.0',
   integrity: 'sha512-abcdefghijklmnopqrstuvwxyz==',
-  sdkRange: '^1.0.0',
+  sdkRange: '^2.0.0',
   compatible: true,
   capabilities: { network: ['*.atlassian.net'], secrets: ['api-token'] },
   plugin: {
@@ -110,7 +110,7 @@ function fakeInstaller(calls: unknown[]): Installer {
           name: '@acme/switchboard-source-jira',
           version: '1.2.0',
           integrity: 'sha512-abcdefghijklmnopqrstuvwxyz==',
-          sdk: '^1.0.0',
+          sdk: '^2.0.0',
           installedAt: '2026-09-27T12:00:00.000Z',
           spec: '@acme/switchboard-source-jira@^1',
         },
@@ -118,7 +118,7 @@ function fakeInstaller(calls: unknown[]): Installer {
     },
     inspect: (o) => {
       calls.push(['inspect', o]);
-      return Promise.resolve({ ...installResult, compatible: false, sdkRange: '^2.0.0' });
+      return Promise.resolve({ ...installResult, compatible: false, sdkRange: '^3.0.0' });
     },
   };
 }
@@ -278,7 +278,7 @@ describe('switchboard apply', () => {
       changes: [
         { kind: 'source', name: 'GitHub — acme org', action: 'create' },
         { kind: 'process', name: 'Autofix', action: 'update' },
-        { kind: 'executor', name: 'Stub', action: 'unchanged' },
+        { kind: 'destination', name: 'Stub', action: 'unchanged' },
       ],
       errors: [],
     };
@@ -303,12 +303,12 @@ describe('switchboard apply', () => {
     const response: ApplyResponse = {
       dryRun: false,
       changes: [],
-      errors: ['processes[0].executor.instance: no executor named "Missing"'],
+      errors: ['processes[0].destination.instance: no destination named "Missing"'],
     };
     const fetch = stubFetch(() => ({ status: 200, body: JSON.stringify(response) }));
     const { run } = harness({ fetch, readFile });
     const cap = await run('apply', '-f', 'sb.yaml', '--reason', 'r');
-    expect(cap.err.join('\n')).toContain('no executor named "Missing"');
+    expect(cap.err.join('\n')).toContain('no destination named "Missing"');
     expect(cap.exitCode).toBe(1);
   });
 

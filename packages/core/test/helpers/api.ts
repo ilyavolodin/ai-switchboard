@@ -109,10 +109,10 @@ export const testPlugin: PluginDefinition = definePlugin({
   id: 'test-plugin',
   displayName: 'Test plugin',
   sources: [testSourceType, openSourceType, noVerifySourceType],
-  executors: [
+  destinations: [
     {
-      id: 'test-executor',
-      displayName: 'Test executor',
+      id: 'test-destination',
+      displayName: 'Test destination',
       settingsSchema: { type: 'object', properties: { url: { type: 'string' } } },
       targetSchema: {
         type: 'object',

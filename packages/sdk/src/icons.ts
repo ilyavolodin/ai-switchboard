@@ -1,5 +1,5 @@
 /**
- * Plugin-declared type icons (since SDK 1.3). A source, executor, notifier or secret provider
+ * Plugin-declared type icons (since SDK 1.3). A source, destination, notifier or secret provider
  * type may set `icon` to either the name of one of the UI's built-in icons (`ICON_NAMES`) or a
  * `data:image/svg+xml;base64,…` URI of at most `MAX_ICON_DATA_URI_LENGTH` characters. The UI
  * renders a data URI through `<img>`, never as inline markup, so an SVG cannot run script.
@@ -10,7 +10,7 @@ export const ICON_NAMES = [
   'board',
   'processes',
   'sources',
-  'executors',
+  'destinations',
   'activity',
   'approvals',
   'plugins',

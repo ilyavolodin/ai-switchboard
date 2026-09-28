@@ -9,7 +9,7 @@ import type {
   InputPreviewResponse,
 } from '../api/contract.js';
 import type { Clock } from '../clock.js';
-import { batches, events, executors } from '../db/schema.js';
+import { batches, events, destinations } from '../db/schema.js';
 import type { Deps } from '../deps.js';
 import {
   createExpressionEngine,
@@ -88,13 +88,13 @@ export async function inputPreview(
       if (req.mode === undefined) mode = batch.kind === 'event' ? 'event' : 'sweep';
     }
   }
-  let schema = deps.runtime.executor(doc.executor.instanceId)?.type.inputSchema;
-  if (schema === undefined && isUuid(doc.executor.instanceId)) {
+  let schema = deps.runtime.destination(doc.destination.instanceId)?.type.inputSchema;
+  if (schema === undefined && isUuid(doc.destination.instanceId)) {
     const [row] = await deps.db
-      .select({ typeId: executors.typeId })
-      .from(executors)
-      .where(eq(executors.id, doc.executor.instanceId));
-    if (row) schema = deps.runtime.executorType(row.typeId)?.type.inputSchema;
+      .select({ typeId: destinations.typeId })
+      .from(destinations)
+      .where(eq(destinations.id, doc.destination.instanceId));
+    if (row) schema = deps.runtime.destinationType(row.typeId)?.type.inputSchema;
   }
   const engine = createExpressionEngine({ env: process.env });
   const out = await evaluateMapping(
@@ -126,7 +126,7 @@ export async function inputPreview(
     schema,
   );
   const errors = out.ok ? [] : out.errors;
-  if (schema === undefined) errors.push('executor instance not found: the input was not validated');
+  if (schema === undefined) errors.push('destination not found: the input was not validated');
   return {
     input: out.ok ? out.input : (out.input ?? null),
     valid: out.ok && schema !== undefined,

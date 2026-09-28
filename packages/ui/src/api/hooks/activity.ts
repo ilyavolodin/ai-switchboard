@@ -17,7 +17,7 @@ import { POLL, qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
 import { cursorPaging, useIdQuery } from '../query.js';
 
-/** GET /events?source=&process=&executor=&stage=&artifact=&from=&to=&cursor= (paged) */
+/** GET /events?source=&process=&destination=&stage=&artifact=&from=&to=&cursor= (paged) */
 export function useEvents(query: Omit<ActivityQuery, 'cursor'> = {}) {
   return useInfiniteQuery({
     queryKey: qk.events.list(query),
@@ -70,7 +70,7 @@ export function useReplayEvent() {
   });
 }
 
-/** GET /runs?process=&executor=&status=&cursor= (paged) */
+/** GET /runs?process=&destination=&status=&cursor= (paged) */
 export function useRuns(query: Omit<RunsQuery, 'cursor'> = {}) {
   return useInfiniteQuery({
     queryKey: qk.runs.list(query),

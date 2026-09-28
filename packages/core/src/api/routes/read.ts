@@ -30,7 +30,7 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
   app.get('/api/v1/status', viewer, async () => statusStrip(ctx));
   app.get('/api/v1/board', viewer, async () => board(ctx));
 
-  // Sources, executors, processes: statistics -----------------------------------------------
+  // Sources, destinations, processes: statistics -----------------------------------------------
   app.get<{ Params: { id: string }; Querystring: { window?: string } }>(
     '/api/v1/sources/:id/stats',
     viewer,
@@ -42,12 +42,12 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
     async (req) => listActivity(ctx, { ...req.query, source: req.params.id }),
   );
   app.get<{ Params: { id: string }; Querystring: { window?: string } }>(
-    '/api/v1/executors/:id/meters',
+    '/api/v1/destinations/:id/meters',
     viewer,
     async (req) => meterHistory(ctx, req.params.id, parseWindow(req.query.window, '7d')),
   );
   app.get<{ Params: { id: string }; Querystring: { window?: string } }>(
-    '/api/v1/executors/:id/usage',
+    '/api/v1/destinations/:id/usage',
     viewer,
     async (req) => usageHistory(ctx, req.params.id, parseWindow(req.query.window, '7d')),
   );

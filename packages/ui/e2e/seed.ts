@@ -7,12 +7,12 @@
  *   run as `error` and a breaker threshold of 1 opens the breaker.
  * - "Healthy alerts" calls `/exec` synchronously and finishes `ok`.
  * - "Approval demo" waits for an approval.
- * The `http` executor reads the stub's `/meter` as its `endpoint` meter (30 of 100 requests).
+ * The `http` destination reads the stub's `/meter` as its `endpoint` meter (30 of 100 requests).
  */
 import type {
   ApplyResponse,
   ApprovalItem,
-  ExecutorSummary,
+  DestinationSummary,
   ProcessDetail,
   ProcessSummary,
   RunSummary,
@@ -23,7 +23,7 @@ import type {
 import { Api, sendAlert, waitFor, type StackState } from './stack.js';
 
 export const SOURCE = 'Stub alerts';
-export const EXECUTOR = 'Stub HTTP';
+export const DESTINATION = 'Stub HTTP';
 export const BREAKER_PROCESS = 'Breaker demo';
 export const HEALTHY_PROCESS = 'Healthy alerts';
 export const APPROVAL_PROCESS = 'Approval demo';
@@ -55,8 +55,8 @@ function process(
       runsPerDay: 200
       usagePerDay: { cost_usd: 5 }
       meterCeilings: {}
-    executor:
-      instance: ${EXECUTOR}
+    destination:
+      instance: ${DESTINATION}
       target: ${JSON.stringify(target)}
     input: |
       { "mode": mode, "runId": run.id, "alerts": events.{ "id": artifact.id, "service": attributes.service } }
@@ -116,8 +116,8 @@ sources:
     caps:
       eventCapPerHour: 1000
 
-executors:
-  - name: ${EXECUTOR}
+destinations:
+  - name: ${DESTINATION}
     type: http
     enabled: true
     settings:
@@ -179,13 +179,16 @@ export async function seed(baseUrl: string, stubUrl: string): Promise<StackState
   if (applied.errors.length > 0) throw new Error(`apply failed: ${applied.errors.join('; ')}`);
 
   const source = byName(await api.get<SourceSummary[]>('/api/v1/sources'), SOURCE);
-  const executor = byName(await api.get<ExecutorSummary[]>('/api/v1/executors'), EXECUTOR);
+  const destination = byName(
+    await api.get<DestinationSummary[]>('/api/v1/destinations'),
+    DESTINATION,
+  );
   const processes = await api.get<ProcessSummary[]>('/api/v1/processes');
   const breaker = byName(processes, BREAKER_PROCESS);
   const healthy = byName(processes, HEALTHY_PROCESS);
   const approval = byName(processes, APPROVAL_PROCESS);
 
-  await api.post('/api/v1/executors/' + executor.id + '/meters/read', { reason: 'e2e seed' });
+  await api.post('/api/v1/destinations/' + destination.id + '/meters/read', { reason: 'e2e seed' });
 
   const artifactId = await sendAlert(stubUrl, baseUrl, source.id, 'healthy');
   await sendAlert(stubUrl, baseUrl, source.id, 'breaker');
@@ -209,7 +212,7 @@ export async function seed(baseUrl: string, stubUrl: string): Promise<StackState
     stubUrl,
     token: api.token,
     sourceId: source.id,
-    executorId: executor.id,
+    destinationId: destination.id,
     breakerProcessId: breaker.id,
     healthyProcessId: healthy.id,
     approvalProcessId: approval.id,

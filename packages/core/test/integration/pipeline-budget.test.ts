@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { executors, meterReadings } from '../../src/db/schema.js';
+import { destinations, meterReadings } from '../../src/db/schema.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import {
   batchesOf,
@@ -9,7 +9,7 @@ import {
   deliver,
   resetDb,
   runsOf,
-  seedExecutor,
+  seedDestination,
   seedProcess,
   seedSource,
   type Harness,
@@ -38,13 +38,13 @@ async function fireOne(sourceId: string, id: string): Promise<void> {
 describe('budget and meters', () => {
   it('a 429 opens a soft-hold honoured by the next batch', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
     ex.state.script.push({ retryAfter: 600 });
     await fireOne(src.id, '1');
     const [first] = await runsOf(h.db, pid);
     expect(first).toMatchObject({ status: 'failed', statusReason: 'rate_limited' });
-    const [row] = await h.db.select().from(executors).where(eq(executors.id, ex.id));
+    const [row] = await h.db.select().from(destinations).where(eq(destinations.id, ex.id));
     expect(row?.softHoldUntil?.toISOString()).toBe(
       new Date(h.clock.now().getTime() + 600_000 - 0).toISOString(),
     );
@@ -62,7 +62,7 @@ describe('budget and meters', () => {
 
   it('a ceiling holds event runs and admits a sweep', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       budgets: { meterCeilings: { five_hour: { events: 85, sweeps: 95 } } },
       schedules: [
@@ -97,7 +97,7 @@ describe('budget and meters', () => {
 
   it('a stale reading does not hold; counters still apply and meter_stale is recorded', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       budgets: { runsPerHour: 1, meterCeilings: { five_hour: { events: 50, sweeps: 50 } } },
     });
@@ -117,7 +117,7 @@ describe('budget and meters', () => {
 
   it('estimated meters count runs against the typed-in limit', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { caps: { estimatedLimits: { daily_runs: 2 } } });
+    const ex = await seedDestination(h, { caps: { estimatedLimits: { daily_runs: 2 } } });
     const pid = await seedProcess(h, ex.id, src.id, {
       budgets: { meterCeilings: { daily_runs: { events: 100, sweeps: 100 } } },
     });
@@ -137,9 +137,9 @@ describe('budget and meters', () => {
     expect(readings.at(-1)).toMatchObject({ estimated: true, used: 2, limit: 2, utilization: 100 });
   });
 
-  it('executor-instance caps and usage caps throttle with the binding limit', async () => {
+  it('destination caps and usage caps throttle with the binding limit', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h, { caps: { runsPerDay: 5 } });
+    const ex = await seedDestination(h, { caps: { runsPerDay: 5 } });
     ex.state.usageOnComplete = { tokens: 600, bogus: 1 };
     const pid = await seedProcess(h, ex.id, src.id, { budgets: { usagePerDay: { tokens: 1000 } } });
     await fireOne(src.id, '1');
@@ -154,7 +154,7 @@ describe('budget and meters', () => {
 
   it('an invalid input fails the run before any budget is spent', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       input: '{ "runId": 5 }',
       budgets: { runsPerHour: 1 },
@@ -178,7 +178,7 @@ describe('budget and meters', () => {
 
   it('concurrent batches against one cap reserve exactly the cap', async () => {
     const src = await seedSource(h);
-    const ex = await seedExecutor(h);
+    const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, {
       budgets: { runsPerHour: 2 },
       batching: { groupBy: 'artifact.id' },

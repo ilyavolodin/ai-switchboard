@@ -16,7 +16,7 @@ import type {
  */
 export interface PipelinePort {
   ingestPush(sourceId: string, req: RawRequest): Promise<{ status: number }>;
-  handleCallback(executorId: string, req: RawRequest): Promise<{ status: number }>;
+  handleCallback(destinationId: string, req: RawRequest): Promise<{ status: number }>;
   runNow(
     processId: string,
     opts: { dryRun?: boolean; batchId?: string; actor: string; reason: string },
@@ -41,8 +41,8 @@ export interface PipelinePort {
     reason: string,
   ): Promise<void>;
   resetBreaker(processId: string, actor: string, reason: string): Promise<void>;
-  clearSoftHold(executorId: string, actor: string, reason: string): Promise<void>;
-  readMetersNow(executorId: string): Promise<void>;
+  clearSoftHold(destinationId: string, actor: string, reason: string): Promise<void>;
+  readMetersNow(destinationId: string): Promise<void>;
 }
 
 export interface PreviewPort {

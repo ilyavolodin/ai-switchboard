@@ -2,7 +2,7 @@
 #
 # - GitHub PR labeled `auto:fix-candidate`, filtered on the linked Linear issue's labels
 #   (`$linked` finds the tracker reference in the PR body, `$resolve` reads its live state).
-# - Claude Routines executor with meter ceilings: event runs stop at 85 % of the five-hour
+# - Claude Routines destination with meter ceilings: event runs stop at 85 % of the five-hour
 #   window, the nightly sweep may go to 95 %; the daily run allowance is estimated.
 # - Quiet hours at night, an approval expression for PRs labeled auto:needs-approval, an
 #   `after` step that labels the PR, a Slack notification on errors and throttles, and a
@@ -10,7 +10,7 @@
 #
 # Secrets are references to environment variables of the switchboard container.
 #
-# Plugins: @ai-switchboard/source-github, source-linear, executor-claude-routines,
+# Plugins: @ai-switchboard/source-github, source-linear, destination-claude-routines,
 # notifier-slack, secrets-env (all baked into the image).
 apiVersion: switchboard/v1
 kind: Configuration
@@ -44,7 +44,7 @@ sources:
     caps:
       eventCapPerHour: 500
 
-executors:
+destinations:
   - name: Claude Routines — automation seat
     type: claude-routines
     enabled: true
@@ -114,7 +114,7 @@ processes:
         five_hour: { events: 85, sweeps: 95 }
         seven_day: { events: 80, sweeps: 90 }
         daily_runs: { events: 80, sweeps: 100 }
-    executor:
+    destination:
       instance: Claude Routines — automation seat
       target:
         routineId: trig_autofix_0000000000

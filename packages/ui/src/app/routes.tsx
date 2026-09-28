@@ -9,8 +9,8 @@ import { Trace } from '../screens/Activity/Trace.js';
 import { Approvals } from '../screens/Approvals/Approvals.js';
 import { ChangePassword } from '../screens/ChangePassword/ChangePassword.js';
 import { Board } from '../screens/Board/Board.js';
-import { ExecutorDetail } from '../screens/Executors/ExecutorDetail.js';
-import { Executors } from '../screens/Executors/Executors.js';
+import { DestinationDetail } from '../screens/Destinations/DestinationDetail.js';
+import { Destinations } from '../screens/Destinations/Destinations.js';
 import { Login } from '../screens/Login/Login.js';
 import { NoAccess } from '../screens/NoAccess/NoAccess.js';
 import { Plugins } from '../screens/Plugins/Plugins.js';
@@ -21,6 +21,7 @@ import { Settings } from '../screens/Settings/Settings.js';
 import { SourceDetail } from '../screens/Sources/SourceDetail.js';
 import { Sources } from '../screens/Sources/Sources.js';
 import { AppShell } from './AppShell.js';
+import { LegacyExecutorsRedirect } from './LegacyRedirect.js';
 import type { RouteHandle } from './nav.js';
 import { NotFound } from './NotFound.js';
 import { RouteError } from './RouteError.js';
@@ -58,14 +59,16 @@ export const routes: RouteObject[] = [
         ],
       },
       {
-        path: 'executors',
-        handle: h('Executors'),
+        path: 'destinations',
+        handle: h('Destinations'),
         children: [
-          { index: true, element: <Executors /> },
-          { path: ':id', element: <ExecutorDetail /> },
-          { path: ':id/:tab', element: <ExecutorDetail /> },
+          { index: true, element: <Destinations /> },
+          { path: ':id', element: <DestinationDetail /> },
+          { path: ':id/:tab', element: <DestinationDetail /> },
         ],
       },
+      // Deprecated: the pre-rename paths redirect to their destination pages.
+      { path: 'executors/*', element: <LegacyExecutorsRedirect /> },
       {
         path: 'activity',
         handle: h('Activity'),

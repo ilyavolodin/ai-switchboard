@@ -5,7 +5,7 @@ import {
   approvals,
   batches,
   dispatches,
-  executors,
+  destinations,
   processes,
   processVersions,
   runs,
@@ -172,7 +172,7 @@ export async function processSummaries(
       .where(inArray(runs.processId, ids))
       .orderBy(runs.processId, desc(runs.createdAt)),
     ctx.db.select({ id: sources.id, name: sources.name }).from(sources),
-    ctx.db.select({ id: executors.id, name: executors.name }).from(executors),
+    ctx.db.select({ id: destinations.id, name: destinations.name }).from(destinations),
     // The daily-cap bar counts exactly what the budget stage counts (by reservation time).
     ctx.db
       .select({ processId: runs.processId, n: count() })
@@ -190,7 +190,7 @@ export async function processSummaries(
       const day = new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10);
       sparkline.push(daily.find((d) => d.processId === p.id && d.day === day)?.n ?? 0);
     }
-    const ex = exs.find((e) => e.id === doc.executor.instanceId);
+    const ex = exs.find((e) => e.id === doc.destination.instanceId);
     const next = nextSweepAt(doc, now);
     return {
       id: p.id,
@@ -223,7 +223,7 @@ export async function processSummaries(
         limit: doc.budgets.runsPerDay ?? null,
       },
       lastRunAt: last?.at.toISOString() ?? null,
-      executor: ex ? { id: ex.id, name: ex.name } : null,
+      destination: ex ? { id: ex.id, name: ex.name } : null,
       triggers: doc.triggers.map((t) => ({
         sourceId: t.sourceId,
         sourceName: srcs.find((s) => s.id === t.sourceId)?.name ?? '(missing source)',

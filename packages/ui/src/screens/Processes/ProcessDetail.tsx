@@ -6,7 +6,7 @@ import { errorMessage } from '../../api/client.js';
 import {
   useDeleteProcess,
   useEnableProcess,
-  useExecutors,
+  useDestinations,
   useProcess,
   useProcessFunnel,
   useProcessStats,
@@ -90,10 +90,10 @@ function Detail({
   const [confirm, setConfirm] = useState<boolean | null>(null);
   const funnel = useProcessFunnel(p.id, window);
   const stats = useProcessStats(p.id, window);
-  const executors = useExecutors();
+  const destinations = useDestinations();
   const enable = useEnableProcess();
   const navigate = useNavigate();
-  const executor = executors.data?.find((x) => x.id === p.document.executor.instanceId);
+  const destination = destinations.data?.find((x) => x.id === p.document.destination.instanceId);
   const base = `/processes/${encodeURIComponent(p.id)}`;
   const approval = p.document.gates.approval;
   const sweeps = p.document.schedules.filter((s) => s.enabled).length;
@@ -162,7 +162,7 @@ function Detail({
                 'no sweep'
               )}
             </span>
-            {executor && <span className={styles.metaText}>→ {executor.name}</span>}
+            {destination && <span className={styles.metaText}>→ {destination.name}</span>}
           </span>
         }
         description={p.document.description || undefined}

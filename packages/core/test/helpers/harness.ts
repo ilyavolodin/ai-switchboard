@@ -9,11 +9,11 @@ import {
   batches,
   dispatches,
   events,
-  executors,
+  destinations,
   processes,
   runs,
   sources,
-  type ExecutorCaps,
+  type DestinationCaps,
   type SourceCaps,
 } from '../../src/db/schema.js';
 import type { Deps } from '../../src/deps.js';
@@ -30,7 +30,7 @@ import {
   HOOK_TYPE,
   PR_LABELED,
   signedDelivery,
-  type FakeExecutorState,
+  type FakeDestinationState,
   type FakeSourceState,
   type HookBody,
 } from './fake-runtime.js';
@@ -109,7 +109,7 @@ export async function createHarness(db: Db, start = '2026-01-05T09:00:00Z'): Pro
 /** Wipe every pipeline table between tests (the schema stays). */
 export async function resetDb(db: Db): Promise<void> {
   await db.execute(
-    sql.raw(`TRUNCATE sources, executors, processes, events, event_raw, dispatches,
+    sql.raw(`TRUNCATE sources, destinations, processes, events, event_raw, dispatches,
       batches, runs, run_updates, steps, approvals, meter_readings, stats_hourly, schedule_ticks,
       notification_log, system_alerts, audit_log, settings, replicas, notifiers RESTART IDENTITY`),
   );
@@ -136,26 +136,26 @@ export async function seedSource(
   return { id, state };
 }
 
-export async function seedExecutor(
+export async function seedDestination(
   h: SeedTarget,
   options: {
-    tracking?: FakeExecutorState['tracking'];
+    tracking?: FakeDestinationState['tracking'];
     idempotent?: boolean;
-    caps?: ExecutorCaps;
+    caps?: DestinationCaps;
     enabled?: boolean;
-    /** The type's invoke timeout (`LiveExecutor.invokeTimeoutFor`). */
+    /** The type's invoke timeout (`LiveDestination.invokeTimeoutFor`). */
     invokeTimeoutSeconds?: number;
   } = {},
-): Promise<{ id: string; state: FakeExecutorState }> {
+): Promise<{ id: string; state: FakeDestinationState }> {
   const id = randomUUID();
-  await h.db.insert(executors).values({
+  await h.db.insert(destinations).values({
     id,
     typeId: EXEC_TYPE,
     name: 'Exec',
     enabled: options.enabled ?? true,
     caps: options.caps ?? {},
   });
-  const state = h.runtime.addExecutor(id, 'Exec', {
+  const state = h.runtime.addDestination(id, 'Exec', {
     ...(options.tracking ? { tracking: options.tracking } : {}),
     ...(options.idempotent !== undefined ? { idempotent: options.idempotent } : {}),
     ...(options.invokeTimeoutSeconds !== undefined
@@ -175,12 +175,12 @@ export const DEFAULT_INPUT = '{ "runId": run.id, "mode": mode, "artifacts": [eve
 
 export async function seedProcess(
   h: SeedTarget,
-  executorId: string,
+  destinationId: string,
   sourceId: string | null,
   patch: DocPatch = {},
   enabled = true,
 ): Promise<string> {
-  const base = defaultProcessDocument('Autofix', executorId);
+  const base = defaultProcessDocument('Autofix', destinationId);
   const { batching, gates, budgets, ...rest } = patch;
   const doc: ProcessDocument = {
     ...base,

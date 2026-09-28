@@ -35,29 +35,29 @@ already has the answer.
    the same answer in a banner with a link to the event's trace.
 4. Find where it stopped and act on that stage:
 
-| Where it stopped                                                   | What it means                                                                         | What to do                                                                                                                                                                                                                                |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No event at all                                                    | The delivery never arrived or failed verification                                     | Check the source's _Overview_ for verify failures (logged with the remote address). Re-register the webhook (_Register webhook_). Check the sender's delivery log                                                                         |
-| `source_disabled`                                                  | The source instance is off; the event was stored, not processed                       | Enable the source, then _Replay_ the event                                                                                                                                                                                                |
-| `source_throttled`                                                 | Dropped by `eventCapPerHour` / `eventCapPerDay`                                       | Raise the cap if the flood was legitimate; a sweep covers the gap                                                                                                                                                                         |
-| `type_muted`                                                       | The event type is muted on this source                                                | Unmute it in the source's settings                                                                                                                                                                                                        |
-| `event_invalid`                                                    | The plugin produced an event that does not match its declared schema                  | A plugin bug; the Plugins page counts it. Upgrade or report the plugin                                                                                                                                                                    |
-| `unmatched`                                                        | No enabled trigger's source, event types and filter all matched                       | Read _Why nothing ran_. A disabled process: switch _Enabled_ on (process editor › Basics, or the detail page), then _Replay_ the event. Otherwise fix the trigger's event types or filter (the editor evaluates it against recent events) |
-| `filter_error`                                                     | The filter threw and counted as false                                                 | Fix the expression; the trace shows the error                                                                                                                                                                                             |
-| `deduped`                                                          | This process already saw this dedupe key within 7 days                                | Expected for redeliveries. If it was a genuinely new change, the source's `artifact.version` did not change: a plugin issue                                                                                                               |
-| Batch `open` for long                                              | Still collecting: debounce keeps extending while events arrive                        | Lower `debounceSeconds` or `maxAgeSeconds`                                                                                                                                                                                                |
-| `held: process_disabled` / `source_disabled` / `executor_disabled` | Something in the path is off                                                          | Enable it. The next sweep does the work; use _Run now_ for an immediate run                                                                                                                                                               |
-| `held: executor_unhealthy`                                         | The executor's `health()` is failing                                                  | Open the executor; usually credentials (see rotation below)                                                                                                                                                                               |
-| `held: plugin_unavailable`                                         | The plugin that provides the type did not load                                        | Plugins page and startup logs; reinstall or roll back the plugin version                                                                                                                                                                  |
-| `held: breaker_open`                                               | The process failed `threshold` times in a row                                         | See breakers below                                                                                                                                                                                                                        |
-| `held: quiet_hours`                                                | Inside the process's quiet window                                                     | Expected. The first sweep after the window picks it up                                                                                                                                                                                    |
-| `awaiting_approval`                                                | The approval rule required a person                                                   | **Approvals** → approve or reject with a reason                                                                                                                                                                                           |
-| `held: paused`                                                     | The backend refused because the target is paused on its side                          | Unpause it in the backend (for example, the routine)                                                                                                                                                                                      |
-| `throttled`                                                        | A budget or meter ceiling; the trace names the binding limit                          | Wait for the window to reset, raise the budget, or lower the ceiling margin. Not re-queued: the next sweep does the work                                                                                                                  |
-| Run `failed`                                                       | Definitive error at invoke: input failed `inputSchema`, a `before` step failed, a 4xx | Read the run's errors; fix the mapping or target in the editor with the live preview                                                                                                                                                      |
-| Run `uncertain`                                                    | The response was lost and the executor is not idempotent                              | Wait for tracking or the deadline. Never re-run it blindly; see below                                                                                                                                                                     |
-| Run `unknown`                                                      | Nothing closed the run before `trackingDeadlineMinutes`                               | Check the external link. For callbacks, check the backend actually posts to `/callbacks/<executorId>` with a valid signature                                                                                                              |
-| Run `error`                                                        | The backend ran it and reported errors                                                | The external link has the details                                                                                                                                                                                                         |
+| Where it stopped                                                      | What it means                                                                         | What to do                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No event at all                                                       | The delivery never arrived or failed verification                                     | Check the source's _Overview_ for verify failures (logged with the remote address). Re-register the webhook (_Register webhook_). Check the sender's delivery log                                                                         |
+| `source_disabled`                                                     | The source instance is off; the event was stored, not processed                       | Enable the source, then _Replay_ the event                                                                                                                                                                                                |
+| `source_throttled`                                                    | Dropped by `eventCapPerHour` / `eventCapPerDay`                                       | Raise the cap if the flood was legitimate; a sweep covers the gap                                                                                                                                                                         |
+| `type_muted`                                                          | The event type is muted on this source                                                | Unmute it in the source's settings                                                                                                                                                                                                        |
+| `event_invalid`                                                       | The plugin produced an event that does not match its declared schema                  | A plugin bug; the Plugins page counts it. Upgrade or report the plugin                                                                                                                                                                    |
+| `unmatched`                                                           | No enabled trigger's source, event types and filter all matched                       | Read _Why nothing ran_. A disabled process: switch _Enabled_ on (process editor › Basics, or the detail page), then _Replay_ the event. Otherwise fix the trigger's event types or filter (the editor evaluates it against recent events) |
+| `filter_error`                                                        | The filter threw and counted as false                                                 | Fix the expression; the trace shows the error                                                                                                                                                                                             |
+| `deduped`                                                             | This process already saw this dedupe key within 7 days                                | Expected for redeliveries. If it was a genuinely new change, the source's `artifact.version` did not change: a plugin issue                                                                                                               |
+| Batch `open` for long                                                 | Still collecting: debounce keeps extending while events arrive                        | Lower `debounceSeconds` or `maxAgeSeconds`                                                                                                                                                                                                |
+| `held: process_disabled` / `source_disabled` / `destination_disabled` | Something in the path is off                                                          | Enable it. The next sweep does the work; use _Run now_ for an immediate run                                                                                                                                                               |
+| `held: destination_unhealthy`                                         | The destination's `health()` is failing                                               | Open the destination; usually credentials (see rotation below)                                                                                                                                                                            |
+| `held: plugin_unavailable`                                            | The plugin that provides the type did not load                                        | Plugins page and startup logs; reinstall or roll back the plugin version                                                                                                                                                                  |
+| `held: breaker_open`                                                  | The process failed `threshold` times in a row                                         | See breakers below                                                                                                                                                                                                                        |
+| `held: quiet_hours`                                                   | Inside the process's quiet window                                                     | Expected. The first sweep after the window picks it up                                                                                                                                                                                    |
+| `awaiting_approval`                                                   | The approval rule required a person                                                   | **Approvals** → approve or reject with a reason                                                                                                                                                                                           |
+| `held: paused`                                                        | The backend refused because the target is paused on its side                          | Unpause it in the backend (for example, the routine)                                                                                                                                                                                      |
+| `throttled`                                                           | A budget or meter ceiling; the trace names the binding limit                          | Wait for the window to reset, raise the budget, or lower the ceiling margin. Not re-queued: the next sweep does the work                                                                                                                  |
+| Run `failed`                                                          | Definitive error at invoke: input failed `inputSchema`, a `before` step failed, a 4xx | Read the run's errors; fix the mapping or target in the editor with the live preview                                                                                                                                                      |
+| Run `uncertain`                                                       | The response was lost and the destination is not idempotent                           | Wait for tracking or the deadline. Never re-run it blindly; see below                                                                                                                                                                     |
+| Run `unknown`                                                         | Nothing closed the run before `trackingDeadlineMinutes`                               | Check the external link. For callbacks, check the backend actually posts to `/callbacks/<destinationId>` with a valid signature                                                                                                           |
+| Run `error`                                                           | The backend ran it and reported errors                                                | The external link has the details                                                                                                                                                                                                         |
 
 A source that should have sent something but did not: the Board's _Needs attention_ panel lists
 silent sources (no events for `sourceSilenceMinutes`), and the system notifier alerts on them. It
@@ -89,8 +89,8 @@ Secret values are never in Postgres, so rotation happens in the secret provider:
    (`secret://env/GITHUB_TOKEN`), the mounted file for `file`, the vault path for a vault provider.
    For `env`, that means a restart or rollout with the new environment; for `file`, updating the
    Kubernetes secret is enough once the kubelet syncs the file.
-2. Press **Reload instance** on the source, executor or notifier (or
-   `POST $SB/sources/<id>/reload`, `POST $SB/executors/<id>/reload`,
+2. Press **Reload instance** on the source, destination or notifier (or
+   `POST $SB/sources/<id>/reload`, `POST $SB/destinations/<id>/reload`,
    `POST $SB/notifiers/<id>/reload` with a reason). The core resolves the references again and
    rebuilds that one instance. The replica that served the request rebuilds it at once; the
    reload also bumps the instance's `config_version`, so every other replica rebuilds it within
@@ -100,7 +100,7 @@ Secret values are never in Postgres, so rotation happens in the secret provider:
    green. `switchboard doctor` checks every reference and every instance.
 
 Changing a **secret provider** itself (Settings › Secret providers: add, enable or disable,
-edit, rename or reload it) rebuilds every source, executor and notifier whose settings reference
+edit, rename or reload it) rebuilds every source, destination and notifier whose settings reference
 it, on every replica (the others within `SWITCHBOARD_INSTANCE_SYNC_SECONDS`); the provider's row
 lists them with their status afterwards. Renaming a provider does not
 rewrite references: instances still naming the old `secret://<old>/…` fail with
@@ -108,8 +108,8 @@ rewrite references: instances still naming the old `secret://<old>/…` fail wit
 provider that anything still references cannot be deleted (409 naming the users); point those
 references elsewhere first.
 
-When credentials are revoked before you rotate, invokes fail with 401/403, the executor is marked
-unhealthy, its processes are held with `executor_unhealthy`, and the system notifier alerts.
+When credentials are revoked before you rotate, invokes fail with 401/403, the destination is marked
+unhealthy, its processes are held with `destination_unhealthy`, and the system notifier alerts.
 Nothing is lost; the next sweep after the reload does the work.
 
 ## Replaying events
@@ -125,7 +125,7 @@ which starts a manual batch through the gate.
 
 ## Uncertain runs
 
-A run is `uncertain` when the executor is not idempotent and the invoke's response was lost
+A run is `uncertain` when the destination is not idempotent and the invoke's response was lost
 (timeout, reset, 5xx after send). The core never invokes it again, because the backend may
 already be doing the work. Tracking (poll or callback) usually settles it; otherwise the deadline
 makes it `unknown`.
@@ -138,7 +138,7 @@ curl -X POST -H "$AUTH" -H 'content-type: application/json' \
 ```
 
 If the work did not happen, close it `error` or `unknown` and use **Run now**. An invoke that gets
-no answer within its timeout (the executor instance's **Invoke timeout** cap, else the executor
+no answer within its timeout (the destination's **Invoke timeout** cap, else the destination
 type's value, else 300 s) is treated as a lost response: `uncertain` when not idempotent. A run
 left `invoking` past its attempt's deadline (a replica died mid-invoke) becomes `uncertain` on its
 own; an attempt that died in its `before` steps never reached the backend and is resumed instead.
@@ -163,12 +163,12 @@ have gone out.
 ## Soft-holds and stale meters
 
 - **Soft-hold:** when a backend answers "out of capacity" with a retry-after (a 429), the core
-  opens a soft-hold on that executor instance for that long, and batches are throttled with the
+  opens a soft-hold on that destination for that long, and batches are throttled with the
   soft-hold named. It ends by itself. If you know capacity is back, **Clear soft-hold** on the
-  executor (`POST $SB/executors/<id>/soft-hold/clear`).
+  destination (`POST $SB/destinations/<id>/soft-hold/clear`).
 - **Stale meter:** a meter whose latest reading is older than `meterStalenessMinutes` is shown
   grey with its last-read time. Ceilings stop using it and only the counters (runs per hour and
-  day, usage caps) gate. Press **Read meters** (`POST $SB/executors/<id>/meters/read`) to see the
+  day, usage caps) gate. Press **Read meters** (`POST $SB/destinations/<id>/meters/read`) to see the
   error; usually the meter endpoint's credential (for Claude Routines, the seat's OAuth refresh
   token).
 
@@ -280,7 +280,7 @@ replica, and unique constraints keep runs once. To scale:
   tombstone), unregistering them without a restart. Plugins added with the CLI on one replica
   are that replica's alone, and are left alone by the sync pass unless an admin removes them.
 - Instance changes converge the same way. The replica that handles a change to a source,
-  executor, notifier or secret provider (create, edit, caps, enable or disable, reload, delete,
+  destination, notifier or secret provider (create, edit, caps, enable or disable, reload, delete,
   `apply`) rebuilds it at once; every other replica rebuilds it on its next reconcile pass (at
   boot and every `SWITCHBOARD_INSTANCE_SYNC_SECONDS`, 10 s), so for up to that long a request
   landing on another replica may still see the old configuration. Each write bumps the row's

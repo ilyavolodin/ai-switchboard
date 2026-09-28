@@ -214,7 +214,7 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Unhealthy executors",
+      "title": "Unhealthy destinations",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -265,7 +265,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(switchboard_executor_health == 0) or vector(0)",
+          "expr": "count(switchboard_destination_health == 0) or vector(0)",
           "legendFormat": "",
           "instant": true
         }
@@ -682,7 +682,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (status) (increase(switchboard_runs_total{process=~\"$process\", executor=~\"$executor\"}[$__rate_interval]))",
+          "expr": "sum by (status) (increase(switchboard_runs_total{process=~\"$process\", destination=~\"$destination\"}[$__rate_interval]))",
           "legendFormat": "{{status}}",
           "range": true
         }
@@ -737,7 +737,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (process) (increase(switchboard_runs_total{process=~\"$process\", executor=~\"$executor\"}[$__rate_interval]))",
+          "expr": "sum by (process) (increase(switchboard_runs_total{process=~\"$process\", destination=~\"$destination\"}[$__rate_interval]))",
           "legendFormat": "{{process}}",
           "range": true
         }
@@ -942,7 +942,7 @@
         "x": 0,
         "y": 39
       },
-      "description": "Usage per declared dimension as the executor plugin reported it.",
+      "description": "Usage per declared dimension as the destination plugin reported it.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -977,8 +977,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (executor, unit) (increase(switchboard_run_usage_total{process=~\"$process\", executor=~\"$executor\"}[$__rate_interval]))",
-          "legendFormat": "{{executor}} · {{unit}}",
+          "expr": "sum by (destination, unit) (increase(switchboard_run_usage_total{process=~\"$process\", destination=~\"$destination\"}[$__rate_interval]))",
+          "legendFormat": "{{destination}} · {{unit}}",
           "range": true
         }
       ]
@@ -1053,8 +1053,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (executor, meter) (switchboard_meter_utilization{executor=~\"$executor\"})",
-          "legendFormat": "{{executor}} · {{meter}}",
+          "expr": "max by (destination, meter) (switchboard_meter_utilization{destination=~\"$destination\"})",
+          "legendFormat": "{{destination}} · {{meter}}",
           "instant": true
         }
       ]
@@ -1126,8 +1126,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (executor, meter, estimated) (switchboard_meter_utilization{executor=~\"$executor\"})",
-          "legendFormat": "{{executor}} · {{meter}} (estimated={{estimated}})",
+          "expr": "max by (destination, meter, estimated) (switchboard_meter_utilization{destination=~\"$destination\"})",
+          "legendFormat": "{{destination}} · {{meter}} (estimated={{estimated}})",
           "range": true
         }
       ]
@@ -1181,8 +1181,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "min by (executor, meter) (switchboard_meter_resets_in{executor=~\"$executor\"})",
-          "legendFormat": "{{executor}} · {{meter}}",
+          "expr": "min by (destination, meter) (switchboard_meter_resets_in{destination=~\"$destination\"})",
+          "legendFormat": "{{destination}} · {{meter}}",
           "range": true
         }
       ]
@@ -1315,7 +1315,7 @@
     {
       "id": 27,
       "type": "timeseries",
-      "title": "Source and executor health",
+      "title": "Source and destination health",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1373,8 +1373,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "min by (executor) (switchboard_executor_health)",
-          "legendFormat": "executor {{executor}}",
+          "expr": "min by (destination) (switchboard_destination_health)",
+          "legendFormat": "destination {{destination}}",
           "range": true
         }
       ]
@@ -1529,18 +1529,18 @@
         "sort": 1
       },
       {
-        "name": "executor",
-        "label": "Executor",
+        "name": "destination",
+        "label": "Destination",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
         "query": {
-          "query": "label_values(switchboard_runs_total, executor)",
-          "refId": "executor"
+          "query": "label_values(switchboard_runs_total, destination)",
+          "refId": "destination"
         },
-        "definition": "label_values(switchboard_runs_total, executor)",
+        "definition": "label_values(switchboard_runs_total, destination)",
         "includeAll": true,
         "multi": true,
         "allValue": ".*",

@@ -5,8 +5,8 @@ import { useNavigate, useParams } from 'react-router';
 import { errorMessage, isApiRequestError } from '../../api/client.js';
 import {
   useCreateProcess,
-  useExecutor,
-  useExecutors,
+  useDestination,
+  useDestinations,
   useNotifiers,
   useProcess,
   useProcessBatches,
@@ -57,7 +57,7 @@ import {
   stepsSummary,
   triggersSummary,
 } from './editorModel.js';
-import { ExecutorFields } from './ExecutorFields.js';
+import { DestinationFields } from './DestinationFields.js';
 import { unsavedLabel } from '../shared/unsavedLabel.js';
 import styles from './ProcessEditor.module.css';
 import { type StepProvider, StepsFields } from './StepsFields.js';
@@ -72,7 +72,7 @@ import { TriggersFields } from './TriggersFields.js';
 export function ProcessEditor() {
   const { id } = useParams();
   const process = useProcess(id);
-  const executors = useExecutors();
+  const destinations = useDestinations();
 
   if (id) {
     if (process.isPending)
@@ -91,8 +91,9 @@ export function ProcessEditor() {
       <EditorForm key={id} processId={id} saved={process.data} initial={process.data.document} />
     );
   }
-  if (executors.isPending) return <Skeleton shape="card" height={320} label="Loading executors" />;
-  return <EditorForm key="new" initial={newProcessDocument(executors.data?.[0]?.id ?? '')} />;
+  if (destinations.isPending)
+    return <Skeleton shape="card" height={320} label="Loading destinations" />;
+  return <EditorForm key="new" initial={newProcessDocument(destinations.data?.[0]?.id ?? '')} />;
 }
 
 function EditorForm({
@@ -112,7 +113,7 @@ function EditorForm({
 
   const latest = useProcess(processId);
   const sources = useSources();
-  const executors = useExecutors();
+  const destinations = useDestinations();
   const notifiers = useNotifiers();
   const settings = useSettings();
   const batches = useProcessBatches(processId);
@@ -123,7 +124,7 @@ function EditorForm({
   const [draft, setDraft] = useState(initial);
   const [baseVersion, setBaseVersion] = useState(saved?.version ?? 0);
   const [open, setOpen] = useState<Set<SectionId>>(
-    () => new Set<SectionId>(processId ? ['triggers'] : ['triggers', 'executor']),
+    () => new Set<SectionId>(processId ? ['triggers'] : ['triggers', 'destination']),
   );
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(initial.triggers.slice(0, 1).map((t) => t.id)),
@@ -136,10 +137,10 @@ function EditorForm({
   const [batchChoice, setBatchChoice] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState(true);
 
-  const executor = useExecutor(draft.executor.instanceId || undefined);
+  const destination = useDestination(draft.destination.instanceId || undefined);
   const sourceList = sources.data ?? [];
-  const executorList = executors.data ?? [];
-  const executorSummary = executorList.find((x) => x.id === draft.executor.instanceId);
+  const destinationList = destinations.data ?? [];
+  const destinationSummary = destinationList.find((x) => x.id === draft.destination.instanceId);
   const batchList = batches.data ?? [];
   const batchId = batchChoice ?? batchList[0]?.id ?? EXAMPLE_SWEEP;
   const sourceName = (sid: string) => sourceList.find((s) => s.id === sid)?.name ?? '';
@@ -184,12 +185,12 @@ function EditorForm({
       name: sourceName(sid) || sid,
       kind: 'source' as const,
     })),
-    ...(draft.executor.instanceId
+    ...(draft.destination.instanceId
       ? [
           {
-            id: draft.executor.instanceId,
-            name: executorSummary?.name ?? draft.executor.instanceId,
-            kind: 'executor' as const,
+            id: draft.destination.instanceId,
+            name: destinationSummary?.name ?? draft.destination.instanceId,
+            kind: 'destination' as const,
           },
         ]
       : []),
@@ -200,7 +201,7 @@ function EditorForm({
     (v) => ({
       title: `Test run ${baseline.name || 'this process'}?`,
       consequence: v.dryRun
-        ? 'Invokes the saved version with the chosen batch and a dry-run flag; executors that honour it change nothing.'
+        ? 'Invokes the saved version with the chosen batch and a dry-run flag; destinations that honour it change nothing.'
         : 'Invokes the saved version for real with the chosen batch: it spends budget and may change things.',
       confirmLabel: 'Start test run',
       danger: !v.dryRun,
@@ -313,7 +314,7 @@ function EditorForm({
         <EditorDiagram
           doc={draft}
           sources={sourceList}
-          executor={executorSummary}
+          destination={destinationSummary}
           processId={processId}
           status={saved?.status}
         />
@@ -361,22 +362,22 @@ function EditorForm({
       >
         <BudgetsFields
           {...common}
-          executor={executor.data}
-          executorLoading={executor.isLoading}
+          destination={destination.data}
+          destinationLoading={destination.isLoading}
           processId={processId ?? 'draft'}
         />
       </EditorSection>
 
       <EditorSection
-        title="Executor"
-        summary={`${executorSummary?.name ?? 'no executor'} · ${draft.trackingDeadlineMinutes} min tracking deadline`}
-        {...sectionProps('executor')}
+        title="Destination"
+        summary={`${destinationSummary?.name ?? 'no destination'} · ${draft.trackingDeadlineMinutes} min tracking deadline`}
+        {...sectionProps('destination')}
       >
-        <ExecutorFields
+        <DestinationFields
           {...common}
-          executors={executorList}
-          executor={executor.data}
-          executorLoading={executor.isLoading}
+          destinations={destinationList}
+          destination={destination.data}
+          destinationLoading={destination.isLoading}
           batches={batchList}
           batchId={batchId}
           onBatchChange={setBatchChoice}
