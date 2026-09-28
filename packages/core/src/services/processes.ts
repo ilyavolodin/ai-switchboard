@@ -1,9 +1,16 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
-import { processes, processVersions } from '../db/schema.js';
+import {
+  approvals,
+  batches,
+  processes,
+  processVersions,
+  type GateDecisionRecord,
+} from '../db/schema.js';
 import type { ProcessDocument } from '../domain/process.js';
 import { recordAudit, recordAuditDiff } from './audit.js';
+import { appendDecisions } from './pipeline/context.js';
 
 type ProcessRow = typeof processes.$inferSelect;
 
@@ -113,20 +120,79 @@ export async function saveProcessVersion(
   });
 }
 
-/** Delete a process and audit its last document. Returns false when there is no such process. */
-export async function deleteProcess(db: Db, id: string, meta: SaveMeta): Promise<boolean> {
+/** What deleting a process cleaned up. */
+export interface DeletedProcess {
+  /** Batches that had not reached a run (open, closed, awaiting approval), now `rejected`. */
+  droppedBatches: number;
+  /** Pending approval requests, now `withdrawn`. */
+  withdrawnApprovals: number;
+}
+
+/** Batch outcomes that still lead somewhere: a delete drops them. */
+const UNFINISHED_BATCHES = ['open', 'closed', 'awaiting_approval'] as const;
+
+/**
+ * Delete a process and audit its last document, in one transaction with its cleanup: its
+ * unfinished batches (open, closed but not dispatched, awaiting approval) end `rejected` with
+ * reason `process_deleted`, and its pending approvals end `withdrawn` (one audit row each), so
+ * the Approvals queue never shows a request nobody can act on. Runs, events, versions, schedule
+ * ticks and decided batches stay for the trace and the audit log. A run already reserved goes
+ * on to its terminal state. The dispatch stage re-checks `outcome = 'closed'` under a row lock,
+ * so a batch dropped here never reaches the executor. Returns null when there is no such process.
+ */
+export async function deleteProcess(
+  db: Db,
+  id: string,
+  meta: SaveMeta,
+): Promise<DeletedProcess | null> {
+  const { actor, reason, now } = meta;
   return db.transaction(async (tx) => {
     const [row] = await tx.delete(processes).where(eq(processes.id, id)).returning();
-    if (!row) return false;
+    if (!row) return null;
+    const record: GateDecisionRecord = {
+      stage: 'batch',
+      check: 'process_deleted',
+      pass: false,
+      detail: `${actor}: ${reason}`,
+      at: now.toISOString(),
+    };
+    const dropped = await tx
+      .update(batches)
+      .set({
+        outcome: 'rejected',
+        outcomeReason: 'process_deleted',
+        closedAt: sql`COALESCE(${batches.closedAt}, ${now.toISOString()}::timestamptz)`,
+        approvalState: sql`CASE WHEN ${batches.approvalState} = 'pending' THEN 'rejected' ELSE ${batches.approvalState} END`,
+        decisions: appendDecisions([record]),
+      })
+      .where(and(eq(batches.processId, id), inArray(batches.outcome, [...UNFINISHED_BATCHES])))
+      .returning({ id: batches.id });
+    const withdrawn = await tx
+      .update(approvals)
+      .set({ decision: 'withdrawn', decidedBy: actor, decidedAt: now, reason })
+      .where(and(eq(approvals.processId, id), isNull(approvals.decision)))
+      .returning({ batchId: approvals.batchId });
+    for (const a of withdrawn) {
+      await recordAudit(tx, {
+        actor,
+        scope: 'approval',
+        targetId: a.batchId,
+        field: 'decision',
+        before: 'pending',
+        after: 'withdrawn',
+        reason: `process ${row.name} deleted: ${reason}`,
+        at: now,
+      });
+    }
     await recordAudit(tx, {
-      actor: meta.actor,
+      actor,
       scope: 'process',
       targetId: row.id,
       field: 'deleted',
       before: row.document,
-      reason: meta.reason,
-      at: meta.now,
+      reason,
+      at: now,
     });
-    return true;
+    return { droppedBatches: dropped.length, withdrawnApprovals: withdrawn.length };
   });
 }

@@ -6,7 +6,7 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 - Auth: a session cookie (`sb_session`) from sign-in, or `Authorization: Bearer <api token>`.
 - Roles: `viewer` reads; `operator` also changes sources, executors, processes, approvals, manual runs and replays; `admin` also manages plugins, users, secret providers, notifiers and settings.
 - Every state-changing body carries `reason` (non-empty). Every change writes `audit_log` rows. An admin can make reasons optional (`GlobalSettings.requireReasons: false`, Settings › General): then a missing or blank `reason` is accepted (a `DELETE` may omit the body) and audited as `(no reason given)`. `MeResponse.requireReasons` tells a client whether to ask. Each replica caches the setting for 5 s; the replica that saves it applies it at once, the others within the cache window.
-- Errors: `{ error, message, details? }` with 400 (validation, including a malformed time or cursor), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, or a name already taken), 422 (semantic), 429 (too many sign-in attempts), 503.
+- Errors: `{ error, message, details?, usedBy? }` with 400 (validation, including a malformed time or cursor), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, a name already taken, or deleting a source, executor or notifier that processes still use: `usedBy` lists them as `{ id, name }`), 422 (semantic), 429 (too many sign-in attempts), 503.
 - Lists: `?cursor=&limit=` → `Page<T>` (`{ items, nextCursor }`). Filters apply before paging, and a cursor is keyed by time and id, so rows that share a timestamp are neither skipped nor repeated.
 
 ## Unauthenticated surfaces
@@ -163,6 +163,14 @@ per-target and default timeouts (core default 300 s); no answer in time is a los
 | POST   | `/processes/preview/filter`                | `FilterPreviewRequest` → `FilterPreviewResponse`                   | viewer   |
 | POST   | `/processes/preview/input`                 | `InputPreviewRequest` → `InputPreviewResponse`                     | viewer   |
 | POST   | `/processes/preview/cron`                  | `CronPreviewRequest` → `CronPreviewResponse`                       | viewer   |
+
+`DELETE /processes/:id` removes the process and, in the same transaction, ends what it left
+unfinished: its open batches, closed batches not yet dispatched and batches awaiting approval
+become `rejected` with reason `process_deleted` (a `batch`/`process_deleted` decision names the
+actor and reason), and its pending approvals become `withdrawn` (`ApprovalHistoryItem.decision`,
+one `approval` audit row each). Runs already reserved finish as usual; runs, events, versions and
+schedule ticks stay for the trace, and the `deleted` audit row keeps the last document. A source,
+executor or notifier the process used can be deleted afterwards.
 
 ## Activity, events, trace
 

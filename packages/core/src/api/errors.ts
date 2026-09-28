@@ -12,6 +12,8 @@ export class HttpError extends Error {
     readonly code: string,
     message: string,
     readonly details?: string[],
+    /** See `ApiError.usedBy`. */
+    readonly usedBy?: { id: string; name: string }[],
   ) {
     super(message);
   }
@@ -21,7 +23,8 @@ export const notFound = (what: string): HttpError =>
   new HttpError(404, 'not_found', `${what} not found`);
 export const badRequest = (message: string, details?: string[]): HttpError =>
   new HttpError(400, 'bad_request', message, details);
-export const conflict = (message: string): HttpError => new HttpError(409, 'conflict', message);
+export const conflict = (message: string, usedBy?: { id: string; name: string }[]): HttpError =>
+  new HttpError(409, 'conflict', message, undefined, usedBy);
 export const unprocessable = (message: string, details?: string[]): HttpError =>
   new HttpError(422, 'unprocessable', message, details);
 
@@ -48,6 +51,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
         error: err.code,
         message: err.message,
         ...(err.details ? { details: err.details } : {}),
+        ...(err.usedBy ? { usedBy: err.usedBy } : {}),
       };
       return reply.code(err.status).send(body);
     }

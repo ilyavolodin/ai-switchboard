@@ -3,6 +3,7 @@
  * executor and steps live in their own files.
  */
 import type { InstanceSummary, ProcessDocument } from '@ai-switchboard/core/contract';
+import { useState } from 'react';
 
 import { Button } from '../../components/Button.js';
 import { Checkbox } from '../../components/Checkbox.js';
@@ -14,7 +15,7 @@ import { Radio } from '../../components/Radio.js';
 import { Select } from '../../components/Select.js';
 import { Toggle } from '../../components/Toggle.js';
 import { CoalesceDemo } from './CoalesceDemo.js';
-import { newNotification, newSchedule } from './editorModel.js';
+import { batchingOn, newNotification, newSchedule, withBatching } from './editorModel.js';
 import { NumberField } from './NumberField.js';
 import styles from './ProcessEditor.module.css';
 
@@ -27,8 +28,16 @@ export interface SectionProps {
   disabled?: boolean;
 }
 
+/**
+ * Batching: a "Batch events" switch (derived from the document: off is max size 1, see
+ * `batchingOn`), then debounce, max size, max age and group-by while it is on. Switching off
+ * and on again in one visit restores the values it had.
+ */
 export function BatchingFields({ doc, baseline, set, errors, disabled }: SectionProps) {
   const b = doc.batching;
+  const on = batchingOn(b);
+  // The values batching had before it was switched off here, to restore on the way back.
+  const [previous, setPrevious] = useState<ProcessDocument['batching'] | undefined>(undefined);
   const put = (patch: Partial<ProcessDocument['batching']>) => {
     set((d) => ({ ...d, batching: { ...d.batching, ...patch } }));
   };
@@ -36,96 +45,130 @@ export function BatchingFields({ doc, baseline, set, errors, disabled }: Section
     <div className={styles.twoCol}>
       <div className={styles.stack}>
         <Field
-          label="Debounce"
-          help="wait this long after the last event before closing the batch"
+          label="Batch events"
+          help={
+            on
+              ? 'events that arrive close together share one run'
+              : 'off: every event is its own run, started at once — nothing waits and nothing is grouped'
+          }
           layout="row"
-          changed={b.debounceSeconds !== baseline.batching.debounceSeconds}
-          error={errors['/batching/debounceSeconds']}
+          changed={on !== batchingOn(baseline.batching)}
         >
           {({ id, describedBy }) => (
-            <NumberField
+            <Toggle
               id={id}
               describedBy={describedBy}
-              integer
-              max={86_400}
-              suffix="seconds"
-              value={b.debounceSeconds}
+              ariaLabel="Batch events"
+              checked={on}
               disabled={disabled}
-              onChange={(v) => {
-                if (v != null) put({ debounceSeconds: v });
+              onChange={(next) => {
+                if (!next) setPrevious(b);
+                set((d) =>
+                  withBatching(
+                    d,
+                    next,
+                    previous ?? (batchingOn(baseline.batching) ? baseline.batching : undefined),
+                  ),
+                );
               }}
             />
           )}
         </Field>
-        <Field
-          label="Max size"
-          help="close the batch at this many events"
-          layout="row"
-          changed={b.maxSize !== baseline.batching.maxSize}
-          error={errors['/batching/maxSize']}
-        >
-          {({ id, describedBy }) => (
-            <NumberField
-              id={id}
-              describedBy={describedBy}
-              integer
-              min={1}
-              max={10_000}
-              suffix="events"
-              value={b.maxSize}
-              disabled={disabled}
-              onChange={(v) => {
-                if (v != null) put({ maxSize: v });
-              }}
-            />
-          )}
-        </Field>
-        <Field
-          label="Max age"
-          help="close at this age even while events keep arriving"
-          layout="row"
-          changed={b.maxAgeSeconds !== baseline.batching.maxAgeSeconds}
-          error={errors['/batching/maxAgeSeconds']}
-        >
-          {({ id, describedBy }) => (
-            <NumberField
-              id={id}
-              describedBy={describedBy}
-              integer
-              max={604_800}
-              suffix="seconds"
-              value={b.maxAgeSeconds}
-              disabled={disabled}
-              onChange={(v) => {
-                if (v != null) put({ maxAgeSeconds: v });
-              }}
-            />
-          )}
-        </Field>
-        <Field
-          label="Group by"
-          help="optional · one batch per key, e.g. artifact.id or attributes.repository"
-          layout="row"
-          changed={(b.groupBy ?? '') !== (baseline.batching.groupBy ?? '')}
-        >
-          {({ id, describedBy }) => (
-            <ExpressionEditor
-              id={id}
-              describedBy={describedBy}
-              label="Group-by expression"
-              textareaRows={1}
-              completions={{
-                variables: ['event', 'attributes', 'artifact', 'type', 'process', 'now'],
-              }}
-              value={b.groupBy ?? ''}
-              disabled={disabled}
-              insertions={[{ label: 'artifact.id' }, { label: 'event.sourceId' }]}
-              onChange={(groupBy) => {
-                put({ groupBy: groupBy === '' ? undefined : groupBy });
-              }}
-            />
-          )}
-        </Field>
+        {on && (
+          <>
+            <Field
+              label="Debounce"
+              help="wait this long after the last event before closing the batch"
+              layout="row"
+              changed={b.debounceSeconds !== baseline.batching.debounceSeconds}
+              error={errors['/batching/debounceSeconds']}
+            >
+              {({ id, describedBy }) => (
+                <NumberField
+                  id={id}
+                  describedBy={describedBy}
+                  integer
+                  max={86_400}
+                  suffix="seconds"
+                  value={b.debounceSeconds}
+                  disabled={disabled}
+                  onChange={(v) => {
+                    if (v != null) put({ debounceSeconds: v });
+                  }}
+                />
+              )}
+            </Field>
+            <Field
+              label="Max size"
+              help="close the batch at this many events (at least 2; switch batching off for one run per event)"
+              layout="row"
+              changed={b.maxSize !== baseline.batching.maxSize}
+              error={errors['/batching/maxSize']}
+            >
+              {({ id, describedBy }) => (
+                <NumberField
+                  id={id}
+                  describedBy={describedBy}
+                  integer
+                  min={2}
+                  max={10_000}
+                  suffix="events"
+                  value={b.maxSize}
+                  disabled={disabled}
+                  onChange={(v) => {
+                    if (v != null) put({ maxSize: v });
+                  }}
+                />
+              )}
+            </Field>
+            <Field
+              label="Max age"
+              help="close at this age even while events keep arriving"
+              layout="row"
+              changed={b.maxAgeSeconds !== baseline.batching.maxAgeSeconds}
+              error={errors['/batching/maxAgeSeconds']}
+            >
+              {({ id, describedBy }) => (
+                <NumberField
+                  id={id}
+                  describedBy={describedBy}
+                  integer
+                  max={604_800}
+                  suffix="seconds"
+                  value={b.maxAgeSeconds}
+                  disabled={disabled}
+                  onChange={(v) => {
+                    if (v != null) put({ maxAgeSeconds: v });
+                  }}
+                />
+              )}
+            </Field>
+            <Field
+              label="Group by"
+              help="optional · one batch per key, e.g. artifact.id or attributes.repository"
+              layout="row"
+              changed={(b.groupBy ?? '') !== (baseline.batching.groupBy ?? '')}
+            >
+              {({ id, describedBy }) => (
+                <ExpressionEditor
+                  id={id}
+                  describedBy={describedBy}
+                  label="Group-by expression"
+                  textareaRows={1}
+                  completions={{
+                    variables: ['event', 'attributes', 'artifact', 'type', 'process', 'now'],
+                  }}
+                  value={b.groupBy ?? ''}
+                  disabled={disabled}
+                  insertions={[{ label: 'artifact.id' }, { label: 'event.sourceId' }]}
+                  onChange={(groupBy) => {
+                    put({ groupBy: groupBy === '' ? undefined : groupBy });
+                  }}
+                />
+              )}
+            </Field>
+          </>
+        )}
       </div>
       <CoalesceDemo batching={b} />
     </div>

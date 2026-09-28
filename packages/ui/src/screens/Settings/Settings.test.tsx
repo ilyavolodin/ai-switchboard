@@ -341,6 +341,25 @@ describe('Settings', () => {
       expect(within(row).getByText(/Still used by executor/)).toBeInTheDocument();
     });
 
+    it('links the processes that still notify through a notifier it refused to delete', async () => {
+      const { user } = open('notifiers', 'admin', {
+        'DELETE /notifiers/:id': () =>
+          mockStatus(409, {
+            error: 'conflict',
+            message: 'Still used by Autofix.',
+            usedBy: [{ id: 'p-autofix', name: 'Autofix' }],
+          }),
+      });
+      await user.click(await screen.findByRole('button', { name: 'Delete Slack — #loops' }));
+      await giveReason(user, 'clean up', 'Delete');
+      expect(await screen.findByText('Slack — #loops is still in use')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Autofix' })).toHaveAttribute(
+        'href',
+        '/processes/p-autofix/edit',
+      );
+      expect(screen.queryByText('Slack — #loops was not deleted')).toBeNull();
+    });
+
     it('keeps admin actions disabled for an operator', async () => {
       open('notifiers', 'operator');
       expect(await screen.findByRole('button', { name: 'Delete Slack — #loops' })).toHaveAttribute(

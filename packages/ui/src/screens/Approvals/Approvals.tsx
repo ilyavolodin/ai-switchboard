@@ -229,7 +229,11 @@ const HISTORY_COLUMNS: TableColumn<ApprovalHistoryItem>[] = [
     key: 'decision',
     header: 'decision',
     cell: (r) => (
-      <StatusChip size="sm" tone={r.decision === 'approved' ? 'ok' : 'error'} label={r.decision} />
+      <StatusChip
+        size="sm"
+        tone={r.decision === 'approved' ? 'ok' : r.decision === 'withdrawn' ? 'off' : 'error'}
+        label={r.decision === 'withdrawn' ? 'withdrawn · process deleted' : r.decision}
+      />
     ),
   },
   { key: 'by', header: 'by', cell: (r) => r.decidedBy },

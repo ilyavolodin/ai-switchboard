@@ -92,12 +92,32 @@ async function readError(res: Response): Promise<ApiError> {
         error: typeof p.error === 'string' ? p.error : fallback.error,
         message: typeof p.message === 'string' ? p.message : fallback.message,
         ...(Array.isArray(p.details) ? { details: p.details.map(String) } : {}),
+        ...(Array.isArray(p.usedBy) ? { usedBy: p.usedBy.filter(isProcessRef) } : {}),
       };
     }
     return fallback;
   } catch {
     return fallback;
   }
+}
+
+function isProcessRef(v: unknown): v is { id: string; name: string } {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    typeof (v as { id?: unknown }).id === 'string' &&
+    typeof (v as { name?: unknown }).name === 'string'
+  );
+}
+
+/**
+ * The processes named by a 409 "still used by" refusal (deleting a source, executor or
+ * notifier), or null for any other error.
+ */
+export function usedByOf(e: unknown): { id: string; name: string }[] | null {
+  if (!isApiRequestError(e) || e.status !== 409) return null;
+  const used = e.body.usedBy;
+  return used && used.length > 0 ? used : null;
 }
 
 /** A readable one-line message for any thrown value (for toasts and inline errors). */

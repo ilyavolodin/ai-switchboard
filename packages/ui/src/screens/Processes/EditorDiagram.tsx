@@ -12,6 +12,7 @@ import { SourceNode } from '../../components/SourceNode.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { cx } from '../../lib/cx.js';
 import { describeCron } from '../../lib/cron.js';
+import { batchingOn, batchingSummary, budgetsOn } from './editorModel.js';
 import styles from './ProcessEditor.module.css';
 
 export interface EditorDiagramProps {
@@ -124,12 +125,9 @@ export function EditorDiagram({ doc, sources, executor, processId, status }: Edi
         width={300}
       >
         <span className={styles.badges}>
-          <span
-            className={styles.badge}
-            title={`batching: debounce ${doc.batching.debounceSeconds} s · max ${doc.batching.maxSize}`}
-          >
+          <span className={styles.badge} title={`batching: ${batchingSummary(doc.batching)}`}>
             <Icon name="clock" size={12} />
-            batch {doc.batching.debounceSeconds} s
+            {batchingOn(doc.batching) ? `batch ${doc.batching.debounceSeconds} s` : 'no batching'}
           </span>
           <span className={styles.badge} title={`gates: ${gateParts.join(' · ')}`}>
             <Icon name="gate" size={12} />
@@ -137,7 +135,7 @@ export function EditorDiagram({ doc, sources, executor, processId, status }: Edi
           </span>
           <span className={styles.badge} title={`budgets: ${budgetParts.join(' · ') || 'none'}`}>
             <Icon name="budget" size={12} />
-            {budgetParts[0] ?? 'no caps'}
+            {budgetParts[0] ?? (budgetsOn(doc.budgets) ? 'ceilings' : 'no limits')}
           </span>
           {sweep && (
             <span

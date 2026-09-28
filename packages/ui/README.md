@@ -96,7 +96,10 @@ src/test/                          setup.ts, render.tsx (renderWithProviders, re
   confirmation with an optional note. Tests: `renderWithProviders(ui, { requireReasons: false })`.
 
   Fleet-affecting actions pass `danger: true` and a `consequence` sentence naming the effect (or
-  render `<ConfirmDialog>` yourself).
+  render `<ConfirmDialog>` yourself). An `onError(e)` option that returns true shows the error
+  itself instead of the toast: deleting a source, executor or notifier that processes still use
+  answers 409 with `usedBy`, which `useInUseRefusal` + `<InUseBanner>` (`screens/shared/`) turn
+  into links to those processes' editors.
 
 - A save gated by a plugin schema uses `validateAgainstSchema(schema, value)` (same Ajv the form uses).
 

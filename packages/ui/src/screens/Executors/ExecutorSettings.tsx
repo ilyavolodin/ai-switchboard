@@ -3,6 +3,8 @@ import type { ExecutorCapsDTO, ExecutorDetail } from '@ai-switchboard/core/contr
 import { useDeleteExecutor, useUpdateExecutor } from '../../api/index.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { InstanceSettingsForm } from '../shared/InstanceSettingsForm.js';
+import { InUseBanner } from '../shared/InUseBanner.js';
+import { useInUseRefusal } from '../shared/useInUseRefusal.js';
 import { ExecutorCapsFields } from './ExecutorCapsFields.js';
 import { estimatedMeters } from './executorModel.js';
 
@@ -21,18 +23,17 @@ export function ExecutorSettings({ executor }: { executor: ExecutorDetail }) {
     },
     { successMessage: 'Settings saved' },
   );
+  const inUse = useInUseRefusal();
   const remove = useReasonedMutation(
     useDeleteExecutor(),
     {
       title: `Delete ${executor.name}?`,
       consequence:
-        executor.processes.length > 0
-          ? `${executor.processes.map((p) => p.name).join(', ')} lose their executor and hold every batch until they are bound to another one.`
-          : 'It disappears from the Board and the capacity strip. Its run history stays until retention removes it.',
+        'It disappears from the Board and the capacity strip. Its run history stays until retention removes it.',
       confirmLabel: 'Delete executor',
       danger: true,
     },
-    { successMessage: `${executor.name} deleted` },
+    { successMessage: `${executor.name} deleted`, onError: inUse.onError },
   );
 
   return (
@@ -52,10 +53,27 @@ export function ExecutorSettings({ executor }: { executor: ExecutorDetail }) {
       )}
       onSave={(draft) => save.run({ id: executor.id, ...draft })}
       saving={save.pending}
-      onDelete={() => remove.run({ id: executor.id })}
+      onDelete={() => {
+        // Processes bound to it: the server would refuse, so say why at once.
+        if (executor.processes.length > 0) {
+          inUse.block(executor.processes);
+          return Promise.resolve(null);
+        }
+        return remove.run({ id: executor.id });
+      }}
       deleting={remove.pending}
-      deleteNote="Deleting removes the instance. Processes bound to it hold their batches until they are bound to another executor."
+      deleteNote="Deleting removes the instance. An executor that processes are bound to (or whose actions their steps use) can't be deleted: bind them elsewhere first."
       afterDelete="/executors"
+      deleteBlocked={
+        inUse.usedBy && (
+          <InUseBanner
+            name={executor.name}
+            kind="executor"
+            processes={inUse.usedBy}
+            onDismiss={inUse.dismiss}
+          />
+        )
+      }
     />
   );
 }

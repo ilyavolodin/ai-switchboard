@@ -40,9 +40,9 @@ export function newProcessDocument(executorInstanceId: string): ProcessDocument 
     enabled: true,
     triggers: [],
     schedules: [],
-    batching: { debounceSeconds: 30, maxSize: 20, maxAgeSeconds: 600 },
+    batching: { ...BATCHING_DEFAULTS },
     gates: { approval: 'none', breaker: { threshold: 3, cooldownMinutes: 60 } },
-    budgets: { runsPerDay: 20, meterCeilings: {} },
+    budgets: { ...BUDGETS_DEFAULTS, meterCeilings: {} },
     executor: { instanceId: executorInstanceId, target: {} },
     input: '{ "mode": mode, "runId": run.id, "artifacts": events.artifact }',
     before: [],
@@ -202,7 +202,75 @@ export function triggersSummary(doc: ProcessDocument, sourceName: (id: string) =
   return `${on.length} on${doc.triggers.length > on.length ? ` · ${doc.triggers.length - on.length} off` : ''} · ${head}`;
 }
 
+type Batching = ProcessDocument['batching'];
+type Budgets = ProcessDocument['budgets'];
+
+/** What a new process batches with, and what switching batching back on restores by default. */
+export const BATCHING_DEFAULTS: Batching = { debounceSeconds: 30, maxSize: 20, maxAgeSeconds: 600 };
+
+/**
+ * Batching off, as the document stores it: a batch closes on its first event (`maxSize: 1`, the
+ * size rule), so every event is its own run at once. Debounce and max age are 0 so the document
+ * reads the same way (`maxAgeSeconds: 0` is "no age cap", which a one-event batch never needs).
+ */
+export const BATCHING_OFF: Batching = { debounceSeconds: 0, maxSize: 1, maxAgeSeconds: 0 };
+
+/**
+ * Whether the process batches at all. Derived from the document, with no field of its own: at
+ * `maxSize` 1 the batch closes on arrival whatever the debounce and age say, so that is exactly
+ * "off" in the pipeline too.
+ */
+export function batchingOn(b: Batching): boolean {
+  return b.maxSize > 1;
+}
+
+/**
+ * The document with batching switched on or off. Off writes `BATCHING_OFF` (the group-by goes:
+ * one-event batches have nothing to group). On restores `previous` when it batched, else the
+ * defaults.
+ */
+export function withBatching(
+  doc: ProcessDocument,
+  on: boolean,
+  previous?: Batching,
+): ProcessDocument {
+  if (!on) return { ...doc, batching: { ...BATCHING_OFF } };
+  const restored = previous && batchingOn(previous) ? previous : BATCHING_DEFAULTS;
+  return { ...doc, batching: { ...restored } };
+}
+
+/** What switching budgets on starts from when there is nothing to restore. */
+export const BUDGETS_DEFAULTS: Budgets = { runsPerDay: 20, meterCeilings: {} };
+
+/**
+ * Whether the process limits its own runs: any runs-per-hour or per-day cap, usage cap or meter
+ * ceiling. Derived from the document; "off" is `{ meterCeilings: {} }`.
+ */
+export function budgetsOn(b: Budgets): boolean {
+  return (
+    b.runsPerHour != null ||
+    b.runsPerDay != null ||
+    Object.keys(b.usagePerDay ?? {}).length > 0 ||
+    Object.keys(b.meterCeilings).length > 0
+  );
+}
+
+/** The document with its budgets switched on (restoring `previous`, else the defaults) or off. */
+export function withBudgets(
+  doc: ProcessDocument,
+  on: boolean,
+  previous?: Budgets,
+): ProcessDocument {
+  if (!on) return { ...doc, budgets: { meterCeilings: {} } };
+  const restored = previous && budgetsOn(previous) ? previous : BUDGETS_DEFAULTS;
+  return {
+    ...doc,
+    budgets: { ...restored, meterCeilings: { ...restored.meterCeilings } },
+  };
+}
+
 export function batchingSummary(b: ProcessDocument['batching']): string {
+  if (!batchingOn(b)) return 'Off — one run per event';
   return [
     `debounce ${b.debounceSeconds} s`,
     `max ${b.maxSize}`,
@@ -245,7 +313,7 @@ export function budgetsSummary(b: ProcessDocument['budgets']): string {
       `ceilings ${[...new Set(ceilings.map((c) => `${c.events}% / ${c.sweeps}%`))].join(', ')}`,
     );
   }
-  return parts.length > 0 ? parts.join(' · ') : 'no caps';
+  return parts.length > 0 ? parts.join(' · ') : 'No limits';
 }
 
 export function stepsSummary(doc: ProcessDocument): string {

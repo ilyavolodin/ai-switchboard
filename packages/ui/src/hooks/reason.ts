@@ -72,7 +72,11 @@ export function useReasonPrompt(): AskReason {
 export function useReasonedMutation<TData, TVars extends { reason: string }>(
   mutation: UseMutationResult<TData, Error, TVars>,
   prompt: ReasonPromptOptions | ((vars: Omit<TVars, 'reason'>) => ReasonPromptOptions),
-  options: { successMessage?: string | ((data: TData) => string) } = {},
+  options: {
+    successMessage?: string | ((data: TData) => string);
+    /** Return true when the caller shows the error itself (no error toast). */
+    onError?: (e: unknown) => boolean;
+  } = {},
 ) {
   const ask = useReasonPrompt();
   const toast = useToast();
@@ -97,7 +101,9 @@ export function useReasonedMutation<TData, TVars extends { reason: string }>(
         if (msg) toast({ tone: 'ok', title: msg });
         return data;
       } catch (e) {
-        toast({ tone: 'error', title: 'That did not work', detail: errorMessage(e) });
+        if (!o.onError?.(e)) {
+          toast({ tone: 'error', title: 'That did not work', detail: errorMessage(e) });
+        }
         return null;
       } finally {
         setPending(false);

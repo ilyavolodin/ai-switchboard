@@ -97,7 +97,8 @@ Save.
 2. **Triggers → Add trigger.** Pick `Test hook` and tick `webhook.request.received`. Set the filter
    to `attributes.severity = 'critical'` (the editor completes attribute names). Once events
    exist, the editor shows the filter's result on the last 20 of them.
-3. **Batching.** Debounce 5 seconds is fine.
+3. **Batching.** Keep **Batch events** on and set the debounce to 5 seconds, so a burst becomes
+   one run. (Switched off, every event is its own run, started at once.)
 4. **Executor.** Pick `Log`. Target: label `quick-start`, outcome `ok`. Keep the default input
    mapping; the preview shows what the executor will receive.
 5. **Save.**
@@ -136,7 +137,9 @@ docker compose -f deploy/docker-compose.yml logs switchboard | grep "log executo
   another: the trace says `process is disabled`.
 - **Redelivery collapses:** send the same body twice. The second one is `deduped` for the process.
 - **A burst coalesces:** send ten events within five seconds. The debounce turns them into one run.
-- **Throttled:** set **Budgets › Runs per hour** to 1 and send two events a minute apart. The
+- **One run per event:** switch **Batching › Batch events** off and send three events: three
+  runs, nothing waits.
+- **Throttled:** keep **Budgets › Limit runs** on, set **Runs per hour** to 1 and send two events a minute apart. The
   second batch is `throttled`, with the binding limit named.
 - **Failures:** set the executor target's **Simulated outcome** to `error` and send three events.
   The breaker opens after the threshold and the Board shows it under **Needs attention** with a

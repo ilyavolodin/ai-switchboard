@@ -259,7 +259,10 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         if (spec.inUseHint !== undefined) {
           const users = await processesUsing(ctx, row.id);
           if (users.length > 0)
-            throw conflict(`Still used by ${users.join(', ')}.${spec.inUseHint}`);
+            throw conflict(
+              `Still used by ${users.map((u) => u.name).join(', ')}.${spec.inUseHint}`,
+              users,
+            );
         }
         await spec.beforeDelete?.(row);
         await deleteInstance(db, kind, row.id);

@@ -7,6 +7,7 @@ import type {
 } from '@ai-switchboard/core/contract';
 
 import { buildFixtures } from '../../api/fixtures.js';
+import { mockStatus } from '../../api/mockApi.js';
 import { at } from '../../lib/at.js';
 import type { RenderOptions } from '../../test/render.js';
 import { renderWithProviders, TEST_NOW } from '../../test/render.js';
@@ -285,6 +286,63 @@ describe('SourceDetail', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
     expect(router.state.location.pathname).toBe('/sources/src-linear/settings');
     expect(screen.getByLabelText(/Team key/)).toHaveValue('LOLX');
+  });
+
+  it('names the processes that still use it instead of asking to delete', async () => {
+    const f = buildFixtures(TEST_NOW);
+    const linear = at(
+      f.sources.filter((x) => x.id === 'src-linear'),
+      0,
+    );
+    const { api, user } = renderSource('/sources/src-linear/settings', {
+      overrides: {
+        'GET /sources/:id': () => ({
+          ...f.sourceDetail(linear),
+          processes: [{ id: 'p-autofix', name: 'Autofix', eventTypes: ['issue.label_added'] }],
+        }),
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Delete source' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await screen.findByText('Linear — lola is still in use')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Autofix' })).toHaveAttribute(
+      'href',
+      '/processes/p-autofix/edit',
+    );
+    expect(screen.getByText(/remove its triggers from each/)).toBeInTheDocument();
+    expect(api.callsTo('DELETE /sources/src-linear')).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByText('Linear — lola is still in use')).toBeNull();
+  });
+
+  it('turns a 409 "still used by" into links to those processes', async () => {
+    const { api, user } = renderSource('/sources/src-linear/settings', {
+      overrides: {
+        'DELETE /sources/:id': () =>
+          mockStatus(409, {
+            error: 'conflict',
+            message: 'Still used by Autofix, Triage. Remove it from those processes first.',
+            usedBy: [
+              { id: 'p-autofix', name: 'Autofix' },
+              { id: 'p-triage', name: 'Triage' },
+            ],
+          }),
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Delete source' }));
+    await reasonAndConfirm(user, 'unused now', 'Delete source');
+    expect(await screen.findByText('Linear — lola is still in use')).toBeInTheDocument();
+    expect(api.callsTo('DELETE /sources/src-linear')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Autofix' })).toHaveAttribute(
+      'href',
+      '/processes/p-autofix/edit',
+    );
+    expect(screen.getByRole('link', { name: 'Triage' })).toHaveAttribute(
+      'href',
+      '/processes/p-triage/edit',
+    );
+    expect(screen.getByText(/or delete those processes/)).toBeInTheDocument();
+    expect(screen.queryByText('That did not work')).toBeNull();
   });
 
   it('says so when the source does not exist', async () => {

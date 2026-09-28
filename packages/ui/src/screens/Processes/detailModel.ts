@@ -44,6 +44,17 @@ export function enableConsequence(p: ProcessDetail, enable: boolean): string {
   }. Open batches are dropped; runs already started keep going.`;
 }
 
+/** The sentence the delete confirm names: what ends, and what stays for the trace. */
+export function deleteConsequence(p: ProcessDetail): string {
+  const approvals =
+    p.awaitingApproval > 0
+      ? `, and its ${plural(p.awaitingApproval, 'pending approval')} ${
+          p.awaitingApproval === 1 ? 'is' : 'are'
+        } withdrawn`
+      : '';
+  return `Its triggers and sweeps stop for good. Its open batches are dropped${approvals}. Runs already started finish; runs and events stay for the trace, and the audit log keeps its last version. This cannot be undone.`;
+}
+
 /** When the breaker's cooldown ends: opened + cooldown minutes. */
 export function cooldownEndsAt(p: ProcessDetail): string | null {
   const opened = toMs(p.breakerOpenedAt);

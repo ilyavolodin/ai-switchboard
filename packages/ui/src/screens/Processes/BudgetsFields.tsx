@@ -1,9 +1,12 @@
 import type { ExecutorDetail, MeterCeiling, ProcessDocument } from '@ai-switchboard/core/contract';
+import { useState } from 'react';
 
 import { Field } from '../../components/Field.js';
 import { MeterGauge } from '../../components/MeterGauge.js';
 import { Skeleton } from '../../components/Skeleton.js';
+import { Toggle } from '../../components/Toggle.js';
 import { formatCount } from '../../lib/format.js';
+import { budgetsOn, withBudgets } from './editorModel.js';
 import type { SectionProps } from './EditorSections.js';
 import { NumberField } from './NumberField.js';
 import styles from './ProcessEditor.module.css';
@@ -45,7 +48,8 @@ function withUsageCap(
 }
 
 /**
- * Budgets: runs per hour and per day, a daily cap per budgetable usage dimension the bound
+ * Budgets: a "Limit runs" switch (off = no caps of the process's own; derived from the
+ * document, see `budgetsOn`), then runs per hour and per day, a daily cap per budgetable usage dimension the bound
  * executor declares (with its unit), and per-meter ceilings drawn as marks on each meter's gauge
  * — the dark tick is the event ceiling, the light one the sweep ceiling.
  */
@@ -65,6 +69,72 @@ export function BudgetsFields({
 }) {
   const b = doc.budgets;
   const dims = executor?.usage.filter((u) => u.budgetable) ?? [];
+  // The switch is derived from the document (`budgetsOn`); `keepOpen` holds it on while every
+  // field is being cleared in this visit, so emptying the last cap does not hide the fields.
+  const [keepOpen, setKeepOpen] = useState(false);
+  const [previous, setPrevious] = useState<ProcessDocument['budgets'] | undefined>(undefined);
+  const on = budgetsOn(b) || keepOpen;
+  const executorCaps = executor ? `${executor.name}'s` : "the executor's";
+  return (
+    <div className={styles.stack}>
+      <Field
+        label="Limit runs"
+        help={
+          on
+            ? `this process's own caps; ${executorCaps} caps apply as well`
+            : `off: no runs-per-hour or per-day caps, usage caps or meter ceilings for this process — ${executorCaps} own caps still apply`
+        }
+        layout="row"
+        changed={budgetsOn(b) !== budgetsOn(baseline.budgets)}
+      >
+        {({ id, describedBy }) => (
+          <Toggle
+            id={id}
+            describedBy={describedBy}
+            ariaLabel="Limit runs"
+            checked={on}
+            disabled={disabled}
+            onChange={(next) => {
+              setKeepOpen(next);
+              if (!next) setPrevious(b);
+              set((d) =>
+                withBudgets(
+                  d,
+                  next,
+                  previous ?? (budgetsOn(baseline.budgets) ? baseline.budgets : undefined),
+                ),
+              );
+            }}
+          />
+        )}
+      </Field>
+      {on && (
+        <BudgetLimits
+          {...{ doc, baseline, set, errors, disabled, executor, executorLoading, processId, dims }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The limits themselves, while "Limit runs" is on. */
+function BudgetLimits({
+  doc,
+  baseline,
+  set,
+  errors,
+  disabled,
+  executor,
+  executorLoading,
+  processId,
+  dims,
+}: SectionProps & {
+  executor: ExecutorDetail | undefined;
+  executorLoading: boolean;
+  processId: string;
+  dims: ExecutorDetail['usage'];
+}) {
+  const b = doc.budgets;
   return (
     <div className={styles.twoCol}>
       <div className={styles.stack}>

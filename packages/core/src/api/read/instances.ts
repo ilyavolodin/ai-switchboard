@@ -219,8 +219,11 @@ export async function executorDetail(ctx: ApiContext, id: string): Promise<Execu
   };
 }
 
-/** Rows referencing an instance, so a delete can refuse while processes still use it. */
-export async function processesUsing(ctx: ApiContext, instanceId: string): Promise<string[]> {
+/** Processes referencing an instance, so a delete can refuse while processes still use it. */
+export async function processesUsing(
+  ctx: ApiContext,
+  instanceId: string,
+): Promise<{ id: string; name: string }[]> {
   const procs = await allProcesses(ctx);
   return procs
     .filter(
@@ -230,5 +233,5 @@ export async function processesUsing(ctx: ApiContext, instanceId: string): Promi
         [...p.document.before, ...p.document.after].some((s) => s.provider === instanceId) ||
         p.document.notify.some((n) => n.notifierId === instanceId),
     )
-    .map((p) => p.name);
+    .map((p) => ({ id: p.id, name: p.name }));
 }

@@ -69,6 +69,11 @@ export interface ApiError {
   message: string;
   /** Field-level problems, e.g. schema validation messages. */
   details?: string[];
+  /**
+   * 409 on deleting a source, executor or notifier that processes still use: those processes,
+   * so a client can link to them.
+   */
+  usedBy?: { id: string; name: string }[];
 }
 
 export interface Page<T> {
@@ -918,7 +923,8 @@ export interface ApprovalItem {
 }
 
 export interface ApprovalHistoryItem extends ApprovalItem {
-  decision: 'approved' | 'rejected';
+  /** `withdrawn`: the process was deleted while the request was pending. */
+  decision: 'approved' | 'rejected' | 'withdrawn';
   decidedBy: string;
   decidedAt: Iso;
   reason: string;

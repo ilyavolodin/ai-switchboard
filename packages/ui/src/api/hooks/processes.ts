@@ -182,12 +182,15 @@ export function useUpdateProcess() {
   });
 }
 
-/** DELETE /processes/:id */
+/**
+ * DELETE /processes/:id. The list, board, status and approvals refresh; the deleted process's
+ * own queries are left alone (a refetch would 404 while the screen navigates away).
+ */
 export function useDeleteProcess() {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'DELETE',
     path: (v) => `/processes/${seg(v.id)}`,
-    invalidate: fleet,
+    invalidate: [qk.processes.list(), qk.board, qk.status, qk.approvals.all],
   });
 }
 

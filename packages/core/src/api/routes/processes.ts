@@ -243,7 +243,16 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
     operator,
     async (req, reply) => {
       const reason = requireReason(req.body);
-      if (!(await deleteProcess(db, req.params.id, meta(req, reason)))) throw notFound('Process');
+      const deleted = await deleteProcess(db, req.params.id, meta(req, reason));
+      if (!deleted) throw notFound('Process');
+      req.log.info(
+        {
+          process_id: req.params.id,
+          dropped_batches: deleted.droppedBatches,
+          withdrawn_approvals: deleted.withdrawnApprovals,
+        },
+        'process deleted',
+      );
       return reply.code(204).send();
     },
   );

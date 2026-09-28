@@ -1,9 +1,10 @@
 import type { ProcessDetail as ProcessDetailDTO, StatsWindow } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
-import { useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 
 import { errorMessage } from '../../api/client.js';
 import {
+  useDeleteProcess,
   useEnableProcess,
   useExecutors,
   useProcess,
@@ -35,6 +36,7 @@ import { DetailCharts } from './DetailCharts.js';
 import {
   asDetailTab,
   cooldownEndsAt,
+  deleteConsequence,
   enableConsequence,
   WINDOWS,
   windowLabel,
@@ -90,6 +92,7 @@ function Detail({
   const stats = useProcessStats(p.id, window);
   const executors = useExecutors();
   const enable = useEnableProcess();
+  const navigate = useNavigate();
   const executor = executors.data?.find((x) => x.id === p.document.executor.instanceId);
   const base = `/processes/${encodeURIComponent(p.id)}`;
   const approval = p.document.gates.approval;
@@ -104,6 +107,16 @@ function Detail({
       confirmLabel: 'Run now',
     },
     { successMessage: (r) => `Run ${r.outcome}${r.runId ? ` · ${r.runId}` : ''}` },
+  );
+  const remove = useReasonedMutation(
+    useDeleteProcess(),
+    {
+      title: `Delete ${p.name}?`,
+      consequence: deleteConsequence(p),
+      confirmLabel: `Delete ${p.name}`,
+      danger: true,
+    },
+    { successMessage: `${p.name} deleted` },
   );
   const reset = useReasonedMutation(
     useResetBreaker(),
@@ -170,6 +183,20 @@ function Detail({
               }}
             >
               Run now
+            </Button>
+            <Button
+              variant="danger-outline"
+              icon="trash"
+              requires="operator"
+              loading={remove.pending}
+              onClick={() => {
+                // `run` resolves null when cancelled or refused; a 204 resolves undefined.
+                void remove.run({ id: p.id }).then((r) => {
+                  if (r !== null) void navigate('/processes');
+                });
+              }}
+            >
+              Delete
             </Button>
             <Toggle
               boxed

@@ -1,7 +1,7 @@
 import type { InstanceSummary, JSONSchema } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 
-import { errorMessage } from '../../api/client.js';
+import { errorMessage, usedByOf } from '../../api/client.js';
 import {
   type InstanceRoute,
   useCreateInstance,
@@ -31,6 +31,7 @@ import { useCan } from '../../app/session.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { asRecord, secretProviderIds } from '../../lib/instances.js';
 import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
+import { InUseBanner } from '../shared/InUseBanner.js';
 import { ProviderDependents } from './ProviderDependents.js';
 import { ProviderSecrets } from './ProviderSecrets.js';
 import styles from './Settings.module.css';
@@ -100,8 +101,13 @@ export function InstancesTab({ route }: { route: InstanceRoute }) {
       confirmLabel: 'Delete',
       danger: true,
     }),
-    { successMessage: 'Deleted' },
+    // A refusal naming processes is shown under the instance, with links (no toast).
+    { successMessage: 'Deleted', onError: (e) => usedByOf(e) != null },
   );
+  const refusedBy = (id: string) =>
+    remove.mutation.isError && remove.mutation.variables.id === id
+      ? usedByOf(remove.mutation.error)
+      : null;
 
   return (
     <Card
@@ -159,10 +165,22 @@ export function InstancesTab({ route }: { route: InstanceRoute }) {
               {route === 'secret-providers' && inst.dependents && (
                 <ProviderDependents provider={inst.name} dependents={inst.dependents} />
               )}
-              {remove.mutation.isError && remove.mutation.variables.id === inst.id && (
-                <Banner tone="error" title={`${inst.name} was not deleted`}>
-                  {errorMessage(remove.mutation.error)}
-                </Banner>
+              {refusedBy(inst.id) ? (
+                <InUseBanner
+                  name={inst.name}
+                  kind="notifier"
+                  processes={refusedBy(inst.id) ?? []}
+                  onDismiss={() => {
+                    remove.mutation.reset();
+                  }}
+                />
+              ) : (
+                remove.mutation.isError &&
+                remove.mutation.variables.id === inst.id && (
+                  <Banner tone="error" title={`${inst.name} was not deleted`}>
+                    {errorMessage(remove.mutation.error)}
+                  </Banner>
+                )
               )}
               {Object.keys(inst.settings).length > 0 && (
                 <KeyValueList data={inst.settings} label={`${inst.name} settings`} />

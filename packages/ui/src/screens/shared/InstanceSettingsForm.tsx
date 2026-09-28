@@ -53,6 +53,8 @@ export interface InstanceSettingsFormProps<C extends object> {
   deleteNote: string;
   /** Where to go once it is deleted (the list). */
   afterDelete: string;
+  /** Shown in the delete card when a delete was refused (`<InUseBanner>`). */
+  deleteBlocked?: ReactNode;
   /** A sample delivery the schema form's path fields suggest from (push sources). */
   sample?: DeliverySample | null;
   /** Shown under the schema form with the draft settings (the sample-delivery preview). */
@@ -74,6 +76,7 @@ export function InstanceSettingsForm<C extends object>({
   deleting,
   deleteNote,
   afterDelete,
+  deleteBlocked,
   sample,
   renderAfterSettings,
 }: InstanceSettingsFormProps<C>) {
@@ -188,6 +191,7 @@ export function InstanceSettingsForm<C extends object>({
         </Button>
       </div>
       <Card title={`Delete this ${kind}`}>
+        {deleteBlocked}
         <div className={styles.dangerZone}>
           <span className={styles.spacer}>{deleteNote}</span>
           <Button

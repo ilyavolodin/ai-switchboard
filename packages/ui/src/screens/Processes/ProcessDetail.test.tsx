@@ -112,6 +112,34 @@ describe('ProcessDetail', () => {
     });
   });
 
+  it('deletes with a confirm naming the consequences, then goes to the list', async () => {
+    const { api, user, router } = renderWithProviders(<ProcessDetail />, at());
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Delete Autofix?')).toBeInTheDocument();
+    expect(within(dialog).getByText(/Its open batches are dropped/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/runs and events stay for the trace/)).toBeInTheDocument();
+    await confirmWithReason(user, 'replaced by Autofix v2', 'Delete Autofix');
+    await vi.waitFor(() => {
+      expect(api.callsTo('DELETE /processes/p-autofix')[0]?.body).toEqual({
+        reason: 'replaced by Autofix v2',
+      });
+    });
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe('/processes');
+    });
+    expect(await screen.findByText('Autofix deleted')).toBeInTheDocument();
+  });
+
+  it('stays on the process when the delete is cancelled', async () => {
+    const { api, user, router } = renderWithProviders(<ProcessDetail />, at());
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(api.callsTo('DELETE /processes/p-autofix')).toHaveLength(0);
+    expect(router.state.location.pathname).toBe('/processes/p-autofix');
+  });
+
   it('keeps Run now and the toggle visible but disabled for viewers', async () => {
     renderWithProviders(<ProcessDetail />, { ...at(), role: 'viewer' });
     expect(await screen.findByRole('button', { name: 'Run now' })).toHaveAttribute(
@@ -126,6 +154,7 @@ describe('ProcessDetail', () => {
       'aria-disabled',
       'true',
     );
+    expect(screen.getByRole('button', { name: 'Delete' })).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('lists activity with links to each artifact’s trace', async () => {

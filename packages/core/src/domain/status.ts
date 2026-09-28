@@ -117,7 +117,11 @@ export function stepTone(status: StepStatus): StatusTone {
   }
 }
 
-export type ApprovalDecision = 'approved' | 'rejected';
+/**
+ * How an approval request ended. `withdrawn`: nobody decided; its process was deleted while it
+ * was pending.
+ */
+export type ApprovalDecision = 'approved' | 'rejected' | 'withdrawn';
 
 export type Role = 'admin' | 'operator' | 'viewer';
 export const ROLES: readonly Role[] = ['admin', 'operator', 'viewer'];

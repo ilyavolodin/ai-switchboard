@@ -74,18 +74,18 @@ payload carries references, not state: the process that runs re-reads real state
 
 A process is one JSON document a person edits. There is no process code anywhere.
 
-| Part                      | What it says                                                                                                          |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `triggers`                | Source instance, event types, JSONata filter, a `describe` sentence every screen shows                                |
-| `schedules`               | Cron sweeps in a named timezone, with `catchUp: skip \| once` for ticks missed while nothing ran                      |
-| `batching`                | `debounceSeconds`, `maxSize`, `maxAgeSeconds`, optional `groupBy` expression (one batch per key)                      |
-| `gates`                   | `quietHours`, `approval` (`none`, `always` or an expression), `breaker` (`threshold`, `cooldownMinutes`)              |
-| `budgets`                 | `runsPerHour`, `runsPerDay`, `usagePerDay` per budgetable dimension, `meterCeilings` per meter (`events`, `sweeps` %) |
-| `executor`                | The executor instance and a `target` validated by the executor type's `targetSchema`                                  |
-| `input`                   | JSONata over `{ events, process, run, mode }` producing the executor type's `inputSchema`                             |
-| `before`, `after`         | Action steps with argument expressions and a `when` condition                                                         |
-| `notify`                  | Notifier instance, template, and `on: ok \| error \| held \| throttled`                                               |
-| `trackingDeadlineMinutes` | When an open run becomes `unknown`                                                                                    |
+| Part                      | What it says                                                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `triggers`                | Source instance, event types, JSONata filter, a `describe` sentence every screen shows                                                                                 |
+| `schedules`               | Cron sweeps in a named timezone, with `catchUp: skip \| once` for ticks missed while nothing ran                                                                       |
+| `batching`                | `debounceSeconds`, `maxSize`, `maxAgeSeconds`, optional `groupBy` expression (one batch per key); `maxSize: 1` is "off" (one run per event; the UI writes `0 / 1 / 0`) |
+| `gates`                   | `quietHours`, `approval` (`none`, `always` or an expression), `breaker` (`threshold`, `cooldownMinutes`)                                                               |
+| `budgets`                 | `runsPerHour`, `runsPerDay`, `usagePerDay` per budgetable dimension, `meterCeilings` per meter (`events`, `sweeps` %)                                                  |
+| `executor`                | The executor instance and a `target` validated by the executor type's `targetSchema`                                                                                   |
+| `input`                   | JSONata over `{ events, process, run, mode }` producing the executor type's `inputSchema`                                                                              |
+| `before`, `after`         | Action steps with argument expressions and a `when` condition                                                                                                          |
+| `notify`                  | Notifier instance, template, and `on: ok \| error \| held \| throttled`                                                                                                |
+| `trackingDeadlineMinutes` | When an open run becomes `unknown`                                                                                                                                     |
 
 JSONata is the one expression language, for filters, batch keys, input mappings, step arguments,
 step conditions and notification templates. It has a small bound library: `$resolve(ref)` and

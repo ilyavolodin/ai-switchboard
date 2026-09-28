@@ -112,6 +112,19 @@ describe('batching', () => {
     expect(d.closeNow).toBeNull();
     expect(d.fireAfter.toISOString()).toBe('2026-01-05T09:00:30.000Z');
   });
+
+  it('batching off (debounce 0, max size 1, max age 0) closes every batch on arrival', () => {
+    // What the UI's "Batch events" switch writes when off: one run per event, nothing waits.
+    const off = { debounceSeconds: 0, maxSize: 1, maxAgeSeconds: 0 };
+    const now = new Date('2026-01-05T09:00:00Z');
+    const d = joinBatch(null, off, now);
+    expect(d).toMatchObject({ action: 'open', size: 1, closeNow: 'size' });
+    expect(d.fireAfter.toISOString()).toBe(now.toISOString());
+    // Max size 1 alone decides it: a debounce or age left behind changes nothing.
+    expect(
+      joinBatch(null, { ...off, debounceSeconds: 300, maxAgeSeconds: 600 }, now).closeNow,
+    ).toBe('size');
+  });
 });
 
 describe('batch keys', () => {

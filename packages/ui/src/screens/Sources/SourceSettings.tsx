@@ -5,6 +5,8 @@ import { useDeleteSource, useUpdateSource } from '../../api/index.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { deliverySample, EMPTY_SAMPLE, type SampleDraft } from '../../lib/sampleDelivery.js';
 import { InstanceSettingsForm } from '../shared/InstanceSettingsForm.js';
+import { InUseBanner } from '../shared/InUseBanner.js';
+import { useInUseRefusal } from '../shared/useInUseRefusal.js';
 import { SamplePreview } from './SamplePreview.js';
 import { SourceCapsFields } from './SourceCapsFields.js';
 
@@ -26,18 +28,17 @@ export function SourceSettings({ source }: { source: SourceDetail }) {
     },
     { successMessage: 'Settings saved' },
   );
+  const inUse = useInUseRefusal();
   const remove = useReasonedMutation(
     useDeleteSource(),
     {
       title: `Delete ${source.name}?`,
       consequence:
-        source.processes.length > 0
-          ? `Its triggers stop matching: ${source.processes.map((p) => p.name).join(', ')} will no longer receive its events. Its webhook URL answers 404.`
-          : 'Its webhook URL answers 404 and it disappears from the Board. Recorded events stay until retention removes them.',
+        'Its webhook URL answers 404 and it disappears from the Board. Recorded events stay until retention removes them.',
       confirmLabel: 'Delete source',
       danger: true,
     },
-    { successMessage: `${source.name} deleted` },
+    { successMessage: `${source.name} deleted`, onError: inUse.onError },
   );
 
   return (
@@ -56,10 +57,27 @@ export function SourceSettings({ source }: { source: SourceDetail }) {
       )}
       onSave={(draft) => save.run({ id: source.id, ...draft })}
       saving={save.pending}
-      onDelete={() => remove.run({ id: source.id })}
+      onDelete={() => {
+        // Processes with a trigger on it: the server would refuse, so say why at once.
+        if (source.processes.length > 0) {
+          inUse.block(source.processes);
+          return Promise.resolve(null);
+        }
+        return remove.run({ id: source.id });
+      }}
       deleting={remove.pending}
-      deleteNote="Deleting removes the instance and its webhook URL. Processes keep their triggers but stop matching."
+      deleteNote="Deleting removes the instance and its webhook URL. A source that processes still use can't be deleted: remove their triggers on it first."
       afterDelete="/sources"
+      deleteBlocked={
+        inUse.usedBy && (
+          <InUseBanner
+            name={source.name}
+            kind="source"
+            processes={inUse.usedBy}
+            onDismiss={inUse.dismiss}
+          />
+        )
+      }
       sample={push ? deliverySample(sample) : null}
       renderAfterSettings={
         push

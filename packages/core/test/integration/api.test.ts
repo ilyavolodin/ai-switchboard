@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 
 import type {
   ActivityRow,
+  ApiError,
   EventDetail,
   ExecutorDetail,
   MeResponse,
@@ -261,7 +262,24 @@ describe('sources and executors', () => {
       body: { reason },
     });
     expect(del.statusCode).toBe(409);
-    expect(del.json<{ message: string }>().message).toMatch(/Uses them/);
+    const body = del.json<ApiError>();
+    expect(body.message).toMatch(/Uses them/);
+    const pid = proc.json<ProcessDetail>().id;
+    expect(body.usedBy).toEqual([{ id: pid, name: 'Uses them' }]);
+
+    // Once the process is gone the source can go too.
+    const gone = await h.request('DELETE', `/api/v1/processes/${pid}`, {
+      cookie: h.adminCookie,
+      body: { reason: 'retired' },
+    });
+    expect(gone.statusCode).toBe(204);
+    const again = await h.request('GET', `/api/v1/processes/${pid}`, { cookie: h.adminCookie });
+    expect(again.statusCode).toBe(404);
+    const freed = await h.request('DELETE', `/api/v1/sources/${src.id}`, {
+      cookie: h.adminCookie,
+      body: { reason },
+    });
+    expect(freed.statusCode).toBe(204);
   });
 
   it('delegates pipeline actions with the actor and reason', async () => {
