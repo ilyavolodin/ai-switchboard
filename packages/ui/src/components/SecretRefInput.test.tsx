@@ -78,3 +78,37 @@ describe('SecretRefInput suggestions', () => {
     expect(screen.getByRole('textbox', { name: 'API key name' })).toHaveValue('X');
   });
 });
+
+describe('SecretRefInput providers', () => {
+  it('offers only the configured providers (no built-in fallback)', () => {
+    renderWithProviders(
+      <SecretRefInput label="API key" value={undefined} providers={['vault']} onChange={vi.fn()} />,
+    );
+    const select = screen.getByRole('combobox', { name: 'API key provider' });
+    expect([...(select as HTMLSelectElement).options].map((o) => o.value)).toEqual(['vault']);
+  });
+
+  it('points to Settings › Secret providers when none is configured', () => {
+    renderWithProviders(
+      <SecretRefInput label="API key" value={undefined} providers={[]} onChange={vi.fn()} />,
+    );
+    expect(screen.getByText(/No secret provider is configured/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Add one in Settings › Secret providers' }),
+    ).toHaveAttribute('href', '/settings/secret-providers');
+    expect(screen.getByRole('textbox', { name: 'API key name' })).toBeDisabled();
+  });
+
+  it('keeps a stored reference whose provider is not configured', () => {
+    renderWithProviders(
+      <SecretRefInput
+        label="API key"
+        value="secret://env/TOKEN"
+        providers={[]}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('combobox', { name: 'API key provider' })).toHaveValue('env');
+    expect(screen.queryByText(/No secret provider is configured/)).not.toBeInTheDocument();
+  });
+});

@@ -86,7 +86,9 @@ export const targetSchema: JSONSchema = {
       exclusiveMinimum: 0,
       maximum: 900,
       title: 'Timeout (seconds)',
-      description: 'Request timeout. Defaults to 30 seconds.',
+      description:
+        'Request timeout. Defaults to 30 seconds. Switchboard waits 10 seconds longer for the ' +
+        'run as a whole, then treats the response as lost.',
     },
   },
 };
@@ -114,4 +116,20 @@ export function trackingFor(target: unknown): TrackingMode {
 
 export function idempotentFor(target: unknown): boolean {
   return tryParse<HttpTarget>(targetSchema, target)?.idempotent ?? false;
+}
+
+/** The HTTP request timeout when the target sets none (the SDK HttpClient's default). */
+export const DEFAULT_REQUEST_TIMEOUT_SECONDS = 30;
+/**
+ * How much longer than the request timeout the core waits for `invoke`: room for reading the
+ * body and the `usageFrom` expression, and so the request's own timeout (a `TransportError`
+ * that says whether the request was sent) always fires first.
+ */
+export const INVOKE_TIMEOUT_MARGIN_SECONDS = 10;
+
+/** `ExecutorType.invokeTimeoutFor`: the target's request timeout plus a margin. */
+export function invokeTimeoutFor(target: unknown): number {
+  const request =
+    tryParse<HttpTarget>(targetSchema, target)?.timeoutSeconds ?? DEFAULT_REQUEST_TIMEOUT_SECONDS;
+  return Math.ceil(request) + INVOKE_TIMEOUT_MARGIN_SECONDS;
 }

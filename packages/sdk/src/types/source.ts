@@ -51,6 +51,12 @@ export interface SourceType {
   id: string;
   displayName: string;
   description?: string;
+  /**
+   * Optional (since SDK 1.3): the icon the UI shows for this type. Either a built-in icon name
+   * (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB, rendered through
+   * `<img>`. Without one the UI shows the kind's generic icon.
+   */
+  icon?: string;
   mode: 'push' | 'pull' | 'both';
   /** Per instance: credential refs, org, filters. */
   settingsSchema: JSONSchema;

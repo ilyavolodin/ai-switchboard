@@ -151,6 +151,15 @@ describe('linear manifest', () => {
   });
 });
 
+describe('linear actions', () => {
+  it('declares label and state changes idempotent, comments not', () => {
+    const idempotent = Object.fromEntries(
+      (linearSource.actions ?? []).map((a) => [a.id, a.idempotent === true]),
+    );
+    expect(idempotent).toEqual({ addLabel: true, setState: true, comment: false });
+  });
+});
+
 describe('linear verify', () => {
   it('accepts a fresh, correctly signed delivery', () => {
     expect(make().source.verify!(deliver(issueCreated))).toEqual({ ok: true });

@@ -17,7 +17,7 @@ import { Table, type TableColumn } from '../../components/Table.js';
 import { Time } from '../../components/Time.js';
 import { traceHref } from '../../lib/artifact.js';
 import { formatAmount, formatSeconds } from '../../lib/format.js';
-import { runStatusTone } from '../../lib/tone.js';
+import { runStatusTone, stepStatusTone } from '../../lib/tone.js';
 import styles from './ProcessDetail.module.css';
 
 function ExternalLink({ run }: { run: RunSummary }) {
@@ -73,7 +73,9 @@ function RunDrawerBody({ runId }: { runId: string }) {
               {r.batchId}
             </span>,
           ],
-          ['binding limit', r.bindingLimit ?? '—'],
+          ...(r.requestedBy
+            ? [['requested', `Run now by ${r.requestedBy}`] as [string, string]]
+            : []),
           ['external', <ExternalLink key="ext" run={r} />],
         ]}
       />
@@ -111,11 +113,7 @@ function RunDrawerBody({ runId }: { runId: string }) {
                 <span className="mono">
                   {s.providerId}.{s.action}
                 </span>
-                <StatusChip
-                  tone={s.status === 'ok' ? 'ok' : s.error ? 'error' : 'off'}
-                  label={s.status}
-                  size="sm"
-                />
+                <StatusChip {...stepStatusTone(s.status)} size="sm" />
                 <Time value={s.at} format="clock-seconds" />
                 {s.error && <span className={styles.errorText}>{s.error}</span>}
               </li>

@@ -1,5 +1,6 @@
 import type { SecretRefDTO } from '@ai-switchboard/core/contract';
 import { useId, useState } from 'react';
+import { Link } from 'react-router';
 
 import { useSecretSuggestions } from '../api/hooks/secrets.js';
 import { useNow } from '../hooks/useNow.js';
@@ -14,7 +15,10 @@ export interface SecretRefInputProps {
   /** The stored value: `secret://<provider>/<name>`. Anything else is never displayed. */
   value: unknown;
   onChange: (next: string | undefined) => void;
-  /** Secret provider ids to choose from (default: env, file). */
+  /**
+   * The configured secret provider ids to choose from. `undefined` while they are loading; an
+   * empty list shows a hint pointing to Settings › Secret providers.
+   */
   providers?: string[];
   /** Resolution status from the API (`SecretRefDTO`), for "resolved 13 h ago". */
   status?: SecretRefDTO;
@@ -35,7 +39,7 @@ export interface SecretRefInputProps {
 export function SecretRefInput({
   value,
   onChange,
-  providers = ['env', 'file'],
+  providers,
   status,
   id,
   describedBy,
@@ -45,14 +49,16 @@ export function SecretRefInput({
 }: SecretRefInputProps) {
   const nowMs = useNow(60_000);
   const parsed = parseSecretRef(value);
-  const [draftProvider, setDraftProvider] = useState(providers[0] ?? 'env');
-  const provider = parsed?.provider ?? draftProvider;
+  const [draftProvider, setDraftProvider] = useState<string | undefined>(undefined);
+  const known = providers ?? [];
+  const provider = parsed?.provider ?? draftProvider ?? known[0] ?? '';
+  const noProviders = providers?.length === 0 && provider === '';
   const name = parsed?.name ?? '';
   const hasPlainValue = value != null && value !== '' && parsed == null;
   const suggestions = useSecretSuggestions(provider);
   const listId = useId();
   const notListed = suggestions.names != null && name !== '' && !suggestions.names.includes(name);
-  const options = (providers.includes(provider) ? providers : [provider, ...providers]).map(
+  const options = (known.includes(provider) || provider === '' ? known : [provider, ...known]).map(
     (p) => ({
       value: p,
       label: p,
@@ -60,6 +66,8 @@ export function SecretRefInput({
   );
 
   const emit = (p: string, n: string) => {
+    // Without a provider there is no reference to form yet.
+    if (p === '') return;
     onChange(n.trim() ? formatSecretRef(p, n.trim()) : undefined);
   };
 
@@ -77,7 +85,7 @@ export function SecretRefInput({
           aria-label={`${label} provider`}
           options={options}
           value={provider}
-          disabled={disabled}
+          disabled={disabled === true || options.length === 0}
           onChange={(e) => {
             setDraftProvider(e.target.value);
             if (name) emit(e.target.value, name);
@@ -98,7 +106,7 @@ export function SecretRefInput({
           autoComplete="off"
           spellCheck={false}
           value={name}
-          disabled={disabled}
+          disabled={disabled === true || noProviders}
           list={suggestions.names?.length ? listId : undefined}
           onChange={(e) => {
             emit(provider, e.target.value);
@@ -113,7 +121,12 @@ export function SecretRefInput({
         )}
       </div>
       <span className={styles.caption}>
-        {hasPlainValue ? (
+        {noProviders ? (
+          <span className={styles.warn}>
+            No secret provider is configured.{' '}
+            <Link to="/settings/secret-providers">Add one in Settings › Secret providers</Link>
+          </span>
+        ) : hasPlainValue ? (
           <span className={styles.warn}>
             A value is stored here directly (hidden). Replace it with a reference.
           </span>

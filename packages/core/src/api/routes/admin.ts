@@ -37,6 +37,7 @@ import type {
   SetPasswordRequest,
   UpdateSettingsRequest,
   UpdateUserRequest,
+  UserDirectoryEntry,
 } from '../contract.js';
 import { badRequest, conflict, HttpError, notFound, requireReason } from '../errors.js';
 import { decodeCursor, encodeCursor, pageLimit } from '../read/paging.js';
@@ -189,6 +190,18 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
   // Users --------------------------------------------------------------------------------------
   app.get('/api/v1/users', admin, async () =>
     (await db.select().from(users).orderBy(users.email)).map(toUserDTO),
+  );
+
+  // Every role may see who has access and with which role (the Users tab, read-only); how and
+  // when they sign in stays admin-only.
+  app.get(
+    '/api/v1/users/directory',
+    viewer,
+    async (): Promise<UserDirectoryEntry[]> =>
+      await db
+        .select({ id: users.id, email: users.email, role: users.role })
+        .from(users)
+        .orderBy(users.email),
   );
 
   app.post<{ Body: CreateUserRequest }>(

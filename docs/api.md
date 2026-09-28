@@ -47,6 +47,11 @@ throttled like sign-in), applies the password rules (400 with the rule in `messa
 new password, clears `mustChangePassword` and signs out the user's other sessions. It carries no
 `reason`; the audit row reads "changed own password". An account without a password gets 409.
 
+**Sign-in throttle.** Failed attempts are counted in Postgres across replicas: 10 failures per
+client address or 5 per account (normalised email) within 5 minutes answer 429
+`too_many_attempts` with `Retry-After: <seconds>` until the oldest counted failure leaves the
+window. `POST /auth/password` allows 5 failed confirmations per user in the same window.
+
 **Password rules:** at least 12 characters (at most 256), not the account's email (or the part
 before `@`), not one of the most common passwords.
 
@@ -62,6 +67,13 @@ before `@`), not one of the most common passwords.
 | Method | Path                  | Response          | Role   |
 | ------ | --------------------- | ----------------- | ------ |
 | GET    | `/plugin-types?kind=` | `PluginTypeDTO[]` | viewer |
+
+`PluginTypeDTO.icon` is the icon the type declares (SDK 1.3): a built-in icon name from the
+SDK's `ICON_NAMES`, or a `data:image/svg+xml;base64,…` URI of at most 8 KB. It is absent when
+the type declares none. Instance summaries (`SourceSummary`, `ExecutorSummary`,
+`InstanceSummary`) and the board's source and executor nodes carry the same value as
+`typeIcon` (`null` when there is none or the plugin is not loaded). Clients render a data URI
+through `<img>` only, never as inline markup, and fall back to the kind's generic icon.
 
 ## Sources
 
@@ -94,6 +106,12 @@ before `@`), not one of the most common passwords.
 | POST   | `/executors/:id/soft-hold/clear` | `Reasoned` → `ExecutorDetail`              | operator |
 | GET    | `/executors/:id/meters?window=`  | → `MeterHistoryResponse`                   | viewer   |
 | GET    | `/executors/:id/usage?window=`   | → `UsageHistoryResponse`                   | viewer   |
+
+`ExecutorCapsDTO` (on create and update) carries the core's caps: `runsPerHour`, `runsPerDay`,
+`usagePerDay`, `meterPollSeconds` (30–86 400), `meterStalenessMinutes`, `estimatedLimits` and
+`invokeTimeoutSeconds` (1–3600): how long to wait for `invoke` to answer. It overrides the type's
+per-target and default timeouts (core default 300 s); no answer in time is a lost response
+(retried when idempotent, otherwise the run is `uncertain`).
 
 ## Processes
 
@@ -136,6 +154,18 @@ before `@`), not one of the most common passwords.
 | GET    | `/runs/:id`                                | → `RunDetail`                   | viewer   |
 | POST   | `/runs/:id/close`                          | `CloseRunRequest` → `RunDetail` | operator |
 
+`RunDetail.steps[].status` is the step journal state: `started` (the action is running, or in
+doubt when the run moved on), `ok`, `error`, `skipped` (dry run or `when` false) or `uncertain`
+(left in doubt by an interrupted attempt; the action is not idempotent, so it was not repeated). A
+run whose non-idempotent `before` step was in doubt is `failed` with the reason
+`step_in_doubt:before[<index>] <action>`. In a trace, a notification entry with tone `warn` was
+claimed but its delivery was not confirmed.
+
+A run exists only once its budget check passed, so it has no binding limit: a throttled batch
+carries its binding limit in the batch (`outcome_reason` and the budget decision in the trace).
+`RunDetail.requestedBy` names who asked for a manual run (Run now or a test run); it is null for
+event runs and sweeps.
+
 ## Approvals
 
 | Method | Path                          | Body → Response                           | Role     |
@@ -148,14 +178,14 @@ before `@`), not one of the most common passwords.
 
 ## Plugins
 
-| Method | Path                       | Body → Response                                                                          | Role   |
-| ------ | -------------------------- | ---------------------------------------------------------------------------------------- | ------ |
-| GET    | `/plugins`                 | → `PluginSummary[]`                                                                      | viewer |
-| GET    | `/plugins/catalogue`       | → `CatalogueEntry[]`                                                                     | viewer |
-| GET    | `/plugins/search?kind=&q=` | → `PluginSearchResponse`; 503 `registry_unavailable` when the registry cannot be reached | viewer |
-| POST   | `/plugins/inspect`         | `InspectPluginRequest` → `InspectPluginResponse`                                         | admin  |
-| POST   | `/plugins`                 | `InstallPluginRequest` → 201 `PluginSummary` (loaded at once; see below)                 | admin  |
-| DELETE | `/plugins/:name`           | `Reasoned` → 204 (the loaded code is unloaded on the next restart)                       | admin  |
+| Method | Path                       | Body → Response                                                                           | Role   |
+| ------ | -------------------------- | ----------------------------------------------------------------------------------------- | ------ |
+| GET    | `/plugins`                 | → `PluginSummary[]`                                                                       | viewer |
+| GET    | `/plugins/catalogue`       | → `CatalogueEntry[]`                                                                      | viewer |
+| GET    | `/plugins/search?kind=&q=` | → `PluginSearchResponse`; 503 `registry_unavailable` when the registry cannot be reached  | viewer |
+| POST   | `/plugins/inspect`         | `InspectPluginRequest` → `InspectPluginResponse`                                          | admin  |
+| POST   | `/plugins`                 | `InstallPluginRequest` → 201 `PluginSummary` (loaded at once; see below)                  | admin  |
+| DELETE | `/plugins/:name`           | `Reasoned` → 204 (unloaded here at once; every replica removes its copy on its sync pass) | admin  |
 
 `GET /plugins/search` queries the npm registry (`SWITCHBOARD_NPM_REGISTRY`) for the union of the
 name prefix (`ai-switchboard-{kind}`) and `keywords:switchboard-plugin`, and keeps only packages
@@ -171,12 +201,28 @@ catalogue).
 running process: its types are usable immediately. Every other replica installs and loads the
 recorded plugin at boot and on a sync pass every `SWITCHBOARD_PLUGIN_SYNC_SECONDS` (60 s).
 `pendingRestart: true` means another version of the plugin is already loaded (an upgrade); the new
-version loads on the next restart. `DELETE /plugins/:name` uninstalls it here and removes the record
-so replicas stop installing it.
+version loads on the next restart. `DELETE /plugins/:name` uninstalls it here, unregisters its
+types (their instances report `plugin_unavailable`), clears the install record and sets a
+tombstone (`plugins.remove_requested_at`): every replica's sync pass (and boot) removes its own
+copy from `$SWITCHBOARD_HOME` and unregisters it, idempotently. A copy installed on a replica
+after the removal (with the CLI) is kept, as are plugins that were never installed through the
+API. Re-installing with `POST /plugins` clears the tombstone. A removed plugin leaves
+`GET /plugins` once this replica's copy is gone; its types stay listed with `available: false`.
 
 ## Notifiers and secret providers
 
 `/notifiers` and `/secret-providers` share one shape: `GET` → `InstanceSummary[]`, `POST` `CreateInstanceRequest`, `PUT /:id` `UpdateInstanceRequest`, `POST /:id/enable` `EnableRequest`, `POST /:id/reload`, `DELETE /:id`, and for notifiers `POST /:id/test` (`Reasoned`). Role: admin for writes.
+
+Secret providers: sources, executors and notifiers resolve `secret://<provider>/…` references
+when they are built, so creating, enabling or disabling, editing (including renaming) or
+reloading a provider rebuilds every instance whose settings reference its name (and, after a
+rename, its old name: those instances fail with `secret_error: secret provider "<old>" is not
+configured or not running` until their references are updated; nothing is rewritten). Hot-loading
+a secret-provider plugin does the same for the providers it brings up. Each secret-provider
+`InstanceSummary` carries `dependents`: those instances with their status now, so a mutation's
+response shows the rebuild's outcome. `DELETE /secret-providers/:id` answers 409 while any source,
+executor, notifier or process (a `secret://` field, or `$secretRef('<provider>/<name>')` in an
+expression) still references the provider, naming them.
 
 `GET /secret-providers/:id/secrets` → `ProviderSecretsResponse` (role: **admin**; secret names map
 out the credentials a deployment holds, so viewers and operators get 403). It returns secret
@@ -196,6 +242,7 @@ stopped provider, or a failed or timed-out (10 s) listing gives `available: fals
 | GET    | `/settings`                            | → `GlobalSettings`                                 | viewer               |
 | PUT    | `/settings`                            | `UpdateSettingsRequest` → `GlobalSettings`         | admin                |
 | GET    | `/users`                               | → `UserDTO[]`                                      | admin                |
+| GET    | `/users/directory`                     | → `UserDirectoryEntry[]` (email and role only)     | viewer               |
 | POST   | `/users`                               | `CreateUserRequest` → `UserDTO`                    | admin                |
 | PUT    | `/users/:id`                           | `UpdateUserRequest` → `UserDTO`                    | admin                |
 | DELETE | `/users/:id`                           | `Reasoned` → 204                                   | admin                |
@@ -209,6 +256,9 @@ stopped provider, or a failed or timed-out (10 s) listing gives `available: fals
 | GET    | `/export`                              | → YAML (`text/yaml`)                               | operator             |
 | POST   | `/apply`                               | `ApplyRequest` → `ApplyResponse`                   | admin                |
 | GET    | `/about`                               | → `AboutResponse`                                  | viewer               |
+
+`GET /users/directory` lets every role see who has access and with which role (the read-only
+Users tab); sign-in methods, last sign-in and every write stay admin-only.
 
 `POST /users` takes an optional `password`: the user signs in with it once and must change it.
 `PUT /users/:id/password` sets or resets a temporary password (the rules above apply), marks the

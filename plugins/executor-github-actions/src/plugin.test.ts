@@ -106,6 +106,12 @@ runConformance(
   { describe, it },
 );
 
+describe('github-actions: invoke timeout', () => {
+  it('allows a token exchange, the dispatch and a correlation lookup to answer', () => {
+    expect(githubActionsExecutorType.invokeTimeoutSeconds).toBe(120);
+  });
+});
+
 describe('github-actions: invoke', () => {
   it('dispatches with the inputs plus switchboard_run_id', async () => {
     const { executor, calls } = setup(github({ dispatch: () => ({ json: dispatchDetails }) }));

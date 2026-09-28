@@ -22,7 +22,7 @@ import { JOBS, callPlugin, withTx, type Ctx } from './context.js';
 import { isUuid } from './errors.js';
 import { batchEvents } from './load.js';
 import { notifyProcess, sendSystemAlert, type NotifyOn } from './notify.js';
-import { runSteps, runView, type RunRow } from './steps.js';
+import { beforeStepsSettled, runSteps, runView, type RunRow } from './steps.js';
 
 /**
  * Run lifecycle after invoke: tracking (poll, callback, deadline), closing a run with its usage,
@@ -98,6 +98,7 @@ export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Prom
         externalId: run.externalId ?? input.externalId ?? null,
         externalUrl: input.externalUrl ?? run.externalUrl,
         invokeStartedAt: null,
+        invokeDeadlineAt: null,
         nextPollAt: null,
       })
       .where(eq(runs.id, runId))
@@ -283,7 +284,12 @@ export async function markUncertain(
 ): Promise<void> {
   const [moved] = await ctx.db
     .update(runs)
-    .set({ status: 'uncertain', statusReason: change.reason, invokeStartedAt: null })
+    .set({
+      status: 'uncertain',
+      statusReason: change.reason,
+      invokeStartedAt: null,
+      invokeDeadlineAt: null,
+    })
     .where(
       and(
         eq(runs.id, runId),
@@ -506,9 +512,12 @@ export async function handleCallback(
 }
 
 /**
- * Recovery (at startup and every minute): `invoking` runs whose attempt started more than 60 s
- * ago become `uncertain` (or are re-invoked with the same run id when idempotent); runs whose
- * invoke job was lost are resumed; open runs past their deadline close as `unknown`.
+ * Recovery (at startup and every minute): an `invoking` run whose attempt is past its invoke
+ * deadline (`invoke_deadline_at`: the steps' budget, the effective invoke timeout and a margin)
+ * becomes `uncertain`, or is re-invoked with the same run id when idempotent. An attempt that
+ * stopped in its `before` steps never reached `invoke`, so it is resumed regardless (the step
+ * journal then decides what may run again). Runs whose invoke job was lost are resumed; open runs
+ * past their deadline close as `unknown`.
  */
 export async function recoverRuns(ctx: Ctx): Promise<void> {
   const now = ctx.clock.now();
@@ -517,27 +526,36 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
     const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, run.processId));
     const live = ctx.runtime.executor(run.executorId);
     const idempotent = live && proc ? live.idempotentFor(proc.document.executor.target) : false;
-    const action = recoverInvoking(
+    let action = recoverInvoking(
       {
         status: run.status,
         invokeStartedAt: run.invokeStartedAt,
+        invokeDeadlineAt: run.invokeDeadlineAt,
         createdAt: run.createdAt,
         retryAt: run.nextPollAt,
       },
       idempotent,
       now,
     );
+    if (action === 'uncertain' && proc && !(await beforeStepsSettled(ctx, run.id, proc))) {
+      action = 'reinvoke';
+    }
     if (action === 'uncertain' && run.invokeStartedAt) {
+      const since = Math.round((now.getTime() - run.invokeStartedAt.getTime()) / 1000);
       await markUncertain(ctx, run.id, {
         source: 'recovery',
-        reason: 'invoke attempt in flight for more than 60 s',
-        detail: { reason: 'invoking older than 60 s' },
+        reason: `invoke attempt in flight past its deadline (${since} s)`,
+        detail: {
+          reason: 'invoking past its invoke deadline',
+          invokeStartedAt: run.invokeStartedAt.toISOString(),
+          invokeDeadlineAt: run.invokeDeadlineAt?.toISOString() ?? null,
+        },
         attemptStartedAt: run.invokeStartedAt,
       });
     } else if (action === 'reinvoke' && run.invokeStartedAt) {
       const moved = await ctx.db
         .update(runs)
-        .set({ invokeStartedAt: null })
+        .set({ invokeStartedAt: null, invokeDeadlineAt: null })
         .where(
           and(
             eq(runs.id, run.id),

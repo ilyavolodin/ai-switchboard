@@ -120,6 +120,15 @@ function hookType(): SourceType {
     mode: 'push',
     settingsSchema: { type: 'object' },
     eventTypes: hookEventTypes,
+    actions: [
+      {
+        id: 'addLabel',
+        title: 'Add label',
+        argsSchema: { type: 'object' },
+        idempotent: true,
+      },
+      { id: 'comment', title: 'Comment', argsSchema: { type: 'object' } },
+    ],
     allowsUnauthenticated: true,
     create: () => {
       throw new Error('create through FakeRuntime.addSource');
@@ -154,6 +163,8 @@ export interface FakeExecutorState {
   readings: MeterReading[];
   usageOnComplete: Record<string, number> | undefined;
   actions: { action: string; args: unknown }[];
+  /** What the type reports as its invoke timeout (`LiveExecutor.invokeTimeoutFor`). */
+  invokeTimeoutSeconds: number | undefined;
 }
 
 export const usageDimensions: UsageDimension[] = [
@@ -439,7 +450,10 @@ export class FakeRuntime implements PluginRuntime {
     id: string,
     name: string,
     options: Partial<
-      Pick<FakeExecutorState, 'tracking' | 'idempotent' | 'fallback' | 'callbackToken'>
+      Pick<
+        FakeExecutorState,
+        'tracking' | 'idempotent' | 'fallback' | 'callbackToken' | 'invokeTimeoutSeconds'
+      >
     > = {},
   ): FakeExecutorState {
     const state: FakeExecutorState = {
@@ -456,6 +470,7 @@ export class FakeRuntime implements PluginRuntime {
       readings: [],
       usageOnComplete: undefined,
       actions: [],
+      invokeTimeoutSeconds: options.invokeTimeoutSeconds,
     };
     const type = execType();
     this.executors.set(id, {
@@ -468,6 +483,7 @@ export class FakeRuntime implements PluginRuntime {
       meters: meterSpecs,
       trackingFor: () => state.tracking,
       idempotentFor: () => state.idempotent,
+      invokeTimeoutFor: () => state.invokeTimeoutSeconds,
       executor: attributed<Executor>(
         {
           invoke: async (target, input, run) => {

@@ -31,12 +31,22 @@ export const useNotifiers = () => useInstances('notifiers');
 /** GET /secret-providers */
 export const useSecretProviders = () => useInstances('secret-providers');
 
+/**
+ * What a mutation refreshes. A secret-provider change rebuilds the sources, executors and
+ * notifiers that reference it, so their lists (and the board) refresh too.
+ */
+function refreshed(route: InstanceRoute) {
+  return route === 'secret-providers'
+    ? [qk.instances(route), qk.instances('notifiers'), qk.sources.all, qk.executors.all, qk.board]
+    : [qk.instances(route)];
+}
+
 /** POST /notifiers | /secret-providers */
 export function useCreateInstance(route: InstanceRoute) {
   return useApiMutation<CreateInstanceRequest, InstanceSummary>({
     method: 'POST',
     path: () => `/${route}`,
-    invalidate: [qk.instances(route)],
+    invalidate: refreshed(route),
   });
 }
 
@@ -45,7 +55,7 @@ export function useUpdateInstance(route: InstanceRoute) {
   return useApiMutation<UpdateInstanceRequest & { id: string }, InstanceSummary>({
     method: 'PUT',
     path: (v) => `/${route}/${seg(v.id)}`,
-    invalidate: [qk.instances(route)],
+    invalidate: refreshed(route),
   });
 }
 
@@ -54,7 +64,7 @@ export function useEnableInstance(route: InstanceRoute) {
   return useApiMutation<EnableRequest & { id: string }, InstanceSummary>({
     method: 'POST',
     path: (v) => `/${route}/${seg(v.id)}/enable`,
-    invalidate: [qk.instances(route)],
+    invalidate: refreshed(route),
   });
 }
 
@@ -63,7 +73,7 @@ export function useReloadInstance(route: InstanceRoute) {
   return useApiMutation<Reasoned & { id: string }, InstanceSummary>({
     method: 'POST',
     path: (v) => `/${route}/${seg(v.id)}/reload`,
-    invalidate: [qk.instances(route)],
+    invalidate: refreshed(route),
   });
 }
 
@@ -72,7 +82,7 @@ export function useDeleteInstance(route: InstanceRoute) {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'DELETE',
     path: (v) => `/${route}/${seg(v.id)}`,
-    invalidate: [qk.instances(route)],
+    invalidate: refreshed(route),
   });
 }
 

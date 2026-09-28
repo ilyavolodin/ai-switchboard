@@ -3,12 +3,12 @@ import { Link } from 'react-router';
 
 import { useEnableExecutor } from '../../api/index.js';
 import { Countdown } from '../../components/Countdown.js';
-import { Icon } from '../../components/Icon.js';
+import { TypeIcon } from '../../components/TypeIcon.js';
 import { MeterGauge } from '../../components/MeterGauge.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
-import { cardTone, typeIcon } from '../../lib/instances.js';
+import { cardTone } from '../../lib/instances.js';
 import styles from '../Sources/instanceCard.module.css';
 import { enableExecutorPrompt } from './executorModel.js';
 
@@ -26,7 +26,7 @@ export function ExecutorCard({ executor }: { executor: ExecutorSummary }) {
     <article className={styles.card} data-tone={tone ?? undefined} aria-label={executor.name}>
       <div className={styles.head}>
         <span className={styles.iconTile}>
-          <Icon name={typeIcon(executor.typeId, 'executor')} />
+          <TypeIcon icon={executor.typeIcon} kind="executor" />
         </span>
         <span className={styles.titles}>
           <Link to={`/executors/${executor.id}`} className={styles.name}>

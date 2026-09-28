@@ -29,8 +29,11 @@ import {
   type HttpSettings,
 } from './settings.js';
 import {
+  DEFAULT_REQUEST_TIMEOUT_SECONDS,
   idempotentFor,
+  INVOKE_TIMEOUT_MARGIN_SECONDS,
   inputSchema,
+  invokeTimeoutFor,
   readTarget,
   targetSchema,
   trackingFor,
@@ -215,9 +218,7 @@ function createHttpExecutor(settings: HttpSettings, ctx: PluginContext): Executo
         url,
         headers,
         ...(sendsBody && input !== undefined ? { json: input } : {}),
-        ...(target.timeoutSeconds !== undefined
-          ? { timeoutMs: Math.round(target.timeoutSeconds * 1000) }
-          : {}),
+        timeoutMs: Math.round((target.timeoutSeconds ?? DEFAULT_REQUEST_TIMEOUT_SECONDS) * 1000),
       });
       const durationSeconds = Math.max(0, (ctx.now().getTime() - started) / 1000);
       if (!res.ok) return refusal(res, ctx.now(), `${target.method} ${new URL(url).host}`);
@@ -309,6 +310,7 @@ function createHttpExecutor(settings: HttpSettings, ctx: PluginContext): Executo
 export const httpExecutorType: ExecutorType = {
   id: 'http',
   displayName: 'HTTP',
+  icon: 'link',
   description:
     'Sends one HTTP request per run to any endpoint: an internal job runner, a serverless ' +
     'function, any webhook-triggered automation.',
@@ -331,6 +333,8 @@ export const httpExecutorType: ExecutorType = {
   trackingFor,
   idempotentInvoke: false,
   idempotentFor,
+  invokeTimeoutSeconds: DEFAULT_REQUEST_TIMEOUT_SECONDS + INVOKE_TIMEOUT_MARGIN_SECONDS,
+  invokeTimeoutFor,
   usage: DEFAULT_USAGE_DIMENSIONS,
   usageFor,
   meters: [],

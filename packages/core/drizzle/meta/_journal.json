@@ -36,6 +36,20 @@
       "when": 1790547200797,
       "tag": "0004_manifest_json",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790553633609,
+      "tag": "0005_login_attempts_plugin_tombstone",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790553687245,
+      "tag": "0006_step_journal_invoke_deadline",
+      "breakpoints": true
     }
   ]
 }

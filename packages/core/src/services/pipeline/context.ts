@@ -158,11 +158,50 @@ export function evalFunctions(
 }
 
 /**
- * Default time limit for a plugin call (poll, readMeters, a notifier send, an action). Below the
- * 60 s after which recovery treats an in-flight invoke attempt as stale, so a hung `before` step
- * fails its run before recovery can call the attempt `uncertain`.
+ * Default time limit for a plugin call (poll, readMeters, a notifier send, an action). An invoke
+ * has its own, per-executor limit (`effectiveInvokeTimeoutSeconds`); an attempt's recovery
+ * deadline budgets this limit for each `before` step.
  */
 export const PLUGIN_CALL_TIMEOUT_MS = 45_000;
+
+/** Evaluation slack budgeted per `before` step on top of its action's time limit (`when`, args). */
+export const STEP_EVAL_BUDGET_SECONDS = 10;
+
+/** The time the `before` steps of one attempt may take, in seconds, for the recovery deadline. */
+export function beforeStepBudgetSeconds(
+  ctx: Pick<Ctx, 'pluginCallTimeoutMs'>,
+  stepCount: number,
+): number {
+  const perStep = (ctx.pluginCallTimeoutMs ?? PLUGIN_CALL_TIMEOUT_MS) / 1000;
+  return stepCount * (perStep + STEP_EVAL_BUDGET_SECONDS);
+}
+
+/**
+ * Await `call` for at most `ms`. A sync throw or a rejection propagates; a call that has not
+ * settled in time yields `{ timedOut: true }` (the call itself keeps running and is ignored).
+ */
+export async function withTimeout<T>(
+  ms: number,
+  call: () => Promise<T> | T,
+): Promise<{ timedOut: false; value: T } | { timedOut: true }> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), ms);
+    timer.unref();
+  });
+  try {
+    // `then(call)`: a plugin that returns a plain value or throws synchronously is handled too.
+    const settled = Promise.resolve()
+      .then(call)
+      .then((value) => ({ value }));
+    // A late rejection after a timeout must not become an unhandled rejection.
+    settled.catch(() => undefined);
+    const out = await Promise.race([settled, timeout]);
+    return out === 'timeout' ? { timedOut: true } : { timedOut: false, value: out.value };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Await a plugin call with a time limit, so a plugin that never settles cannot hold a worker.
@@ -176,25 +215,14 @@ export async function callPlugin<T>(
   call: () => Promise<T> | T,
 ): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
   const ms = ctx.pluginCallTimeoutMs ?? PLUGIN_CALL_TIMEOUT_MS;
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<'timeout'>((resolve) => {
-    timer = setTimeout(() => resolve('timeout'), ms);
-    timer.unref();
-  });
   try {
-    // `then(call)`: a plugin that returns a plain value or throws synchronously is handled too.
-    const settled = Promise.resolve()
-      .then(call)
-      .then((value) => ({ value }));
-    const out = await Promise.race([settled, timeout]);
-    if (out !== 'timeout') return { ok: true, value: out.value };
+    const out = await withTimeout(ms, call);
+    if (!out.timedOut) return { ok: true, value: out.value };
     const error = `${method}: timed out after ${ms} ms`;
     ctx.runtime.recordPluginError(pluginName, 'exception', error);
     return { ok: false, error };
   } catch (err) {
     return { ok: false, error: `${method}: ${errorMessage(err)}` };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

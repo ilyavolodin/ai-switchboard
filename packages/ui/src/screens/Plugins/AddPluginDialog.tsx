@@ -138,8 +138,8 @@ export function AddPluginDialog({
 
         <Banner tone="info" icon="info">
           Plugins run in the core&apos;s process as trusted code. Adding one installs and loads it
-          now, and every replica installs it within a minute. Upgrading or removing a loaded plugin
-          applies on the next restart.
+          now, and every replica installs it within a minute. Removing one unloads it everywhere
+          within a minute; upgrading a loaded plugin applies on the next restart.
         </Banner>
       </div>
     </Dialog>

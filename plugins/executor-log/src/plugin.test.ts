@@ -32,6 +32,13 @@ describe('log executor', () => {
     expect(plugin.capabilities.network).toEqual([]);
   });
 
+  it('allows its simulated delay plus 10 s to answer, at least 30 s; its log action is idempotent', () => {
+    expect(logExecutorType.invokeTimeoutSeconds).toBe(30);
+    expect(logExecutorType.invokeTimeoutFor?.({ delayMs: 0 })).toBe(30);
+    expect(logExecutorType.invokeTimeoutFor?.({ delayMs: 25_000 })).toBe(35);
+    expect(logExecutorType.actions?.find((a) => a.id === 'log')?.idempotent).toBe(true);
+  });
+
   it('logs the invocation and answers with the input', async () => {
     const { ctx, executor } = make();
     const result = await executor.invoke(

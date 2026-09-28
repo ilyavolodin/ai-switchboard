@@ -83,6 +83,14 @@ Secret values are never in Postgres, so rotation happens in the secret provider:
 3. Confirm the instance's secret references show a fresh _last resolved_ time and its health is
    green. `switchboard doctor` checks every reference and every instance.
 
+Changing a **secret provider** itself (Settings › Secret providers: add, enable or disable,
+edit, rename or reload it) rebuilds every source, executor and notifier whose settings reference
+it; the provider's row lists them with their status afterwards. Renaming a provider does not
+rewrite references: instances still naming the old `secret://<old>/…` fail with
+`secret_error: secret provider "<old>" is not configured or not running` until you edit them. A
+provider that anything still references cannot be deleted (409 naming the users); point those
+references elsewhere first.
+
 When credentials are revoked before you rotate, invokes fail with 401/403, the executor is marked
 unhealthy, its processes are held with `executor_unhealthy`, and the system notifier alerts.
 Nothing is lost; the next sweep after the reload does the work.
@@ -112,8 +120,28 @@ curl -X POST -H "$AUTH" -H 'content-type: application/json' \
   -d '{"status":"ok","reason":"checked the session, it finished"}' "$SB/runs/<runId>/close"
 ```
 
-If the work did not happen, close it `error` or `unknown` and use **Run now**. A run left
-`invoking` for more than 60 seconds (a replica died mid-invoke) becomes `uncertain` on its own.
+If the work did not happen, close it `error` or `unknown` and use **Run now**. An invoke that gets
+no answer within its timeout (the executor instance's **Invoke timeout** cap, else the executor
+type's value, else 300 s) is treated as a lost response: `uncertain` when not idempotent. A run
+left `invoking` past its attempt's deadline (a replica died mid-invoke) becomes `uncertain` on its
+own; an attempt that died in its `before` steps never reached the backend and is resumed instead.
+
+## Steps in doubt
+
+Each `before` and `after` step is journaled: written `started` before the action runs, settled
+after. A resumed run skips settled steps and runs the ones never started. A step left `started` by
+a replica that died is in doubt:
+
+- An idempotent action (add a label, set a state) runs again.
+- A non-idempotent `before` action (post a comment) fails the run with
+  `step_in_doubt:before[<index>] <action>` before anything is invoked. Check whether the side
+  effect happened, then **Run now** if the work should still happen.
+- A non-idempotent `after` action is shown **in doubt** (`uncertain`) on the run and is not
+  repeated; the other steps still run.
+
+A run's notifications are claimed before they are sent, so a redelivered job never sends one
+twice. A notification left `sending` (the trace says "claimed, delivery not confirmed") may not
+have gone out.
 
 ## Soft-holds and stale meters
 
@@ -185,7 +213,12 @@ replica, and unique constraints keep runs once. To scale:
   `/readyz` gates traffic until Postgres is reachable and plugins are loaded; `/healthz` is
   liveness.
 - Every replica must load the same plugins (same image, or the same `$SWITCHBOARD_HOME`), or
-  types flap between available and unavailable.
+  types flap between available and unavailable. Plugins added or removed on the Plugins page
+  converge by themselves: each replica's sync pass (at boot and every
+  `SWITCHBOARD_PLUGIN_SYNC_SECONDS`, 60 s) installs recorded plugins into its own
+  `$SWITCHBOARD_HOME` and removes ones an admin removed (the `plugins.remove_requested_at`
+  tombstone), unregistering them without a restart. Plugins added with the CLI on one replica
+  are that replica's alone, and are left alone by the sync pass unless an admin removes them.
 - To separate ingress and API from pipeline work, run some replicas with
   `SWITCHBOARD_WORKERS=false`: they serve the UI, API, hooks and callbacks and run no pipeline
   workers or scheduler.

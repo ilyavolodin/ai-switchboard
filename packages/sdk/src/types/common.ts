@@ -48,6 +48,14 @@ export interface ActionSpec {
   argsSchema: JSONSchema;
   /** A short sentence template shown in the UI, e.g. "Add label {{label}}". */
   describe?: string;
+  /**
+   * Optional (since SDK 1.3), default `false`. True when running the action again is harmless
+   * even if a previous attempt may or may not have happened (add a label, set a state, mark a
+   * PR ready). When a crash leaves a step's outcome in doubt, the core re-runs an idempotent
+   * action; a non-idempotent one (post a comment) is never repeated: a `before` step in doubt
+   * fails the run before invoke, an `after` step in doubt is recorded `uncertain`.
+   */
+  idempotent?: boolean;
 }
 
 export interface ActionResult {

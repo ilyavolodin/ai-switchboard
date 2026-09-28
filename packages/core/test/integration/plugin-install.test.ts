@@ -12,7 +12,12 @@ import { testConfig } from '../../src/config.js';
 import { auditLog, notifiers, plugins, pluginTypes } from '../../src/db/schema.js';
 import { silentLogger } from '../../src/logger.js';
 import { PluginHost } from '../../src/plugins/host.js';
-import { listInstalled, type RunNpm } from '../../src/plugins/install.js';
+import {
+  installPlugin,
+  listInstalled,
+  removePlugin,
+  type RunNpm,
+} from '../../src/plugins/install.js';
 import type { RegistryFetch } from '../../src/plugins/search.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
 import { createApiHarness, type ApiHarness } from '../helpers/api.js';
@@ -437,15 +442,153 @@ describe('plugins API: search, install and remove', () => {
     });
   });
 
-  it('removes a plugin so replicas stop installing it', async () => {
+  it('removes a plugin: tombstoned for the replicas, unregistered here at once', async () => {
     const res = await h.request('DELETE', `/api/v1/plugins/${encodeURIComponent(BELL)}`, {
       cookie: h.adminCookie,
       body: { reason: 'not needed' },
     });
     expect(res.statusCode, res.body).toBe(204);
     const [row] = await tdb.db.select().from(plugins).where(eq(plugins.name, BELL));
-    expect(row).toMatchObject({ installSpec: null, installVersion: null });
+    expect(row).toMatchObject({
+      installSpec: null,
+      installVersion: null,
+      status: 'unavailable',
+      statusMessage: 'removed by an admin',
+    });
+    expect(row?.removeRequestedAt).toBeInstanceOf(Date);
+    expect(h.ctx.runtime.notifierType('bell')).toBeUndefined();
     const list = await h.request('GET', '/api/v1/plugins', { cookie: h.adminCookie });
-    expect(list.json<PluginSummary[]>().find((p) => p.name === BELL)).toBeDefined();
+    expect(list.json<PluginSummary[]>().find((p) => p.name === BELL)).toBeUndefined();
+    const types = await h.request('GET', '/api/v1/plugin-types?kind=notifier', {
+      cookie: h.adminCookie,
+    });
+    expect(types.json<PluginTypeDTO[]>()).toContainEqual(
+      expect.objectContaining({ typeId: 'bell', available: false }),
+    );
+    const again = await h.request('DELETE', `/api/v1/plugins/${encodeURIComponent(BELL)}`, {
+      cookie: h.adminCookie,
+      body: { reason: 'twice' },
+    });
+    expect(again.statusCode).toBe(404);
+  });
+});
+
+describe('removal reaches every replica', () => {
+  const CLI = 'ai-switchboard-notifier-cli';
+  let r1: PluginHost;
+  let r2: PluginHost;
+  let npm2: ReturnType<typeof fakeNpm> & { uninstalls: string[] };
+  let home1: string;
+  let home2: string;
+  let notifierId: string;
+
+  /** fakeNpm that also counts `npm uninstall` calls. */
+  function countingNpm(): ReturnType<typeof fakeNpm> & { uninstalls: string[] } {
+    const inner = fakeNpm(registry);
+    const uninstalls: string[] = [];
+    const run: RunNpm = (args, cwd) => {
+      if (args[0] === 'uninstall') uninstalls.push(args[1] ?? '');
+      return inner(args, cwd);
+    };
+    return Object.assign(run, { installs: inner.installs, uninstalls });
+  }
+
+  beforeAll(async () => {
+    registry[CLI] = { name: CLI, version: '0.1.0', dir: await writeFixture(CLI, '0.1.0', 'cli') };
+    home1 = await prepareHome('r1');
+    home2 = await prepareHome('r2');
+    r1 = host(home1, fakeNpm(registry));
+    npm2 = countingNpm();
+    r2 = host(home2, npm2);
+    await r1.boot();
+    await r2.boot();
+  });
+
+  it('re-installing a removed plugin clears the tombstone and replicas converge on it', async () => {
+    // The API suite above removed BELL; installing it again lifts the tombstone.
+    await r1.installAndLoad(BELL);
+    const [row] = await tdb.db.select().from(plugins).where(eq(plugins.name, BELL));
+    expect(row?.removeRequestedAt).toBeNull();
+    await r2.syncInstalled();
+    expect(r2.notifierType('bell')?.pluginName).toBe(BELL);
+    const [n] = await tdb.db
+      .insert(notifiers)
+      .values({ typeId: 'bell', name: 'Bell on r2', settings: {} })
+      .returning();
+    notifierId = n!.id;
+    await r2.reload('notifier', notifierId);
+    expect(r2.notifier(notifierId)).toBeDefined();
+  });
+
+  it('a replica removes its own copy on its sync pass and unregisters the plugin', async () => {
+    // A plugin added on r2 with the CLI only (no database record) must survive the pass.
+    await installPlugin({ home: home2, spec: CLI, runNpm: npm2, now: () => new Date() });
+
+    // r1 handles DELETE /plugins/bell: its own copy, then the tombstone.
+    await removePlugin({ home: home1, name: BELL, runNpm: fakeNpm(registry) });
+    await r1.forgetInstall(BELL);
+    expect(r1.notifierType('bell')).toBeUndefined();
+    // r2 keeps serving it until its pass.
+    expect(r2.notifierType('bell')).toBeDefined();
+
+    await r2.syncInstalled();
+    expect(npm2.uninstalls).toEqual([BELL]);
+    expect((await listInstalled(home2)).map((l) => l.name)).not.toContain(BELL);
+    expect(r2.notifierType('bell')).toBeUndefined();
+    expect(r2.notifier(notifierId)).toBeUndefined();
+    expect(r2.instanceError(notifierId)).toBe('plugin_unavailable');
+    expect(r2.loaded.find((p) => p.name === BELL)?.status).toBe('removed');
+    const [t] = await tdb.db
+      .select()
+      .from(pluginTypes)
+      .where(and(eq(pluginTypes.kind, 'notifier'), eq(pluginTypes.typeId, 'bell')));
+    expect(t?.available).toBe(false);
+
+    // Idempotent: another pass changes nothing.
+    await r2.syncInstalled();
+    expect(npm2.uninstalls).toEqual([BELL]);
+    // The CLI-only plugin is untouched.
+    expect((await listInstalled(home2)).map((l) => l.name)).toContain(CLI);
+  });
+
+  it('a restarted replica does not load the removed plugin', async () => {
+    const again = host(home2, countingNpm());
+    await again.boot();
+    expect(again.loaded.find((p) => p.name === BELL)).toBeUndefined();
+    expect(again.notifierType('bell')).toBeUndefined();
+    expect(again.instanceError(notifierId)).toBe('plugin_unavailable');
+    const [row] = await tdb.db.select().from(plugins).where(eq(plugins.name, BELL));
+    expect(row).toMatchObject({ status: 'unavailable', statusMessage: 'removed by an admin' });
+  });
+
+  it('keeps a copy installed locally after the removal', async () => {
+    const later = new PluginHost({
+      db: tdb.db,
+      clock: new FakeClock('2027-01-01T00:00:00Z'),
+      logger: silentLogger(),
+      telemetry: createRecordingTelemetry(),
+      config: testConfig({ home: home2 }),
+      scanDirs: [{ path: join(home2, 'plugins', 'node_modules'), origin: 'installed' }],
+      runNpm: npm2,
+    });
+    // An operator re-adds it with the CLI on this replica, after the tombstone.
+    await installPlugin({
+      home: home2,
+      spec: BELL,
+      runNpm: npm2,
+      now: () => new Date('2027-01-01T00:00:00Z'),
+    });
+    await later.syncInstalled();
+    expect((await listInstalled(home2)).map((l) => l.name)).toContain(BELL);
+    await later.boot();
+    expect(later.notifierType('bell')?.pluginName).toBe(BELL);
+  });
+
+  it('the replica that removed it loads it again on a re-install, without a restart', async () => {
+    expect(r1.loaded.find((p) => p.name === BELL)?.status).toBe('removed');
+    const result = await r1.installAndLoad(BELL);
+    expect(result).toMatchObject({ pendingRestart: false, plugin: { status: 'loaded' } });
+    expect(r1.notifierType('bell')?.pluginName).toBe(BELL);
+    expect(r1.notifier(notifierId)).toBeDefined();
   });
 });

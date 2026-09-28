@@ -7,13 +7,22 @@ import { resolveSecretRefs } from '../../expr/index.js';
 import { redactSecretValues } from '../../secrets/refs.js';
 import {
   classifyInvoke,
+  effectiveInvokeTimeoutSeconds,
+  invokeAttemptDeadline,
   MAX_INVOKE_ATTEMPTS,
   statusAfterStart,
   type InvokeClassification,
   type InvokeOutcome,
 } from '../../pipeline/invoke.js';
 
-import { JOBS, addSeconds, errorMessage, type Ctx } from './context.js';
+import {
+  JOBS,
+  addSeconds,
+  beforeStepBudgetSeconds,
+  errorMessage,
+  withTimeout,
+  type Ctx,
+} from './context.js';
 import { batchEvents } from './load.js';
 import { sendSystemAlert } from './notify.js';
 import { closeRun, markUncertain, recordUpdate, runHandle, scheduleTracking } from './runs.js';
@@ -46,16 +55,36 @@ function isInvokeResult(value: unknown): value is InvokeResult {
 
 /** `pipeline.invoke` and the dispatch stage's first attempt. */
 export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
+  const [pending] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
+  if (pending?.status !== 'invoking' || pending.invokeStartedAt !== null) return;
+  const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, pending.processId));
+  const [exRow] = await ctx.db.select().from(executors).where(eq(executors.id, pending.executorId));
+  const live = ctx.runtime.executor(pending.executorId);
+  const target = proc && exRow ? targetFor(proc.document, exRow.targetDefaults) : undefined;
+  const timeoutSeconds = effectiveInvokeTimeoutSeconds({
+    cap: exRow?.caps.invokeTimeoutSeconds,
+    perTarget: live && proc && exRow ? live.invokeTimeoutFor(target) : undefined,
+  });
+
+  // Claim the attempt with its recovery deadline: until then recovery leaves it alone, since the
+  // worker may legitimately still be running the steps or waiting on the backend.
   const now = ctx.clock.now();
+  const deadline = invokeAttemptDeadline(
+    now,
+    timeoutSeconds,
+    beforeStepBudgetSeconds(ctx, proc?.document.before.length ?? 0),
+  );
   const [run] = await ctx.db
     .update(runs)
-    .set({ invokeStartedAt: now, attempts: sql`${runs.attempts} + 1`, nextPollAt: null })
+    .set({
+      invokeStartedAt: now,
+      invokeDeadlineAt: deadline,
+      attempts: sql`${runs.attempts} + 1`,
+      nextPollAt: null,
+    })
     .where(and(eq(runs.id, runId), eq(runs.status, 'invoking'), isNull(runs.invokeStartedAt)))
     .returning();
   if (!run) return;
-  const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, run.processId));
-  const [exRow] = await ctx.db.select().from(executors).where(eq(executors.id, run.executorId));
-  const live = ctx.runtime.executor(run.executorId);
   if (!proc || !exRow || !live) {
     // Nothing was sent: retry later, like a connection refused.
     const reason = `executor ${run.executorId} has no live instance`;
@@ -70,18 +99,17 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
     await apply(ctx, run, cls, 'none');
     return;
   }
-  const target = targetFor(proc.document, exRow.targetDefaults);
   const tracking = live.trackingFor(target);
   const idempotent = live.idempotentFor(target);
 
   // `before` steps run under this attempt's claim, so recovery never invokes past a step that is
-  // still in flight (a claimed attempt is only ever made `uncertain`). `runSteps` is idempotent
-  // per run: a resumed or retried attempt reuses the recorded outcome.
+  // still in flight. `runSteps` resumes from the step journal: a retried or recovered attempt
+  // skips settled steps, re-runs an in-doubt idempotent step, and fails on a non-idempotent one.
   if (proc.document.before.length > 0) {
     const [batch] = await ctx.db.select().from(batches).where(eq(batches.id, run.batchId));
     const events = batch ? await batchEvents(ctx.db, batch) : [];
-    const stepsOk = await runSteps(ctx, 'before', run, proc, events);
-    if (!stepsOk) {
+    const steps = await runSteps(ctx, 'before', run, proc, events);
+    if (!steps.ok) {
       // Nothing was sent: the run does not count toward budgets and has no after phase.
       await ctx.db
         .update(runs)
@@ -90,7 +118,7 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
       await closeRun(ctx, run.id, {
         status: 'failed',
         source: 'invoke',
-        reason: 'before_step_failed',
+        reason: steps.reason,
       });
       return;
     }
@@ -115,16 +143,22 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
     return;
   }
 
+  // No answer within the effective timeout is a lost response (the request may have reached
+  // the backend), not a plugin error: the idempotency rule decides, never a blind second invoke.
   let outcome: InvokeOutcome;
   try {
-    const result: unknown = await live.executor.invoke(
-      target,
-      input,
-      runHandle(ctx, run, proc.name),
+    const handle = runHandle(ctx, run, proc.name);
+    const answered = await withTimeout(timeoutSeconds * 1000, () =>
+      live.executor.invoke(target, input, handle),
     );
-    outcome = isInvokeResult(result)
-      ? { kind: 'result', result }
-      : { kind: 'error', error: new Error('invoke returned a malformed InvokeResult') };
+    if (answered.timedOut) {
+      outcome = { kind: 'timeout', seconds: timeoutSeconds };
+    } else {
+      const result: unknown = answered.value;
+      outcome = isInvokeResult(result)
+        ? { kind: 'result', result }
+        : { kind: 'error', error: new Error('invoke returned a malformed InvokeResult') };
+    }
   } catch (err) {
     outcome = { kind: 'error', error: err };
   }
@@ -134,7 +168,13 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
     secretValues,
   ) as InvokeClassification;
   ctx.log.info(
-    { run_id: run.id, process_id: run.processId, action: cls.action, attempt: run.attempts },
+    {
+      run_id: run.id,
+      process_id: run.processId,
+      action: cls.action,
+      attempt: run.attempts,
+      ...(outcome.kind === 'timeout' ? { invoke_timeout_seconds: timeoutSeconds } : {}),
+    },
     'invoke classified',
   );
   await apply(ctx, run, cls, tracking);
@@ -183,7 +223,7 @@ async function apply(
       const at = addSeconds(now, cls.delaySeconds);
       const moved = await ctx.db
         .update(runs)
-        .set({ invokeStartedAt: null, nextPollAt: at })
+        .set({ invokeStartedAt: null, invokeDeadlineAt: null, nextPollAt: at })
         .where(and(eq(runs.id, run.id), eq(runs.status, 'invoking')))
         .returning({ id: runs.id });
       if (moved.length === 0) return;
@@ -220,6 +260,7 @@ async function apply(
         .set({
           status: 'running',
           invokeStartedAt: null,
+          invokeDeadlineAt: null,
           externalId: sql`COALESCE(${runs.externalId}, ${cls.externalId ?? null})`,
           externalUrl: sql`COALESCE(${cls.externalUrl ?? null}, ${runs.externalUrl})`,
         })

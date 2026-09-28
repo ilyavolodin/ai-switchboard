@@ -27,6 +27,7 @@ import type {
   Role,
   RunStatusValue,
   StatusTone,
+  StepStatus,
 } from '../domain/status.js';
 
 export type { ProcessDocument } from '../domain/process.js';
@@ -45,6 +46,7 @@ export type {
   Role,
   RunStatusValue,
   StatusTone,
+  StepStatus,
 } from '../domain/status.js';
 export type {
   ArtifactRef,
@@ -101,6 +103,16 @@ export interface UserDTO {
   mustChangePassword: boolean;
   lastLoginAt: Iso | null;
   createdAt: Iso;
+}
+
+/**
+ * GET /users/directory: who can sign in and with which role, for every signed-in role. Email and
+ * role only; sign-in methods and times stay admin-only (`UserDTO`).
+ */
+export interface UserDirectoryEntry {
+  id: string;
+  email: string;
+  role: Role;
 }
 
 export interface MeResponse {
@@ -184,6 +196,8 @@ export interface BoardSourceNode {
   name: string;
   typeId: string;
   typeName: string;
+  /** The type's declared icon (see `SourceSummary.typeIcon`). */
+  typeIcon: string | null;
   status: StatusLabel;
   enabled: boolean;
   lastEventAt: Iso | null;
@@ -210,6 +224,8 @@ export interface BoardExecutorNode {
   name: string;
   typeId: string;
   typeName: string;
+  /** The type's declared icon (see `SourceSummary.typeIcon`). */
+  typeIcon: string | null;
   status: StatusLabel;
   enabled: boolean;
   meters: MeterGaugeDTO[];
@@ -270,6 +286,11 @@ export interface PluginTypeDTO {
   typeId: string;
   displayName: string;
   description?: string;
+  /**
+   * The icon the plugin declared (SDK 1.3): a built-in icon name (`ICON_NAMES`) or a
+   * `data:image/svg+xml;base64,…` URI (render through `<img>` only). Absent: the kind's icon.
+   */
+  icon?: string;
   plugin: string;
   available: boolean;
   settingsSchema: JSONSchema;
@@ -315,6 +336,11 @@ export interface SourceSummary {
   name: string;
   typeId: string;
   typeName: string;
+  /**
+   * The type's declared icon: a built-in icon name or an SVG data URI (see
+   * `PluginTypeDTO.icon`); `null` when the type declares none or its plugin is not loaded.
+   */
+  typeIcon: string | null;
   mode: 'push' | 'pull' | 'both';
   enabled: boolean;
   status: StatusLabel;
@@ -384,6 +410,11 @@ export interface ExecutorCapsDTO {
   meterPollSeconds?: number;
   meterStalenessMinutes?: number;
   estimatedLimits?: Record<string, number>;
+  /**
+   * How long to wait for `invoke` to answer, 1–3600 s. Overrides the type's per-target and
+   * default timeouts (core default 300 s). No answer in time is a lost response.
+   */
+  invokeTimeoutSeconds?: number;
 }
 
 export interface ExecutorSummary {
@@ -391,6 +422,8 @@ export interface ExecutorSummary {
   name: string;
   typeId: string;
   typeName: string;
+  /** The type's declared icon (see `SourceSummary.typeIcon`). */
+  typeIcon: string | null;
   enabled: boolean;
   status: StatusLabel;
   health: Health | null;
@@ -737,7 +770,6 @@ export interface RunSummary {
   externalId: string | null;
   externalUrl: string | null;
   usage: UsageReport | null;
-  bindingLimit: string | null;
   dryRun: boolean;
   invokedAt: Iso | null;
   finishedAt: Iso | null;
@@ -748,6 +780,8 @@ export interface RunSummary {
 
 export interface RunDetail extends RunSummary {
   batchId: string;
+  /** Manual runs (Run now, test runs): who asked for it. Null for event runs and sweeps. */
+  requestedBy: string | null;
   input: unknown;
   result: unknown;
   errors: string[];
@@ -757,7 +791,11 @@ export interface RunDetail extends RunSummary {
     providerId: string;
     action: string;
     args: unknown;
-    status: string;
+    /**
+     * `started` (running now, or in doubt when the run moved on), `ok`, `error`, `skipped`, or
+     * `uncertain` (in doubt after an interrupted attempt; a non-idempotent action is not repeated).
+     */
+    status: StepStatus;
     error: string | null;
     at: Iso;
   }[];
@@ -897,12 +935,30 @@ export interface InstanceSummary {
   kind: 'notifier' | 'secret_provider';
   typeId: string;
   typeName: string;
+  /** The type's declared icon (see `SourceSummary.typeIcon`). */
+  typeIcon: string | null;
   name: string;
   enabled: boolean;
   status: StatusLabel;
   health: Health | null;
   settings: Record<string, unknown>;
   settingsSchema: JSONSchema;
+  instanceError: string | null;
+  /**
+   * Secret providers only: the sources, executors and notifiers whose settings reference
+   * `secret://<this name>/…`, with their status now. Creating, enabling, disabling, editing or
+   * reloading a provider rebuilds them first, so a mutation's response shows the outcome.
+   */
+  dependents?: SecretProviderDependentDTO[];
+}
+
+/** An instance that resolves secrets through a provider (see `InstanceSummary.dependents`). */
+export interface SecretProviderDependentDTO {
+  kind: 'source' | 'executor' | 'notifier';
+  id: string;
+  name: string;
+  status: StatusLabel;
+  /** Why it is not running (`secret_error: …` when a reference no longer resolves). */
   instanceError: string | null;
 }
 

@@ -143,6 +143,8 @@ export async function seedExecutor(
     idempotent?: boolean;
     caps?: ExecutorCaps;
     enabled?: boolean;
+    /** The type's invoke timeout (`LiveExecutor.invokeTimeoutFor`). */
+    invokeTimeoutSeconds?: number;
   } = {},
 ): Promise<{ id: string; state: FakeExecutorState }> {
   const id = randomUUID();
@@ -156,6 +158,9 @@ export async function seedExecutor(
   const state = h.runtime.addExecutor(id, 'Exec', {
     ...(options.tracking ? { tracking: options.tracking } : {}),
     ...(options.idempotent !== undefined ? { idempotent: options.idempotent } : {}),
+    ...(options.invokeTimeoutSeconds !== undefined
+      ? { invokeTimeoutSeconds: options.invokeTimeoutSeconds }
+      : {}),
   });
   return { id, state };
 }

@@ -147,11 +147,22 @@ async function recordInvocation(ctx: PluginContext, now: Date): Promise<number[]
   return recent;
 }
 
+/** The invoke timeout for a target: its simulated delay plus 10 s, at least 30 s. */
+export function invokeTimeoutFor(target: unknown): number {
+  const delayMs =
+    target !== null && typeof target === 'object'
+      ? (target as { delayMs?: unknown }).delayMs
+      : undefined;
+  const delay = typeof delayMs === 'number' && Number.isFinite(delayMs) ? delayMs / 1000 : 0;
+  return Math.max(30, Math.ceil(delay) + 10);
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const logExecutorType: ExecutorType = {
   id: 'log',
   displayName: 'Log (test executor)',
+  icon: 'activity',
   description:
     'Writes every invocation to the server log and answers with the input. Simulates outcomes, delays and a meter, so a process can be tried out without a real backend.',
   settingsSchema,
@@ -167,6 +178,9 @@ export const logExecutorType: ExecutorType = {
   tracking: 'sync',
   // Logging twice is harmless, so a lost response may be retried.
   idempotentInvoke: true,
+  // The simulated delay (at most 30 s) plus room to answer.
+  invokeTimeoutSeconds: 30,
+  invokeTimeoutFor: (target) => invokeTimeoutFor(target),
   usage: [
     { id: 'invocations', title: 'Invocations', unit: 'count', aggregate: 'sum', budgetable: true },
     { id: 'input_bytes', title: 'Input size', unit: 'bytes', aggregate: 'sum', budgetable: true },
@@ -184,6 +198,8 @@ export const logExecutorType: ExecutorType = {
         properties: { message: { type: 'string', title: 'Message' } },
       },
       describe: 'Log "{{message}}"',
+      // Writing the line again is harmless.
+      idempotent: true,
     },
   ],
   create(rawSettings, ctx) {

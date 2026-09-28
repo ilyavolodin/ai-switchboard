@@ -216,7 +216,7 @@ describe('tracking', () => {
     expect((await runsOf(h.db, pid)).map((r) => r.status)).toEqual(['ok', 'error']);
   });
 
-  it('after a restart, an invoking run older than 60 s becomes uncertain', async () => {
+  it('after a restart, an invoking run past its invoke deadline becomes uncertain', async () => {
     const src = await seedSource(h);
     const ex = await seedExecutor(h, { tracking: 'callback' });
     const pid = await seedProcess(h, ex.id, src.id);
@@ -228,14 +228,78 @@ describe('tracking', () => {
     void h.drain();
     await new Promise((r) => setTimeout(r, 200));
     expect((await onlyRun(pid)).status).toBe('invoking');
-    h.clock.advanceSeconds(61);
+    // The core default timeout (300 s) plus the margin (30 s) has passed.
+    h.clock.advanceSeconds(331);
     const restarted = await h.replica();
     await restarted.queue.drain();
     const run = await onlyRun(pid);
-    expect(run).toMatchObject({ status: 'uncertain' });
+    expect(run).toMatchObject({ status: 'uncertain', invokeDeadlineAt: null });
     const [update] = await h.db.select().from(runUpdates).where(eq(runUpdates.runId, run.id));
     expect(update?.source).toBe('recovery');
     expect(ex.state.invocations).toHaveLength(1);
+  });
+
+  it('recovery leaves an invoke alone while it is inside its own deadline', async () => {
+    const src = await seedSource(h);
+    // A slow backend: the type allows 10 minutes for invoke to answer.
+    const ex = await seedExecutor(h, { tracking: 'callback', invokeTimeoutSeconds: 600 });
+    const pid = await seedProcess(h, ex.id, src.id);
+    ex.state.script.push(() => new Promise(() => undefined));
+    await deliver(h, src.id, [{ id: '1', version: 'v1' }]);
+    await h.drain();
+    h.clock.advanceSeconds(31);
+    void h.drain();
+    await new Promise((r) => setTimeout(r, 200));
+    const claimed = await onlyRun(pid);
+    expect(claimed.invokeDeadlineAt?.getTime()).toBe(
+      (claimed.invokeStartedAt?.getTime() ?? 0) + (600 + 30) * 1000,
+    );
+    // Well past the old fixed 60 s staleness, but inside the attempt's deadline.
+    h.clock.advanceSeconds(400);
+    const other = await h.replica();
+    await other.pipeline.maintenance();
+    await other.queue.drain();
+    expect((await onlyRun(pid)).status).toBe('invoking');
+    h.clock.advanceSeconds(231);
+    await other.pipeline.maintenance();
+    await other.queue.drain();
+    expect((await onlyRun(pid)).status).toBe('uncertain');
+    expect(ex.state.invocations).toHaveLength(1);
+  });
+
+  it('a hung invoke times out: uncertain for a non-idempotent executor, not a plugin error', async () => {
+    const src = await seedSource(h);
+    const ex = await seedExecutor(h, {
+      tracking: 'callback',
+      idempotent: false,
+      caps: { invokeTimeoutSeconds: 1 },
+      // The instance cap wins over the type's value.
+      invokeTimeoutSeconds: 600,
+    });
+    const pid = await seedProcess(h, ex.id, src.id);
+    ex.state.script.push(() => new Promise(() => undefined));
+    await fireOne(src.id, '1');
+    const run = await onlyRun(pid);
+    expect(run).toMatchObject({ status: 'uncertain', statusReason: 'no answer within 1 s' });
+    expect(h.runtime.errors).toEqual([]);
+    await h.advance(600);
+    await h.pipeline.maintenance();
+    await h.drain();
+    expect(ex.state.invocations).toHaveLength(1);
+  });
+
+  it('a hung invoke on an idempotent executor is retried with the same run id', async () => {
+    const src = await seedSource(h);
+    const ex = await seedExecutor(h, { idempotent: true, invokeTimeoutSeconds: 1 });
+    const pid = await seedProcess(h, ex.id, src.id);
+    ex.state.script.push(() => new Promise(() => undefined));
+    await fireOne(src.id, '1');
+    expect((await onlyRun(pid)).status).toBe('invoking');
+    await h.advance(5);
+    const run = await onlyRun(pid);
+    expect(run.status).toBe('ok');
+    expect(ex.state.invocations.map((i) => i.run.id)).toEqual([run.id, run.id]);
+    expect(h.runtime.errors).toEqual([]);
   });
 
   it('closeRun by hand settles an uncertain run and is audited', async () => {

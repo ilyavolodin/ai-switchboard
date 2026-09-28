@@ -20,8 +20,62 @@ export function retryDelaySeconds(attempt: number): number {
   return RETRY_DELAYS_SECONDS[Math.min(attempt, RETRY_DELAYS_SECONDS.length) - 1] ?? 40;
 }
 
+/** Core default invoke timeout, when neither the instance, the target nor the type sets one. */
+export const DEFAULT_INVOKE_TIMEOUT_SECONDS = 300;
+export const MIN_INVOKE_TIMEOUT_SECONDS = 1;
+/** Matches the SDK's `MAX_INVOKE_TIMEOUT_SECONDS`. */
+export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;
+
+function usableSeconds(n: unknown): number | undefined {
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * The effective invoke timeout, in seconds: the executor instance's `invokeTimeoutSeconds` cap,
+ * else the type's per-target value (`invokeTimeoutFor`), else the type's default
+ * (`invokeTimeoutSeconds`), else 300 s; clamped to 1–3600 s. A value that is not a positive
+ * finite number is ignored at its level.
+ */
+export function effectiveInvokeTimeoutSeconds(levels: {
+  cap?: unknown;
+  perTarget?: unknown;
+  typeDefault?: unknown;
+}): number {
+  const chosen =
+    usableSeconds(levels.cap) ??
+    usableSeconds(levels.perTarget) ??
+    usableSeconds(levels.typeDefault) ??
+    DEFAULT_INVOKE_TIMEOUT_SECONDS;
+  return Math.min(MAX_INVOKE_TIMEOUT_SECONDS, Math.max(MIN_INVOKE_TIMEOUT_SECONDS, chosen));
+}
+
+/**
+ * Slack added to an attempt's deadline beyond its invoke timeout and step budget, so recovery
+ * only calls an attempt stale once the worker running it has certainly given up.
+ */
+export const INVOKE_DEADLINE_MARGIN_SECONDS = 30;
+
+/**
+ * When recovery may treat an attempt claimed at `startedAt` as stale: after the `before` steps'
+ * budget (each step's own time limit plus evaluation), the invoke timeout and a margin.
+ */
+export function invokeAttemptDeadline(
+  startedAt: Date,
+  invokeTimeoutSeconds: number,
+  beforeStepBudgetSeconds: number,
+): Date {
+  const total = invokeTimeoutSeconds + beforeStepBudgetSeconds + INVOKE_DEADLINE_MARGIN_SECONDS;
+  return new Date(startedAt.getTime() + total * 1000);
+}
+
+/**
+ * What `invoke` did: answered, threw, or gave no answer within the invoke timeout. A timeout is
+ * a lost response (the request may have reached the backend), not a plugin error.
+ */
 export type InvokeOutcome =
-  { kind: 'result'; result: InvokeResult } | { kind: 'error'; error: unknown };
+  | { kind: 'result'; result: InvokeResult }
+  | { kind: 'error'; error: unknown }
+  | { kind: 'timeout'; seconds: number };
 
 export type InvokeClassification =
   | { action: 'retry'; reason: string; delaySeconds: number }
@@ -120,6 +174,8 @@ export function classifyInvoke(input: ClassifyInput, outcome: InvokeOutcome): In
         return lost(`malformed InvokeResult status ${JSON.stringify(r.status)}`);
     }
   }
+
+  if (outcome.kind === 'timeout') return lost(`no answer within ${outcome.seconds} s`);
 
   const err = outcome.error;
   if (isTransportError(err)) {

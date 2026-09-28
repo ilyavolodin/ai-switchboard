@@ -3,7 +3,12 @@ import type { ExecutorCapsDTO, MeterSpec, UsageDimension } from '@ai-switchboard
 import { sameValue } from '../../lib/instances.js';
 import { CapField } from '../Sources/CapField.js';
 import styles from '../Sources/forms.module.css';
-import { DEFAULT_METER_POLL_SECONDS, MIN_METER_POLL_SECONDS } from './executorModel.js';
+import {
+  DEFAULT_INVOKE_TIMEOUT_SECONDS,
+  DEFAULT_METER_POLL_SECONDS,
+  MAX_INVOKE_TIMEOUT_SECONDS,
+  MIN_METER_POLL_SECONDS,
+} from './executorModel.js';
 
 export interface ExecutorCapsFieldsProps {
   value: ExecutorCapsDTO;
@@ -20,8 +25,8 @@ export interface ExecutorCapsFieldsProps {
 
 /**
  * The core's own caps for an executor: runs per hour and day, a per-day cap per budgetable usage
- * dimension (with its unit), how often meters are read and when a reading counts as stale, and
- * the limits of estimated meters.
+ * dimension (with its unit), how long to wait for `invoke` to answer, how often meters are read
+ * and when a reading counts as stale, and the limits of estimated meters.
  */
 export function ExecutorCapsFields({
   value,
@@ -81,6 +86,19 @@ export function ExecutorCapsFields({
           }}
         />
       ))}
+      <CapField
+        label="Invoke timeout"
+        suffix="seconds"
+        min={1}
+        max={MAX_INVOKE_TIMEOUT_SECONDS}
+        placeholder="type default"
+        help={`How long to wait for the backend to answer an invoke (1–${MAX_INVOKE_TIMEOUT_SECONDS} s). Empty uses the executor type's value, else ${DEFAULT_INVOKE_TIMEOUT_SECONDS} s. No answer in time counts as a lost response: retried when the executor is idempotent, otherwise the run is uncertain.`}
+        value={value.invokeTimeoutSeconds}
+        changed={changed(value.invokeTimeoutSeconds, baseline?.invokeTimeoutSeconds)}
+        onChange={(v) => {
+          set('invokeTimeoutSeconds', v);
+        }}
+      />
       {hasMeters && (
         <>
           <CapField

@@ -41,6 +41,8 @@ const artifactArg: JSONSchema = {
 export const actions: ActionSpec[] = [
   {
     id: 'addLabel',
+    // Repeating it leaves the same state, so a step in doubt may run again.
+    idempotent: true,
     title: 'Add label',
     description: 'Add an existing label (team or workspace) to the issue, by name.',
     describe: 'Add label {{label}}',
@@ -60,6 +62,8 @@ export const actions: ActionSpec[] = [
   },
   {
     id: 'setState',
+    // Repeating it leaves the same state, so a step in doubt may run again.
+    idempotent: true,
     title: 'Set state',
     description: 'Move the issue to a workflow state of its team, by name.',
     describe: 'Move to {{state}}',
@@ -353,6 +357,7 @@ function createLinearSource(settings: Settings, ctx: PluginContext): Source {
 export const linearSource: SourceType = {
   id: 'linear',
   displayName: 'Linear',
+  icon: 'issue',
   description:
     'Linear issue and comment webhooks, with label and state changes derived per change, plus live state and actions.',
   mode: 'push',

@@ -62,6 +62,7 @@ describe('tracking', () => {
       {
         status: 'invoking',
         invokeStartedAt: new Date(now.getTime() - 61_000),
+        invokeDeadlineAt: null,
         createdAt: now,
         retryAt: null,
       },
@@ -73,6 +74,7 @@ describe('tracking', () => {
       {
         status: 'invoking',
         invokeStartedAt: new Date(now.getTime() - 61_000),
+        invokeDeadlineAt: null,
         createdAt: now,
         retryAt: null,
       },
@@ -84,6 +86,7 @@ describe('tracking', () => {
       {
         status: 'invoking',
         invokeStartedAt: new Date(now.getTime() - 30_000),
+        invokeDeadlineAt: null,
         createdAt: now,
         retryAt: null,
       },
@@ -91,10 +94,47 @@ describe('tracking', () => {
       null,
     ],
     [
+      'attempt in flight 10 min, still inside its invoke deadline → leave it',
+      {
+        status: 'invoking',
+        invokeStartedAt: new Date(now.getTime() - 600_000),
+        invokeDeadlineAt: new Date(now.getTime() + 1_000),
+        createdAt: now,
+        retryAt: null,
+      },
+      false,
+      null,
+    ],
+    [
+      'attempt in flight 20 s, past its (short) invoke deadline → uncertain',
+      {
+        status: 'invoking',
+        invokeStartedAt: new Date(now.getTime() - 20_000),
+        invokeDeadlineAt: new Date(now.getTime() - 1),
+        createdAt: now,
+        retryAt: null,
+      },
+      false,
+      'uncertain',
+    ],
+    [
+      'attempt past its invoke deadline, idempotent → reinvoke',
+      {
+        status: 'invoking',
+        invokeStartedAt: new Date(now.getTime() - 400_000),
+        invokeDeadlineAt: now,
+        createdAt: now,
+        retryAt: null,
+      },
+      true,
+      'reinvoke',
+    ],
+    [
       'never started for 2 min → resume',
       {
         status: 'invoking',
         invokeStartedAt: null,
+        invokeDeadlineAt: null,
         createdAt: new Date(now.getTime() - 120_000),
         retryAt: null,
       },
@@ -106,6 +146,7 @@ describe('tracking', () => {
       {
         status: 'invoking',
         invokeStartedAt: null,
+        invokeDeadlineAt: null,
         createdAt: new Date(now.getTime() - 120_000),
         retryAt: new Date(now.getTime() + 10_000),
       },
@@ -114,7 +155,13 @@ describe('tracking', () => {
     ],
     [
       'not invoking → nothing',
-      { status: 'running', invokeStartedAt: null, createdAt: new Date(0), retryAt: null },
+      {
+        status: 'running',
+        invokeStartedAt: null,
+        invokeDeadlineAt: null,
+        createdAt: new Date(0),
+        retryAt: null,
+      },
       false,
       null,
     ],

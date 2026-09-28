@@ -19,7 +19,7 @@ import {
   type Settings,
   type SourceType,
 } from '@ai-switchboard/sdk';
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import semver from 'semver';
 
 import type { Clock } from '../clock.js';
@@ -35,7 +35,7 @@ import {
   sources,
 } from '../db/schema.js';
 import { toPluginLogger, type CoreLogger } from '../logger.js';
-import { parseSecretRef, resolveSecretRefs } from '../secrets/refs.js';
+import { parseSecretRef, referencesProvider, resolveSecretRefs } from '../secrets/refs.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
 import { discoverPlugins, type DiscoveredPackage } from './discovery.js';
 import {
@@ -43,16 +43,18 @@ import {
   listInstalled,
   pluginsDir,
   PluginInstallError,
+  removePlugin,
   specPackageName,
   type InstallResult,
   type RunNpm,
 } from './install.js';
-import type {
-  LiveExecutor,
-  LiveNotifier,
-  LiveSecretProvider,
-  LiveSource,
-  PluginRuntime,
+import {
+  typeInvokeTimeout,
+  type LiveExecutor,
+  type LiveNotifier,
+  type LiveSecretProvider,
+  type LiveSource,
+  type PluginRuntime,
 } from './runtime.js';
 
 export type InstanceKind = 'source' | 'executor' | 'notifier' | 'secret_provider';
@@ -61,7 +63,8 @@ export interface LoadedPlugin {
   name: string;
   version: string;
   origin: 'baked' | 'installed';
-  status: 'loaded' | 'failed' | 'incompatible';
+  /** `removed`: an admin removed it while this process ran; its types are unregistered. */
+  status: 'loaded' | 'failed' | 'incompatible' | 'removed';
   message?: string;
   definition?: PluginDefinition;
 }
@@ -101,6 +104,8 @@ interface TypeEntry<T> {
   pluginName: string;
 }
 
+const REMOVED_MESSAGE = 'removed by an admin';
+
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -127,6 +132,7 @@ export function serializeType(
   const base = {
     displayName: type.displayName,
     description: type.description,
+    ...(type.icon !== undefined ? { icon: type.icon } : {}),
     settingsSchema: type.settingsSchema,
   };
   if (kind === 'source') {
@@ -370,14 +376,17 @@ export class PluginHost implements PluginRuntime {
           .onConflictDoUpdate({ target: plugins.name, set: values });
       }
       // Plugins seen before but missing now are unavailable; their types too.
-      const rows = await tx.select({ name: plugins.name }).from(plugins);
+      const rows = await tx
+        .select({ name: plugins.name, removeRequestedAt: plugins.removeRequestedAt })
+        .from(plugins);
       for (const row of rows) {
         if (!present.has(row.name)) {
           await tx
             .update(plugins)
             .set({
               status: 'unavailable',
-              statusMessage: 'package not found at boot',
+              statusMessage: row.removeRequestedAt ? REMOVED_MESSAGE : 'package not found at boot',
+              loadedAt: null,
               updatedAt: now,
             })
             .where(eq(plugins.name, row.name));
@@ -464,12 +473,15 @@ export class PluginHost implements PluginRuntime {
     const ticket = this.ticket();
     const ids = (kind: InstanceKind) => types.filter((t) => t.kind === kind).map((t) => t.typeId);
     const providerTypes = ids('secret_provider');
-    if (providerTypes.length > 0)
-      for (const row of await db
+    if (providerTypes.length > 0) {
+      const rows = await db
         .select()
         .from(secretProviders)
-        .where(inArray(secretProviders.typeId, providerTypes)))
-        this.buildSecretProvider(row, ticket);
+        .where(inArray(secretProviders.typeId, providerTypes));
+      for (const row of rows) this.buildSecretProvider(row, ticket);
+      // Instances that failed on these providers' references resolve them now.
+      if (rows.length > 0) await this.reloadDependentsOf(rows.map((r) => r.name));
+    }
     const sourceTypes = ids('source');
     if (sourceTypes.length > 0)
       for (const row of await db.select().from(sources).where(inArray(sources.typeId, sourceTypes)))
@@ -520,7 +532,13 @@ export class PluginHost implements PluginRuntime {
     sdkRange: string,
   ): Promise<void> {
     const now = this.opts.clock.now();
-    const install = { installSpec: spec, installVersion: version, installedAt: now };
+    // Re-installing clears a removal tombstone.
+    const install = {
+      installSpec: spec,
+      installVersion: version,
+      installedAt: now,
+      removeRequestedAt: null,
+    };
     await this.opts.db
       .insert(plugins)
       .values({
@@ -538,43 +556,122 @@ export class PluginHost implements PluginRuntime {
       .onConflictDoUpdate({ target: plugins.name, set: { ...install, origin: 'installed' } });
   }
 
-  /** Forget an API install, so replicas stop converging on it. */
+  /**
+   * Record an admin's removal: forget the API install and set the tombstone, so every replica's
+   * sync pass removes its own copy and unregisters it (see {@link syncInstalled}). This process
+   * unregisters it now; the caller has already removed the local package.
+   */
   async forgetInstall(name: string): Promise<void> {
+    const now = this.opts.clock.now();
     await this.opts.db
       .update(plugins)
-      .set({
-        installSpec: null,
-        installVersion: null,
-        statusMessage: 'removed; unloaded on the next restart',
-        updatedAt: this.opts.clock.now(),
-      })
+      .set({ installSpec: null, installVersion: null, removeRequestedAt: now, updatedAt: now })
       .where(eq(plugins.name, name));
+    await this.unregister(name);
+  }
+
+  /**
+   * Take a removed plugin out of this process: drop its types, rebuild the instances that used
+   * them (they report `plugin_unavailable`) and mark its rows unavailable. Idempotent. The ES
+   * module cache keeps its code; a later re-install imports a fresh copy.
+   */
+  private async unregister(name: string): Promise<void> {
+    const { db, clock, logger } = this.opts;
+    const record = this.loaded.find((p) => p.name === name);
+    const dropped: { kind: InstanceKind; typeId: string }[] = [];
+    for (const kind of ['source', 'executor', 'notifier', 'secret_provider'] as const) {
+      for (const [typeId, entry] of this.types[kind]) {
+        if (entry.pluginName !== name) continue;
+        this.types[kind].delete(typeId);
+        dropped.push({ kind, typeId });
+      }
+    }
+    if (record && record.status !== 'removed') {
+      record.status = 'removed';
+      record.message = REMOVED_MESSAGE;
+      delete record.definition;
+      logger.info({ plugin: name }, 'plugin removed; types unregistered');
+    }
+    if (dropped.length > 0) await this.buildInstancesOf(dropped);
+    const now = clock.now();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(plugins)
+        .set({
+          status: 'unavailable',
+          statusMessage: REMOVED_MESSAGE,
+          loadedAt: null,
+          updatedAt: now,
+        })
+        .where(and(eq(plugins.name, name), isNotNull(plugins.removeRequestedAt)));
+      await tx
+        .update(pluginTypes)
+        .set({ available: false, updatedAt: now })
+        .where(eq(pluginTypes.plugin, name));
+    });
   }
 
   /**
    * Converge this replica on the database: install every plugin recorded by an API install that
    * is missing from (or at another version in) the local `$SWITCHBOARD_HOME`, and with `load`,
-   * hot-load it. Idempotent; failures are logged and retried on the next pass, never thrown.
+   * hot-load it; remove every tombstoned plugin from the local home and unregister it. A copy
+   * installed locally after the removal (a CLI install) is left alone, as are plugins that were
+   * never recorded. Idempotent; failures are logged and retried on the next pass, never thrown.
    */
   async syncInstalled(options: { load: boolean } = { load: true }): Promise<void> {
     const { db, logger, config } = this.opts;
-    let recorded: { name: string; installSpec: string | null; installVersion: string | null }[];
+    let rows: {
+      name: string;
+      installSpec: string | null;
+      installVersion: string | null;
+      removeRequestedAt: Date | null;
+    }[];
     try {
-      recorded = await db
+      rows = await db
         .select({
           name: plugins.name,
           installSpec: plugins.installSpec,
           installVersion: plugins.installVersion,
+          removeRequestedAt: plugins.removeRequestedAt,
         })
         .from(plugins)
-        .where(isNotNull(plugins.installSpec));
+        .where(or(isNotNull(plugins.installSpec), isNotNull(plugins.removeRequestedAt)));
     } catch (err) {
       logger.error({ err }, 'could not read recorded plugin installs');
       return;
     }
-    if (recorded.length === 0) return;
+    if (rows.length === 0) return;
+    const recorded = rows.filter((r) => r.installSpec !== null);
+    const tombstoned = rows.filter(
+      (r): r is typeof r & { removeRequestedAt: Date } =>
+        r.installSpec === null && r.removeRequestedAt !== null,
+    );
     await this.serialized(async () => {
       const local = await listInstalled(config.home).catch(() => []);
+      for (const row of tombstoned) {
+        try {
+          const have = local.find((l) => l.name === row.name);
+          const installedAt = have ? Date.parse(have.installedAt) : Number.NaN;
+          // Installed here after the removal (e.g. with the CLI): a newer decision, keep it.
+          if (have && installedAt > row.removeRequestedAt.getTime()) continue;
+          if (have) {
+            logger.info(
+              { plugin: row.name },
+              'removing a plugin an admin removed on another replica',
+            );
+            await removePlugin({
+              home: config.home,
+              name: row.name,
+              ...(this.opts.runNpm ? { runNpm: this.opts.runNpm } : {}),
+            });
+          }
+          const current = this.loaded.find((p) => p.name === row.name);
+          if (current?.origin === 'installed' && current.status !== 'removed')
+            await this.unregister(row.name);
+        } catch (err) {
+          logger.error({ err, plugin: row.name }, 'could not remove a removed plugin');
+        }
+      }
       for (const row of recorded) {
         if (!row.installSpec) continue;
         const have = local.find((l) => l.name === row.name);
@@ -603,6 +700,7 @@ export class PluginHost implements PluginRuntime {
           const current = this.loaded.find((p) => p.name === row.name);
           const tried =
             current !== undefined &&
+            current.status !== 'removed' &&
             (current.status === 'loaded' || current.version === (wanted ?? current.version));
           if (options.load && !tried) await this.loadInstalled(row.name);
         } catch (err) {
@@ -926,6 +1024,7 @@ export class PluginHost implements PluginRuntime {
         trackingFor: (target) => (type.trackingFor ? type.trackingFor(target) : type.tracking),
         idempotentFor: (target) =>
           type.idempotentFor ? type.idempotentFor(target) : type.idempotentInvoke,
+        invokeTimeoutFor: (target) => typeInvokeTimeout(type, target),
         secretValues: resolved.secrets,
       };
     } catch (err) {
@@ -946,9 +1045,15 @@ export class PluginHost implements PluginRuntime {
       this.fail(row.id, ticket, 'plugin_unavailable');
       return;
     }
+    let settings: Settings;
+    try {
+      ({ settings } = await this.resolveSettings(row.settings));
+    } catch (err) {
+      this.fail(row.id, ticket, `secret_error: ${errorText(err)}`);
+      return;
+    }
     let live: LiveNotifier;
     try {
-      const { settings } = await this.resolveSettings(row.settings);
       const ctx = this.context(
         row.id,
         row.name,
@@ -1047,6 +1152,55 @@ export class PluginHost implements PluginRuntime {
         return;
       }
     }
+  }
+
+  /**
+   * Rebuild every source, executor and notifier whose settings reference
+   * `secret://<provider>/…` for one of these provider names, so they re-resolve against the
+   * provider as it is now: created, enabled, disabled, re-configured, renamed (pass the old and
+   * the new name: instances still naming the old one fail with a `secret_error`) or deleted.
+   * Returns the instances it rebuilt.
+   */
+  async reloadDependentsOf(
+    providerNames: string | readonly string[],
+  ): Promise<{ kind: 'source' | 'executor' | 'notifier'; id: string; name: string }[]> {
+    const { db } = this.opts;
+    const names = new Set(typeof providerNames === 'string' ? [providerNames] : providerNames);
+    if (names.size === 0) return [];
+    // Claim before reading the rows, like reload(): an older build finishing later cannot win.
+    const ticket = this.ticket();
+    const rebuilt: { kind: 'source' | 'executor' | 'notifier'; id: string; name: string }[] = [];
+    const claim = (id: string): void => {
+      this.claims.set(id, ticket);
+    };
+    const sourceRows = (await db.select().from(sources)).filter((r) =>
+      referencesProvider(r.settings, names),
+    );
+    const executorRows = (await db.select().from(executors)).filter((r) =>
+      referencesProvider(r.settings, names),
+    );
+    const notifierRows = (await db.select().from(notifiers)).filter((r) =>
+      referencesProvider(r.settings, names),
+    );
+    for (const row of [...sourceRows, ...executorRows, ...notifierRows]) claim(row.id);
+    for (const row of sourceRows) {
+      await this.buildSource(row, ticket);
+      rebuilt.push({ kind: 'source', id: row.id, name: row.name });
+    }
+    for (const row of executorRows) {
+      await this.buildExecutor(row, ticket);
+      rebuilt.push({ kind: 'executor', id: row.id, name: row.name });
+    }
+    for (const row of notifierRows) {
+      await this.buildNotifier(row, ticket);
+      rebuilt.push({ kind: 'notifier', id: row.id, name: row.name });
+    }
+    if (rebuilt.length > 0)
+      this.opts.logger.info(
+        { providers: [...names], instances: rebuilt.length },
+        'rebuilt instances that reference a secret provider',
+      );
+    return rebuilt;
   }
 
   recordPluginError(

@@ -1,4 +1,4 @@
-import type { Role, UserDTO } from '@ai-switchboard/core/contract';
+import type { Role, UserDirectoryEntry, UserDTO } from '@ai-switchboard/core/contract';
 import { type SubmitEvent, useState } from 'react';
 
 import { errorMessage } from '../../api/client.js';
@@ -9,13 +9,13 @@ import {
   useRevokeUserSessions,
   useSetUserPassword,
   useUpdateUser,
+  useUserDirectory,
   useUsers,
 } from '../../api/index.js';
-import { roleLabel, useCan, useSession } from '../../app/session.js';
+import { roleLabel, roleRequiredMessage, useCan, useSession } from '../../app/session.js';
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
-import { EmptyState } from '../../components/EmptyState.js';
 import { Field } from '../../components/Field.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
@@ -37,21 +37,104 @@ const ROLE_OPTIONS = (['admin', 'operator', 'viewer'] as const).map((r) => ({
 
 const isRole = (v: string): v is Role => v === 'admin' || v === 'operator' || v === 'viewer';
 
-/** Users: who can sign in and with which role. Admin only (the API refuses everyone else). */
+/**
+ * Users: who can sign in and with which role. Admins manage them; every other role sees the same
+ * list read-only (`GET /users/directory`: email and role), with the controls visible but disabled.
+ */
 export function UsersTab() {
   const isAdmin = useCan('admin');
-  const { user } = useSession();
-  if (!isAdmin) {
-    return (
-      <Card title="Users">
-        <EmptyState title="Users are managed by admins">
-          You are signed in as {user?.email ?? 'a guest'} with the{' '}
-          {user ? roleLabel(user.role) : 'no'} role. Ask an admin to add people or change roles.
-        </EmptyState>
+  return isAdmin ? <UsersAdmin /> : <UsersReadOnly />;
+}
+
+/** The Users tab for operators and viewers: the directory, every control disabled. */
+function UsersReadOnly() {
+  const directory = useUserDirectory();
+  const { user: me } = useSession();
+  const needsAdmin = roleRequiredMessage('admin', me?.role);
+  const columns: TableColumn<UserDirectoryEntry>[] = [
+    {
+      key: 'email',
+      header: 'email',
+      cell: (u) => (
+        <span className={styles.who}>
+          <span className={styles.avatar} aria-hidden="true">
+            {initials(u.email)}
+          </span>
+          {u.email}
+          {u.id === me?.id && <span className={styles.muted}>· you</span>}
+        </span>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'role',
+      width: 140,
+      cell: (u) => (
+        <Tooltip content={needsAdmin}>
+          <Select
+            size="sm"
+            aria-label={`Role for ${u.email}`}
+            value={u.role}
+            options={ROLE_OPTIONS}
+            disabled
+            onChange={() => undefined}
+          />
+        </Tooltip>
+      ),
+    },
+    {
+      key: 'actions',
+      header: <span className="visually-hidden">actions</span>,
+      align: 'right',
+      cell: (u) => (
+        <span className={styles.rowActions}>
+          <Button
+            size="sm"
+            variant="ghost"
+            requires="admin"
+            aria-label={`Set password for ${u.email}`}
+          >
+            Set password
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            requires="admin"
+            aria-label={`Revoke sessions for ${u.email}`}
+          >
+            Revoke sessions
+          </Button>
+          <Button
+            size="sm"
+            variant="danger-outline"
+            requires="admin"
+            aria-label={`Remove ${u.email}`}
+          >
+            Remove
+          </Button>
+        </span>
+      ),
+    },
+  ];
+  return (
+    <div className={styles.stack}>
+      <AddUser />
+      <Card
+        title="Users"
+        subtitle={`You are ${me ? roleLabel(me.role) : 'signed in'}: adding people and changing roles needs the Admin role`}
+      >
+        {directory.isPending ? (
+          <Skeleton lines={4} height={24} label="Loading users" />
+        ) : directory.isError ? (
+          <Banner tone="error" title="Users could not load">
+            {errorMessage(directory.error)}
+          </Banner>
+        ) : (
+          <Table caption="Users" columns={columns} rows={directory.data} rowKey={(u) => u.id} />
+        )}
       </Card>
-    );
-  }
-  return <UsersAdmin />;
+    </div>
+  );
 }
 
 function UsersAdmin() {
@@ -267,6 +350,8 @@ function AddUser() {
   const [error, setError] = useState<string | null>(null);
   const [passwordErr, setPasswordErr] = useState<string | null>(null);
   const { oidcConfigured } = useSession();
+  // Operators and viewers see the form, disabled; the button names the role it needs.
+  const isAdmin = useCan('admin');
   const create = useReasonedMutation(
     useCreateUser(),
     (v) => ({
@@ -309,6 +394,7 @@ function AddUser() {
               aria-describedby={describedBy}
               invalid={invalid}
               type="email"
+              disabled={!isAdmin}
               placeholder="name@company.com"
               value={email}
               onChange={(e) => {
@@ -328,6 +414,7 @@ function AddUser() {
               aria-describedby={describedBy}
               invalid={invalid}
               mono
+              disabled={!isAdmin}
               autoComplete="off"
               spellCheck={false}
               value={password}
@@ -342,6 +429,7 @@ function AddUser() {
             <Select
               id={id}
               value={role}
+              disabled={!isAdmin}
               options={ROLE_OPTIONS}
               onChange={(e) => {
                 if (isRole(e.target.value)) setRole(e.target.value);

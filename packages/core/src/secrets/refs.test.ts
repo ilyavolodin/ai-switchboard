@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  collectDocumentSecretRefs,
   collectSecretRefs,
   formatSecretRef,
   literalSecretFields,
   parseSecretRef,
   redactSecretValues,
+  referencesProvider,
   resolveSecretRefs,
 } from './refs.js';
 
@@ -72,5 +74,29 @@ describe('redactSecretValues', () => {
       n: 3,
       short: 'abc',
     });
+  });
+});
+
+describe('document references', () => {
+  it('finds secret:// fields and $secretRef calls in expressions', () => {
+    const doc = {
+      executor: { target: { token: 'secret://vault/A' } },
+      mapping: {
+        input: "{ 'k': $secretRef('vault/B'), 'j': $secretRef( \"secret://env/C\" ) }",
+      },
+      triggers: [{ filter: "$secretRef('nopath') and $secretRef(name)" }],
+    };
+    expect(collectDocumentSecretRefs(doc)).toEqual([
+      { path: 'executor.target.token', ref: 'secret://vault/A' },
+      { path: 'mapping.input', ref: 'secret://vault/B' },
+      { path: 'mapping.input', ref: 'secret://env/C' },
+    ]);
+  });
+
+  it('tells whether settings reference a provider', () => {
+    const settings = { a: 'secret://vault/A', b: ['plain', 'secret://env/X'] };
+    expect(referencesProvider(settings, new Set(['env']))).toBe(true);
+    expect(referencesProvider(settings, new Set(['vault-2']))).toBe(false);
+    expect(referencesProvider({}, new Set(['env']))).toBe(false);
   });
 });

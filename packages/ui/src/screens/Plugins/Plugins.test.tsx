@@ -41,7 +41,7 @@ describe('Plugins', () => {
       await screen.findByRole('button', { name: 'Remove @lola/switchboard-source-braintrust' }),
     );
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/unloaded on the next restart/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/every replica removes its copy/)).toBeInTheDocument();
     await user.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'unmaintained');
     await user.click(within(dialog).getByRole('button', { name: 'Remove plugin' }));
     await vi.waitFor(() => {

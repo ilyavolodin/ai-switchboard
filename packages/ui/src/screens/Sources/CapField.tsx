@@ -12,6 +12,7 @@ export interface CapFieldProps {
   /** Unit after the input ("events", "seconds"). */
   suffix?: ReactNode;
   min?: number;
+  max?: number;
   placeholder?: string;
   changed?: boolean;
   disabled?: boolean;
@@ -26,6 +27,7 @@ export function CapField({
   onChange,
   suffix,
   min = 0,
+  max,
   placeholder = 'no cap',
   changed,
   disabled,
@@ -42,6 +44,7 @@ export function CapField({
           size="sm"
           mono
           min={min}
+          max={max}
           placeholder={placeholder}
           value={value ?? ''}
           changed={changed}

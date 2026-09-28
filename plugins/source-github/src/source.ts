@@ -58,6 +58,8 @@ const both = ['github.pr', 'github.issue'];
 export const actions: ActionSpec[] = [
   {
     id: 'addLabel',
+    // Repeating it leaves the same state, so a step in doubt may run again.
+    idempotent: true,
     title: 'Add label',
     description: 'Add a label to a pull request or issue (created on the repository if missing).',
     describe: 'Add label {{label}}',
@@ -78,6 +80,8 @@ export const actions: ActionSpec[] = [
   },
   {
     id: 'removeLabel',
+    // Repeating it leaves the same state, so a step in doubt may run again.
+    idempotent: true,
     title: 'Remove label',
     description: 'Remove a label from a pull request or issue. Removing an absent label succeeds.',
     describe: 'Remove label {{label}}',
@@ -92,6 +96,8 @@ export const actions: ActionSpec[] = [
   },
   {
     id: 'markReady',
+    // Repeating it leaves the same state, so a step in doubt may run again.
+    idempotent: true,
     title: 'Mark ready for review',
     description: 'Take a draft pull request out of draft.',
     describe: 'Mark the pull request ready for review',
@@ -326,6 +332,7 @@ function createGitHubSource(settings: Settings, ctx: PluginContext): Source {
 export const githubSource: SourceType = {
   id: 'github',
   displayName: 'GitHub',
+  icon: 'pr',
   description:
     'Pull requests, issues, check suites, releases and pushes from a GitHub organization, with label, comment and ready-for-review actions.',
   mode: 'push',

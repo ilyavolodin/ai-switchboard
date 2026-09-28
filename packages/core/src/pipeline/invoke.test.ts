@@ -4,6 +4,8 @@ import { InvokeError, TransportError } from '@ai-switchboard/sdk';
 
 import {
   classifyInvoke,
+  effectiveInvokeTimeoutSeconds,
+  invokeAttemptDeadline,
   MAX_INVOKE_ATTEMPTS,
   statusAfterStart,
   type InvokeOutcome,
@@ -20,8 +22,44 @@ function foreign(name: string, fields: Record<string, unknown>): Error {
   return e;
 }
 
+describe('effective invoke timeout', () => {
+  it.each<[string, Parameters<typeof effectiveInvokeTimeoutSeconds>[0], number]>([
+    ['nothing set → core default 300 s', {}, 300],
+    ['type default only', { typeDefault: 60 }, 60],
+    ['per-target beats the type default', { perTarget: 45, typeDefault: 60 }, 45],
+    ['instance cap beats per-target and type', { cap: 20, perTarget: 45, typeDefault: 60 }, 20],
+    [
+      'a per-target undefined falls through to the type',
+      { perTarget: undefined, typeDefault: 90 },
+      90,
+    ],
+    ['garbage at a level is ignored', { cap: 'x', perTarget: Number.NaN, typeDefault: -5 }, 300],
+    ['clamped up to 1 s', { cap: 0.2 }, 1],
+    ['clamped down to 3600 s', { perTarget: 99_999 }, 3600],
+  ])('%s', (_name, levels, expected) => {
+    expect(effectiveInvokeTimeoutSeconds(levels)).toBe(expected);
+  });
+
+  it('an attempt deadline covers the step budget, the timeout and a margin', () => {
+    const start = new Date('2026-01-01T00:00:00Z');
+    expect(invokeAttemptDeadline(start, 300, 50).toISOString()).toBe('2026-01-01T00:06:20.000Z');
+  });
+});
+
 describe('the idempotency rule', () => {
   it.each<[string, boolean, InvokeOutcome, string]>([
+    [
+      'no answer within the invoke timeout, non-idempotent → uncertain',
+      false,
+      { kind: 'timeout', seconds: 30 },
+      'uncertain',
+    ],
+    [
+      'no answer within the invoke timeout, idempotent → retry',
+      true,
+      { kind: 'timeout', seconds: 30 },
+      'retry',
+    ],
     [
       'connection refused (not sent) → retry',
       false,

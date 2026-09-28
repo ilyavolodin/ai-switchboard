@@ -173,6 +173,7 @@ function createEnvProvider(settings: EnvSecretSettings, ctx: PluginContext): Sec
 export const envSecretProviderType: SecretProviderType = {
   id: 'env',
   displayName: 'Environment variables',
+  icon: 'key',
   description: 'Reads secrets from environment variables of the Switchboard process.',
   settingsSchema,
   create: (settings: Settings, ctx: PluginContext) =>

@@ -290,6 +290,17 @@ describe('http executor: tracking and idempotency per target', () => {
   });
 });
 
+describe('http executor: invoke timeout', () => {
+  it("waits 10 s longer than the target's request timeout (30 s by default)", () => {
+    expect(httpExecutorType.invokeTimeoutSeconds).toBe(40);
+    expect(httpExecutorType.invokeTimeoutFor?.({ url: '/x' })).toBe(40);
+    expect(httpExecutorType.invokeTimeoutFor?.({ url: '/x', timeoutSeconds: 120 })).toBe(130);
+    expect(httpExecutorType.invokeTimeoutFor?.({ url: '/x', timeoutSeconds: 2.5 })).toBe(13);
+    // An invalid target falls back to the default rather than throwing.
+    expect(httpExecutorType.invokeTimeoutFor?.({ timeoutSeconds: 'soon' })).toBe(40);
+  });
+});
+
 describe('http executor: verifyCallback', () => {
   const { executor } = setup(() => undefined);
   const verify = (

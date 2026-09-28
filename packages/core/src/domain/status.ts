@@ -78,7 +78,7 @@ export const HOLD_REASONS = [
 ] as const;
 export type HoldReason = (typeof HOLD_REASONS)[number];
 
-/** Binding limits (budget stage), stored in `batches.outcome_reason` and `runs.binding_limit`. */
+/** Binding limits (budget stage), stored in `batches.outcome_reason` (and the budget decision in `batches.decisions`). */
 export type BindingLimit =
   | 'runs_per_hour'
   | 'runs_per_day'
@@ -90,7 +90,28 @@ export type BindingLimit =
   | 'soft_hold';
 
 export type StepPhase = 'before' | 'after';
-export type StepStatus = 'ok' | 'error' | 'skipped';
+/**
+ * A step's journal state. A row is written `started` before the action runs and moved to `ok` or
+ * `error` after; a row still `started` when the run is resumed is in doubt. An in-doubt `after`
+ * step whose action is not idempotent is recorded `uncertain` (never repeated).
+ */
+export const STEP_STATUSES = ['started', 'ok', 'error', 'skipped', 'uncertain'] as const;
+export type StepStatus = (typeof STEP_STATUSES)[number];
+
+/** A step status's tone: in doubt (`started`, `uncertain`) is a warning. */
+export function stepTone(status: StepStatus): StatusTone {
+  switch (status) {
+    case 'ok':
+      return 'ok';
+    case 'error':
+      return 'error';
+    case 'started':
+    case 'uncertain':
+      return 'warn';
+    case 'skipped':
+      return 'off';
+  }
+}
 
 export type ApprovalDecision = 'approved' | 'rejected';
 

@@ -105,7 +105,6 @@ export async function runSummaries(ctx: ApiContext, rows: RunRow[]): Promise<Run
       externalId: r.externalId,
       externalUrl: r.externalUrl,
       usage: r.usage,
-      bindingLimit: r.bindingLimit,
       dryRun: r.dryRun,
       invokedAt: r.invokedAt?.toISOString() ?? null,
       finishedAt: r.finishedAt?.toISOString() ?? null,
@@ -149,13 +148,18 @@ export async function runDetail(ctx: ApiContext, id: string): Promise<RunDetail>
   if (!row) throw notFound('Run');
   const [summary] = await runSummaries(ctx, [row]);
   if (!summary) throw notFound('Run');
-  const [stepRows, updates] = await Promise.all([
+  const [stepRows, updates, batchRows] = await Promise.all([
     ctx.db.select().from(steps).where(eq(steps.runId, id)).orderBy(steps.phase, steps.index),
     ctx.db.select().from(runUpdates).where(eq(runUpdates.runId, id)).orderBy(runUpdates.at),
+    ctx.db
+      .select({ requestedBy: batches.requestedBy })
+      .from(batches)
+      .where(eq(batches.id, row.batchId)),
   ]);
   return {
     ...summary,
     batchId: row.batchId,
+    requestedBy: batchRows[0]?.requestedBy ?? null,
     input: row.input,
     result: row.result,
     errors: row.errors ?? [],

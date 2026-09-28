@@ -240,3 +240,25 @@
 .passwordForm {
   max-width: 380px;
 }
+
+.dependents {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dependentList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dependent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}

@@ -1,9 +1,13 @@
-import type { Role } from '@ai-switchboard/core/contract';
+import type {
+  InstanceSummary,
+  Role,
+  SecretProviderDependentDTO,
+} from '@ai-switchboard/core/contract';
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildFixtures } from '../../api/fixtures.js';
-import type { MockHandlers } from '../../api/mockApi.js';
+import { mockStatus, type MockHandlers } from '../../api/mockApi.js';
 import { TEST_NOW } from '../../test/constants.js';
 import { renderApp, renderWithProviders } from '../../test/render.js';
 import { Settings } from './Settings.js';
@@ -98,9 +102,25 @@ describe('Settings', () => {
   });
 
   describe('Users', () => {
-    it('is for admins only', async () => {
+    it('shows an operator the users read-only, every control disabled and naming the role', async () => {
       const { api } = open('users', 'operator');
-      expect(await screen.findByText('Users are managed by admins')).toBeVisible();
+      const table = await screen.findByRole('table', { name: 'Users' });
+      expect(within(table).getByText('daria@lola.com')).toBeInTheDocument();
+      expect(
+        within(table).getByRole('combobox', { name: 'Role for daria@lola.com' }),
+      ).toBeDisabled();
+      const remove = within(table).getByRole('button', { name: 'Remove daria@lola.com' });
+      expect(remove).toHaveAttribute('aria-disabled', 'true');
+      expect(screen.getByRole('button', { name: 'Add user' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      expect(screen.getByRole('textbox', { name: 'Email' })).toBeDisabled();
+      expect(
+        screen.getByText(/adding people and changing roles needs the Admin role/),
+      ).toBeVisible();
+      // Only the directory (email and role): the admin list is never requested.
+      expect(api.callsTo('GET /users/directory')).toHaveLength(1);
       expect(api.callsTo('GET /users')).toHaveLength(0);
     });
 
@@ -241,6 +261,62 @@ describe('Settings', () => {
       await vi.waitFor(() => {
         expect(within(provider).getByRole('option', { name: 'vault' })).toBeInTheDocument();
       });
+    });
+
+    it('shows who uses a secret provider and the refreshed status after enabling it', async () => {
+      const { secretProviders } = buildFixtures(TEST_NOW);
+      const env = secretProviders[0];
+      if (!env) throw new Error('fixture env provider missing');
+      const failing: SecretProviderDependentDTO = {
+        kind: 'source',
+        id: 's-github',
+        name: 'GitHub',
+        status: { tone: 'error', label: 'error' },
+        instanceError: 'secret_error: secret provider "env" is not configured or not running',
+      };
+      const broken: InstanceSummary = { ...env, enabled: false, dependents: [failing] };
+      let current = broken;
+      const { user } = open('secret-providers', 'admin', {
+        'GET /secret-providers': () => [current],
+        'POST /secret-providers/:id/enable': () => {
+          current = {
+            ...broken,
+            enabled: true,
+            dependents: [{ ...failing, status: { tone: 'ok', label: 'ok' }, instanceError: null }],
+          };
+          return current;
+        },
+      });
+      const usage = await screen.findByRole('region', { name: 'Instances using env' });
+      expect(within(usage).getByText(/secret_error/)).toBeInTheDocument();
+      await user.click(screen.getByRole('switch', { name: 'Enabled' }));
+      await giveReason(user, 'turn env back on', 'Enable');
+      await vi.waitFor(() => {
+        expect(
+          within(screen.getByRole('region', { name: 'Instances using env' })).queryByText(
+            /secret_error/,
+          ),
+        ).not.toBeInTheDocument();
+      });
+      expect(within(usage).getByRole('link', { name: 'GitHub' })).toHaveAttribute(
+        'href',
+        '/sources/s-github',
+      );
+    });
+
+    it('explains a refused delete of a secret provider in use', async () => {
+      const { user } = open('secret-providers', 'admin', {
+        'DELETE /secret-providers/:id': () =>
+          mockStatus(409, {
+            error: 'conflict',
+            message: 'Still used by executor "Claude Routines — automation seat".',
+          }),
+      });
+      await user.click(await screen.findByRole('button', { name: 'Delete env' }));
+      await giveReason(user, 'clean up', 'Delete');
+      const row = screen.getByRole('listitem', { name: 'env' });
+      expect(await within(row).findByText('env was not deleted')).toBeInTheDocument();
+      expect(within(row).getByText(/Still used by executor/)).toBeInTheDocument();
     });
 
     it('keeps admin actions disabled for an operator', async () => {

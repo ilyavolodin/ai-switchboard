@@ -159,8 +159,9 @@ when an instance is built.
 Replicas are identical. Ingress is stateless, the pipeline is a job queue, and there is no
 in-memory state anywhere in the pipeline: anything that must survive a restart is a row. pg-boss
 hands each job to one replica at a time and re-delivers unfinished jobs after their visibility
-timeout, so a rollout loses time, not work. A run left `invoking` for more than 60 seconds
-becomes `uncertain`, which tracking then settles.
+timeout, so a rollout loses time, not work. A run left `invoking` past its attempt's deadline
+(its `before` steps' budget, the executor's invoke timeout and a margin) becomes `uncertain`,
+which tracking then settles; steps resume from their journal.
 
 Each replica emits `switchboard.heartbeat` every 30 seconds and records itself for the About
 panel (`GET /api/v1/about`). Two replicas are the recommended minimum for zero-downtime rollouts.

@@ -58,6 +58,11 @@ export interface ExecutorCaps {
   meterStalenessMinutes?: number;
   /** Typed-in limits for estimated meters, keyed by meter id. */
   estimatedLimits?: Record<string, number>;
+  /**
+   * How long to wait for `invoke` to answer (1–3600 s); overrides the executor type's
+   * per-target and default timeouts.
+   */
+  invokeTimeoutSeconds?: number;
 }
 
 // ------------------------------------------------------------------------------------------
@@ -88,6 +93,12 @@ export const plugins = pgTable('plugins', {
   installSpec: text('install_spec'),
   installVersion: text('install_version'),
   installedAt: ts('installed_at'),
+  /**
+   * Tombstone set by `DELETE /plugins/:name`: every replica's sync pass removes the package from
+   * its own $SWITCHBOARD_HOME (when installed there before this time) and unregisters it. An API
+   * re-install clears it.
+   */
+  removeRequestedAt: ts('remove_requested_at'),
   errorCount: integer('error_count').notNull().default(0),
   invalidEventCount: integer('invalid_event_count').notNull().default(0),
   loadedAt: ts('loaded_at'),
@@ -414,7 +425,6 @@ export const runs = pgTable(
     result: jsonb('result'),
     usage: jsonb('usage').$type<UsageReport>(),
     errors: jsonb('errors').$type<string[]>(),
-    bindingLimit: text('binding_limit'),
     dryRun: boolean('dry_run').notNull().default(false),
     attempts: integer('attempts').notNull().default(0),
     invokedAt: ts('invoked_at'),
@@ -424,6 +434,11 @@ export const runs = pgTable(
     pollCount: integer('poll_count').notNull().default(0),
     /** Set while an invoke attempt is in flight; cleared while a retry waits. */
     invokeStartedAt: ts('invoke_started_at'),
+    /**
+     * When the in-flight attempt is past its time (its steps' budget, the effective invoke
+     * timeout and a margin): before this, recovery leaves the attempt alone.
+     */
+    invokeDeadlineAt: ts('invoke_deadline_at'),
     /** Earliest event occurredAt in the batch, for latency. */
     firstEventAt: ts('first_event_at'),
     createdAt: createdAt(),
@@ -453,7 +468,11 @@ export const steps = pgTable(
     error: text('error'),
     at: ts('at').notNull().defaultNow(),
   },
-  (t) => [index('steps_run').on(t.runId)],
+  (t) => [
+    index('steps_run').on(t.runId),
+    // The step journal: one row per step, written `started` before the action runs.
+    uniqueIndex('steps_run_phase_index').on(t.runId, t.phase, t.index),
+  ],
 );
 
 export const approvals = pgTable(
@@ -524,6 +543,21 @@ export const sessions = pgTable(
   (t) => [index('sessions_user').on(t.userId)],
 );
 
+/**
+ * Failed sign-in (and password confirmation) attempts, one row per failure and throttle key, so
+ * every replica counts the same window (`auth/throttle.ts`). Pruned by the `auth.prune` job.
+ */
+export const loginAttempts = pgTable(
+  'login_attempts',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    /** `ip:<address>`, `email:<sha256 of the normalised email>` or `password:<user id>`. */
+    key: text('key').notNull(),
+    at: ts('at').notNull(),
+  },
+  (t) => [index('login_attempts_key_at').on(t.key, t.at)],
+);
+
 export const apiTokens = pgTable('api_tokens', {
   id: id(),
   userId: uuid('user_id').notNull(),
@@ -584,11 +618,16 @@ export const notificationLog = pgTable(
     runId: uuid('run_id'),
     title: text('title').notNull(),
     text: text('text').notNull(),
-    status: text('status').$type<'sent' | 'error'>().notNull(),
+    /** `sending`: claimed before the send (a crash leaves it; it is never sent twice). */
+    status: text('status').$type<'sending' | 'sent' | 'error'>().notNull(),
     error: text('error'),
     at: ts('at').notNull(),
   },
   (t) => [
+    // A run's notification is claimed once per notifier and outcome before it is sent.
+    uniqueIndex('notification_log_run_notifier_on')
+      .on(t.runId, t.notifierId, t.on)
+      .where(sql`${t.runId} IS NOT NULL`),
     index('notification_log_batch').on(t.batchId),
     index('notification_log_run').on(t.runId),
     index('notification_log_at').on(t.at),

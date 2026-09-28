@@ -3,6 +3,8 @@ import { PgBoss } from 'pg-boss';
 import type { Clock } from '../clock.js';
 import type { CoreLogger } from '../logger.js';
 
+const DEFAULT_EXPIRE_SECONDS = 300;
+
 export interface SendOptions {
   /** Do not run before this time. */
   startAfter?: Date;
@@ -22,6 +24,11 @@ export interface WorkOptions {
   /** Parallel handlers per replica. */
   concurrency?: number;
   pollingIntervalSeconds?: number;
+  /**
+   * How long one job may run before the queue treats its worker as dead and redelivers it
+   * (default 300). Jobs that call a plugin's invoke need room for the longest invoke timeout.
+   */
+  expireInSeconds?: number;
 }
 
 /**
@@ -58,16 +65,19 @@ export class PgBossQueue implements JobQueue {
     });
   }
 
-  private async ensure(name: string): Promise<void> {
-    if (this.created.has(name)) return;
+  private async ensure(name: string, expireInSeconds?: number): Promise<void> {
+    if (this.created.has(name) && expireInSeconds === undefined) return;
     const existing = await this.boss.getQueue(name);
     if (!existing) {
       await this.boss.createQueue(name, {
         retryLimit: 5,
         retryDelay: 5,
         retryBackoff: true,
-        expireInSeconds: 300,
+        expireInSeconds: expireInSeconds ?? DEFAULT_EXPIRE_SECONDS,
       });
+    } else if (expireInSeconds !== undefined && existing.expireInSeconds !== expireInSeconds) {
+      // Queues outlive releases; bring an existing queue up to the worker's requirement.
+      await this.boss.updateQueue(name, { expireInSeconds });
     }
     this.created.add(name);
   }
@@ -94,7 +104,7 @@ export class PgBossQueue implements JobQueue {
   }
 
   async work(name: string, handler: JobHandler, options: WorkOptions = {}): Promise<void> {
-    await this.ensure(name);
+    await this.ensure(name, options.expireInSeconds);
     await this.boss.work<Record<string, unknown>>(
       name,
       {

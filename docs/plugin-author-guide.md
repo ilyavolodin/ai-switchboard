@@ -78,7 +78,39 @@ export default definePlugin({
 `validatePlugin(plugin)` returns the manifest problems the host would refuse: kebab-case unique
 ids per kind, valid JSON Schemas, event types that start with the source type id, flat
 attributes, examples that conform, at most one primary meter per executor type, and example
-targets and inputs that validate.
+targets and inputs that validate, and well-formed icons.
+
+### Icons
+
+Every source, executor, notifier and secret provider type may declare an `icon` (since SDK
+1.3). The UI shows it on instance cards and in the _Add_ dialogs; a type without one gets the
+kind's generic icon.
+
+- **A built-in name**: one of `ICON_NAMES` exported from `@ai-switchboard/sdk` (for example
+  `'webhook'`, `'pr'`, `'issue'`, `'alert'`, `'run'`, `'play'`, `'link'`, `'refresh'`, `'key'`,
+  `'lock'`). These are the UI's own 16 px stroke icons, so they match the rest of the interface
+  in both themes. Prefer one when it fits.
+- **Your own SVG**: a `data:image/svg+xml;base64,…` URI, at most 8 KB (8192 characters) in
+  all, whose payload is an `<svg>` document. No other mime type, no URL-encoded form, no remote
+  URLs. The UI draws it through `<img>`, never as inline markup, so scripts and external
+  references inside the SVG don't run. Draw it on a 16×16 view box with a colour that reads on
+  both light and dark backgrounds (`currentColor` does not apply inside `<img>`).
+
+```typescript
+import { readFileSync } from 'node:fs';
+
+const icon = `data:image/svg+xml;base64,${readFileSync(new URL('../icon.svg', import.meta.url)).toString('base64')}`;
+
+export const deploysSource: SourceType = {
+  id: 'acme-deploys',
+  displayName: 'Acme deploys',
+  icon /* … */,
+};
+```
+
+`validatePlugin` (and so the conformance kit's _manifest validates_ check) rejects an unknown
+name, another mime type, invalid base64, a payload that isn't SVG, or a URI over the limit;
+`iconProblem(icon)` gives the reason for one value.
 
 ## Settings schemas and UI annotations
 
@@ -393,6 +425,8 @@ interface ExecutorType {
   trackingFor?(target: unknown): TrackingMode; // when the mode depends on the target
   idempotentInvoke: boolean;
   idempotentFor?(target: unknown): boolean;
+  invokeTimeoutSeconds?: number; // since 1.3: how long invoke may take to answer (default 300 s)
+  invokeTimeoutFor?(target: unknown): number | undefined; // since 1.3: per target
   usage: UsageDimension[];
   usageFor?(settings: Settings): UsageDimension[];
   meters?: MeterSpec[];
@@ -454,6 +488,32 @@ established, and a 503. Tell the core which one happened:
 
 Guards `isTransportError` and `isInvokeError` are duck-typed, so they work across duplicate SDK
 copies.
+
+### Invoke timeout
+
+The core waits a limited time for `invoke` to answer. The effective timeout is, in order: the
+executor instance's `invokeTimeoutSeconds` cap (set by an admin in the UI), else the type's
+`invokeTimeoutFor(target)`, else the type's `invokeTimeoutSeconds`, else 300 s. It is clamped to
+1–3600 s.
+
+No answer in time is a **lost response, not a plugin error**: the request may have reached the
+backend, so the idempotency rule applies. An idempotent invoke is retried with the same run id; a
+non-idempotent one leaves the run `uncertain` for tracking to settle, never a second `invoke`.
+The timeout is not counted against the plugin.
+
+The timeout also tells recovery when an attempt is stale. Each attempt records a deadline (the
+`before` steps' budget, the invoke timeout and a 30 s margin), and a replica that finds a run
+still `invoking` leaves it alone until that deadline has passed. So declare a timeout that
+covers what `invoke` really does:
+
+- One HTTP request: the `HttpClient` timeout (30 s by default) plus room to read the answer, for
+  example `invokeTimeoutSeconds: 60`.
+- Several requests in one invoke (a token exchange, then the dispatch, then a lookup): the sum.
+- A timeout the target chooses (the `http` executor's `timeoutSeconds`): implement
+  `invokeTimeoutFor(target)` and return the request timeout plus a margin.
+
+Keep your own request timeouts **below** the invoke timeout, so a slow backend surfaces as your
+`TransportError` (with its accurate `sent` flag) before the core gives up on the answer.
 
 ### Example: an executor with callback tracking
 
@@ -618,11 +678,36 @@ types in (`caps.estimatedLimits`), and the UI labels it _estimated_.
 ## Actions
 
 Sources and executors can declare actions (`ActionSpec`: `id`, `title`, `argsSchema`, an
-optional `describe` sentence such as `Add label {{label}}`) and implement `act(action, args)`.
-Processes use them as `before` and `after` steps. The core validates `args` against `argsSchema`
-before calling, records every call in `steps` with the run that caused it, and fails the run if a
-`before` step fails. Return `{ ok, message?, data? }`. Document the credential scope each action
-needs.
+optional `describe` sentence such as `Add label {{label}}`, and since 1.3 `idempotent`) and
+implement `act(action, args)`. Processes use them as `before` and `after` steps. The core
+validates `args` against `argsSchema` before calling, records every call in `steps` with the run
+that caused it, and fails the run if a `before` step fails. Return `{ ok, message?, data? }`.
+Document the credential scope each action needs.
+
+### Idempotent actions
+
+The core keeps a journal of steps: each step's row is written `started` before `act` is called
+and settled (`ok` or `error`) after. When a replica dies between the two, the step is **in
+doubt**: the action may or may not have happened. What the core does next depends on
+`idempotent` (default `false`):
+
+- `idempotent: true`: repeating the action is harmless whether or not the first attempt
+  happened (add a label, remove a label, set a state, mark a pull request ready). The core runs
+  it again.
+- `idempotent: false`: repeating it would duplicate a side effect (post a comment, send a
+  message). A `before` step in doubt fails the run with
+  `step_in_doubt:before[<index>] <action>` before anything is invoked; an `after` step in doubt
+  is recorded `uncertain` and the remaining steps still run.
+
+Steps that settled are never repeated, and a step that never started runs on resume. Declare
+`idempotent: true` only when a second call leaves the same state as one call:
+
+```typescript
+actions: [
+  { id: 'addLabel', title: 'Add label', argsSchema, idempotent: true },
+  { id: 'comment', title: 'Comment', argsSchema }, // not idempotent: a second call posts twice
+],
+```
 
 ## HttpClient and capabilities
 
@@ -865,8 +950,9 @@ with a real token.
 - The host loads any plugin whose `switchboard.sdk` range includes the running SDK major. Declare
   `^1.0.0` and you will load on every 1.x host. The host checks the full range, so if you use an
   export added in a later minor (`parseWith`, `invokeErrorForStatus` and the custom event type
-  helpers arrived in 1.2.0), declare that minor (`^1.2.0`) in both `switchboard.sdk` and
-  `peerDependencies`.
+  helpers arrived in 1.2.0; `icon`, `ICON_NAMES`, `invokeTimeoutSeconds`, `invokeTimeoutFor` and
+  `ActionSpec.idempotent` in 1.3.0), declare that minor (`^1.3.0`) in both `switchboard.sdk` and
+  `peerDependencies`. An older host ignores the optional fields.
 - Your plugin's own version is yours, but treat event type ids, attribute names and action ids as
   public API: people's filters and processes depend on them. Removing or renaming one is a major.
 - SDK majors are announced through the `switchboard-plugin` topic on the repository.

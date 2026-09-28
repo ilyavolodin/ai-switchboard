@@ -38,6 +38,41 @@ export function collectSecretRefs(value: unknown, path = ''): { path: string; re
   return [];
 }
 
+/** `$secretRef('<provider>/<name>')` (or with a full `secret://` reference) in expression text. */
+const EXPRESSION_REF = /\$secretRef\(\s*(['"])(?:secret:\/\/)?([^'"\s]+)\1\s*\)/g;
+
+/**
+ * Every secret reference a process document makes: `secret://` strings in fields, plus the
+ * literal `$secretRef('<provider>/<name>')` calls inside expression strings.
+ */
+export function collectDocumentSecretRefs(value: unknown): { path: string; ref: string }[] {
+  const out = collectSecretRefs(value);
+  const walk = (v: unknown, path: string): void => {
+    if (typeof v === 'string') {
+      for (const m of v.matchAll(EXPRESSION_REF)) {
+        const ref = `${SECRET_SCHEME}${m[2] ?? ''}`;
+        if (parseSecretRef(ref)) out.push({ path, ref });
+      }
+    } else if (Array.isArray(v)) {
+      v.forEach((inner, i) => {
+        walk(inner, `${path}[${i}]`);
+      });
+    } else if (v !== null && typeof v === 'object') {
+      for (const [k, inner] of Object.entries(v)) walk(inner, path === '' ? k : `${path}.${k}`);
+    }
+  };
+  walk(value, '');
+  return out;
+}
+
+/** Whether a settings object references any of these providers (`secret://<provider>/…`). */
+export function referencesProvider(value: unknown, providers: ReadonlySet<string>): boolean {
+  return collectSecretRefs(value).some((r) => {
+    const parsed = parseSecretRef(r.ref);
+    return parsed !== null && providers.has(parsed.provider);
+  });
+}
+
 export type SecretLookup = (ref: string) => Promise<string>;
 
 /** Deep-copy `value`, replacing every secret reference with its resolved value. */

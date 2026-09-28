@@ -170,6 +170,7 @@ export function typeDTO(kind: PluginKind, row: typeof pluginTypes.$inferSelect):
     typeId: row.typeId,
     displayName: row.displayName,
     ...(typeof m.description === 'string' ? { description: m.description } : {}),
+    ...(typeof m.icon === 'string' ? { icon: m.icon } : {}),
     plugin: row.plugin,
     available: row.available,
     settingsSchema: (m.settingsSchema as PluginTypeDTO['settingsSchema'] | undefined) ?? {
@@ -254,7 +255,12 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
       instanceCounts(),
       listInstalled(config.home).catch(() => []),
     ]);
-    const summaries: PluginSummary[] = rows.map((p) => {
+    // A removed plugin leaves the list once this replica's copy is gone (its row stays as the
+    // tombstone other replicas act on).
+    const listed = rows.filter(
+      (p) => p.removeRequestedAt === null || lock.some((l) => l.name === p.name),
+    );
+    const summaries: PluginSummary[] = listed.map((p) => {
       const locked = lock.find((l) => l.name === p.name);
       const pendingRestart =
         p.origin === 'installed' && locked !== undefined && locked.version !== p.version;
@@ -460,7 +466,8 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
           installError,
         );
       }
-      // Replicas stop installing it; the loaded code stays in memory until the next restart.
+      // The tombstone: every replica's sync pass removes its own copy and unregisters it; this
+      // one unregisters it now.
       await ctx.host.forgetInstall(name);
       await recordAudit(db, {
         actor: actorOf(req),

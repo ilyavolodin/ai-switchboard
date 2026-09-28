@@ -1,50 +1,66 @@
 import { describe, expect, it } from 'vitest';
 
-import { FakeClock } from '../clock.js';
-import { AttemptThrottle } from './throttle.js';
+import { emailKey, throttleDecision, type ThrottleLimit } from './throttle.js';
 
-describe('attempt throttle', () => {
-  it('locks a key for a minute after five failures and unlocks it after', () => {
-    const clock = new FakeClock();
-    const t = new AttemptThrottle(clock);
-    for (let i = 0; i < 4; i++) t.fail('ip');
-    expect(t.locked('ip')).toBe(false);
-    t.fail('ip');
-    expect(t.locked('ip')).toBe(true);
-    expect(t.locked('other')).toBe(false);
-    clock.advanceSeconds(61);
-    expect(t.locked('ip')).toBe(false);
+const NOW = new Date('2026-05-01T12:00:00.000Z');
+const WINDOW = 5 * 60_000;
+const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);
+const times = (n: number, from: number, step = 1) =>
+  Array.from({ length: n }, (_, i) => ago(from - i * step));
+
+const ip: ThrottleLimit = { key: 'ip:10.0.0.1', max: 10 };
+const email: ThrottleLimit = { key: 'email:abc', max: 5 };
+
+describe('throttleDecision (sliding window)', () => {
+  it.each([
+    ['no failures', new Map<string, Date[]>(), true],
+    ['four email failures', new Map([['email:abc', times(4, 60)]]), true],
+    ['five email failures', new Map([['email:abc', times(5, 60)]]), false],
+    ['nine IP failures', new Map([['ip:10.0.0.1', times(9, 60)]]), true],
+    ['ten IP failures', new Map([['ip:10.0.0.1', times(10, 60)]]), false],
+    // Failures older than the window do not count.
+    ['five email failures, all older than 5 min', new Map([['email:abc', times(5, 400)]]), true],
+    ['another key failing', new Map([['email:other', times(20, 60)]]), true],
+  ])('%s → allowed %s', (_label, failures, allowed) => {
+    expect(throttleDecision([ip, email], failures, NOW, WINDOW).allowed).toBe(allowed);
   });
 
-  it('forgets failures on success and after the counting window', () => {
-    const clock = new FakeClock();
-    const t = new AttemptThrottle(clock);
-    for (let i = 0; i < 4; i++) t.fail('ip');
-    t.succeed('ip');
-    t.fail('ip');
-    expect(t.locked('ip')).toBe(false);
-    for (let i = 0; i < 3; i++) t.fail('ip');
-    clock.advanceMinutes(16);
-    // Four failures spread over more than the window do not lock.
-    t.fail('ip');
-    expect(t.locked('ip')).toBe(false);
+  it('waits until the oldest counted failure leaves the window', () => {
+    // Five failures at 120 s, 110 s, … 80 s ago: the oldest ages out 180 s from now.
+    const d = throttleDecision([email], new Map([['email:abc', times(5, 120, 10)]]), NOW, WINDOW);
+    expect(d).toEqual({ allowed: false, retryAfterSeconds: 180, lockedKey: 'email:abc' });
   });
 
-  it('stays bounded when many keys fail once', () => {
-    const clock = new FakeClock();
-    const t = new AttemptThrottle(clock, { maxKeys: 100 });
-    for (let i = 0; i < 1000; i++) {
-      t.fail(`ip-${i}`);
-      clock.advance(1);
-    }
-    expect(t.size).toBeLessThanOrEqual(100);
+  it('counts only the newest max failures for the wait', () => {
+    // Seven failures: the wait is set by the fifth newest (110 s ago), not the oldest (120 s).
+    const d = throttleDecision([email], new Map([['email:abc', times(7, 120, 5)]]), NOW, WINDOW);
+    expect(d.retryAfterSeconds).toBe(190);
   });
 
-  it('keeps a locked key when it has to evict', () => {
-    const clock = new FakeClock();
-    const t = new AttemptThrottle(clock, { maxKeys: 10 });
-    for (let i = 0; i < 5; i++) t.fail('attacker');
-    for (let i = 0; i < 50; i++) t.fail(`ip-${i}`);
-    expect(t.locked('attacker')).toBe(true);
+  it('reports the key that frees up last when several are locked', () => {
+    const d = throttleDecision(
+      [ip, email],
+      new Map([
+        ['ip:10.0.0.1', times(10, 290)],
+        ['email:abc', times(5, 30)],
+      ]),
+      NOW,
+      WINDOW,
+    );
+    expect(d.lockedKey).toBe('email:abc');
+    expect(d.retryAfterSeconds).toBe(270);
+  });
+
+  it('never asks to wait less than a second', () => {
+    const d = throttleDecision([email], new Map([['email:abc', times(5, 299.9)]]), NOW, WINDOW);
+    expect(d.retryAfterSeconds).toBe(1);
+  });
+});
+
+describe('emailKey', () => {
+  it('normalises case and whitespace and never holds the address', () => {
+    expect(emailKey('  Ada@Example.COM ')).toBe(emailKey('ada@example.com'));
+    expect(emailKey('ada@example.com')).not.toContain('ada');
+    expect(emailKey('ada@example.com')).toMatch(/^email:[0-9a-f]{64}$/);
   });
 });

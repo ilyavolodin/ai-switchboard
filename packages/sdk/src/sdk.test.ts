@@ -6,6 +6,9 @@ import {
   dedupeKey,
   definePlugin,
   hostMatches,
+  ICON_DATA_URI_PREFIX,
+  ICON_NAMES,
+  iconProblem,
   InvokeError,
   invokeErrorForStatus,
   isInvokeError,
@@ -21,6 +24,7 @@ import {
   validateAgainst,
   validatePlugin,
   verifyHmac,
+  type ExecutorType,
   type SourceType,
 } from './index.js';
 import { createStubHttp, rawRequest, scrubRequest } from './testing/index.js';
@@ -336,6 +340,82 @@ describe('validatePlugin', () => {
     );
     expect(errors.join('\n')).toMatch(/at least one example/);
     expect(errors.join('\n')).toMatch(/duplicate event type/);
+  });
+});
+
+const executorType = (overrides: Partial<ExecutorType> = {}): ExecutorType => ({
+  id: 'demo-exec',
+  displayName: 'Demo executor',
+  settingsSchema: { type: 'object' },
+  targetSchema: { type: 'object' },
+  inputSchema: { type: 'object' },
+  tracking: 'sync',
+  idempotentInvoke: false,
+  usage: [],
+  create: () => ({
+    invoke: () => Promise.resolve({ status: 'completed' }),
+    health: () => Promise.resolve({ status: 'healthy', checkedAt: new Date().toISOString() }),
+  }),
+  ...overrides,
+});
+
+const svgUri = (svg: string) => ICON_DATA_URI_PREFIX + Buffer.from(svg).toString('base64');
+
+describe('icons', () => {
+  it('accepts every built-in icon name and a small SVG data URI', () => {
+    for (const name of ICON_NAMES) expect(iconProblem(name)).toBeNull();
+    expect(iconProblem(svgUri('<svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toBeNull();
+  });
+
+  it('rejects unknown names, other mime types, bad base64, non-SVG payloads and large URIs', () => {
+    expect(iconProblem('rocket')).toMatch(/neither a built-in icon name/);
+    expect(iconProblem('data:image/png;base64,iVBORw0KGgo=')).toMatch(/SVG only/);
+    expect(iconProblem('data:image/svg+xml,<svg></svg>')).toMatch(/SVG only/);
+    expect(iconProblem(`${ICON_DATA_URI_PREFIX}not*base64`)).toMatch(/base64/);
+    expect(iconProblem(svgUri('<html><script>x</script></html>'))).toMatch(/<svg>/);
+    const big = svgUri(`<svg>${'x'.repeat(7000)}</svg>`);
+    expect(iconProblem(big)).toMatch(/limit is 8192/);
+    expect(iconProblem('')).toMatch(/non-empty/);
+  });
+
+  it('validatePlugin reports a bad icon on any kind of type', () => {
+    const errors = validatePlugin(
+      definePlugin({
+        id: 'demo',
+        displayName: 'Demo',
+        sources: [sourceType({ icon: 'rocket' })],
+        executors: [executorType({ icon: 'data:text/html;base64,PGI+' })],
+      }),
+    );
+    expect(errors.join('\n')).toMatch(/source demo: icon "rocket"/);
+    expect(errors.join('\n')).toMatch(/executor demo-exec: icon data URI must start/);
+    expect(
+      validatePlugin(
+        definePlugin({
+          id: 'demo',
+          displayName: 'Demo',
+          sources: [sourceType({ icon: 'webhook' })],
+        }),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('invokeTimeoutSeconds', () => {
+  it('accepts 1 to 3600 seconds and rejects anything else', () => {
+    const check = (invokeTimeoutSeconds: number) =>
+      validatePlugin(
+        definePlugin({
+          id: 'demo',
+          displayName: 'Demo',
+          executors: [executorType({ invokeTimeoutSeconds })],
+        }),
+      );
+    expect(check(60)).toEqual([]);
+    expect(check(3600)).toEqual([]);
+    expect(check(0).join()).toMatch(/invokeTimeoutSeconds must be a number from 1 to 3600/);
+    expect(check(7200).join()).toMatch(/invokeTimeoutSeconds/);
+    expect(check(Number.NaN).join()).toMatch(/invokeTimeoutSeconds/);
   });
 });
 

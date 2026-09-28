@@ -80,6 +80,7 @@ export async function sourceSummaries(
       name: row.name,
       typeId: row.typeId,
       typeName: typeEntry?.type.displayName ?? row.typeId,
+      typeIcon: typeEntry?.type.icon ?? null,
       mode: typeEntry?.type.mode ?? 'push',
       enabled: row.enabled,
       status: instanceStatus({ enabled: row.enabled, health: row.health, instanceError: error }),
@@ -165,6 +166,7 @@ export async function executorSummaries(
       name: row.name,
       typeId: row.typeId,
       typeName: typeEntry?.type.displayName ?? row.typeId,
+      typeIcon: typeEntry?.type.icon ?? null,
       enabled: row.enabled,
       status: instanceStatus({
         enabled: row.enabled,

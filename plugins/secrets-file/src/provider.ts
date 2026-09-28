@@ -142,6 +142,7 @@ function createFileProvider(settings: FileSecretSettings, ctx: PluginContext): S
 export const fileSecretProviderType: SecretProviderType = {
   id: 'file',
   displayName: 'Mounted files',
+  icon: 'lock',
   description:
     'Reads each secret from a file in a directory, the Docker and Kubernetes secret pattern.',
   settingsSchema,

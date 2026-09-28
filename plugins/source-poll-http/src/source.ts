@@ -145,6 +145,7 @@ export function instanceEventTypes(settings: Settings): EventTypeSpec[] {
 export const pollHttpSource: SourceType = {
   id: SOURCE_ID,
   displayName: 'HTTP poll',
+  icon: 'refresh',
   description:
     'Poll any JSON endpoint on a schedule with a cursor parameter and map its items to events with JSONata.',
   mode: 'pull',

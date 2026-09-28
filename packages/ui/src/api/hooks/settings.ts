@@ -14,6 +14,7 @@ import type {
   SetPasswordRequest,
   UpdateSettingsRequest,
   UpdateUserRequest,
+  UserDirectoryEntry,
   UserDTO,
 } from '@ai-switchboard/core/contract';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -45,6 +46,15 @@ export function useUsers() {
   return useQuery({
     queryKey: qk.users,
     queryFn: ({ signal }) => apiFetch<UserDTO[]>('/users', { signal }),
+  });
+}
+
+/** GET /users/directory (every role): email and role only, for the read-only Users tab. */
+export function useUserDirectory(enabled = true) {
+  return useQuery({
+    queryKey: [...qk.users, 'directory'],
+    queryFn: ({ signal }) => apiFetch<UserDirectoryEntry[]>('/users/directory', { signal }),
+    enabled,
   });
 }
 

@@ -295,3 +295,24 @@ describe('bootstrap', () => {
     expect(boss?.passwordHash).toBeNull();
   });
 });
+
+describe('users directory', () => {
+  it('lets every role read emails and roles, and nothing else', async () => {
+    const created = await h.request('POST', '/api/v1/tokens', {
+      cookie: h.adminCookie,
+      body: { name: 'directory-viewer', role: 'viewer', reason },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const token = created.json<{ secret: string }>().secret;
+
+    const res = await h.request('GET', '/api/v1/users/directory', { token });
+    expect(res.statusCode, res.body).toBe(200);
+    const entries = res.json<Record<string, unknown>[]>();
+    expect(entries.map((e) => e.email)).toContain(ADMIN_EMAIL);
+    for (const e of entries) expect(Object.keys(e).sort()).toEqual(['email', 'id', 'role']);
+
+    const full = await h.request('GET', '/api/v1/users', { token });
+    expect(full.statusCode).toBe(403);
+    expect((await h.request('GET', '/api/v1/users/directory')).statusCode).toBe(401);
+  });
+});

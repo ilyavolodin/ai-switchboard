@@ -8,6 +8,7 @@ import type { PipelinePort, PreviewPort } from './api/pipeline-port.js';
 import { bootstrapAdmin } from './auth/bootstrap.js';
 import { OidcClient } from './auth/oidc.js';
 import { pruneSessions } from './auth/sessions.js';
+import { pruneLoginAttempts } from './auth/throttle.js';
 import { systemClock, type Clock } from './clock.js';
 import type { CoreConfig } from './config.js';
 import { connect, runMigrations, type Database } from './db/client.js';
@@ -161,9 +162,14 @@ export async function createSwitchboard(options: CreateOptions): Promise<Switchb
         await pipeline.registerWorkers();
         await queue.work('plugins.health', () => host.checkHealth(), { concurrency: 1 });
         await queue.schedule('plugins.health', '* * * * *');
-        await queue.work('auth.prune', () => pruneSessions(database.db, clock.now()), {
-          concurrency: 1,
-        });
+        await queue.work(
+          'auth.prune',
+          async () => {
+            await pruneSessions(database.db, clock.now());
+            await pruneLoginAttempts(database.db, clock.now());
+          },
+          { concurrency: 1 },
+        );
         await queue.schedule('auth.prune', '17 3 * * *');
       }
       // Every replica (not one queue worker) converges on the plugins admins installed.

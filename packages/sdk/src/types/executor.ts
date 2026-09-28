@@ -128,6 +128,12 @@ export interface ExecutorType {
   id: string;
   displayName: string;
   description?: string;
+  /**
+   * Optional (since SDK 1.3): the icon the UI shows for this type. Either a built-in icon name
+   * (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB, rendered through
+   * `<img>`. Without one the UI shows the kind's generic icon.
+   */
+  icon?: string;
   /** Per instance: account credentials, base URL. */
   settingsSchema: JSONSchema;
   /** Per process: what to run (routine id, workflow file, URL). */
@@ -145,6 +151,22 @@ export interface ExecutorType {
   /** May the core retry an invoke whose response was lost? */
   idempotentInvoke: boolean;
   idempotentFor?(target: Target): boolean;
+  /**
+   * Optional (since SDK 1.3): how long, in seconds, the core waits for `invoke` to answer
+   * before it gives up on the answer. The type's default; `invokeTimeoutFor` refines it per
+   * target and an executor instance's `invokeTimeoutSeconds` cap overrides both. Without any,
+   * the core waits 300 s; the effective value is clamped to 1–3600 s.
+   *
+   * A timeout is a lost response, not a plugin error: the request may have reached the
+   * backend, so the idempotency rule applies. An idempotent invoke is retried with the same
+   * run id; a non-idempotent one leaves the run `uncertain` for tracking to settle, never a
+   * second `invoke`. Recovery never treats an attempt as stale before this time has passed.
+   * Keep the plugin's own HTTP timeout below it, so a slow backend surfaces as the plugin's
+   * `TransportError` first.
+   */
+  invokeTimeoutSeconds?: number;
+  /** Optional (since SDK 1.3): the invoke timeout for one target (e.g. a target's own timeout). */
+  invokeTimeoutFor?(target: Target): number | undefined;
   /** What this backend reports per run (may be empty). */
   usage: UsageDimension[];
   /** Instance-specific dimensions (the `http` executor declares them per instance). */

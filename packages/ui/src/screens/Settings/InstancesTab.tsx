@@ -31,6 +31,7 @@ import { useCan } from '../../app/session.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { asRecord, secretProviderIds } from '../../lib/instances.js';
 import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
+import { ProviderDependents } from './ProviderDependents.js';
 import { ProviderSecrets } from './ProviderSecrets.js';
 import styles from './Settings.module.css';
 
@@ -155,6 +156,14 @@ export function InstancesTab({ route }: { route: InstanceRoute }) {
                 </Banner>
               )}
               {inst.health?.message && <span className="t-caption">{inst.health.message}</span>}
+              {route === 'secret-providers' && inst.dependents && (
+                <ProviderDependents provider={inst.name} dependents={inst.dependents} />
+              )}
+              {remove.mutation.isError && remove.mutation.variables.id === inst.id && (
+                <Banner tone="error" title={`${inst.name} was not deleted`}>
+                  {errorMessage(remove.mutation.error)}
+                </Banner>
+              )}
               {Object.keys(inst.settings).length > 0 && (
                 <KeyValueList data={inst.settings} label={`${inst.name} settings`} />
               )}

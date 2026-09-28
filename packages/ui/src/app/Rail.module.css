@@ -115,10 +115,10 @@
   color: var(--st-warn-fg);
 }
 
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+/* The word after a badge's count ("2 to fix"); the collapsed rail shows the count alone. */
+.badgeWord {
+  font-family: var(--font-body);
+  white-space: pre;
 }
 
 .spacer {
@@ -199,6 +199,7 @@
   .brandText,
   .label,
   .count,
+  .badgeWord,
   .hints,
   .who {
     display: none;
@@ -211,8 +212,7 @@
     justify-content: center;
   }
 
-  .badge,
-  .dot {
+  .badge {
     position: absolute;
     top: 3px;
     right: 3px;

@@ -97,6 +97,7 @@ export const webhookNotifierType: NotifierType = {
   // Ids are unique per kind, so this notifier shares `webhook` with the webhook source.
   id: 'webhook',
   displayName: 'Webhook',
+  icon: 'webhook',
   description: 'POSTs each notification as JSON to any URL, optionally HMAC-signed.',
   settingsSchema,
   create: (settings: Settings, ctx: PluginContext) =>

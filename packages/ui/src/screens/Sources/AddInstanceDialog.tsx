@@ -8,12 +8,12 @@ import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { Field } from '../../components/Field.js';
-import { Icon } from '../../components/Icon.js';
+import { TypeIcon } from '../../components/TypeIcon.js';
 import { SchemaForm } from '../../components/SchemaForm.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { TextField } from '../../components/TextField.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
-import { asRecord, secretProviderIds, typeIcon } from '../../lib/instances.js';
+import { asRecord, secretProviderIds } from '../../lib/instances.js';
 import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
 import { ManifestReview } from '../Plugins/ManifestReview.js';
 import { NpmSearch } from '../Plugins/NpmSearch.js';
@@ -270,7 +270,7 @@ export function AddInstanceDialog<C>({
                       }}
                     >
                       <span className={styles.iconTile}>
-                        <Icon name={typeIcon(t.typeId, kind)} />
+                        <TypeIcon icon={t.icon} kind={kind} />
                       </span>
                       <span className={styles.typeText}>
                         <span className={styles.typeName}>{t.displayName}</span>

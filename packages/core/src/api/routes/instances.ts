@@ -14,6 +14,7 @@ import {
   deleteInstance,
   findInstance,
   setInstanceEnabled,
+  type InstanceHead,
 } from '../../services/instances.js';
 import type { ApiContext } from '../context.js';
 import type {
@@ -42,6 +43,7 @@ import {
   sourceSummaries,
 } from '../read/instances.js';
 import { meterGauges } from '../read/meters.js';
+import { providerDependents, providerUsers } from '../read/secrets.js';
 
 const reasoned = {
   type: 'object',
@@ -77,6 +79,7 @@ const executorCapsSchema: JSONSchema = {
     meterPollSeconds: { type: 'integer', minimum: 30, maximum: 86_400 },
     meterStalenessMinutes: { type: 'integer', minimum: 1, maximum: 10_080 },
     estimatedLimits: { type: 'object', additionalProperties: { type: 'number', minimum: 0 } },
+    invokeTimeoutSeconds: { type: 'integer', minimum: 1, maximum: 3600 },
   },
 };
 
@@ -186,8 +189,10 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     inUseHint?: string;
     /** Runs before the rebuild on reload. */
     beforeReload?: (id: string) => Promise<void>;
-    /** Runs after the rebuild on reload. */
-    afterReload?: () => Promise<void>;
+    /** Runs after the instance was rebuilt by an enable/disable or a reload. */
+    afterRebuild?: (row: InstanceHead) => Promise<void>;
+    /** Runs before a delete; throws to refuse it (a 409 naming who still uses it). */
+    beforeDelete?: (row: InstanceHead) => Promise<void>;
   }): void => {
     const { kind, base, label, role } = spec;
     const load = async (id: string) => {
@@ -205,6 +210,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         const now = clock.now();
         await setInstanceEnabled(db, kind, before.id, req.body.enabled, now);
         await ctx.host.reload(kind, before.id);
+        await spec.afterRebuild?.(before);
         await recordAudit(db, {
           actor: actorOf(req),
           scope: kind,
@@ -227,7 +233,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         const row = await load(req.params.id);
         await spec.beforeReload?.(row.id);
         await ctx.host.reload(kind, row.id);
-        await spec.afterReload?.();
+        await spec.afterRebuild?.(row);
         await recordAudit(db, {
           actor: actorOf(req),
           scope: kind,
@@ -251,6 +257,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
           if (users.length > 0)
             throw conflict(`Still used by ${users.join(', ')}.${spec.inUseHint}`);
         }
+        await spec.beforeDelete?.(row);
         await deleteInstance(db, kind, row.id);
         await ctx.host.reload(kind, row.id);
         await recordAudit(db, {
@@ -606,6 +613,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         kind,
         typeId: row.typeId,
         typeName: type?.displayName ?? row.typeId,
+        typeIcon: type?.icon ?? null,
         name: row.name,
         enabled: row.enabled,
         status: instanceStatus({ enabled: row.enabled, health: row.health, instanceError: error }),
@@ -619,6 +627,12 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       const [row] = await db.select().from(table).where(eq(table.id, id));
       if (!row) throw notFound(kind === 'notifier' ? 'Notifier' : 'Secret provider');
       return row;
+    };
+    /** The summary, with a secret provider's dependents as they are after any rebuild. */
+    const view = async (row: typeof notifiers.$inferSelect): Promise<InstanceSummary> => {
+      if (kind !== 'secret_provider') return summarize(row);
+      const dependents = await providerDependents(ctx, [row.name]);
+      return { ...summarize(row), dependents: dependents.get(row.name) ?? [] };
     };
     const checkName = (name: string): string => {
       const n = nonEmptyName(name);
@@ -635,16 +649,33 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       base,
       label: kind === 'notifier' ? 'Notifier' : 'Secret provider',
       role: admin,
-      view: async (id) => summarize(await load(id)),
-      // Instances resolve their secrets when built: rebuild them against the reloaded provider.
+      view: async (id) => view(await load(id)),
       ...(kind === 'secret_provider'
-        ? { afterReload: () => ctx.host.instantiateAll() }
+        ? {
+            // Instances resolve their secrets when built: rebuild the ones that use this provider.
+            afterRebuild: async (row: InstanceHead) => {
+              await ctx.host.reloadDependentsOf(row.name);
+            },
+            beforeDelete: async (row: InstanceHead) => {
+              const users = await providerUsers(ctx, row.name, row.id);
+              if (users.length > 0)
+                throw conflict(
+                  `Still used by ${users.map((u) => `${u.kind.replace('_', ' ')} "${u.name}"`).join(', ')}. Point their secret://${row.name}/… references at another provider first.`,
+                );
+            },
+          }
         : { inUseHint: '' }),
     });
 
-    app.get(base, viewer, async () =>
-      (await db.select().from(table).orderBy(table.name)).map(summarize),
-    );
+    app.get(base, viewer, async () => {
+      const rows = await db.select().from(table).orderBy(table.name);
+      if (kind !== 'secret_provider') return rows.map(summarize);
+      const dependents = await providerDependents(
+        ctx,
+        rows.map((r) => r.name),
+      );
+      return rows.map((r) => ({ ...summarize(r), dependents: dependents.get(r.name) ?? [] }));
+    });
 
     app.post<{ Body: CreateInstanceRequest }>(
       base,
@@ -672,6 +703,8 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
           .returning();
         if (!row) throw new HttpError(500, 'internal', 'insert failed');
         await ctx.host.reload(kind, row.id);
+        // References to this name that failed before the provider existed resolve now.
+        if (kind === 'secret_provider') await ctx.host.reloadDependentsOf(row.name);
         await recordAudit(db, {
           actor: actorOf(req),
           scope: kind,
@@ -681,7 +714,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
           reason,
           at: now,
         });
-        return reply.code(201).send(summarize(row));
+        return reply.code(201).send(await view(row));
       },
     );
 
@@ -702,13 +735,17 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
           .set({ name, settings, updatedAt: now })
           .where(eq(table.id, before.id));
         await ctx.host.reload(kind, before.id);
+        // After a rename, instances still naming the old provider fail with a secret_error;
+        // nothing rewrites their references.
+        if (kind === 'secret_provider')
+          await ctx.host.reloadDependentsOf([...new Set([before.name, name])]);
         await recordAuditDiff(
           db,
           { actor: actorOf(req), scope: kind, targetId: before.id, reason, at: now },
           { name: before.name, ...prefix('settings', before.settings) },
           { name, ...prefix('settings', settings) },
         );
-        return summarize(await load(before.id));
+        return view(await load(before.id));
       },
     );
   }

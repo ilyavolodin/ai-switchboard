@@ -1,5 +1,5 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import { generatePassword, hashPassword, verifyPassword } from '../../auth/crypto.js';
 import { actorOf, requireRole } from '../../auth/fastify.js';
@@ -11,7 +11,15 @@ import {
   SESSION_COOKIE,
   SESSION_TTL_MS,
 } from '../../auth/sessions.js';
-import { AttemptThrottle } from '../../auth/throttle.js';
+import {
+  AttemptThrottle,
+  emailKey,
+  ipKey,
+  MAX_FAILURES_PER_EMAIL,
+  MAX_FAILURES_PER_IP,
+  MAX_FAILURES_PER_PASSWORD_CHANGE,
+  type ThrottleLimit,
+} from '../../auth/throttle.js';
 import { users } from '../../db/schema.js';
 import { storePassword } from '../../services/users.js';
 import type { ApiContext } from '../context.js';
@@ -66,10 +74,17 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
     me(req.user?.id, req.user?.passwordChangeRequired ?? false),
   );
 
-  const attempts = new AttemptThrottle(clock);
-  const throttled = (key: string): void => {
-    if (attempts.locked(key))
-      throw new HttpError(429, 'too_many_attempts', 'Too many attempts; wait a minute.');
+  // Counted in Postgres, so the limits hold across replicas (a client cannot spread its guesses).
+  const attempts = new AttemptThrottle(db, clock);
+  const throttled = async (reply: FastifyReply, limits: ThrottleLimit[]): Promise<void> => {
+    const decision = await attempts.check(limits);
+    if (decision.allowed) return;
+    void reply.header('Retry-After', String(decision.retryAfterSeconds));
+    const wait =
+      decision.retryAfterSeconds < 60
+        ? `${decision.retryAfterSeconds} seconds`
+        : `${Math.ceil(decision.retryAfterSeconds / 60)} minutes`;
+    throw new HttpError(429, 'too_many_attempts', `Too many attempts; try again in ${wait}.`);
   };
   // Compared against when the email has no password, so a miss costs as long as a wrong password
   // and the response time does not tell which emails have accounts.
@@ -91,9 +106,13 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       },
     },
     async (req, reply) => {
-      const key = req.ip;
-      throttled(key);
       const email = req.body.email.trim().toLowerCase();
+      const byIp = ipKey(req.ip);
+      const byEmail = emailKey(email);
+      await throttled(reply, [
+        { key: byIp, max: MAX_FAILURES_PER_IP },
+        { key: byEmail, max: MAX_FAILURES_PER_EMAIL },
+      ]);
       const [row] = await db
         .select()
         .from(users)
@@ -101,10 +120,12 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       decoy ??= hashPassword(generatePassword());
       const ok = await verifyPassword(req.body.password, row?.passwordHash ?? (await decoy));
       if (!row || !ok) {
-        attempts.fail(key);
+        await attempts.fail([byIp, byEmail]);
         throw new HttpError(401, 'invalid_credentials', 'Email or password is incorrect.');
       }
-      attempts.succeed(key);
+      // The account's counter resets; the address keeps its count, so one known password does
+      // not buy an address fresh guesses at other accounts.
+      await attempts.succeed([byEmail]);
       const token = await createSession(db, row.id, 'password', clock.now());
       void reply.setCookie(SESSION_COOKIE, token, cookieOptions);
       return me(row.id, row.mustChangePassword);
@@ -126,22 +147,22 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
         },
       },
     },
-    async (req) => {
+    async (req, reply) => {
       const user = req.user;
       const token = req.cookies[SESSION_COOKIE];
       if (user?.via !== 'session' || !token)
         throw new HttpError(403, 'forbidden', 'Change a password from a signed-in session.');
       const key = `password:${user.id}`;
-      throttled(key);
+      await throttled(reply, [{ key, max: MAX_FAILURES_PER_PASSWORD_CHANGE }]);
       const [row] = await db.select().from(users).where(eq(users.id, user.id));
       if (!row?.passwordHash)
         throw conflict('This account has no password; ask an admin to set one.');
       if (!(await verifyPassword(req.body.currentPassword, row.passwordHash))) {
-        attempts.fail(key);
+        await attempts.fail([key]);
         // 400, not 401: the session is fine, only the confirmation failed.
         throw new HttpError(400, 'invalid_credentials', 'The current password is incorrect.');
       }
-      attempts.succeed(key);
+      await attempts.succeed([key]);
       const problem = passwordProblem(req.body.newPassword, row.email);
       if (problem) throw badRequest(problem);
       if (req.body.newPassword === req.body.currentPassword)

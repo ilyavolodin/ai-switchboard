@@ -20,7 +20,8 @@ import { NpmSearch } from './NpmSearch.js';
  * Plugins: the Installed tab (versions, types, capabilities, health), Browse npm (packages that
  * follow the naming convention, with the reviewed badge), and the admin-only Add plugin flow that
  * shows a manifest's capabilities and compatibility before anything is installed. An installed
- * plugin is loaded at once; only upgrading or removing a loaded one waits for a restart.
+ * plugin is loaded at once and a removed one unloaded at once; only upgrading a loaded one waits
+ * for a restart.
  */
 export function Plugins() {
   const { tab } = useParams();

@@ -29,9 +29,9 @@ describe('app shell', () => {
     renderApp('/');
     expect(await screen.findByLabelText('11 processes')).toBeInTheDocument();
     expect(await screen.findByLabelText('2 awaiting approval')).toBeInTheDocument();
-    expect(
-      await screen.findByRole('img', { name: 'a plugin needs attention' }),
-    ).toBeInTheDocument();
+    // Never colour without a word: the plugins badge reads "<n> to fix".
+    const trouble = await screen.findByLabelText(/plugins? needs? attention/);
+    expect(trouble).toHaveTextContent(/^\d+ to fix$/);
     expect(screen.getByText('ilya@lola.com')).toBeInTheDocument();
     expect(screen.getByText('Operator')).toBeInTheDocument();
   });

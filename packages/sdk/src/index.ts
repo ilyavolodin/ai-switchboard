@@ -6,7 +6,12 @@ export type * from './types/notifier.js';
 export type * from './types/context.js';
 export { dedupeKey } from './types/events.js';
 
-export { definePlugin, isPluginDefinition, validatePlugin } from './plugin.js';
+export {
+  definePlugin,
+  isPluginDefinition,
+  validatePlugin,
+  MAX_INVOKE_TIMEOUT_SECONDS,
+} from './plugin.js';
 export type { PluginDefinition, PluginKind, PluginSpec } from './plugin.js';
 
 export { createHttpClient, hostMatches, makeResponse, parseRetryAfter } from './http.js';
@@ -58,5 +63,14 @@ export type {
   CompiledEventType,
   MappedEvent,
 } from './custom-events.js';
+
+export {
+  ICON_NAMES,
+  ICON_DATA_URI_PREFIX,
+  MAX_ICON_DATA_URI_LENGTH,
+  isIconName,
+  iconProblem,
+} from './icons.js';
+export type { IconName } from './icons.js';
 
 export { SDK_VERSION, SDK_MAJOR } from './version.js';

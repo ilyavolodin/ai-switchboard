@@ -1,3 +1,4 @@
+import { iconProblem } from './icons.js';
 import { isValidSchema, validateAgainst } from './schema.js';
 import type { Capabilities, JSONSchema } from './types/common.js';
 import type { ExecutorType } from './types/executor.js';
@@ -50,6 +51,9 @@ export function isPluginDefinition(value: unknown): value is PluginDefinition {
   );
 }
 
+/** The longest invoke timeout the core honours, in seconds (since SDK 1.3). */
+export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;
+
 const KEBAB = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 const EVENT_TYPE = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$/;
 const FLAT_TYPES = new Set(['string', 'number', 'integer', 'boolean']);
@@ -88,6 +92,11 @@ export function validatePlugin(plugin: PluginDefinition): string[] {
   if (plugin.displayName.trim() === '') errors.push('plugin displayName is required');
 
   const seen = new Set<string>();
+  const checkIcon = (where: string, icon: string | undefined): void => {
+    if (icon === undefined) return;
+    const problem = iconProblem(icon);
+    if (problem !== null) errors.push(`${where}: ${problem}`);
+  };
   const unique = (kind: PluginKind, id: string): void => {
     if (!KEBAB.test(id)) errors.push(`${kind} "${id}": id must be kebab-case`);
     const key = `${kind}:${id}`;
@@ -97,6 +106,7 @@ export function validatePlugin(plugin: PluginDefinition): string[] {
 
   for (const s of plugin.sources) {
     unique('source', s.id);
+    checkIcon(`source ${s.id}`, s.icon);
     checkSchema(errors, `source ${s.id} settingsSchema`, s.settingsSchema);
     if (!['push', 'pull', 'both'].includes(s.mode)) errors.push(`source ${s.id}: invalid mode`);
     const types = new Set<string>();
@@ -123,6 +133,20 @@ export function validatePlugin(plugin: PluginDefinition): string[] {
 
   for (const e of plugin.executors) {
     unique('executor', e.id);
+    checkIcon(`executor ${e.id}`, e.icon);
+    if (
+      e.invokeTimeoutSeconds !== undefined &&
+      !(
+        typeof e.invokeTimeoutSeconds === 'number' &&
+        Number.isFinite(e.invokeTimeoutSeconds) &&
+        e.invokeTimeoutSeconds >= 1 &&
+        e.invokeTimeoutSeconds <= MAX_INVOKE_TIMEOUT_SECONDS
+      )
+    ) {
+      errors.push(
+        `executor ${e.id}: invokeTimeoutSeconds must be a number from 1 to ${MAX_INVOKE_TIMEOUT_SECONDS}`,
+      );
+    }
     checkSchema(errors, `executor ${e.id} settingsSchema`, e.settingsSchema);
     checkSchema(errors, `executor ${e.id} targetSchema`, e.targetSchema);
     checkSchema(errors, `executor ${e.id} inputSchema`, e.inputSchema);
@@ -150,10 +174,12 @@ export function validatePlugin(plugin: PluginDefinition): string[] {
 
   for (const n of plugin.notifiers) {
     unique('notifier', n.id);
+    checkIcon(`notifier ${n.id}`, n.icon);
     checkSchema(errors, `notifier ${n.id} settingsSchema`, n.settingsSchema);
   }
   for (const p of plugin.secretProviders) {
     unique('secret_provider', p.id);
+    checkIcon(`secret provider ${p.id}`, p.icon);
     checkSchema(errors, `secret provider ${p.id} settingsSchema`, p.settingsSchema);
   }
   return errors;

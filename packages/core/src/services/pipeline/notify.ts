@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 import type { Event, NotificationMessage } from '@ai-switchboard/sdk';
 
@@ -45,20 +45,29 @@ export async function notifyProcess(ctx: Ctx, n: ProcessNotification): Promise<v
   const targets = n.process.document.notify.filter((x) => x.on.includes(n.on));
   if (targets.length === 0) return;
   const now = ctx.clock.now();
+  const title = `${n.process.name}: ${n.on}`;
   for (const target of targets) {
+    const base = {
+      notifierId: target.notifierId,
+      on: n.on,
+      processId: n.process.id,
+      batchId: n.batchId,
+      runId: n.runId ?? null,
+      title,
+      at: now,
+    };
+    // A run's notification is claimed (unique per run, notifier and outcome) before anything
+    // else, so a re-delivered finish job never renders or sends it twice. A crash between the
+    // claim and the send leaves it `sending`: at most once, never twice.
+    let claimedId: number | null = null;
     if (n.runId) {
-      // Idempotent: a re-delivered finish job does not notify twice.
-      const [sent] = await ctx.db
-        .select({ id: notificationLog.id })
-        .from(notificationLog)
-        .where(
-          and(
-            eq(notificationLog.runId, n.runId),
-            eq(notificationLog.notifierId, target.notifierId),
-            eq(notificationLog.on, n.on),
-          ),
-        );
-      if (sent) continue;
+      const [claimed] = await ctx.db
+        .insert(notificationLog)
+        .values({ ...base, text: '', status: 'sending', error: null })
+        .onConflictDoNothing()
+        .returning({ id: notificationLog.id });
+      if (!claimed) continue;
+      claimedId = claimed.id;
     }
     const rendered = await renderTemplate(
       ctx.engine,
@@ -66,7 +75,6 @@ export async function notifyProcess(ctx: Ctx, n: ProcessNotification): Promise<v
       { process: processView(n.process), events: n.events, status: n.on, ...n.context },
       evalFunctions(ctx, n.events, now),
     );
-    const title = `${n.process.name}: ${n.on}`;
     const text =
       rendered.error !== undefined ? `(template error: ${rendered.error})` : rendered.text;
     const { status, error } = await send(
@@ -82,18 +90,12 @@ export async function notifyProcess(ctx: Ctx, n: ProcessNotification): Promise<v
       },
       ctx.runtime.instanceError(target.notifierId) ?? 'notifier unavailable',
     );
-    await ctx.db.insert(notificationLog).values({
-      notifierId: target.notifierId,
-      on: n.on,
-      processId: n.process.id,
-      batchId: n.batchId,
-      runId: n.runId ?? null,
-      title,
-      text: text.slice(0, 4000),
-      status,
-      error,
-      at: now,
-    });
+    const outcome = { text: text.slice(0, 4000), status, error };
+    if (claimedId !== null) {
+      await ctx.db.update(notificationLog).set(outcome).where(eq(notificationLog.id, claimedId));
+    } else {
+      await ctx.db.insert(notificationLog).values({ ...base, ...outcome });
+    }
   }
 }
 

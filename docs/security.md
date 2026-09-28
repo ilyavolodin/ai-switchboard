@@ -15,7 +15,15 @@ people who deploy and operate it.
 - **Local passwords** work alongside OIDC (or without it). An account can have a password, an
   OIDC identity, or both. Passwords are hashed with scrypt; the rules are at least 12 characters,
   not the account's email, and not one of the most common passwords. Failed sign-ins and failed
-  password confirmations are throttled (five misses lock that client or account out for a minute).
+  password confirmations are throttled in Postgres (`login_attempts`), so the limits hold across
+  replicas: within any 5 minutes, 10 failures from one client address, or 5 against one account
+  (the email, trimmed and lower-cased), refuse further sign-ins from that address or to that
+  account with 429 `too_many_attempts` and a `Retry-After` header, even when the password is
+  right. Five failed password confirmations do the same for that user. A successful sign-in
+  clears the account's count, not the address's. The table stores `sha256` of the email, never
+  the address, and the nightly `auth.prune` job drops attempts older than an hour. A sign-in for
+  an email with no password still pays the scrypt cost, so the response time does not tell
+  which emails have accounts.
 - **Temporary passwords.** A password an admin sets (Settings › Users: "Set password" / "Reset
   password", with a reason) and the generated bootstrap password are temporary. The session that
   signs in with one can only read `/auth/me`, change the password or sign out; every other route
@@ -37,7 +45,7 @@ people who deploy and operate it.
 
   | Role       | Can                                                                         |
   | ---------- | --------------------------------------------------------------------------- |
-  | `viewer`   | Read everything                                                             |
+  | `viewer`   | Read everything (users: email and role only, via `GET /users/directory`)    |
   | `operator` | Also sources, executors, processes, approvals, manual runs, replays, export |
   | `admin`    | Also plugins, users, secret providers, notifiers, settings, apply           |
 

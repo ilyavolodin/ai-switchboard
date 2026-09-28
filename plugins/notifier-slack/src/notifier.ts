@@ -209,6 +209,7 @@ function createSlackNotifier(settings: SlackSettings, ctx: PluginContext): Notif
 export const slackNotifierType: NotifierType = {
   id: 'slack',
   displayName: 'Slack',
+  icon: 'alert',
   description: 'Posts run outcomes and system alerts to Slack with Block Kit.',
   settingsSchema,
   create: (settings: Settings, ctx: PluginContext) =>

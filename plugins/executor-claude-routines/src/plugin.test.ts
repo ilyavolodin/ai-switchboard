@@ -114,6 +114,12 @@ runConformance(
   { describe, it },
 );
 
+describe('claude-routines: invoke timeout', () => {
+  it('allows the one fire request (30 s HTTP timeout) to answer', () => {
+    expect(routinesExecutorType.invokeTimeoutSeconds).toBe(60);
+  });
+});
+
 describe('claude-routines: invoke', () => {
   it('fires the routine with the trigger token, version and beta headers', async () => {
     const { executor, calls } = setup();

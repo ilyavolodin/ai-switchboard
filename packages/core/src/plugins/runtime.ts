@@ -38,6 +38,11 @@ export interface LiveExecutor {
   meters: MeterSpec[];
   trackingFor(target: unknown): TrackingMode;
   idempotentFor(target: unknown): boolean;
+  /**
+   * The type's invoke timeout for `target`, in seconds: `invokeTimeoutFor(target)`, else
+   * `invokeTimeoutSeconds`, else undefined (the core then applies the instance cap or its default).
+   */
+  invokeTimeoutFor(target: unknown): number | undefined;
   /** Resolved secret values of the instance's settings, redacted from what the backend returns. */
   secretValues?: string[];
 }
@@ -91,4 +96,22 @@ export interface PluginRuntime {
     kind: 'exception' | 'invalid_event' | 'invalid_usage',
     detail?: string,
   ): void;
+}
+
+function positiveSeconds(n: unknown): number | undefined {
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * `LiveExecutor.invokeTimeoutFor` for a type: the per-target value when the type declares one
+ * and it is a positive number (a throw counts as no value), else the type's default.
+ */
+export function typeInvokeTimeout(type: ExecutorType, target: unknown): number | undefined {
+  let perTarget: unknown;
+  try {
+    perTarget = type.invokeTimeoutFor?.(target);
+  } catch {
+    perTarget = undefined;
+  }
+  return positiveSeconds(perTarget) ?? positiveSeconds(type.invokeTimeoutSeconds);
 }

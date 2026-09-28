@@ -1,3 +1,4 @@
+import type { IconName as SdkIconName } from '@ai-switchboard/sdk/icons';
 import type { ReactNode, SVGProps } from 'react';
 
 /**
@@ -218,7 +219,8 @@ const PATHS = {
       <path d="M2.5 14a5.5 5.5 0 0 1 11 0" />
     </>
   ),
-} satisfies Record<string, ReactNode>;
+  // Exactly the SDK's `ICON_NAMES`, so a plugin-declared icon name always has a drawing here.
+} satisfies Record<SdkIconName, ReactNode>;
 
 /** Every icon name. */
 export type IconName = keyof typeof PATHS;

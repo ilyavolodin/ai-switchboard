@@ -1,26 +1,24 @@
 /**
- * Helpers shared by the source and executor screens: type icons, secret provider ids for
+ * Helpers shared by the source and executor screens: secret provider ids for
  * `secret://` references, the colours of per-type charts, and small form-value utilities.
  */
 import type { InstanceSummary, StatusTone } from '@ai-switchboard/core/contract';
-
-import type { IconName } from '../components/Icon.js';
 
 /** The `<provider>` segment of a secret reference must be a plain id. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 
 /**
  * Provider ids for `secret://<provider>/<name>` inputs: the enabled secret-provider instances by
- * name (the core resolves through the instance named `<provider>`). `undefined` when none are
- * configured, so the input falls back to its defaults.
+ * name (the core resolves through the instance named `<provider>`). `undefined` while the list
+ * is still loading; an empty array when none are configured (the input then says so).
  */
 export function secretProviderIds(instances: InstanceSummary[] | undefined): string[] | undefined {
-  const ids = (instances ?? [])
+  if (instances === undefined) return undefined;
+  const ids = instances
     .filter((i) => i.enabled)
     .map((i) => (SEGMENT.test(i.name) ? i.name : i.typeId))
     .filter((id) => SEGMENT.test(id));
-  const unique = [...new Set(ids)];
-  return unique.length > 0 ? unique : undefined;
+  return [...new Set(ids)];
 }
 
 /**
@@ -35,22 +33,6 @@ export function instanceForProvider(
     instances?.find((i) => i.name === provider) ??
     instances?.find((i) => !SEGMENT.test(i.name) && i.typeId === provider)
   );
-}
-
-const TYPE_ICONS: Record<string, IconName> = {
-  github: 'pr',
-  linear: 'issue',
-  datadog: 'alert',
-  webhook: 'webhook',
-  'poll-http': 'refresh',
-  'claude-routines': 'run',
-  'github-actions': 'play',
-  http: 'link',
-};
-
-/** The icon for a plugin type (falls back to the area icon). */
-export function typeIcon(typeId: string, kind: 'source' | 'executor'): IconName {
-  return TYPE_ICONS[typeId] ?? (kind === 'source' ? 'sources' : 'executors');
 }
 
 /** Series colours for "by type" charts, in order. */

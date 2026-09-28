@@ -17,7 +17,13 @@ import {
   type GateDecisionRecord,
 } from '../db/schema.js';
 import type { Deps } from '../deps.js';
-import { isTerminalRunStatus, type EventStage, type RunStatusValue } from '../domain/status.js';
+import {
+  isTerminalRunStatus,
+  stepTone,
+  type EventStage,
+  type RunStatusValue,
+  type StepStatus,
+} from '../domain/status.js';
 
 import { isUuid } from './pipeline/errors.js';
 import { relatedBatchIds } from './pipeline/load.js';
@@ -32,6 +38,20 @@ import { relatedBatchIds } from './pipeline/load.js';
 type EventRow = typeof events.$inferSelect;
 
 const MAX_EVENTS = 200;
+
+const STEP_TITLE: Record<StepStatus, string> = {
+  started: 'started (in progress, or in doubt if the run moved on)',
+  ok: 'ok',
+  error: 'error',
+  skipped: 'skipped',
+  uncertain: 'uncertain (in doubt, not repeated)',
+};
+
+const NOTE_SUFFIX: Record<'sending' | 'sent' | 'error', string> = {
+  sending: ': claimed, delivery not confirmed',
+  sent: '',
+  error: ': failed',
+};
 
 const KIND_ORDER: TraceEntryKind[] = [
   'event',
@@ -350,8 +370,8 @@ async function buildTrace(
     entries.push({
       at: iso(s.at),
       kind: 'step',
-      tone: s.status === 'ok' ? 'ok' : s.status === 'error' ? 'error' : 'off',
-      title: `${s.phase} step ${s.action} on ${s.providerId}: ${s.status}`,
+      tone: stepTone(s.status),
+      title: `${s.phase} step ${s.action} on ${s.providerId}: ${STEP_TITLE[s.status]}`,
       ...(s.error ? { detail: s.error } : {}),
       data: { args: s.args },
       runId: s.runId,
@@ -362,8 +382,8 @@ async function buildTrace(
     entries.push({
       at: iso(n.at),
       kind: 'notification',
-      tone: n.status === 'sent' ? 'ok' : 'error',
-      title: `Notified ${n.notifierId} (${n.on})${n.status === 'error' ? ': failed' : ''}`,
+      tone: n.status === 'sent' ? 'ok' : n.status === 'sending' ? 'warn' : 'error',
+      title: `Notified ${n.notifierId} (${n.on})${NOTE_SUFFIX[n.status]}`,
       detail: n.error ?? n.text.slice(0, 200),
       ...(n.batchId ? { batchId: n.batchId } : {}),
       ...(n.runId ? { runId: n.runId } : {}),

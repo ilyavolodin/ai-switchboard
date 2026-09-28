@@ -1,3 +1,5 @@
+import { MAX_INVOKE_TIMEOUT_SECONDS } from '@ai-switchboard/sdk';
+
 import { JOBS, errorMessage, type Ctx } from './context.js';
 import { dispatchBatch } from './dispatch.js';
 import { pollSource } from './ingest.js';
@@ -8,6 +10,13 @@ import { readMeters } from './meters.js';
 import { prune } from './retention.js';
 import { deadlineRun, finishRun, pollRun, recoverRuns } from './runs.js';
 import { schedulerTick } from './scheduler.js';
+
+/**
+ * Dispatch and invoke jobs may call a plugin's invoke, which can legitimately run up to the
+ * longest invoke timeout plus before steps. Expiring them sooner would make the queue redeliver
+ * a live job (harmless, since the attempt is claimed, but noisy and misleading).
+ */
+const INVOKE_JOB_EXPIRE_SECONDS = MAX_INVOKE_TIMEOUT_SECONDS + 600;
 import { materialiseStats } from './stats.js';
 
 /** Queue handlers and schedules. Every handler takes ids and is idempotent. */
@@ -43,12 +52,12 @@ export async function registerWorkers(ctx: Ctx): Promise<WorkerHandle> {
   await q.work(
     JOBS.dispatch,
     withId('batchId', (v) => dispatchBatch(ctx, v)),
-    { concurrency: 4 },
+    { concurrency: 4, expireInSeconds: INVOKE_JOB_EXPIRE_SECONDS },
   );
   await q.work(
     JOBS.invoke,
     withId('runId', (v) => attemptInvoke(ctx, v)),
-    { concurrency: 4 },
+    { concurrency: 4, expireInSeconds: INVOKE_JOB_EXPIRE_SECONDS },
   );
   await q.work(
     JOBS.poll,

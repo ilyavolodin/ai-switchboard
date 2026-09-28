@@ -16,6 +16,10 @@ import { toMs } from '../../lib/format.js';
 export const DEFAULT_METER_POLL_SECONDS = 300;
 export const MIN_METER_POLL_SECONDS = 30;
 
+/** Without a cap or a type value, the core waits 300 s for `invoke` to answer (1–3600 s). */
+export const DEFAULT_INVOKE_TIMEOUT_SECONDS = 300;
+export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;
+
 /** One line under a type in the "Add executor" picker. */
 export function describeExecutorType(t: PluginTypeDTO): string {
   const meters = t.meters?.length ?? 0;

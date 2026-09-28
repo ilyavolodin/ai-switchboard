@@ -28,7 +28,7 @@ export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
       const n = p ? instanceCount(p) : 0;
       return {
         title: `Remove ${v.pluginName}?`,
-        consequence: `It is removed from plugins.lock.json now and unloaded on the next restart.${
+        consequence: `It is unloaded now, and every replica removes its copy within a minute.${
           n > 0
             ? ` Its ${n} instance${n === 1 ? '' : 's'} stay configured but are held until it is back.`
             : ''
@@ -37,7 +37,7 @@ export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
         danger: true,
       };
     },
-    { successMessage: 'Removed · applies on the next restart' },
+    { successMessage: 'Removed · replicas follow within a minute' },
   );
 
   const failing = plugins.filter((p) => p.status !== 'loaded');

@@ -2,14 +2,14 @@ import type { SourceSummary } from '@ai-switchboard/core/contract';
 import { Link } from 'react-router';
 
 import { useEnableSource, useSourceStats } from '../../api/index.js';
-import { Icon } from '../../components/Icon.js';
+import { TypeIcon } from '../../components/TypeIcon.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { cx } from '../../lib/cx.js';
 import { formatCount } from '../../lib/format.js';
-import { cardTone, typeIcon } from '../../lib/instances.js';
+import { cardTone } from '../../lib/instances.js';
 import styles from './instanceCard.module.css';
 import { enableSourcePrompt, hourlyTotals, modeLabel, typeSplit } from './sourceModel.js';
 
@@ -31,7 +31,7 @@ export function SourceCard({ source }: { source: SourceSummary }) {
     <article className={styles.card} data-tone={tone ?? undefined} aria-label={source.name}>
       <div className={styles.head}>
         <span className={styles.iconTile}>
-          <Icon name={typeIcon(source.typeId, 'source')} />
+          <TypeIcon icon={source.typeIcon} kind="source" />
         </span>
         <span className={styles.titles}>
           <Link to={`/sources/${source.id}`} className={styles.name}>

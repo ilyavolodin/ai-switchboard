@@ -148,6 +148,18 @@ describe('plugin types', () => {
       .find((t) => t.typeId === 'test-source');
     expect(Object.keys(type?.settingsSchema.properties ?? {})).toEqual(['secret', 'org']);
   });
+
+  it('carries the icon a type declares, on the type and on instance summaries', async () => {
+    const res = await h.request('GET', '/api/v1/plugin-types?kind=source', {
+      cookie: h.adminCookie,
+    });
+    const type = res
+      .json<{ typeId: string; icon?: string }[]>()
+      .find((t) => t.typeId === 'test-source');
+    expect(type?.icon).toBe('webhook');
+    const created = await createSource('Icon check');
+    expect(created.typeIcon).toBe('webhook');
+  });
 });
 
 describe('sources and executors', () => {

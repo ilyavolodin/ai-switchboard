@@ -35,7 +35,7 @@ export function Rail({ onSignOut }: { onSignOut: () => void }) {
   const about = useAbout();
 
   const pending = status.data?.pendingApprovals ?? 0;
-  const pluginTrouble = (plugins.data ?? []).some((p) => p.status !== 'loaded');
+  const pluginTrouble = (plugins.data ?? []).filter((p) => p.status !== 'loaded').length;
   const replicas = about.data?.replicas.filter((r) => r.live).length;
 
   return (
@@ -72,13 +72,18 @@ export function Rail({ onSignOut }: { onSignOut: () => void }) {
                 {pending}
               </span>
             )}
-            {item.to === '/plugins' && pluginTrouble && (
+            {item.to === '/plugins' && pluginTrouble > 0 && (
               <span
-                className={styles.dot}
-                style={{ background: 'var(--st-warn)' }}
-                role="img"
-                aria-label="a plugin needs attention"
-              />
+                className={styles.badge}
+                title={`${pluginTrouble} plugin${pluginTrouble === 1 ? ' needs' : 's need'} attention`}
+                aria-label={`${pluginTrouble} plugin${pluginTrouble === 1 ? ' needs' : 's need'} attention`}
+              >
+                {pluginTrouble}
+                <span className={styles.badgeWord} aria-hidden="true">
+                  {' '}
+                  to fix
+                </span>
+              </span>
             )}
           </NavLink>
         ))}

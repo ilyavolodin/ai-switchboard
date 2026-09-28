@@ -374,6 +374,7 @@ function createGithubActionsExecutor(
 export const githubActionsExecutorType: ExecutorType = {
   id: 'github-actions',
   displayName: 'GitHub Actions',
+  icon: 'play',
   description:
     'Dispatches a workflow_dispatch workflow and polls the run, correlated by a switchboard_run_id input.',
   settingsSchema,
@@ -387,6 +388,9 @@ export const githubActionsExecutorType: ExecutorType = {
   ],
   tracking: 'poll',
   idempotentInvoke: false,
+  // A token exchange, the dispatch and a correlation lookup, each bounded by the HttpClient's
+  // 30 s timeout.
+  invokeTimeoutSeconds: 120,
   usage: USAGE_DIMENSIONS,
   meters: METERS,
   create: (settings, ctx) => createGithubActionsExecutor(readSettings(settings), ctx),

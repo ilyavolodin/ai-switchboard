@@ -140,6 +140,20 @@ runConformance(
   { describe, it },
 );
 
+describe('github actions', () => {
+  it('declares label and ready-for-review changes idempotent, comments not', () => {
+    const idempotent = Object.fromEntries(
+      (githubSource.actions ?? []).map((a) => [a.id, a.idempotent === true]),
+    );
+    expect(idempotent).toEqual({
+      addLabel: true,
+      removeLabel: true,
+      markReady: true,
+      comment: false,
+    });
+  });
+});
+
 describe('github manifest', () => {
   it('validates and calls only api.github.com', () => {
     expect(validatePlugin(plugin)).toEqual([]);

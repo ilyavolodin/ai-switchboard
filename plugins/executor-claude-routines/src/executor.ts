@@ -148,6 +148,7 @@ function createRoutinesExecutor(settings: RoutinesSettings, ctx: PluginContext):
 export const routinesExecutorType: ExecutorType = {
   id: 'claude-routines',
   displayName: 'Claude Routines',
+  icon: 'run',
   description:
     "Fires a Claude Code routine through its API trigger. The routine's completion step posts a signed callback.",
   settingsSchema,
@@ -162,6 +163,8 @@ export const routinesExecutorType: ExecutorType = {
   // The Routines API has no run listing, so a run can only be settled by its callback.
   tracking: 'callback',
   idempotentInvoke: false,
+  // One fire request, bounded by the HttpClient's 30 s timeout.
+  invokeTimeoutSeconds: 60,
   usage: USAGE_DIMENSIONS,
   meters: METERS,
   metersFor,

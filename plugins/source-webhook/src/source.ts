@@ -141,6 +141,7 @@ export function instanceEventTypes(settings: Settings): EventTypeSpec[] {
 export const webhookSource: SourceType = {
   id: SOURCE_ID,
   displayName: 'Webhook',
+  icon: 'webhook',
   description:
     'Receive any JSON (or form-encoded) webhook. You name the event types and write a JSONata mapping from the delivery to type, artifact and attributes.',
   mode: 'push',

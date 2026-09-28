@@ -118,6 +118,7 @@ function createDatadogSource(settings: Settings, ctx: PluginContext): Source {
 export const datadogSource: SourceType = {
   id: 'datadog',
   displayName: 'Datadog',
+  icon: 'alert',
   description:
     'Datadog monitor notifications through a webhook integration, authenticated by a shared-secret header.',
   mode: 'push',

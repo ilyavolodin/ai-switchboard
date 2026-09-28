@@ -292,6 +292,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'GET /settings': () => f.settings,
     'PUT /settings': reasoned(() => f.settings),
     'GET /users': () => f.users,
+    'GET /users/directory': () => f.users.map(({ id, email, role }) => ({ id, email, role })),
     'POST /users': reasoned(() => f.users[1]),
     'PUT /users/:id': reasoned(() => f.users[1]),
     'DELETE /users/:id': reasoned(() => mockStatus(204)),

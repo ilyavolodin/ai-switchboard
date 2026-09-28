@@ -28,6 +28,7 @@ export const TEST_VAULT: Record<string, string> = {
 export const testSourceType: SourceType = {
   id: 'test-source',
   displayName: 'Test source',
+  icon: 'webhook',
   mode: 'push',
   settingsSchema: {
     type: 'object',
