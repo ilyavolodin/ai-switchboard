@@ -19,6 +19,7 @@ export const COUNTERS = [
   'switchboard.runs',
   'switchboard.run.usage',
   'switchboard.plugin.errors',
+  'switchboard.instance.rebuilds',
   'switchboard.heartbeat',
 ] as const;
 export type CounterName = (typeof COUNTERS)[number];

@@ -37,6 +37,11 @@ export interface CoreConfig {
   npmRegistry: string;
   /** How often each replica installs plugins recorded in the database but missing locally. */
   pluginSyncSeconds: number;
+  /**
+   * How often each replica rebuilds the source, executor, notifier and secret provider instances
+   * changed on another replica (`SWITCHBOARD_INSTANCE_SYNC_SECONDS`).
+   */
+  instanceSyncSeconds: number;
   /** Run pipeline workers and the scheduler in this process (false for an API-only replica). */
   workers: boolean;
   /** Trust X-Forwarded-* (behind an ingress or load balancer). */
@@ -99,6 +104,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
       : 'https://registry.npmjs.org'
     ).replace(/\/+$/, ''),
     pluginSyncSeconds: Math.max(Number(env.SWITCHBOARD_PLUGIN_SYNC_SECONDS ?? 60) || 60, 5),
+    instanceSyncSeconds: Math.max(Number(env.SWITCHBOARD_INSTANCE_SYNC_SECONDS ?? 10) || 10, 1),
     workers: bool(env.SWITCHBOARD_WORKERS, true),
     trustProxy: bool(env.SWITCHBOARD_TRUST_PROXY, false),
     secureCookies: bool(env.SWITCHBOARD_SECURE_COOKIES, publicUrl.startsWith('https://')),

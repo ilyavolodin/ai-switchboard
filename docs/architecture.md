@@ -163,6 +163,20 @@ timeout, so a rollout loses time, not work. A run left `invoking` past its attem
 (its `before` steps' budget, the executor's invoke timeout and a margin) becomes `uncertain`,
 which tracking then settles; steps resume from their journal.
 
+The live plugin objects (one per source, executor, notifier and secret provider instance, holding
+resolved secrets) are the one thing each replica builds for itself. The replica that handles a
+change rebuilds the instance immediately; every write that changes what an instance is built from
+(name, settings, enabled) or asks for a reload increments the row's `config_version`. Each
+replica runs a reconcile pass at boot and every `SWITCHBOARD_INSTANCE_SYNC_SECONDS` (10 s, a
+per-replica timer, not a queue job, since every replica must do it): one `id, config_version`
+query per instance table, compared with the version it last built, then it builds new rows,
+rebuilds changed ones, drops deleted ones and rebuilds the dependents of any secret provider that
+changed. Only changed rows are read in full. The replica that made a change recorded the version
+it built, and instances with a rebuild in flight are skipped, so nothing is built twice; build
+tickets keep an older build from replacing a newer one. Caps and target defaults are read from
+the row where they are used, so they need no rebuild. Plugin installs converge through a
+separate sync pass (`SWITCHBOARD_PLUGIN_SYNC_SECONDS`).
+
 Each replica emits `switchboard.heartbeat` every 30 seconds and records itself for the About
 panel (`GET /api/v1/about`). Two replicas are the recommended minimum for zero-downtime rollouts.
 Set `SWITCHBOARD_WORKERS=false` for replicas that should serve the API and ingress only.

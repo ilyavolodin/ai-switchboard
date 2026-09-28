@@ -14,6 +14,7 @@ import {
 } from '../db/schema.js';
 import type { ProcessDocument } from '../domain/process.js';
 import { recordAudit } from './audit.js';
+import { nextConfigVersion } from './instances.js';
 import { getSettings, putSettings } from './settings.js';
 
 /**
@@ -289,7 +290,10 @@ export async function applyConfiguration(
               );
               continue;
             }
-            await tx.update(table).set(values).where(eq(table.id, row.id));
+            await tx
+              .update(table)
+              .set({ ...values, configVersion: nextConfigVersion(table) })
+              .where(eq(table.id, row.id));
             changes.push({ kind, name: spec.name, action: 'update' });
             await audit(kind, row.id, 'applied', after);
           }

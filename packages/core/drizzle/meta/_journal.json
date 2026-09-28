@@ -50,6 +50,13 @@
       "when": 1790553687245,
       "tag": "0006_step_journal_invoke_deadline",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790600929058,
+      "tag": "0007_instance_config_version",
+      "breakpoints": true
     }
   ]
 }

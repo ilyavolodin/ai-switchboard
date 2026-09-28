@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 
 import type { DbOrTx } from '../db/client.js';
 import { executors, notifiers, secretProviders, sources } from '../db/schema.js';
@@ -33,6 +33,15 @@ export async function findInstance(
   return row;
 }
 
+/**
+ * `config_version + 1` for an instance table: set it in every write that changes what the plugin
+ * host builds the live object from (name, settings, enabled), so every replica rebuilds it on its
+ * next reconcile pass.
+ */
+export function nextConfigVersion(t: (typeof TABLES)[InstanceKind]): SQL {
+  return sql`${t.configVersion} + 1`;
+}
+
 export async function setInstanceEnabled(
   db: DbOrTx,
   kind: InstanceKind,
@@ -41,7 +50,27 @@ export async function setInstanceEnabled(
   now: Date,
 ): Promise<void> {
   const t = TABLES[kind];
-  await db.update(t).set({ enabled, updatedAt: now }).where(eq(t.id, id));
+  await db
+    .update(t)
+    .set({ enabled, updatedAt: now, configVersion: nextConfigVersion(t) })
+    .where(eq(t.id, id));
+}
+
+/**
+ * Ask every replica to rebuild an instance (an explicit reload, e.g. after a secret rotated in
+ * the backend): the version bump makes each replica's reconcile pass rebuild it, while the replica
+ * that handles the request rebuilds it at once.
+ */
+export async function requestInstanceReload(
+  db: DbOrTx,
+  kind: InstanceKind,
+  id: string,
+): Promise<void> {
+  const t = TABLES[kind];
+  await db
+    .update(t)
+    .set({ configVersion: nextConfigVersion(t) })
+    .where(eq(t.id, id));
 }
 
 export async function deleteInstance(db: DbOrTx, kind: InstanceKind, id: string): Promise<void> {

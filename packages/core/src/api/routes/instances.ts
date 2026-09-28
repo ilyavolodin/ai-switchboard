@@ -13,6 +13,8 @@ import {
   clearExecutorHealth,
   deleteInstance,
   findInstance,
+  nextConfigVersion,
+  requestInstanceReload,
   setInstanceEnabled,
   type InstanceHead,
 } from '../../services/instances.js';
@@ -232,6 +234,8 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         const reason = requireReason(req.body);
         const row = await load(req.params.id);
         await spec.beforeReload?.(row.id);
+        // Bump the version so the other replicas rebuild it too (secret rotation relies on it).
+        await requestInstanceReload(db, kind, row.id);
         await ctx.host.reload(kind, row.id);
         await spec.afterRebuild?.(row);
         await recordAudit(db, {
@@ -387,7 +391,13 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       const now = clock.now();
       await db
         .update(sources)
-        .set({ name, settings, caps: requestedCaps, updatedAt: now })
+        .set({
+          name,
+          settings,
+          caps: requestedCaps,
+          updatedAt: now,
+          configVersion: nextConfigVersion(sources),
+        })
         .where(eq(sources.id, before.id));
       await ctx.host.reload('source', before.id);
       let caps: Record<string, unknown>;
@@ -403,7 +413,13 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       } catch (err) {
         await db
           .update(sources)
-          .set({ name: before.name, settings: before.settings, caps: before.caps })
+          .set({
+            name: before.name,
+            settings: before.settings,
+            caps: before.caps,
+            updatedAt: now,
+            configVersion: nextConfigVersion(sources),
+          })
           .where(eq(sources.id, before.id));
         await ctx.host.reload('source', before.id);
         throw err;
@@ -542,7 +558,14 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       const now = clock.now();
       await db
         .update(executors)
-        .set({ name, settings, caps, targetDefaults, updatedAt: now })
+        .set({
+          name,
+          settings,
+          caps,
+          targetDefaults,
+          updatedAt: now,
+          configVersion: nextConfigVersion(executors),
+        })
         .where(eq(executors.id, before.id));
       await ctx.host.reload('executor', before.id);
       await recordAuditDiff(
@@ -732,7 +755,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         const now = clock.now();
         await db
           .update(table)
-          .set({ name, settings, updatedAt: now })
+          .set({ name, settings, updatedAt: now, configVersion: nextConfigVersion(table) })
           .where(eq(table.id, before.id));
         await ctx.host.reload(kind, before.id);
         // After a rename, instances still naming the old provider fail with a secret_error;

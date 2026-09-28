@@ -48,6 +48,7 @@ import {
   type InstallResult,
   type RunNpm,
 } from './install.js';
+import { diffInstances } from './reconcile.js';
 import {
   typeInvokeTimeout,
   type LiveExecutor,
@@ -103,6 +104,39 @@ interface TypeEntry<T> {
   type: T;
   pluginName: string;
 }
+
+/** The row version this replica built an instance from (see {@link PluginHost.reconcile}). */
+interface BuiltInstance {
+  kind: InstanceKind;
+  version: number;
+  name: string;
+}
+
+/** One instance a reconcile pass built, rebuilt or dropped. */
+export interface ReconciledInstance {
+  kind: InstanceKind;
+  id: string;
+  name: string;
+}
+
+/** What one {@link PluginHost.reconcile} pass did on this replica. */
+export interface ReconcileResult {
+  /** Rows this replica had never built (created on another replica). */
+  built: ReconciledInstance[];
+  /** Rows whose version moved on (changed, enabled, disabled or reloaded elsewhere). */
+  rebuilt: ReconciledInstance[];
+  /** Instances whose row is gone (deleted elsewhere). */
+  dropped: ReconciledInstance[];
+  /** Instances rebuilt because a secret provider they reference changed. */
+  dependents: ReconciledInstance[];
+}
+
+const INSTANCE_TABLES = {
+  source: sources,
+  executor: executors,
+  notifier: notifiers,
+  secret_provider: secretProviders,
+} as const;
 
 const REMOVED_MESSAGE = 'removed by an admin';
 
@@ -212,6 +246,12 @@ export class PluginHost implements PluginRuntime {
   /** Build tickets: see {@link commit}. */
   private buildEpoch = 0;
   private readonly claims = new Map<string, number>();
+  /** The row version behind each committed build: what {@link reconcile} compares against. */
+  private readonly built = new Map<string, BuiltInstance>();
+  /** Instances with a reload in flight on this replica; a reconcile pass leaves them alone. */
+  private readonly pending = new Map<string, number>();
+  private reconcileTimer: NodeJS.Timeout | undefined;
+  private reconciling: Promise<ReconcileResult> | undefined;
   private readonly pluginErrorQueue = new Map<
     string,
     { exception: number; invalid_event: number; invalid_usage: number }
@@ -231,6 +271,8 @@ export class PluginHost implements PluginRuntime {
     await this.loadPlugins();
     await this.ensureDefaultSecretProviders();
     await this.instantiateAll();
+    // Anything another replica changed while this one was building.
+    await this.reconcile();
   }
 
   defaultScanDirs(): { path: string; origin: 'baked' | 'installed' }[] {
@@ -877,16 +919,38 @@ export class PluginHost implements PluginRuntime {
    * newer row) has claimed the instance. Until the swap the previous object keeps serving, so a
    * reload never leaves a gap while secrets resolve.
    */
-  private commit(id: string, ticket: number, apply: () => void): boolean {
+  private commit(
+    id: string,
+    ticket: number,
+    apply: () => void,
+    from: BuiltInstance | undefined,
+  ): boolean {
     if ((this.claims.get(id) ?? 0) > ticket) return false;
     this.claims.set(id, ticket);
     this.clearInstance(id);
     apply();
+    // `from` is the row the build read; without one the row is gone and so is the instance.
+    if (from) this.built.set(id, from);
+    else this.built.delete(id);
     return true;
   }
 
-  private fail(id: string, ticket: number, error: string): void {
-    this.commit(id, ticket, () => this.errors.set(id, error));
+  private fail(id: string, ticket: number, error: string, from: BuiltInstance): void {
+    this.commit(id, ticket, () => this.errors.set(id, error), from);
+  }
+
+  /** Mark instances as being rebuilt by this replica until `fn` settles. */
+  private async withPending<T>(ids: readonly string[], fn: () => Promise<T>): Promise<T> {
+    for (const id of ids) this.pending.set(id, (this.pending.get(id) ?? 0) + 1);
+    try {
+      return await fn();
+    } finally {
+      for (const id of ids) {
+        const n = (this.pending.get(id) ?? 1) - 1;
+        if (n > 0) this.pending.set(id, n);
+        else this.pending.delete(id);
+      }
+    }
   }
 
   private async markResolved(kind: 'source' | 'executor', id: string): Promise<void> {
@@ -903,13 +967,18 @@ export class PluginHost implements PluginRuntime {
   }
 
   private buildSecretProvider(row: typeof secretProviders.$inferSelect, ticket: number): void {
+    const from: BuiltInstance = {
+      kind: 'secret_provider',
+      version: row.configVersion,
+      name: row.name,
+    };
     const entry = this.types.secret_provider.get(row.typeId);
     if (!entry) {
-      this.fail(row.id, ticket, 'plugin_unavailable');
+      this.fail(row.id, ticket, 'plugin_unavailable', from);
       return;
     }
     if (!row.enabled) {
-      this.fail(row.id, ticket, 'disabled');
+      this.fail(row.id, ticket, 'disabled', from);
       return;
     }
     let live: LiveSecretProvider;
@@ -926,26 +995,32 @@ export class PluginHost implements PluginRuntime {
       );
       live = { id: row.id, name: row.name, typeId: row.typeId, type: entry.type, provider };
     } catch (err) {
-      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`);
+      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`, from);
       return;
     }
-    this.commit(row.id, ticket, () => {
-      this.liveProviders.set(row.id, live);
-      this.providersByName.set(row.name, live);
-    });
+    this.commit(
+      row.id,
+      ticket,
+      () => {
+        this.liveProviders.set(row.id, live);
+        this.providersByName.set(row.name, live);
+      },
+      from,
+    );
   }
 
   private async buildSource(row: typeof sources.$inferSelect, ticket: number): Promise<void> {
+    const from: BuiltInstance = { kind: 'source', version: row.configVersion, name: row.name };
     const entry = this.types.source.get(row.typeId);
     if (!entry) {
-      this.fail(row.id, ticket, 'plugin_unavailable');
+      this.fail(row.id, ticket, 'plugin_unavailable', from);
       return;
     }
     let resolved: { settings: Settings; secrets: string[] };
     try {
       resolved = await this.resolveSettings(row.settings);
     } catch (err) {
-      this.fail(row.id, ticket, `secret_error: ${errorText(err)}`);
+      this.fail(row.id, ticket, `secret_error: ${errorText(err)}`, from);
       return;
     }
     let live: LiveSource;
@@ -976,27 +1051,33 @@ export class PluginHost implements PluginRuntime {
       };
     } catch (err) {
       this.recordPluginError(entry.pluginName, 'exception', `create: ${errorText(err)}`);
-      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`);
+      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`, from);
       return;
     }
-    const committed = this.commit(row.id, ticket, () => {
-      this.liveSources.set(row.id, live);
-      if (!row.enabled) this.errors.set(row.id, 'disabled');
-    });
+    const committed = this.commit(
+      row.id,
+      ticket,
+      () => {
+        this.liveSources.set(row.id, live);
+        if (!row.enabled) this.errors.set(row.id, 'disabled');
+      },
+      from,
+    );
     if (committed) await this.markResolved('source', row.id);
   }
 
   private async buildExecutor(row: typeof executors.$inferSelect, ticket: number): Promise<void> {
+    const from: BuiltInstance = { kind: 'executor', version: row.configVersion, name: row.name };
     const entry = this.types.executor.get(row.typeId);
     if (!entry) {
-      this.fail(row.id, ticket, 'plugin_unavailable');
+      this.fail(row.id, ticket, 'plugin_unavailable', from);
       return;
     }
     let resolved: { settings: Settings; secrets: string[] };
     try {
       resolved = await this.resolveSettings(row.settings);
     } catch (err) {
-      this.fail(row.id, ticket, `secret_error: ${errorText(err)}`);
+      this.fail(row.id, ticket, `secret_error: ${errorText(err)}`, from);
       return;
     }
     let live: LiveExecutor;
@@ -1029,27 +1110,33 @@ export class PluginHost implements PluginRuntime {
       };
     } catch (err) {
       this.recordPluginError(entry.pluginName, 'exception', `create: ${errorText(err)}`);
-      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`);
+      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`, from);
       return;
     }
-    const committed = this.commit(row.id, ticket, () => {
-      this.liveExecutors.set(row.id, live);
-      if (!row.enabled) this.errors.set(row.id, 'disabled');
-    });
+    const committed = this.commit(
+      row.id,
+      ticket,
+      () => {
+        this.liveExecutors.set(row.id, live);
+        if (!row.enabled) this.errors.set(row.id, 'disabled');
+      },
+      from,
+    );
     if (committed) await this.markResolved('executor', row.id);
   }
 
   private async buildNotifier(row: typeof notifiers.$inferSelect, ticket: number): Promise<void> {
+    const from: BuiltInstance = { kind: 'notifier', version: row.configVersion, name: row.name };
     const entry = this.types.notifier.get(row.typeId);
     if (!entry) {
-      this.fail(row.id, ticket, 'plugin_unavailable');
+      this.fail(row.id, ticket, 'plugin_unavailable', from);
       return;
     }
     let settings: Settings;
     try {
       ({ settings } = await this.resolveSettings(row.settings));
     } catch (err) {
-      this.fail(row.id, ticket, `secret_error: ${errorText(err)}`);
+      this.fail(row.id, ticket, `secret_error: ${errorText(err)}`, from);
       return;
     }
     let live: LiveNotifier;
@@ -1066,13 +1153,18 @@ export class PluginHost implements PluginRuntime {
       );
       live = { id: row.id, name: row.name, typeId: row.typeId, type: entry.type, notifier };
     } catch (err) {
-      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`);
+      this.fail(row.id, ticket, `create_failed: ${errorText(err)}`, from);
       return;
     }
-    this.commit(row.id, ticket, () => {
-      this.liveNotifiers.set(row.id, live);
-      if (!row.enabled) this.errors.set(row.id, 'disabled');
-    });
+    this.commit(
+      row.id,
+      ticket,
+      () => {
+        this.liveNotifiers.set(row.id, live);
+        if (!row.enabled) this.errors.set(row.id, 'disabled');
+      },
+      from,
+    );
   }
 
   // ------------------------------------------------------------------------------------------
@@ -1121,34 +1213,43 @@ export class PluginHost implements PluginRuntime {
     return this.errors.get(id);
   }
 
+  /**
+   * Rebuild one instance from its row now (the replica that changed it). Other replicas pick
+   * the change up on their next {@link reconcile} pass through the row's `config_version`; this
+   * one records the version it built, so its own pass does not build it again.
+   */
   async reload(kind: InstanceKind, id: string): Promise<void> {
-    const { db } = this.opts;
     // Claim the instance before reading its row: an older build finishing later cannot win.
     const ticket = this.ticket();
     this.claims.set(id, ticket);
+    await this.withPending([id], () => this.rebuild(kind, id, ticket));
+  }
+
+  private async rebuild(kind: InstanceKind, id: string, ticket: number): Promise<void> {
+    const { db } = this.opts;
     switch (kind) {
       case 'source': {
         const [row] = await db.select().from(sources).where(eq(sources.id, id));
         if (row) await this.buildSource(row, ticket);
-        else this.commit(id, ticket, () => undefined);
+        else this.commit(id, ticket, () => undefined, undefined);
         return;
       }
       case 'executor': {
         const [row] = await db.select().from(executors).where(eq(executors.id, id));
         if (row) await this.buildExecutor(row, ticket);
-        else this.commit(id, ticket, () => undefined);
+        else this.commit(id, ticket, () => undefined, undefined);
         return;
       }
       case 'notifier': {
         const [row] = await db.select().from(notifiers).where(eq(notifiers.id, id));
         if (row) await this.buildNotifier(row, ticket);
-        else this.commit(id, ticket, () => undefined);
+        else this.commit(id, ticket, () => undefined, undefined);
         return;
       }
       case 'secret_provider': {
         const [row] = await db.select().from(secretProviders).where(eq(secretProviders.id, id));
         if (row) this.buildSecretProvider(row, ticket);
-        else this.commit(id, ticket, () => undefined);
+        else this.commit(id, ticket, () => undefined, undefined);
         return;
       }
     }
@@ -1182,25 +1283,191 @@ export class PluginHost implements PluginRuntime {
     const notifierRows = (await db.select().from(notifiers)).filter((r) =>
       referencesProvider(r.settings, names),
     );
-    for (const row of [...sourceRows, ...executorRows, ...notifierRows]) claim(row.id);
-    for (const row of sourceRows) {
-      await this.buildSource(row, ticket);
-      rebuilt.push({ kind: 'source', id: row.id, name: row.name });
-    }
-    for (const row of executorRows) {
-      await this.buildExecutor(row, ticket);
-      rebuilt.push({ kind: 'executor', id: row.id, name: row.name });
-    }
-    for (const row of notifierRows) {
-      await this.buildNotifier(row, ticket);
-      rebuilt.push({ kind: 'notifier', id: row.id, name: row.name });
-    }
+    const ids = [...sourceRows, ...executorRows, ...notifierRows].map((r) => r.id);
+    for (const id of ids) claim(id);
+    await this.withPending(ids, async () => {
+      for (const row of sourceRows) {
+        await this.buildSource(row, ticket);
+        rebuilt.push({ kind: 'source', id: row.id, name: row.name });
+      }
+      for (const row of executorRows) {
+        await this.buildExecutor(row, ticket);
+        rebuilt.push({ kind: 'executor', id: row.id, name: row.name });
+      }
+      for (const row of notifierRows) {
+        await this.buildNotifier(row, ticket);
+        rebuilt.push({ kind: 'notifier', id: row.id, name: row.name });
+      }
+    });
     if (rebuilt.length > 0)
       this.opts.logger.info(
         { providers: [...names], instances: rebuilt.length },
         'rebuilt instances that reference a secret provider',
       );
     return rebuilt;
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Instance convergence across replicas
+  // ------------------------------------------------------------------------------------------
+
+  /**
+   * Converge this replica's live objects on the instance tables: build instances another
+   * replica created, rebuild the ones whose `config_version` moved on (changed, enabled,
+   * disabled or reloaded elsewhere), drop the deleted ones, and rebuild the dependents of every
+   * secret provider that changed. One `id, config_version` query per table; only changed rows
+   * are read in full. Instances with a reload in flight here are left for the next pass. A pass
+   * never throws (failures are logged) and concurrent calls share one pass.
+   */
+  reconcile(): Promise<ReconcileResult> {
+    this.reconciling ??= this.reconcileOnce().finally(() => {
+      this.reconciling = undefined;
+    });
+    return this.reconciling;
+  }
+
+  private async reconcileOnce(): Promise<ReconcileResult> {
+    const result: ReconcileResult = { built: [], rebuilt: [], dropped: [], dependents: [] };
+    try {
+      // Providers first: their dependents resolve against the providers as they are now.
+      const names = new Set<string>();
+      const providers = await this.reconcileKind('secret_provider', result);
+      for (const p of providers) {
+        names.add(p.name);
+        if (p.previousName !== undefined) names.add(p.previousName);
+      }
+      if (names.size > 0) {
+        result.dependents = await this.reloadDependentsOf([...names]);
+        for (const d of result.dependents) this.countRebuild(d.kind, 'dependent');
+      }
+      for (const kind of ['source', 'executor', 'notifier'] as const)
+        await this.reconcileKind(kind, result);
+    } catch (err) {
+      this.opts.logger.error({ err }, 'could not reconcile instances with the database');
+    }
+    const changes =
+      result.built.length +
+      result.rebuilt.length +
+      result.dropped.length +
+      result.dependents.length;
+    if (changes > 0)
+      this.opts.logger.info(
+        {
+          built: result.built.length,
+          rebuilt: result.rebuilt.length,
+          dropped: result.dropped.length,
+          dependents: result.dependents.length,
+        },
+        'converged instances changed on another replica',
+      );
+    else this.opts.logger.debug('instances already converged');
+    return result;
+  }
+
+  /** Reconcile one instance table; returns the touched instances with their previous names. */
+  private async reconcileKind(
+    kind: InstanceKind,
+    result: ReconcileResult,
+  ): Promise<(ReconciledInstance & { previousName?: string })[]> {
+    const { db } = this.opts;
+    // Take the ticket before reading any row, like every other build.
+    const ticket = this.ticket();
+    const table = INSTANCE_TABLES[kind];
+    const rows = await db.select({ id: table.id, version: table.configVersion }).from(table);
+    const built = new Map<string, number>();
+    for (const [id, b] of this.built) if (b.kind === kind) built.set(id, b.version);
+    const diff = diffInstances(
+      rows,
+      built,
+      (id) => this.pending.has(id) || (this.claims.get(id) ?? 0) > ticket,
+    );
+    const touched: (ReconciledInstance & { previousName?: string })[] = [];
+    const changed = new Set(diff.changed);
+    const ids = [...diff.added, ...diff.changed];
+    // The names built before: a renamed provider's dependents on the old name rebuild too.
+    const previous = new Map(ids.map((id) => [id, this.built.get(id)?.name]));
+    for (const row of ids.length > 0 ? await this.buildRows(kind, ids, ticket) : []) {
+      const before = previous.get(row.id);
+      const entry = { kind, id: row.id, name: row.name };
+      const wasChanged = changed.has(row.id);
+      (wasChanged ? result.rebuilt : result.built).push(entry);
+      touched.push({
+        ...entry,
+        ...(before !== undefined && before !== row.name ? { previousName: before } : {}),
+      });
+      this.countRebuild(kind, wasChanged ? 'changed' : 'created');
+      this.opts.logger.debug(
+        { kind, instance_id: row.id, version: row.version },
+        wasChanged
+          ? 'rebuilt an instance changed elsewhere'
+          : 'built an instance created elsewhere',
+      );
+    }
+    for (const id of diff.removed) {
+      const before = this.built.get(id);
+      if (!before || !this.commit(id, ticket, () => undefined, undefined)) continue;
+      const entry = { kind, id, name: before.name };
+      result.dropped.push(entry);
+      touched.push(entry);
+      this.countRebuild(kind, 'removed');
+      this.opts.logger.debug({ kind, instance_id: id }, 'dropped an instance deleted elsewhere');
+    }
+    return touched;
+  }
+
+  /** Read these rows of one table in full and build each; returns what was read. */
+  private async buildRows(
+    kind: InstanceKind,
+    ids: string[],
+    ticket: number,
+  ): Promise<{ id: string; name: string; version: number }[]> {
+    const { db } = this.opts;
+    const head = (r: { id: string; name: string; configVersion: number }) => ({
+      id: r.id,
+      name: r.name,
+      version: r.configVersion,
+    });
+    switch (kind) {
+      case 'secret_provider': {
+        const rows = await db
+          .select()
+          .from(secretProviders)
+          .where(inArray(secretProviders.id, ids));
+        for (const row of rows) this.buildSecretProvider(row, ticket);
+        return rows.map(head);
+      }
+      case 'source': {
+        const rows = await db.select().from(sources).where(inArray(sources.id, ids));
+        for (const row of rows) await this.buildSource(row, ticket);
+        return rows.map(head);
+      }
+      case 'executor': {
+        const rows = await db.select().from(executors).where(inArray(executors.id, ids));
+        for (const row of rows) await this.buildExecutor(row, ticket);
+        return rows.map(head);
+      }
+      case 'notifier': {
+        const rows = await db.select().from(notifiers).where(inArray(notifiers.id, ids));
+        for (const row of rows) await this.buildNotifier(row, ticket);
+        return rows.map(head);
+      }
+    }
+  }
+
+  private countRebuild(
+    kind: InstanceKind,
+    change: 'created' | 'changed' | 'removed' | 'dependent',
+  ): void {
+    this.opts.telemetry.counter('switchboard.instance.rebuilds', { kind, change });
+  }
+
+  /** Run {@link reconcile} every `seconds` on this replica until {@link stop}. */
+  startReconcile(seconds = this.opts.config.instanceSyncSeconds): void {
+    if (this.reconcileTimer) return;
+    this.reconcileTimer = setInterval(() => {
+      void this.reconcile();
+    }, seconds * 1000);
+    this.reconcileTimer.unref();
   }
 
   recordPluginError(
@@ -1304,6 +1571,8 @@ export class PluginHost implements PluginRuntime {
   async stop(): Promise<void> {
     if (this.syncTimer) clearInterval(this.syncTimer);
     this.syncTimer = undefined;
+    if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+    this.reconcileTimer = undefined;
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = undefined;
     await this.flushPluginErrors();

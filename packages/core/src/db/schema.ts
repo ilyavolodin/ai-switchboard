@@ -36,6 +36,13 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () =>
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const createdAt = () => ts('created_at').notNull().defaultNow();
 const id = () => uuid('id').primaryKey().defaultRandom();
+/**
+ * An instance's build version: every write that changes what the plugin host builds the live
+ * object from (name, settings, enabled) and every explicit reload increments it, so each replica
+ * can tell which instances it must rebuild (`PluginHost.reconcile`). Caps and target defaults are
+ * read from the row where they are used and do not need a rebuild.
+ */
+const configVersion = () => integer('config_version').notNull().default(1);
 
 export type PluginKindColumn = 'source' | 'executor' | 'notifier' | 'secret_provider';
 
@@ -145,6 +152,7 @@ export const sources = pgTable('sources', {
   silenceAlertedAt: ts('silence_alerted_at'),
   secretsResolvedAt: ts('secrets_resolved_at'),
   provisionedAt: ts('provisioned_at'),
+  configVersion: configVersion(),
   createdAt: createdAt(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
 });
@@ -162,6 +170,7 @@ export const executors = pgTable('executors', {
   health: jsonb('health').$type<Health>(),
   secretsResolvedAt: ts('secrets_resolved_at'),
   metersReadAt: ts('meters_read_at'),
+  configVersion: configVersion(),
   createdAt: createdAt(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
 });
@@ -189,6 +198,7 @@ export const notifiers = pgTable('notifiers', {
   settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
   enabled: boolean('enabled').notNull().default(true),
   health: jsonb('health').$type<Health>(),
+  configVersion: configVersion(),
   createdAt: createdAt(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
 });
@@ -203,6 +213,7 @@ export const secretProviders = pgTable(
     settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
     enabled: boolean('enabled').notNull().default(true),
     health: jsonb('health').$type<Health>(),
+    configVersion: configVersion(),
     createdAt: createdAt(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },

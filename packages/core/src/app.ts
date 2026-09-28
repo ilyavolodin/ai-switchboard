@@ -172,8 +172,10 @@ export async function createSwitchboard(options: CreateOptions): Promise<Switchb
         );
         await queue.schedule('auth.prune', '17 3 * * *');
       }
-      // Every replica (not one queue worker) converges on the plugins admins installed.
+      // Every replica (not one queue worker) converges on the plugins admins installed and on
+      // the instances changed through another replica.
       host.startSync();
+      host.startReconcile();
       await app.listen({ host: config.host, port: config.port });
       ready = true;
       logger.info(
