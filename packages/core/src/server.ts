@@ -1,4 +1,3 @@
-import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import cookie from '@fastify/cookie';
@@ -24,21 +23,13 @@ import { registerSourcePreviewRoutes } from './api/routes/source-preview.js';
 import { getSettings } from './services/settings.js';
 import { registerHttpTelemetry } from './telemetry/http.js';
 import type { TelemetryRuntime } from './telemetry/setup.js';
+import { exists } from './util/fs.js';
 
 export interface ServerOptions {
   telemetry?: TelemetryRuntime;
   serveUi?: boolean;
   ready?: () => boolean;
   cookieSecret?: string;
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export async function buildServer(

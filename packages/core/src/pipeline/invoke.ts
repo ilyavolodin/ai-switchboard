@@ -5,6 +5,8 @@ import {
   type TrackingMode,
 } from '@ai-switchboard/sdk';
 
+import { errorText } from '../util/errors.js';
+
 /**
  * The idempotency rule: a non-idempotent invoke is retried only when the request never left
  * (`sent === false`) or the backend answered 503. Anything that may have reached the backend
@@ -92,10 +94,6 @@ export type InvokeClassification =
 
 function positive(n: unknown): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
-}
-
-function message(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 export interface ClassifyInput {
@@ -199,7 +197,7 @@ export function classifyInvoke(input: ClassifyInput, outcome: InvokeOutcome): In
     return lost(`${err.status ?? 'error'}: ${err.message}`);
   }
   // An unexpected exception may have happened after the request was sent.
-  return lost(`exception: ${message(err)}`);
+  return lost(`exception: ${errorText(err)}`);
 }
 
 export function statusAfterStart(tracking: TrackingMode): 'running' | 'ok' {

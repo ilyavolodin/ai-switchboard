@@ -1,7 +1,5 @@
 import type { InstanceSummary, StatusTone } from '@ai-switchboard/core/contract';
-
-/** The `<provider>` segment of a secret reference must be a plain id. */
-const SEGMENT = /^[A-Za-z0-9_.-]+$/;
+import { isSecretProviderSegment } from '@ai-switchboard/sdk/schema';
 
 /**
  * The core resolves `secret://<provider>/…` through the instance named `<provider>`. `undefined`
@@ -11,8 +9,8 @@ export function secretProviderIds(instances: InstanceSummary[] | undefined): str
   if (instances === undefined) return undefined;
   const ids = instances
     .filter((i) => i.enabled)
-    .map((i) => (SEGMENT.test(i.name) ? i.name : i.typeId))
-    .filter((id) => SEGMENT.test(id));
+    .map((i) => (isSecretProviderSegment(i.name) ? i.name : i.typeId))
+    .filter((id) => isSecretProviderSegment(id));
   return [...new Set(ids)];
 }
 
@@ -23,7 +21,7 @@ export function instanceForProvider(
 ): InstanceSummary | undefined {
   return (
     instances?.find((i) => i.name === provider) ??
-    instances?.find((i) => !SEGMENT.test(i.name) && i.typeId === provider)
+    instances?.find((i) => !isSecretProviderSegment(i.name) && i.typeId === provider)
   );
 }
 

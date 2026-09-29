@@ -21,11 +21,15 @@ import type { ArtifactRef, Attributes, Health, UsageReport } from '@ai-switchboa
 import type { ProcessDocument } from '../domain/process.js';
 import type {
   ApprovalDecision,
+  ApprovalState,
   BatchKind,
   BatchOutcome,
   DispatchOutcome,
   EventStage,
+  InstanceKind,
   MatchSkip,
+  PluginOrigin,
+  PluginStatus,
   Role,
   RunStatusValue,
   StepPhase,
@@ -43,7 +47,7 @@ const id = () => uuid('id').primaryKey().defaultRandom();
  */
 const configVersion = () => integer('config_version').notNull().default(1);
 
-export type PluginKindColumn = 'source' | 'destination' | 'notifier' | 'secret_provider';
+export type PluginKindColumn = InstanceKind;
 
 /** Core-added per-instance caps for sources. */
 export interface SourceCaps {
@@ -79,11 +83,9 @@ export const plugins = pgTable('plugins', {
     .$type<{ network?: string[]; secrets?: string[] }>()
     .notNull()
     .default({}),
-  /** `loaded` | `unavailable` | `failed` | `incompatible` */
-  status: text('status').notNull(),
+  status: text('status').$type<PluginStatus>().notNull(),
   statusMessage: text('status_message'),
-  /** `baked` (image node_modules) or `installed` ($SWITCHBOARD_HOME/plugins). */
-  origin: text('origin').notNull().default('baked'),
+  origin: text('origin').$type<PluginOrigin>().notNull().default('baked'),
   /**
    * Set for installs through the API: the npm spec every replica converges on. Null for baked
    * plugins and plugins added with the CLI.
@@ -321,10 +323,7 @@ export const batches = pgTable(
     size: integer('size').notNull().default(0),
     outcome: text('outcome').$type<BatchOutcome>().notNull().default('open'),
     outcomeReason: text('outcome_reason'),
-    approvalState: text('approval_state')
-      .$type<'none' | 'pending' | 'approved' | 'rejected'>()
-      .notNull()
-      .default('none'),
+    approvalState: text('approval_state').$type<ApprovalState>().notNull().default('none'),
     /** For sweeps: the schedule that fired it. */
     scheduleId: text('schedule_id'),
     /** When a sweep merged an open event batch into its run. */

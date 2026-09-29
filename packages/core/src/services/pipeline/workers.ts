@@ -1,6 +1,7 @@
 import { MAX_INVOKE_TIMEOUT_SECONDS } from '@ai-switchboard/sdk';
 
-import { JOBS, errorMessage, type Ctx } from './context.js';
+import { errorText } from '../../util/errors.js';
+import { JOBS, type Ctx } from './context.js';
 import { dispatchBatch } from './dispatch.js';
 import { pollSource } from './ingest.js';
 import { attemptInvoke } from './invoke.js';
@@ -109,7 +110,7 @@ export async function registerWorkers(ctx: Ctx): Promise<WorkerHandle> {
   try {
     await recoverRuns(ctx);
   } catch (err) {
-    ctx.log.error({ err: errorMessage(err) }, 'startup recovery failed');
+    ctx.log.error({ err: errorText(err) }, 'startup recovery failed');
   }
 
   const startedAt = ctx.clock.now();
@@ -118,7 +119,7 @@ export async function registerWorkers(ctx: Ctx): Promise<WorkerHandle> {
   if (period > 0) {
     const beat = () => {
       heartbeat(ctx, startedAt).catch((err: unknown) => {
-        ctx.log.warn({ err: errorMessage(err) }, 'heartbeat failed');
+        ctx.log.warn({ err: errorText(err) }, 'heartbeat failed');
       });
     };
     beat();

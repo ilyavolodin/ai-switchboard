@@ -13,6 +13,8 @@ import {
   type PluginKind,
 } from '@ai-switchboard/sdk';
 
+import { isRecord, str } from '../util/guards.js';
+
 export type RunNpm = (args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>;
 
 export type ImportModule = (url: string) => Promise<unknown>;
@@ -126,10 +128,6 @@ export function lockfilePath(home: string): string {
   return join(resolve(home), 'plugins.lock.json');
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, 'utf8')) as unknown;
 }
@@ -149,10 +147,6 @@ async function readJsonIfExists(path: string): Promise<unknown> {
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-}
-
-function str(value: unknown): string | undefined {
-  return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
 function dependenciesOf(pkg: unknown): Record<string, string> {

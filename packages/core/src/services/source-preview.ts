@@ -13,6 +13,8 @@ import type { Deps } from '../deps.js';
 import type { LiveSource } from '../plugins/runtime.js';
 import { REDACTED, redactSecretValues } from '../secrets/refs.js';
 
+import { errorText } from '../util/errors.js';
+import { withTimeout } from '../util/timeout.js';
 import { checkDraft } from './pipeline/ingest.js';
 
 /**
@@ -22,6 +24,7 @@ import { checkDraft } from './pipeline/ingest.js';
 
 /** JSONata has its own 2 s limit; this bounds the whole parse. */
 const PARSE_TIMEOUT_MS = 5_000;
+const PARSE_TIMEOUT_MESSAGE = `parse took longer than ${PARSE_TIMEOUT_MS / 1000} s`;
 
 export interface PreviewBuilder {
   buildPreviewSource(
@@ -33,22 +36,6 @@ export interface PreviewBuilder {
     | { ok: true; live: LiveSource }
     | { ok: false; stage: 'plugin' | 'secret' | 'create'; message: string; secretValues: string[] }
   >;
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`parse took longer than ${ms / 1000} s`));
-    }, ms);
-  });
-  return Promise.race([work, timeout]).finally(() => {
-    clearTimeout(timer);
-  });
 }
 
 /** Lower-cased headers and the body's exact bytes, as the plugin would receive them. */
@@ -83,6 +70,7 @@ async function runParse(
     const report: unknown = await withTimeout(
       Promise.resolve(source.parseWithNotes(req)),
       PARSE_TIMEOUT_MS,
+      PARSE_TIMEOUT_MESSAGE,
     );
     const r = (report ?? {}) as { events?: unknown; notes?: unknown };
     return {
@@ -91,7 +79,11 @@ async function runParse(
     };
   }
   if (!source.parse) throw new Error('this source type does not parse deliveries');
-  const parsed: unknown = await withTimeout(Promise.resolve(source.parse(req)), PARSE_TIMEOUT_MS);
+  const parsed: unknown = await withTimeout(
+    Promise.resolve(source.parse(req)),
+    PARSE_TIMEOUT_MS,
+    PARSE_TIMEOUT_MESSAGE,
+  );
   if (!Array.isArray(parsed)) throw new Error('parse did not return a list of events');
   return { drafts: parsed as unknown[], notes: [] };
 }

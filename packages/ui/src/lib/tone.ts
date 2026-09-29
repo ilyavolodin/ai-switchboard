@@ -1,4 +1,5 @@
 import type { RunStatusValue, StatusTone, StepStatus } from '@ai-switchboard/core/contract';
+import { RUN_STATUS_LABELS, stepTone } from '@ai-switchboard/core/domain';
 
 /** In the order the UI sorts by urgency. */
 export const TONES = ['error', 'warn', 'ok', 'off'] as const satisfies readonly StatusTone[];
@@ -9,36 +10,12 @@ export function toneVars(tone: StatusTone): { fill: string; bg: string; fg: stri
 }
 
 export function runStatusTone(status: RunStatusValue): StatusTone {
-  switch (status) {
-    case 'ok':
-      return 'ok';
-    case 'error':
-    case 'failed':
-      return 'error';
-    case 'held':
-    case 'uncertain':
-    case 'unknown':
-      return 'warn';
-    case 'invoking':
-    case 'running':
-      return 'off';
-  }
+  return RUN_STATUS_LABELS[status].tone;
 }
 
 /** In doubt (`started`, `uncertain`) is a warning. */
 export function stepStatusTone(status: StepStatus): { tone: StatusTone; label: string } {
-  switch (status) {
-    case 'ok':
-      return { tone: 'ok', label: 'ok' };
-    case 'error':
-      return { tone: 'error', label: 'error' };
-    case 'started':
-      return { tone: 'warn', label: 'started' };
-    case 'uncertain':
-      return { tone: 'warn', label: 'in doubt' };
-    case 'skipped':
-      return { tone: 'off', label: 'skipped' };
-  }
+  return { tone: stepTone(status), label: status === 'uncertain' ? 'in doubt' : status };
 }
 
 export function toneRank(tone: StatusTone): number {

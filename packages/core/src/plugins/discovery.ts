@@ -1,6 +1,8 @@
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import type { PluginOrigin } from '../domain/status.js';
+
 export interface SwitchboardField {
   entry: string;
   source?: string;
@@ -12,7 +14,7 @@ export interface DiscoveredPackage {
   version: string;
   dir: string;
   switchboard: SwitchboardField;
-  origin: 'baked' | 'installed';
+  origin: PluginOrigin;
 }
 
 async function isDir(path: string): Promise<boolean> {
@@ -64,7 +66,7 @@ async function packageDirs(nodeModules: string): Promise<string[]> {
  * admin-installed version overrides a baked one.
  */
 export async function discoverPlugins(
-  dirs: { path: string; origin: 'baked' | 'installed' }[],
+  dirs: { path: string; origin: PluginOrigin }[],
 ): Promise<DiscoveredPackage[]> {
   const found = new Map<string, DiscoveredPackage>();
   const seenReal = new Set<string>();

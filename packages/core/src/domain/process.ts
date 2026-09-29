@@ -1,5 +1,7 @@
 import type { Expr, JSONSchema } from '@ai-switchboard/sdk';
 
+import { NOTIFY_ON, type NotifyOn } from './status.js';
+
 /** `HH:MM` 24-hour clock times. */
 export interface QuietWindow {
   start: string;
@@ -38,7 +40,7 @@ export interface Step {
 export interface Notification {
   notifierId: string;
   template: Expr;
-  on: ('ok' | 'error' | 'held' | 'throttled')[];
+  on: NotifyOn[];
 }
 
 export interface MeterCeiling {
@@ -244,7 +246,7 @@ export const processDocumentSchema: JSONSchema = {
         properties: {
           notifierId: { type: 'string' },
           template: expr,
-          on: { type: 'array', items: { enum: ['ok', 'error', 'held', 'throttled'] } },
+          on: { type: 'array', items: { enum: [...NOTIFY_ON] } },
         },
       },
     },

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { actorOf, requireRole } from '../../auth/fastify.js';
+import type { InstanceKind } from '../../domain/status.js';
 import { applyConfiguration, exportConfiguration } from '../../services/config-io.js';
 import type { ApiContext } from '../context.js';
 import type { ApplyRequest } from '../contract.js';
@@ -35,10 +36,7 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: ApiContext): voi
     },
     async (req) => {
       const reason = requireReason(req.body);
-      const typeSchema = (
-        kind: 'source' | 'destination' | 'notifier' | 'secret_provider',
-        typeId: string,
-      ) => {
+      const typeSchema = (kind: InstanceKind, typeId: string) => {
         switch (kind) {
           case 'source':
             return ctx.runtime.sourceType(typeId)?.type.settingsSchema;

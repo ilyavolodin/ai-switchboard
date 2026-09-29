@@ -17,9 +17,14 @@ import type { ProcessDocument } from '../domain/process.js';
 import type {
   BatchKind,
   BatchOutcome,
+  BreakerStateValue,
   EventStage,
+  InstanceKind,
+  PluginOrigin,
+  PluginStatus,
   Role,
   RunStatusValue,
+  SettledRunStatus,
   StatusTone,
   StepStatus,
 } from '../domain/status.js';
@@ -34,11 +39,18 @@ export type {
   MeterCeiling,
 } from '../domain/process.js';
 export type {
+  ApprovalState,
   BatchKind,
   BatchOutcome,
+  BreakerStateValue,
   EventStage,
+  InstanceKind,
+  NotifyOn,
+  PluginOrigin,
+  PluginStatus,
   Role,
   RunStatusValue,
+  SettledRunStatus,
   StatusTone,
   StepStatus,
 } from '../domain/status.js';
@@ -261,7 +273,7 @@ export interface BoardResponse {
   generatedAt: Iso;
 }
 
-export type PluginKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
+export type PluginKind = InstanceKind;
 
 export interface PluginTypeDTO {
   kind: PluginKind;
@@ -467,7 +479,7 @@ export interface ProcessSummary {
   description: string;
   enabled: boolean;
   status: StatusLabel;
-  breakerState: 'open' | 'closed';
+  breakerState: BreakerStateValue;
   awaitingApproval: number;
   dots: PipelineDots;
   /** Runs per day, last 7 days, oldest first. */
@@ -486,7 +498,7 @@ export interface ProcessDetail {
   document: ProcessDocument;
   enabled: boolean;
   status: StatusLabel;
-  breakerState: 'open' | 'closed';
+  breakerState: BreakerStateValue;
   breakerOpenedAt: Iso | null;
   /** When breaker is open: the last failed runs. */
   recentFailures: RunSummary[];
@@ -839,7 +851,7 @@ export interface RunsQuery {
 }
 
 export interface CloseRunRequest extends Reasoned {
-  status: 'ok' | 'error' | 'unknown';
+  status: SettledRunStatus;
 }
 
 export interface ApprovalItem {
@@ -870,10 +882,10 @@ export interface PluginSummary {
   pluginId: string;
   displayName: string;
   version: string;
-  status: 'loaded' | 'unavailable' | 'failed' | 'incompatible';
+  status: PluginStatus;
   statusLabel: StatusLabel;
   statusMessage: string | null;
-  origin: 'baked' | 'installed';
+  origin: PluginOrigin;
   sdkRange: string;
   capabilities: Capabilities;
   types: { kind: PluginKind; typeId: string; displayName: string; instanceCount: number }[];
@@ -984,7 +996,7 @@ export interface UpdateInstanceRequest extends Reasoned {
 
 /** Something whose settings (or, for a process, whose document) hold a `secret://` reference. */
 export interface SecretUserDTO {
-  kind: 'source' | 'destination' | 'notifier' | 'secret_provider' | 'process';
+  kind: InstanceKind | 'process';
   id: string;
   name: string;
   /** Dotted path of the field holding the reference (`apiKey`, `destination.target.token`). */

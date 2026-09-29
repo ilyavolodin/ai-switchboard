@@ -32,19 +32,7 @@ export {
   invokeErrorForStatus,
 } from './errors.js';
 
-export {
-  createAjv,
-  compileSchema,
-  validateAgainst,
-  isValidSchema,
-  formatErrors,
-  secretPaths,
-  UI_KEYWORDS,
-  parseWith,
-  tryParse,
-  SchemaMismatchError,
-} from './schema.js';
-export type { SchemaCheck, ParseWithOptions } from './schema.js';
+export * from './schema/index.js';
 
 export {
   ATTRIBUTE_KINDS,

@@ -10,12 +10,13 @@ import {
   runs,
   type GateDecisionRecord,
 } from '../../db/schema.js';
-import { isTerminalRunStatus } from '../../domain/status.js';
+import { isTerminalRunStatus, type SettledRunStatus } from '../../domain/status.js';
+import { isUuid } from '../../util/uuid.js';
 import { recordAudit } from '../audit.js';
 
 import { appendDecisions, withTx, type Ctx } from './context.js';
 import { dispatchBatch, type DispatchResult } from './dispatch.js';
-import { PipelineError, isUuid } from './errors.js';
+import { PipelineError } from './errors.js';
 import { batchEvents } from './load.js';
 import { readMeters } from './meters.js';
 import { closeRun } from './runs.js';
@@ -169,7 +170,7 @@ async function decide(
 export async function closeRunByHand(
   ctx: Ctx,
   runId: string,
-  status: 'ok' | 'error' | 'unknown',
+  status: SettledRunStatus,
   actor: string,
   reason: string,
 ): Promise<void> {

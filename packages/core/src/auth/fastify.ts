@@ -2,8 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandl
 
 import type { Clock } from '../clock.js';
 import type { Db } from '../db/client.js';
-import type { Role } from '../domain/status.js';
-import { roleAtLeast } from './crypto.js';
+import { roleAtLeast, type Role } from '../domain/status.js';
 import { SESSION_COOKIE, userForApiToken, userForSession, type AuthUser } from './sessions.js';
 
 declare module 'fastify' {

@@ -1,25 +1,12 @@
-export const SECRET_SCHEME = 'secret://';
+import { SECRET_SCHEME, isSecretRef, parseSecretRef } from '@ai-switchboard/sdk';
 
-export interface SecretRef {
-  provider: string;
-  name: string;
-}
-
-export function isSecretRef(value: unknown): value is string {
-  return typeof value === 'string' && value.startsWith(SECRET_SCHEME);
-}
-
-export function parseSecretRef(value: string): SecretRef | null {
-  if (!value.startsWith(SECRET_SCHEME)) return null;
-  const rest = value.slice(SECRET_SCHEME.length);
-  const slash = rest.indexOf('/');
-  if (slash <= 0 || slash === rest.length - 1) return null;
-  return { provider: rest.slice(0, slash), name: rest.slice(slash + 1) };
-}
-
-export function formatSecretRef(ref: SecretRef): string {
-  return `${SECRET_SCHEME}${ref.provider}/${ref.name}`;
-}
+export {
+  SECRET_SCHEME,
+  formatSecretRef,
+  isSecretRef,
+  parseSecretRef,
+  type SecretRef,
+} from '@ai-switchboard/sdk';
 
 export function collectSecretRefs(value: unknown, path = ''): { path: string; ref: string }[] {
   if (isSecretRef(value)) return [{ path, ref: value }];

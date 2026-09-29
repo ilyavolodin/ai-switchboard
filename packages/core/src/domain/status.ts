@@ -57,6 +57,25 @@ export const OPEN_RUN_STATUSES: readonly RunStatusValue[] = ['invoking', 'runnin
 
 export const BREAKER_RUN_STATUSES: readonly RunStatusValue[] = ['error', 'unknown'];
 
+/** Invoked runs that tracking still has to settle. */
+export const TRACKED_RUN_STATUSES = [
+  'running',
+  'uncertain',
+] as const satisfies readonly RunStatusValue[];
+export type TrackedRunStatus = (typeof TRACKED_RUN_STATUSES)[number];
+
+/** The statuses a tracked run can be settled to, by a destination or by hand. */
+export const SETTLED_RUN_STATUSES = [
+  'ok',
+  'error',
+  'unknown',
+] as const satisfies readonly RunStatusValue[];
+export type SettledRunStatus = (typeof SETTLED_RUN_STATUSES)[number];
+
+export function isSettledRunStatus(s: string): s is SettledRunStatus {
+  return (SETTLED_RUN_STATUSES as readonly string[]).includes(s);
+}
+
 export function isTerminalRunStatus(s: RunStatusValue): boolean {
   return TERMINAL_RUN_STATUSES.includes(s);
 }
@@ -110,7 +129,33 @@ export function stepTone(status: StepStatus): StatusTone {
 /** `withdrawn`: the process was deleted while the approval was pending. */
 export type ApprovalDecision = 'approved' | 'rejected' | 'withdrawn';
 
-export type Role = 'admin' | 'operator' | 'viewer';
-export const ROLES: readonly Role[] = ['admin', 'operator', 'viewer'];
+export const APPROVAL_STATES = ['none', 'pending', 'approved', 'rejected'] as const;
+export type ApprovalState = (typeof APPROVAL_STATES)[number];
+
+export const BREAKER_STATES = ['open', 'closed'] as const;
+export type BreakerStateValue = (typeof BREAKER_STATES)[number];
+
+export const NOTIFY_ON = ['ok', 'error', 'held', 'throttled'] as const;
+export type NotifyOn = (typeof NOTIFY_ON)[number];
+
+export const ROLES = ['admin', 'operator', 'viewer'] as const;
+export type Role = (typeof ROLES)[number];
+
+export const ROLE_RANK: Readonly<Record<Role, number>> = { viewer: 0, operator: 1, admin: 2 };
+
+export function roleAtLeast(role: Role, required: Role): boolean {
+  return ROLE_RANK[role] >= ROLE_RANK[required];
+}
+
+export const INSTANCE_KINDS = ['source', 'destination', 'notifier', 'secret_provider'] as const;
+export type InstanceKind = (typeof INSTANCE_KINDS)[number];
+
+/** `plugins.status`. */
+export const PLUGIN_STATUSES = ['loaded', 'unavailable', 'failed', 'incompatible'] as const;
+export type PluginStatus = (typeof PLUGIN_STATUSES)[number];
+
+/** `baked` (image node_modules) or `installed` ($SWITCHBOARD_HOME/plugins). */
+export const PLUGIN_ORIGINS = ['baked', 'installed'] as const;
+export type PluginOrigin = (typeof PLUGIN_ORIGINS)[number];
 
 export type StatusTone = 'ok' | 'warn' | 'error' | 'off';

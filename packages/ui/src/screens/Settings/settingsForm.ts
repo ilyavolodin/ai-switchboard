@@ -1,6 +1,5 @@
 import type { GlobalSettings, Role } from '@ai-switchboard/core/contract';
-
-import { ROLE_RANK } from '../../app/session.js';
+import { roleAtLeast } from '@ai-switchboard/core/domain';
 
 export function timezones(): string[] {
   const intl = Intl as { supportedValuesOf?: (key: string) => string[] };
@@ -49,7 +48,7 @@ export function parsePositiveInt(text: string): number | null {
 }
 
 export function grantableRoles(own: Role): Role[] {
-  return (['viewer', 'operator', 'admin'] as const).filter((r) => ROLE_RANK[r] <= ROLE_RANK[own]);
+  return (['viewer', 'operator', 'admin'] as const).filter((r) => roleAtLeast(own, r));
 }
 
 export function initials(email: string): string {

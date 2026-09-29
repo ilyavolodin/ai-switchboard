@@ -6,7 +6,10 @@ import { batches, destinations, processes, runUpdates, runs } from '../../db/sch
 import {
   OPEN_RUN_STATUSES,
   TERMINAL_RUN_STATUSES,
+  TRACKED_RUN_STATUSES,
+  isSettledRunStatus,
   isTerminalRunStatus,
+  type NotifyOn,
   type RunStatusValue,
 } from '../../domain/status.js';
 import { breakerAfterRun } from '../../pipeline/breaker.js';
@@ -20,10 +23,10 @@ import { mergeUsage, sanitizeUsage } from '../../pipeline/usage.js';
 
 import { TRACEPARENT_KEY } from '../../queue/traced.js';
 
+import { isUuid } from '../../util/uuid.js';
 import { JOBS, callPlugin, withTx, type Ctx } from './context.js';
-import { isUuid } from './errors.js';
 import { batchEvents } from './load.js';
-import { notifyProcess, sendSystemAlert, type NotifyOn } from './notify.js';
+import { notifyProcess, sendSystemAlert } from './notify.js';
 import { beforeStepsSettled, runSteps, runView, type RunRow } from './steps.js';
 
 export type UpdateSource = 'invoke' | 'poll' | 'callback' | 'deadline' | 'manual' | 'recovery';
@@ -111,7 +114,7 @@ export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Prom
       },
     });
 
-    if (!run.dryRun && ['ok', 'error', 'unknown'].includes(input.status)) {
+    if (!run.dryRun && isSettledRunStatus(input.status)) {
       const [proc] = await tx
         .select()
         .from(processes)
@@ -348,7 +351,7 @@ async function applyTracking(
         usage,
         ...(source === 'poll' ? { pollCount: run.pollCount + 1 } : {}),
       })
-      .where(and(eq(runs.id, run.id), inArray(runs.status, ['running', 'uncertain', 'invoking'])))
+      .where(and(eq(runs.id, run.id), inArray(runs.status, OPEN_RUN_STATUSES)))
       .returning();
     const changed =
       run.status !== 'running' || (status.externalUrl ?? null) !== (run.externalUrl ?? null);
@@ -409,7 +412,7 @@ async function pollRunInSpan(ctx: Ctx, runId: string): Promise<void> {
     .where(
       and(
         eq(runs.id, runId),
-        inArray(runs.status, ['running', 'uncertain']),
+        inArray(runs.status, TRACKED_RUN_STATUSES),
         run.nextPollAt === null ? isNull(runs.nextPollAt) : eq(runs.nextPollAt, run.nextPollAt),
       ),
     )
@@ -596,7 +599,7 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
   const overdue = await ctx.db
     .select({ id: runs.id })
     .from(runs)
-    .where(and(inArray(runs.status, ['running', 'uncertain']), lte(runs.deadlineAt, now)));
+    .where(and(inArray(runs.status, TRACKED_RUN_STATUSES), lte(runs.deadlineAt, now)));
   for (const r of overdue)
     await closeRun(ctx, r.id, { status: 'unknown', source: 'deadline', reason: 'deadline' });
   const lostPolls = await ctx.db
@@ -604,7 +607,7 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
     .from(runs)
     .where(
       and(
-        inArray(runs.status, ['running', 'uncertain']),
+        inArray(runs.status, TRACKED_RUN_STATUSES),
         lte(runs.nextPollAt, new Date(now.getTime() - 60_000)),
       ),
     );

@@ -7,6 +7,7 @@ import { batches, type GateDecisionRecord, type events, type processes } from '.
 import type { Deps } from '../../deps.js';
 import type { EvalFunctions, ExpressionEngine } from '../../expr/index.js';
 import type { CoreLogger } from '../../logger.js';
+import { errorText } from '../../util/errors.js';
 
 export interface SecretResolver {
   resolve(ref: string): Promise<string>;
@@ -219,12 +220,8 @@ export async function callPlugin<T>(
     ctx.runtime.recordPluginError(pluginName, 'exception', error);
     return { ok: false, error };
   } catch (err) {
-    return { ok: false, error: `${method}: ${errorMessage(err)}` };
+    return { ok: false, error: `${method}: ${errorText(err)}` };
   }
-}
-
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 export function addSeconds(d: Date, s: number): Date {

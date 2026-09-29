@@ -15,10 +15,12 @@ import { eventRaw, events, sources } from '../../db/schema.js';
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import type { EventStage } from '../../domain/status.js';
 import type { LiveSource } from '../../plugins/runtime.js';
+import { errorText } from '../../util/errors.js';
+import { isUuid } from '../../util/uuid.js';
 import { recordAudit } from '../audit.js';
 
-import { JOBS, callPlugin, errorMessage, lockKey, withTx, type Ctx } from './context.js';
-import { PipelineError, isUuid } from './errors.js';
+import { JOBS, callPlugin, lockKey, withTx, type Ctx } from './context.js';
+import { PipelineError } from './errors.js';
 
 type SourceRow = typeof sources.$inferSelect;
 
@@ -101,7 +103,7 @@ export function checkDraft(draft: unknown, live: LiveSource, now: Date): Checked
       const check = validateAgainst(spec.attributes, structuredClone(attributes));
       problems.push(...check.errors);
     } catch (err) {
-      problems.push(`declared attribute schema is invalid: ${errorMessage(err)}`);
+      problems.push(`declared attribute schema is invalid: ${errorText(err)}`);
     }
   }
   const secrets = live.secretValues.filter((s) => s.length >= 4);
@@ -511,7 +513,7 @@ async function replayEventInSpan(
       drafts = Array.isArray(parsed) ? parsed : [];
     } catch (err) {
       // Already counted against the plugin by the runtime's attribution wrapper.
-      throw new PipelineError('invalid', `parse failed on replay: ${errorMessage(err)}`);
+      throw new PipelineError('invalid', `parse failed on replay: ${errorText(err)}`);
     }
   }
   const out = await storeDrafts(ctx, row, live, drafts, {

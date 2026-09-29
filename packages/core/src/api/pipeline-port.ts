@@ -7,6 +7,7 @@ import type {
   FilterPreviewResponse,
   InputPreviewRequest,
   InputPreviewResponse,
+  SettledRunStatus,
   TraceResponse,
 } from './contract.js';
 
@@ -31,12 +32,7 @@ export interface PipelinePort {
     actor: string,
     reason: string,
   ): Promise<{ eventIds: string[] }>;
-  closeRun(
-    runId: string,
-    status: 'ok' | 'error' | 'unknown',
-    actor: string,
-    reason: string,
-  ): Promise<void>;
+  closeRun(runId: string, status: SettledRunStatus, actor: string, reason: string): Promise<void>;
   resetBreaker(processId: string, actor: string, reason: string): Promise<void>;
   clearSoftHold(destinationId: string, actor: string, reason: string): Promise<void>;
   readMetersNow(destinationId: string): Promise<void>;

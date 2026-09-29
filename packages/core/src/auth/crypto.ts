@@ -6,8 +6,6 @@ import {
   type ScryptOptions,
 } from 'node:crypto';
 
-import type { Role } from '../domain/status.js';
-
 function scrypt(
   password: string,
   salt: Buffer,
@@ -58,10 +56,4 @@ export function generatePassword(): string {
   let out = '';
   for (const b of bytes) out += alphabet.charAt(b % alphabet.length);
   return `${out.slice(0, 5)}-${out.slice(5, 10)}-${out.slice(10, 15)}-${out.slice(15, 20)}`;
-}
-
-const RANK: Record<Role, number> = { viewer: 0, operator: 1, admin: 2 };
-
-export function roleAtLeast(role: Role, required: Role): boolean {
-  return RANK[role] >= RANK[required];
 }

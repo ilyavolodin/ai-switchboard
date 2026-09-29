@@ -1,5 +1,6 @@
 import { validateAgainst, type JSONSchema } from '@ai-switchboard/sdk';
 
+import { errorText } from '../util/errors.js';
 import type { EvalFunctions, ExpressionEngine } from './engine.js';
 import { replaceSecretRefs } from './engine.js';
 
@@ -35,9 +36,7 @@ export async function evaluateMapping(
         ok: false,
         input: out.value,
         stage: 'validate',
-        errors: [
-          `destination inputSchema is invalid: ${err instanceof Error ? err.message : String(err)}`,
-        ],
+        errors: [`destination inputSchema is invalid: ${errorText(err)}`],
       };
     }
     if (!check.valid)

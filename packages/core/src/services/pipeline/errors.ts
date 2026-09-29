@@ -32,9 +32,3 @@ export class PipelineError extends Error {
 export function isPipelineError(err: unknown): err is PipelineError {
   return err instanceof Error && err.name === 'PipelineError' && 'code' in err;
 }
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isUuid(value: unknown): boolean {
-  return typeof value === 'string' && UUID.test(value);
-}

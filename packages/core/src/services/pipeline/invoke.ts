@@ -15,14 +15,8 @@ import {
   type InvokeOutcome,
 } from '../../pipeline/invoke.js';
 
-import {
-  JOBS,
-  addSeconds,
-  beforeStepBudgetSeconds,
-  errorMessage,
-  withTimeout,
-  type Ctx,
-} from './context.js';
+import { errorText } from '../../util/errors.js';
+import { JOBS, addSeconds, beforeStepBudgetSeconds, withTimeout, type Ctx } from './context.js';
 import { batchEvents } from './load.js';
 import { sendSystemAlert } from './notify.js';
 import { closeRun, markUncertain, recordUpdate, runHandle, scheduleTracking } from './runs.js';
@@ -151,7 +145,7 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
     await apply(
       ctx,
       run,
-      { action: 'failed', reason: 'secret_error', errors: [errorMessage(err)] },
+      { action: 'failed', reason: 'secret_error', errors: [errorText(err)] },
       tracking,
     );
     return;

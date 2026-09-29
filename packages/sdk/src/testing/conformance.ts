@@ -1,5 +1,5 @@
 import { definePlugin, validatePlugin, type PluginDefinition } from '../plugin.js';
-import { isValidSchema, validateAgainst } from '../schema.js';
+import { isValidSchema, validateAgainst } from '../schema/index.js';
 import type { RawRequest, Settings } from '../types/common.js';
 import type { ArtifactRef, EventDraft, EventTypeSpec } from '../types/events.js';
 import type {

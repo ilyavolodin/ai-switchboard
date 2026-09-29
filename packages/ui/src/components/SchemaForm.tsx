@@ -1,9 +1,9 @@
 import type { JSONSchema, SecretRefDTO } from '@ai-switchboard/core/contract';
+import { xDocs, xHelp, xPlaceholder, xWidget } from '@ai-switchboard/sdk/schema';
 import { type ReactNode, useMemo, useState } from 'react';
 
 import {
   asSchema,
-  docsLink,
   effectiveDefault,
   enumLabel,
   fieldKind,
@@ -155,8 +155,8 @@ function ObjectFields({ schema, path, ctx }: { schema: JSONSchema; path: ValuePa
 
 function helpFor(s: JSONSchema, title: string): ReactNode {
   const description = typeof s.description === 'string' ? s.description : null;
-  const long = typeof s['x-help'] === 'string' ? s['x-help'] : null;
-  const docs = docsLink(s);
+  const long = xHelp(s);
+  const docs = xDocs(s);
   if (!description && !long && !docs) return undefined;
   return (
     <>
@@ -406,11 +406,7 @@ function ControlField({
           value={value}
           changed={changed}
           placeholder={
-            typeof schema['x-placeholder'] === 'string'
-              ? schema['x-placeholder']
-              : hasDefault
-                ? formatDefault(schema.default)
-                : undefined
+            xPlaceholder(schema) ?? (hasDefault ? formatDefault(schema.default) : undefined)
           }
           ctx={ctx}
           set={set}
@@ -438,7 +434,7 @@ interface ControlProps {
 function Control(props: ControlProps) {
   const { ids, name, schema, kind, title, value, changed, placeholder, ctx, set } = props;
   const { id, describedBy, invalid } = ids;
-  const widget = typeof schema['x-widget'] === 'string' ? schema['x-widget'] : null;
+  const widget = xWidget(schema);
   if (isSecretField(schema)) {
     return (
       <SecretRefInput
@@ -565,9 +561,7 @@ function Control(props: ControlProps) {
         changed={changed}
         mono={widget === 'code'}
         rows={widget === 'code' ? 6 : 3}
-        placeholder={
-          typeof schema['x-placeholder'] === 'string' ? schema['x-placeholder'] : undefined
-        }
+        placeholder={xPlaceholder(schema) ?? undefined}
         disabled={ctx.disabled}
         value={text}
         onChange={(e) => {

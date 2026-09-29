@@ -1,7 +1,7 @@
 import type { Health } from '@ai-switchboard/sdk';
 
 import type { QuietWindow } from '../domain/process.js';
-import type { BatchKind, HoldReason } from '../domain/status.js';
+import type { ApprovalState, BatchKind, HoldReason } from '../domain/status.js';
 
 import { breakerAtGate, breakerClosesAt, type BreakerState } from './breaker.js';
 import { inQuietHours } from './quiet-hours.js';
@@ -27,7 +27,7 @@ export interface GateInput {
     rule: string;
     /** For an expression rule, errors count as required. */
     required: boolean;
-    state: 'none' | 'pending' | 'approved' | 'rejected';
+    state: ApprovalState;
     error?: string;
   };
 }

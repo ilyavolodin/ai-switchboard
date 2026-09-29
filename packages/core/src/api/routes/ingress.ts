@@ -4,6 +4,7 @@ import type { RawRequest } from '@ai-switchboard/sdk';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
+import { isUuid } from '../../util/uuid.js';
 import type { ApiContext } from '../context.js';
 
 /** The exact bytes and lower-cased headers of an inbound request. */
@@ -28,8 +29,6 @@ export function toRawRequest(req: FastifyRequest, receivedAt: Date): RawRequest 
     remoteAddress: req.ip,
   };
 }
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The three unauthenticated surfaces (`/hooks`, `/callbacks`, `/healthz`) plus `/readyz` and
@@ -69,7 +68,7 @@ export async function registerIngressRoutes(
       '/hooks/:sourceId',
       rateLimit,
       async (req, reply) => {
-        if (!UUID.test(req.params.sourceId)) return reply.code(404).send();
+        if (!isUuid(req.params.sourceId)) return reply.code(404).send();
         // Any failure here (Postgres down) answers 503 so the sender retries.
         const result = await ctx.pipeline
           .ingestPush(req.params.sourceId, toRawRequest(req, ctx.clock.now()))
@@ -88,7 +87,7 @@ export async function registerIngressRoutes(
       '/callbacks/:destinationId',
       rateLimit,
       async (req, reply) => {
-        if (!UUID.test(req.params.destinationId)) return reply.code(404).send();
+        if (!isUuid(req.params.destinationId)) return reply.code(404).send();
         const result = await ctx.pipeline
           .handleCallback(req.params.destinationId, toRawRequest(req, ctx.clock.now()))
           .catch((err: unknown) => {

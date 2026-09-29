@@ -6,8 +6,8 @@ import { actorOf, requireRole } from '../../auth/fastify.js';
 import { destinations, notifiers, secretProviders, sources } from '../../db/schema.js';
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import { instanceStatus } from '../../domain/labels.js';
+import type { InstanceKind } from '../../domain/status.js';
 import { literalSecretFields } from '../../secrets/refs.js';
-import type { InstanceKind } from '../../plugins/host.js';
 import { recordAudit, recordAuditDiff } from '../../services/audit.js';
 import {
   clearDestinationHealth,
@@ -18,6 +18,7 @@ import {
   setInstanceEnabled,
   type InstanceHead,
 } from '../../services/instances.js';
+import { errorText } from '../../util/errors.js';
 import type { ApiContext } from '../context.js';
 import type {
   CreateDestinationRequest,
@@ -442,7 +443,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       const url = `${ctx.config.publicUrl}/hooks/${live.id}`;
       const result = await live.source.provision(url).catch((err: unknown) => ({
         ok: false,
-        message: err instanceof Error ? err.message : String(err),
+        message: errorText(err),
       }));
       const now = clock.now();
       if (result.ok)
@@ -783,7 +784,7 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
         });
         return { ok: true, message: 'Sent.' };
       } catch (err) {
-        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+        return { ok: false, message: errorText(err) };
       }
     },
   );

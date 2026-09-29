@@ -1,4 +1,5 @@
 import type { MeResponse, Role, UserDTO } from '@ai-switchboard/core/contract';
+import { roleAtLeast } from '@ai-switchboard/core/domain';
 import { createContext, useContext } from 'react';
 
 export interface Session {
@@ -18,8 +19,6 @@ export const SessionContext = createContext<Session>({
   requireReasons: true,
 });
 
-export const ROLE_RANK: Record<Role, number> = { viewer: 0, operator: 1, admin: 2 };
-
 export function roleLabel(role: Role): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
@@ -31,7 +30,7 @@ export function useSession(): Session {
 /** Signed out is never allowed. */
 export function useCan(role: Role): boolean {
   const { user } = useSession();
-  return user != null && ROLE_RANK[user.role] >= ROLE_RANK[role];
+  return user != null && roleAtLeast(user.role, role);
 }
 
 export function roleRequiredMessage(role: Role, current: Role | undefined): string {

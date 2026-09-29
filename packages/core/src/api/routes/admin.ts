@@ -2,7 +2,6 @@ import { SDK_VERSION, validateAgainst, type JSONSchema } from '@ai-switchboard/s
 import { and, desc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
-import { roleAtLeast } from '../../auth/crypto.js';
 import { actorOf, requireRole } from '../../auth/fastify.js';
 import { passwordProblem } from '../../auth/password-policy.js';
 import { createApiToken, revokeUserSessions } from '../../auth/sessions.js';
@@ -19,11 +18,12 @@ import {
   users,
 } from '../../db/schema.js';
 import type { DbOrTx } from '../../db/client.js';
-import { ROLES, type Role } from '../../domain/status.js';
+import { ROLES, roleAtLeast, type Role } from '../../domain/status.js';
 import { recordAudit, recordAuditDiff } from '../../services/audit.js';
 import { getSettings, putSettings } from '../../services/settings.js';
 import { removePassword, storePassword } from '../../services/users.js';
 import { telemetryStatus } from '../../telemetry/otel-config.js';
+import { isUuid } from '../../util/uuid.js';
 import type { ApiContext } from '../context.js';
 import type {
   AboutResponse,
@@ -523,8 +523,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
   });
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** id → display name for the audit rows on one page, across instances, users and processes. */
 async function targetNames(
   ctx: ApiContext,
@@ -532,7 +530,7 @@ async function targetNames(
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   // Plugin names, `global` and bootstrap emails are not row ids.
-  const ids = [...new Set(targetIds.filter((id): id is string => id !== null && UUID.test(id)))];
+  const ids = [...new Set(targetIds.filter((id): id is string => id !== null && isUuid(id)))];
   if (ids.length === 0) return out;
   const lists = await Promise.all([
     ctx.db

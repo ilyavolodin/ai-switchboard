@@ -1,29 +1,26 @@
 import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormatsModule from 'ajv-formats';
 
-import type { JSONSchema } from './types/common.js';
+import type { JSONSchema } from '../types/common.js';
+
+import { UI_KEYWORDS, xSecret } from './extensions.js';
 
 // ajv-formats ships CJS with a default export that ESM sees as a namespace.
 const addFormats = addFormatsModule as unknown as (ajv: Ajv2020) => Ajv2020;
 
-export const UI_KEYWORDS = [
-  'x-secret',
-  'x-widget',
-  'x-group',
-  'x-order',
-  'x-placeholder',
-  'x-help',
-  'x-warning',
-  'x-enumLabels',
-  'x-effectiveDefault',
-  'x-docs',
-] as const;
+export interface CreateAjvOptions {
+  /**
+   * Fill in schema defaults while validating (the default). Validation then mutates the value, so
+   * turn it off to validate a value that must stay as it is, such as form state.
+   */
+  useDefaults?: boolean;
+}
 
-export function createAjv(): Ajv2020 {
+export function createAjv(options: CreateAjvOptions = {}): Ajv2020 {
   const ajv = new Ajv2020({
     allErrors: true,
     strict: false,
-    useDefaults: true,
+    useDefaults: options.useDefaults ?? true,
     coerceTypes: false,
   });
   addFormats(ajv);
@@ -82,7 +79,7 @@ export function secretPaths(schema: JSONSchema, prefix = ''): string[] {
   const out: string[] = [];
   for (const [key, sub] of Object.entries(props)) {
     const path = prefix === '' ? key : `${prefix}.${key}`;
-    if (sub['x-secret'] === true) out.push(path);
+    if (xSecret(sub)) out.push(path);
     if (sub.type === 'object') out.push(...secretPaths(sub, path));
   }
   return out;

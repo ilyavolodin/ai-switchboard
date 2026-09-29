@@ -1,3 +1,5 @@
+import { errorText } from '../util/errors.js';
+import { isRecord, str } from '../util/guards.js';
 import {
   isDiscoverablePluginName,
   parsePluginPackageName,
@@ -39,14 +41,6 @@ export interface SearchRegistryOptions {
   size?: number;
   fetch?: RegistryFetch;
   timeoutMs?: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function str(value: unknown): string | undefined {
-  return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
 export function searchTexts(kind: PluginNameKind | undefined, q: string): string[] {
@@ -114,7 +108,7 @@ export async function searchRegistry(options: SearchRegistryOptions): Promise<Re
           headers: { accept: 'application/json' },
         });
       } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
+        const detail = errorText(err);
         throw new RegistryUnavailableError(
           `The npm registry at ${base} is unreachable (${detail}).`,
         );

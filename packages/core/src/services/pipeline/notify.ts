@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { Event, NotificationMessage } from '@ai-switchboard/sdk';
 
 import { notificationLog, systemAlerts } from '../../db/schema.js';
+import type { NotifyOn } from '../../domain/status.js';
 import { renderTemplate } from '../../expr/index.js';
 import { getSettings } from '../settings.js';
 
@@ -16,8 +17,6 @@ import {
 } from './context.js';
 
 /** Every send is logged in `notification_log` for the trace. */
-
-export type NotifyOn = 'ok' | 'error' | 'held' | 'throttled';
 
 export interface ProcessNotification {
   process: ProcessRow;

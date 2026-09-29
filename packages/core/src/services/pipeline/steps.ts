@@ -7,7 +7,8 @@ import type { StepPhase } from '../../domain/status.js';
 import { evaluateFilter, resolveSecretRefs, stepContext } from '../../expr/index.js';
 import { redactSecretValues } from '../../secrets/refs.js';
 
-import { callPlugin, errorMessage, evalFunctions, type Ctx, type ProcessRow } from './context.js';
+import { errorText } from '../../util/errors.js';
+import { callPlugin, evalFunctions, type Ctx, type ProcessRow } from './context.js';
 
 /**
  * A failing `before` step fails the run before invoke; `after` steps run on the terminal state
@@ -251,7 +252,7 @@ async function runStepsInSpan(
       }
     } catch (err) {
       status = 'error';
-      error = errorMessage(err);
+      error = errorText(err);
     }
     // An action's error may echo what it was sent: never store a secret value.
     await ctx.db

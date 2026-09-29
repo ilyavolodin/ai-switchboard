@@ -9,6 +9,8 @@ import {
   formatSecretRef,
   parseSecretRef,
 } from '../../secrets/refs.js';
+import { errorText } from '../../util/errors.js';
+import { withTimeout } from '../../util/timeout.js';
 import type { ApiContext } from '../context.js';
 import type {
   MissingSecretDTO,
@@ -171,23 +173,6 @@ function sanitize(listing: unknown): SecretListing[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function listWithTimeout(list: () => Promise<SecretListing[]>): Promise<unknown> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      list(),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error('listing timed out'));
-        }, LIST_TIMEOUT_MS);
-        timer.unref();
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 /**
  * The secrets a provider instance makes available (names only), who uses each, and the
  * references to this provider whose names it does not list.
@@ -227,9 +212,11 @@ export async function providerSecrets(
   let listing: SecretListing[];
   try {
     // The live provider is wrapped by the host, so an exception here is already attributed.
-    listing = sanitize(await listWithTimeout(() => provider.list?.() ?? Promise.resolve([])));
+    listing = sanitize(
+      await withTimeout<unknown>(provider.list(), LIST_TIMEOUT_MS, 'listing timed out'),
+    );
   } catch (err) {
-    return unavailable(`Listing failed: ${err instanceof Error ? err.message : String(err)}`);
+    return unavailable(`Listing failed: ${errorText(err)}`);
   }
 
   const users = await usersByName(ctx, row.name);

@@ -2,8 +2,8 @@ import { and, eq, isNull, lt, ne } from 'drizzle-orm';
 
 import type { DbOrTx } from '../db/client.js';
 import { apiTokens, sessions, users } from '../db/schema.js';
-import type { Role } from '../domain/status.js';
-import { randomToken, roleAtLeast, sha256 } from './crypto.js';
+import { roleAtLeast, type Role } from '../domain/status.js';
+import { randomToken, sha256 } from './crypto.js';
 
 export const SESSION_COOKIE = 'sb_session';
 /** Sliding. */

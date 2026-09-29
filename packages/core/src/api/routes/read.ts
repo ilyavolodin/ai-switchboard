@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { actorOf, requireRole } from '../../auth/fastify.js';
+import { isSettledRunStatus } from '../../domain/status.js';
 import type { ApiContext } from '../context.js';
 import type { ActivityQuery, CloseRunRequest, RunsQuery } from '../contract.js';
 import { badRequest, notFound, requireReason } from '../errors.js';
@@ -101,7 +102,7 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
     { ...operator, schema: { body: reasoned } },
     async (req) => {
       const reason = requireReason(req.body);
-      if (!['ok', 'error', 'unknown'].includes(req.body.status))
+      if (!isSettledRunStatus(req.body.status))
         throw badRequest('status must be ok, error or unknown');
       await ctx.pipeline.closeRun(req.params.id, req.body.status, actorOf(req), reason);
       return runDetail(ctx, req.params.id);

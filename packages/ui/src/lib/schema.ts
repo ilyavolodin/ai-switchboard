@@ -1,9 +1,15 @@
 import type { JSONSchema } from '@ai-switchboard/core/contract';
-import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
-import addFormatsModule from 'ajv-formats';
-
-// ajv-formats ships CJS with a default export that ESM sees as a namespace.
-const addFormats = addFormatsModule as unknown as (ajv: Ajv2020) => Ajv2020;
+import {
+  createAjv,
+  xEffectiveDefaults,
+  xEnumLabels,
+  xGroup,
+  xOrder,
+  xSecret,
+  xWarnings,
+  xWidget,
+} from '@ai-switchboard/sdk/schema';
+import type { Ajv2020, ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 
 export type ValuePath = (string | number)[];
 
@@ -66,7 +72,7 @@ export function formatDefault(v: unknown): string {
 }
 
 export function textInputType(s: JSONSchema): 'password' | 'email' | 'url' | 'text' {
-  if (s['x-widget'] === 'password') return 'password';
+  if (xWidget(s) === 'password') return 'password';
   if (s.format === 'email') return 'email';
   if (s.format === 'uri') return 'url';
   return 'text';
@@ -74,10 +80,7 @@ export function textInputType(s: JSONSchema): 'password' | 'email' | 'url' | 'te
 
 /** From `x-enumLabels` (`{ "<value>": "<label>" }`); null falls back to the raw value. */
 export function enumLabel(s: JSONSchema, option: unknown): string | null {
-  const labels = asSchema(s['x-enumLabels']);
-  if (!labels) return null;
-  const label = labels[String(option)];
-  return typeof label === 'string' ? label : null;
+  return xEnumLabels(s)[String(option)] ?? null;
 }
 
 /** `x-order` first, then declaration order. */
@@ -86,7 +89,7 @@ export function orderedProperties(s: JSONSchema): [string, JSONSchema][] {
   const entries = Object.entries(props)
     .map(([k, v]) => [k, asSchema(v)] as const)
     .filter((e): e is [string, JSONSchema] => e[1] != null);
-  const order = Array.isArray(s['x-order']) ? (s['x-order'] as unknown[]).map(String) : [];
+  const order = xOrder(s);
   const rank = (k: string) => {
     const i = order.indexOf(k);
     return i === -1 ? order.length : i;
@@ -103,8 +106,7 @@ export function groupProperties(
 ): { group: string | null; fields: [string, JSONSchema][] }[] {
   const groups: { group: string | null; fields: [string, JSONSchema][] }[] = [];
   for (const entry of props) {
-    const raw = entry[1]['x-group'];
-    const g = typeof raw === 'string' ? raw : null;
+    const g = xGroup(entry[1]);
     let bucket = groups.find((x) => x.group === g);
     if (!bucket) {
       bucket = { group: g, fields: [] };
@@ -122,7 +124,7 @@ export function requiredOf(s: JSONSchema): string[] {
 
 /** Stored as `secret://<provider>/<name>`, never shown. */
 export function isSecretField(s: JSONSchema): boolean {
-  return s['x-secret'] === true;
+  return xSecret(s);
 }
 
 export function humanize(key: string): string {
@@ -136,18 +138,6 @@ export function humanize(key: string): string {
 
 export function fieldTitle(key: string, s: JSONSchema): string {
   return typeof s.title === 'string' && s.title ? s.title : humanize(key);
-}
-
-const SECRET_RE = /^secret:\/\/([^/]+)\/(.+)$/;
-
-export function parseSecretRef(v: unknown): { provider: string; name: string } | null {
-  if (typeof v !== 'string') return null;
-  const m = SECRET_RE.exec(v);
-  return m ? { provider: m[1] ?? '', name: m[2] ?? '' } : null;
-}
-
-export function formatSecretRef(provider: string, name: string): string {
-  return `secret://${provider}/${name}`;
 }
 
 export function schemaDefaults(s: JSONSchema): unknown {
@@ -199,10 +189,8 @@ const compiled = new WeakMap<object, ValidateFunction | null>();
 
 function validatorFor(schema: JSONSchema): ValidateFunction | null {
   if (compiled.has(schema)) return compiled.get(schema) ?? null;
-  if (!ajv) {
-    ajv = new Ajv2020({ allErrors: true, strict: false, coerceTypes: false });
-    addFormats(ajv);
-  }
+  // No defaults: validating must not write into the form's value.
+  ajv ??= createAjv({ useDefaults: false });
   const fn = compileOrNull(ajv, schema);
   compiled.set(schema, fn);
   return fn;
@@ -373,33 +361,14 @@ export function resolveConditionals(s: JSONSchema, value: unknown): ResolvedObje
  * settings, so a plugin can tell "unset" from a chosen value.
  */
 export function effectiveDefault(s: JSONSchema, parent: unknown): unknown {
-  const raw = s['x-effectiveDefault'];
-  const list = Array.isArray(raw) ? (raw as unknown[]) : [];
-  for (const entry of list) {
-    const e = asSchema(entry);
-    if (!e || !('value' in e)) continue;
-    const when = typeof e.when === 'boolean' ? e.when : asSchema(e.when);
-    if (e.when === undefined || (when !== null && matches(when, parent ?? {}))) return e.value;
+  for (const e of xEffectiveDefaults(s)) {
+    if (e.when === undefined || matches(e.when, parent ?? {})) return e.value;
   }
   return 'default' in s ? s.default : undefined;
 }
 
-export function docsLink(s: JSONSchema): { url: string; label: string } | null {
-  const d = asSchema(s['x-docs']);
-  if (!d || typeof d.url !== 'string' || !/^https?:\/\//.test(d.url)) return null;
-  return { url: d.url, label: typeof d.label === 'string' ? d.label : 'Documentation' };
-}
-
 /** `x-warning`: `{ when: <schema>, message }` or a list of them; the first match wins. */
 export function warningFor(s: JSONSchema, value: unknown): string | null {
-  const raw = s['x-warning'];
-  const list = Array.isArray(raw) ? (raw as unknown[]) : raw === undefined ? [] : [raw];
-  for (const entry of list) {
-    const w = asSchema(entry);
-    if (!w || typeof w.message !== 'string') continue;
-    const when = typeof w.when === 'boolean' ? w.when : asSchema(w.when);
-    if (when === null) continue;
-    if (value !== undefined && matches(when, value)) return w.message;
-  }
-  return null;
+  if (value === undefined) return null;
+  return xWarnings(s).find((w) => matches(w.when, value))?.message ?? null;
 }

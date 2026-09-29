@@ -25,6 +25,11 @@
       "@ai-switchboard/source": "./src/icons.ts",
       "types": "./dist/icons.d.ts",
       "default": "./dist/icons.js"
+    },
+    "./schema": {
+      "@ai-switchboard/source": "./src/schema/index.ts",
+      "types": "./dist/schema/index.d.ts",
+      "default": "./dist/schema/index.js"
     }
   },
   "scripts": {

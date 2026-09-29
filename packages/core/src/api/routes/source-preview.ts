@@ -3,12 +3,12 @@ import type { FastifyInstance } from 'fastify';
 
 import { requireRole } from '../../auth/fastify.js';
 import { isSecretRef } from '../../secrets/refs.js';
-import { isUuid } from '../../services/pipeline/errors.js';
 import {
   lastDelivery,
   previewSourceDelivery,
   sourceForPreview,
 } from '../../services/source-preview.js';
+import { isUuid } from '../../util/uuid.js';
 import type { ApiContext } from '../context.js';
 import type { SourcePreviewRequest, SourcePreviewResponse } from '../contract.js';
 import { HttpError, notFound, unprocessable } from '../errors.js';

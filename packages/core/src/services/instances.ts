@@ -2,7 +2,7 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 
 import type { DbOrTx } from '../db/client.js';
 import { destinations, notifiers, secretProviders, sources } from '../db/schema.js';
-import type { InstanceKind } from '../plugins/host.js';
+import type { InstanceKind } from '../domain/status.js';
 
 export interface InstanceHead {
   id: string;

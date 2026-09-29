@@ -13,6 +13,7 @@ import {
   type SaveMeta,
 } from '../../services/processes.js';
 import type { DbOrTx } from '../../db/client.js';
+import { errorText } from '../../util/errors.js';
 import type { ApiContext } from '../context.js';
 import type {
   CreateProcessRequest,
@@ -51,7 +52,7 @@ function compileError(expr: string | undefined): string | null {
     jsonata(expr);
     return null;
   } catch (err) {
-    return err instanceof Error ? err.message : String(err);
+    return errorText(err);
   }
 }
 

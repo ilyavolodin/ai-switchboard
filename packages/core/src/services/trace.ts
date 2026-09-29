@@ -25,8 +25,8 @@ import {
   type StepStatus,
 } from '../domain/status.js';
 
+import { isUuid } from '../util/uuid.js';
 import { explanationsFor } from './explain.js';
-import { isUuid } from './pipeline/errors.js';
 import { relatedBatchIds } from './pipeline/load.js';
 
 type EventRow = typeof events.$inferSelect;

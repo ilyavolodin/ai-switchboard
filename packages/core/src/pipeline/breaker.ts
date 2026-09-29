@@ -1,4 +1,8 @@
-import { BREAKER_RUN_STATUSES, type RunStatusValue } from '../domain/status.js';
+import {
+  BREAKER_RUN_STATUSES,
+  type BreakerStateValue,
+  type RunStatusValue,
+} from '../domain/status.js';
 
 /**
  * Opens after `threshold` consecutive `error` or `unknown` runs; closes by hand or after
@@ -6,7 +10,7 @@ import { BREAKER_RUN_STATUSES, type RunStatusValue } from '../domain/status.js';
  */
 
 export interface BreakerState {
-  state: 'open' | 'closed';
+  state: BreakerStateValue;
   openedAt: Date | null;
 }
 

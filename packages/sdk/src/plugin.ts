@@ -1,5 +1,5 @@
 import { iconProblem } from './icons.js';
-import { isValidSchema, validateAgainst } from './schema.js';
+import { isValidSchema, validateAgainst } from './schema/index.js';
 import type { Capabilities, JSONSchema } from './types/common.js';
 import type { DestinationType } from './types/destination.js';
 import type { NotifierType, SecretProviderType } from './types/notifier.js';

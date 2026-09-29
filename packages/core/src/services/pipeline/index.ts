@@ -1,5 +1,6 @@
 import type { RawRequest } from '@ai-switchboard/sdk';
 
+import type { SettledRunStatus } from '../../domain/status.js';
 import { createExpressionEngine } from '../../expr/index.js';
 
 import { traceQueue } from '../../queue/traced.js';
@@ -52,12 +53,7 @@ export interface Pipeline {
     actor: string,
     reason: string,
   ): Promise<{ eventIds: string[] }>;
-  closeRun(
-    runId: string,
-    status: 'ok' | 'error' | 'unknown',
-    actor: string,
-    reason: string,
-  ): Promise<void>;
+  closeRun(runId: string, status: SettledRunStatus, actor: string, reason: string): Promise<void>;
   resetBreaker(processId: string, actor: string, reason: string): Promise<void>;
   clearSoftHold(destinationId: string, actor: string, reason: string): Promise<void>;
   readMetersNow(destinationId: string): Promise<void>;

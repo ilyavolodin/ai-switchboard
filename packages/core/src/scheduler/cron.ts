@@ -2,6 +2,8 @@ import { CronExpressionParser } from 'cron-parser';
 import cronstrue from 'cronstrue';
 import { DateTime } from 'luxon';
 
+import { errorText } from '../util/errors.js';
+
 /**
  * DST rules: a wall time skipped by a spring-forward gap fires once, at the first instant after
  * the gap; a wall time repeated by a fall-back fold fires once, on its first occurrence.
@@ -69,7 +71,7 @@ export function parseCron(expression: string): CronParse {
       },
     };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorText(err) };
   }
 }
 

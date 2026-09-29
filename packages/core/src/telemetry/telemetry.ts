@@ -14,6 +14,7 @@ import {
 
 import type { CoreLogger } from '../logger.js';
 
+import { errorText } from '../util/errors.js';
 import { activeTraceparent, contextFromTraceparent, parseTraceparent } from './trace-context.js';
 
 /** Signal names from the TDD's Observability table. */
@@ -239,7 +240,7 @@ function failSpan(span: Span, err: unknown): void {
   span.recordException(err instanceof Error ? err : new Error(String(err)));
   span.setStatus({
     code: SpanStatusCode.ERROR,
-    message: err instanceof Error ? err.message : String(err),
+    message: errorText(err),
   });
 }
 

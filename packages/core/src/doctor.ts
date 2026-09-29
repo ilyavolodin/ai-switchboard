@@ -9,20 +9,13 @@ import { destinations, notifiers, secretProviders, sources } from './db/schema.j
 import { silentLogger } from './logger.js';
 import { PluginHost } from './plugins/host.js';
 import { createRecordingTelemetry } from './telemetry/telemetry.js';
+import { errorText } from './util/errors.js';
+import { withTimeout } from './util/timeout.js';
 
 export interface DoctorCheck {
   name: string;
   ok: boolean;
   detail: string;
-}
-
-async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms).unref(),
-    ),
-  ]);
 }
 
 /** Read-only except for the plugin registry refresh the host does. */
@@ -41,7 +34,7 @@ export async function runDoctor(config: CoreConfig): Promise<DoctorCheck[]> {
       checks.push({
         name: 'database',
         ok: false,
-        detail: err instanceof Error ? err.message : String(err),
+        detail: errorText(err),
       });
       return checks;
     }
@@ -113,7 +106,7 @@ export async function runDoctor(config: CoreConfig): Promise<DoctorCheck[]> {
           continue;
         }
         try {
-          const h = await withTimeout(obj.health(), 10_000);
+          const h = await withTimeout(obj.health(), 10_000, 'timed out after 10000 ms');
           checks.push({
             name: `${kind} ${row.name}`,
             ok: h.status !== 'unhealthy',
@@ -123,7 +116,7 @@ export async function runDoctor(config: CoreConfig): Promise<DoctorCheck[]> {
           checks.push({
             name: `${kind} ${row.name}`,
             ok: false,
-            detail: `health() threw: ${err instanceof Error ? err.message : String(err)}`,
+            detail: `health() threw: ${errorText(err)}`,
           });
         }
       }

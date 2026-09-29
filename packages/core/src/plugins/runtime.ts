@@ -13,6 +13,8 @@ import type {
   UsageDimension,
 } from '@ai-switchboard/sdk';
 
+import type { InstanceKind } from '../domain/status.js';
+
 export interface LiveSource {
   id: string;
   name: string;
@@ -78,10 +80,7 @@ export interface PluginRuntime {
   /** Why an instance has no live object (`plugin_unavailable`, `disabled`, `secret_error: ...`). */
   instanceError(id: string): string | undefined;
 
-  reload(
-    kind: 'source' | 'destination' | 'notifier' | 'secret_provider',
-    id: string,
-  ): Promise<void>;
+  reload(kind: InstanceKind, id: string): Promise<void>;
 
   recordPluginError(
     pluginName: string,

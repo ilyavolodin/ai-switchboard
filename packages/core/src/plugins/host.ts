@@ -1,4 +1,3 @@
-import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -34,10 +33,18 @@ import {
   secretProviders,
   sources,
 } from '../db/schema.js';
+import {
+  INSTANCE_KINDS,
+  type InstanceKind,
+  type PluginOrigin,
+  type PluginStatus,
+} from '../domain/status.js';
 import { toPluginLogger, type CoreLogger } from '../logger.js';
 import { parseSecretRef, referencesProvider, resolveSecretRefs } from '../secrets/refs.js';
 import { createTracedFetch } from '../telemetry/http-client.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
+import { errorText } from '../util/errors.js';
+import { exists } from '../util/fs.js';
 import { discoverPlugins, type DiscoveredPackage } from './discovery.js';
 import {
   installPlugin,
@@ -59,17 +66,17 @@ import {
   type PluginRuntime,
 } from './runtime.js';
 
-export type InstanceKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
-
 export interface LoadedPlugin {
   name: string;
   version: string;
-  origin: 'baked' | 'installed';
+  origin: PluginOrigin;
   /** `removed`: an admin removed it while this process ran; its types are unregistered. */
-  status: 'loaded' | 'failed' | 'incompatible' | 'removed';
+  status: Exclude<PluginStatus, 'unavailable'> | 'removed';
   message?: string;
   definition?: PluginDefinition;
 }
+
+type EvaluatedPlugin = LoadedPlugin & { status: Exclude<LoadedPlugin['status'], 'removed'> };
 
 export interface PluginHostOptions {
   db: Db;
@@ -79,7 +86,7 @@ export interface PluginHostOptions {
   config: CoreConfig;
   /** Registered without discovery (tests, embedded use). */
   builtin?: { name: string; version: string; definition: PluginDefinition }[];
-  scanDirs?: { path: string; origin: 'baked' | 'installed' }[];
+  scanDirs?: { path: string; origin: PluginOrigin }[];
   runNpm?: RunNpm;
 }
 
@@ -128,22 +135,9 @@ const INSTANCE_TABLES = {
 
 const REMOVED_MESSAGE = 'removed by an admin';
 
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 /** Errors a plugin raises on purpose to describe a backend outcome; not counted as plugin bugs. */
 function isExpectedError(err: unknown): boolean {
   return isTransportError(err) || isInvokeError(err);
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export function serializeType(
@@ -277,7 +271,7 @@ export class PluginHost implements PluginRuntime {
     await this.reconcile();
   }
 
-  defaultScanDirs(): { path: string; origin: 'baked' | 'installed' }[] {
+  defaultScanDirs(): { path: string; origin: PluginOrigin }[] {
     const coreNodeModules = fileURLToPath(new URL('../../node_modules', import.meta.url));
     return [
       { path: join(this.opts.config.home, 'plugins', 'node_modules'), origin: 'installed' },
@@ -297,8 +291,8 @@ export class PluginHost implements PluginRuntime {
     return mod.default;
   }
 
-  private async evaluate({ pkg, load }: Candidate): Promise<LoadedPlugin> {
-    const record: LoadedPlugin = {
+  private async evaluate({ pkg, load }: Candidate): Promise<EvaluatedPlugin> {
+    const record: EvaluatedPlugin = {
       name: pkg.name,
       version: pkg.version,
       origin: pkg.origin,
@@ -333,7 +327,7 @@ export class PluginHost implements PluginRuntime {
       }
     } catch (err) {
       record.status = 'failed';
-      record.message = err instanceof Error ? err.message : String(err);
+      record.message = errorText(err);
     }
     if (record.status !== 'loaded')
       this.opts.logger.warn(
@@ -344,7 +338,7 @@ export class PluginHost implements PluginRuntime {
   }
 
   /** Install columns are left alone. */
-  private pluginRow(p: LoadedPlugin, sdkRange: string, now: Date) {
+  private pluginRow(p: EvaluatedPlugin, sdkRange: string, now: Date) {
     const def = p.definition;
     return {
       name: p.name,
@@ -363,7 +357,7 @@ export class PluginHost implements PluginRuntime {
 
   private typeRows(pluginName: string | undefined, now: Date) {
     const rows = [];
-    for (const kind of ['source', 'destination', 'notifier', 'secret_provider'] as const) {
+    for (const kind of INSTANCE_KINDS) {
       for (const [typeId, entry] of this.types[kind]) {
         if (pluginName !== undefined && entry.pluginName !== pluginName) continue;
         rows.push({
@@ -399,13 +393,15 @@ export class PluginHost implements PluginRuntime {
       })),
     ];
 
+    const evaluated: EvaluatedPlugin[] = [];
+    for (const candidate of candidates) evaluated.push(await this.evaluate(candidate));
     this.loaded.length = 0;
-    for (const candidate of candidates) this.loaded.push(await this.evaluate(candidate));
+    this.loaded.push(...evaluated);
 
     const now = clock.now();
     await db.transaction(async (tx) => {
       const present = new Set<string>();
-      for (const p of this.loaded) {
+      for (const p of evaluated) {
         present.add(p.name);
         const values = this.pluginRow(
           p,
@@ -605,7 +601,7 @@ export class PluginHost implements PluginRuntime {
     const { db, clock, logger } = this.opts;
     const record = this.loaded.find((p) => p.name === name);
     const dropped: { kind: InstanceKind; typeId: string }[] = [];
-    for (const kind of ['source', 'destination', 'notifier', 'secret_provider'] as const) {
+    for (const kind of INSTANCE_KINDS) {
       for (const [typeId, entry] of this.types[kind]) {
         if (entry.pluginName !== name) continue;
         this.types[kind].delete(typeId);
@@ -868,11 +864,7 @@ export class PluginHost implements PluginRuntime {
         { err, plugin: pluginName, instance_id: instanceId, method },
         'plugin exception',
       );
-      this.recordPluginError(
-        pluginName,
-        'exception',
-        `${method}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.recordPluginError(pluginName, 'exception', `${method}: ${errorText(err)}`);
     };
   }
 
@@ -1552,7 +1544,7 @@ export class PluginHost implements PluginRuntime {
     } catch (err) {
       return {
         status: 'unhealthy',
-        message: err instanceof Error ? err.message : String(err),
+        message: errorText(err),
         checkedAt: now,
       };
     }

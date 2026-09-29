@@ -20,8 +20,8 @@ import {
 } from '../expr/index.js';
 import { cronPreview as previewCron } from '../scheduler/preview.js';
 
+import { isUuid } from '../util/uuid.js';
 import { evalFunctions, toEvent } from './pipeline/context.js';
-import { isUuid } from './pipeline/errors.js';
 import { batchEvents } from './pipeline/load.js';
 
 /**

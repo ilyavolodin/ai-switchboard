@@ -1,6 +1,6 @@
 import type { Health } from '@ai-switchboard/sdk';
 
-import type { RunStatusValue, StatusTone } from './status.js';
+import type { PluginStatus, RunStatusValue, StatusTone } from './status.js';
 
 export interface StatusLabel {
   tone: StatusTone;
@@ -60,7 +60,7 @@ export function processStatus(input: {
   return { tone: 'ok', label: 'flowing' };
 }
 
-export function pluginStatusLabel(status: string): StatusLabel {
+export function pluginStatusLabel(status: PluginStatus): StatusLabel {
   switch (status) {
     case 'loaded':
       return { tone: 'ok', label: 'loaded' };
@@ -68,7 +68,7 @@ export function pluginStatusLabel(status: string): StatusLabel {
       return { tone: 'warn', label: 'unavailable' };
     case 'incompatible':
       return { tone: 'error', label: 'incompatible' };
-    default:
+    case 'failed':
       return { tone: 'error', label: 'failed' };
   }
 }

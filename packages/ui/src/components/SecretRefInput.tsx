@@ -1,11 +1,11 @@
 import type { SecretRefDTO } from '@ai-switchboard/core/contract';
+import { formatSecretRef, parseSecretRef } from '@ai-switchboard/sdk/schema';
 import { useId, useState } from 'react';
 import { Link } from 'react-router';
 
 import { useSecretSuggestions } from '../api/hooks/secrets.js';
 import { useNow } from '../hooks/useNow.js';
 import { formatRelative, toMs } from '../lib/format.js';
-import { formatSecretRef, parseSecretRef } from '../lib/schema.js';
 import { Icon } from './Icon.js';
 import { Select } from './Select.js';
 import styles from './SecretRefInput.module.css';
@@ -57,7 +57,7 @@ export function SecretRefInput({
 
   const emit = (p: string, n: string) => {
     if (p === '') return;
-    onChange(n.trim() ? formatSecretRef(p, n.trim()) : undefined);
+    onChange(n.trim() ? formatSecretRef({ provider: p, name: n.trim() }) : undefined);
   };
 
   const resolved = toMs(status?.lastResolvedAt);

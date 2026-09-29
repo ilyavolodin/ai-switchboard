@@ -269,14 +269,14 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
         pluginId: p.pluginId,
         displayName: p.displayName,
         version: p.version,
-        status: p.status as PluginSummary['status'],
+        status: p.status,
         statusLabel: pendingRestart
           ? { tone: 'warn', label: 'restart to apply' }
           : pluginStatusLabel(p.status),
         statusMessage: pendingRestart
           ? `Version ${locked.version} is installed; restart to load it.`
           : p.statusMessage,
-        origin: p.origin as PluginSummary['origin'],
+        origin: p.origin,
         sdkRange: p.sdkRange,
         capabilities: p.capabilities,
         types: types

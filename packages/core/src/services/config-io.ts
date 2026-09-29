@@ -13,6 +13,8 @@ import {
   sources,
 } from '../db/schema.js';
 import type { ProcessDocument } from '../domain/process.js';
+import type { InstanceKind } from '../domain/status.js';
+import { errorText } from '../util/errors.js';
 import { recordAudit } from './audit.js';
 import { nextConfigVersion } from './instances.js';
 import { getSettings, putSettings } from './settings.js';
@@ -201,7 +203,7 @@ export interface ApplyOptions {
   dryRun: boolean;
   /** Undefined when the type is not installed. */
   validateSettings: (
-    kind: 'source' | 'destination' | 'notifier' | 'secret_provider',
+    kind: InstanceKind,
     typeId: string,
     settings: Record<string, unknown>,
   ) => string[] | undefined;
@@ -226,7 +228,7 @@ export async function applyConfiguration(
     return {
       dryRun: opts.dryRun,
       changes: [],
-      errors: [`YAML: ${err instanceof Error ? err.message : String(err)}`],
+      errors: [`YAML: ${errorText(err)}`],
     };
   }
   const upgraded = upgradeLegacyConfiguration(file);

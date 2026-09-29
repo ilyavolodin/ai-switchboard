@@ -1,8 +1,8 @@
 import type { SecretRefDTO } from '@ai-switchboard/core/contract';
+import { parseSecretRef } from '@ai-switchboard/sdk/schema';
 
 import { Icon } from '../../components/Icon.js';
 import { Time } from '../../components/Time.js';
-import { parseSecretRef } from '../../lib/schema.js';
 import styles from './detail.module.css';
 
 export function SecretRefsFact({ refs }: { refs: SecretRefDTO[] }) {

@@ -22,6 +22,11 @@
       "@ai-switchboard/source": "./src/api/contract.ts",
       "types": "./dist/api/contract.d.ts",
       "default": "./dist/api/contract.js"
+    },
+    "./domain": {
+      "@ai-switchboard/source": "./src/domain/index.ts",
+      "types": "./dist/domain/index.d.ts",
+      "default": "./dist/domain/index.js"
     }
   },
   "scripts": {
