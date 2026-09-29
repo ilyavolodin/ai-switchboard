@@ -3,6 +3,7 @@ import {
   Controls,
   type EdgeTypes,
   type Node,
+  type NodeChange,
   type NodeProps,
   type NodeTypes,
   ReactFlow,
@@ -123,6 +124,28 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
   const [params, setParams] = useSearchParams();
   const nowMs = useNow(60_000);
   const [hovered, setHovered] = useState<string | null>(null);
+  // The canvas is controlled: nodes are rebuilt on every hover and poll. React Flow hides a node
+  // it has no dimensions for, so keep the sizes it measured and hand them back on each node.
+  const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
+  const onNodesChange = (changes: NodeChange[]) => {
+    const sized = changes.filter(
+      (c): c is Extract<NodeChange, { type: 'dimensions' }> =>
+        c.type === 'dimensions' && c.dimensions !== undefined,
+    );
+    if (sized.length === 0) return;
+    setMeasured((prev) => {
+      let next = prev;
+      for (const c of sized) {
+        const d = c.dimensions;
+        if (!d) continue;
+        const old = prev[c.id];
+        if (old?.width === d.width && old.height === d.height) continue;
+        if (next === prev) next = { ...prev };
+        next[c.id] = { width: d.width, height: d.height };
+      }
+      return next;
+    });
+  };
   const hideDisabled = params.get('hide') === 'disabled';
   const focus = params.get('focus');
   const focusProcess = data.processes.find((p) => p.id === focus) ?? null;
@@ -175,6 +198,7 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
       selectable: false,
       zIndex: hovered === n.id ? 10 : 1,
       width: n.width,
+      ...(measured[n.id] ? { measured: measured[n.id] } : {}),
     };
   });
 
@@ -257,7 +281,7 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
           />
         )}
       </div>
-      <div className={styles.grid}>
+      <div className={`${styles.grid} ${styles.fill}`}>
         <Card className={styles.canvasCard} padding="flush" aria-label="Board canvas">
           <div className={styles.legend} aria-hidden="true">
             <span className={styles.legendKey}>
@@ -277,10 +301,11 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
               last hour: matched › batched › gated › invoked › ok
             </span>
           </div>
-          <div className={styles.canvas} style={{ height: canvasHeight }}>
+          <div className={styles.canvas} style={{ minHeight: canvasHeight }}>
             <ReactFlowProvider>
               <ReactFlow
                 nodes={[...COLUMN_LABELS, ...nodes]}
+                onNodesChange={onNodesChange}
                 edges={edges}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
@@ -297,6 +322,16 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
                 fitView
                 fitViewOptions={{ padding: 0.06, maxZoom: 1 }}
                 aria-label="Sources, processes and destinations"
+                proOptions={{ hideAttribution: true }}
+                // Passing node mouse handlers is what makes React Flow give nodes pointer events
+                // (it sets pointer-events: none inline on nodes that are not draggable, selectable
+                // or connectable). Without them nothing on the canvas can be hovered or clicked.
+                onNodeMouseEnter={(_, node) => {
+                  if (node.type === 'switchboard') setHovered(node.id);
+                }}
+                onNodeMouseLeave={() => {
+                  setHovered(null);
+                }}
               >
                 <Controls showInteractive={false} position="bottom-right" />
                 <FitView layoutKey={layout.nodes.map((n) => n.id).join(',')} />

@@ -23,8 +23,21 @@
   align-items: start;
 }
 
+/* The board with a canvas fills the rest of the page height. */
+.fill {
+  flex-grow: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.fill > :last-child {
+  align-self: start;
+}
+
 .canvasCard {
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .legend {
@@ -72,6 +85,7 @@
 
 .canvas {
   position: relative;
+  flex-grow: 1;
   width: 100%;
   min-height: 360px;
 }

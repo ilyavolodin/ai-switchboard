@@ -12,12 +12,31 @@
   min-width: 0;
   transition:
     opacity 150ms ease,
-    box-shadow 150ms ease;
+    box-shadow 150ms ease,
+    transform 150ms ease,
+    background-color 150ms ease;
 }
 
 a.card:hover {
   color: var(--foreground);
-  box-shadow: var(--shadow-float);
+}
+
+a.card:hover,
+a.card:focus-visible,
+.highlighted {
+  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--node-border, var(--tangerine)) 6%, var(--card));
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--node-border, var(--tangerine)) 28%, transparent),
+    var(--shadow-float);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a.card:hover,
+  a.card:focus-visible,
+  .highlighted {
+    transform: none;
+  }
 }
 
 .head {
@@ -63,10 +82,4 @@ a.card:hover {
 
 .dimmed {
   opacity: 0.35;
-}
-
-.highlighted {
-  box-shadow:
-    0 0 0 3px var(--tangerine-soft),
-    var(--shadow-card);
 }

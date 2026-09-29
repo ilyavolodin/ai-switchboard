@@ -1,33 +1,23 @@
-import { useReactFlow } from '@xyflow/react';
+import { useReactFlow, useStore } from '@xyflow/react';
 import { useEffect } from 'react';
 
 const OPTIONS = { padding: 0.06, maxZoom: 1 } as const;
 
 /**
- * Refits the canvas when the window resizes or the laid-out graph changes (a filter, a new
- * node); React Flow's `fitView` prop only fits the first render. Render inside `<ReactFlow>`.
+ * Refits the canvas when its container changes size (the window, the banner, the canvas growing
+ * to fill the page) or the laid-out graph changes (a filter, a new node); React Flow's `fitView`
+ * prop only fits the first render. Render inside `<ReactFlow>`.
  */
 export function FitView({ layoutKey }: { layoutKey: string }) {
   const { fitView } = useReactFlow();
+  const width = useStore((s) => s.width);
+  const height = useStore((s) => s.height);
   useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      void fitView(OPTIONS);
-    });
-    return () => {
-      cancelAnimationFrame(id);
-    };
-  }, [fitView, layoutKey]);
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const onResize = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void fitView(OPTIONS), 120);
-    };
-    window.addEventListener('resize', onResize);
+    if (width === 0 || height === 0) return;
+    const timer = setTimeout(() => void fitView(OPTIONS), 60);
     return () => {
       clearTimeout(timer);
-      window.removeEventListener('resize', onResize);
     };
-  }, [fitView]);
+  }, [fitView, layoutKey, width, height]);
   return null;
 }
