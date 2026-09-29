@@ -1,21 +1,23 @@
+import { secretPaths, type RawRequest } from '@ai-switchboard/sdk';
 import { and, desc, eq } from 'drizzle-orm';
-
-import type { RawRequest } from '@ai-switchboard/sdk';
 
 import type {
   LastDeliveryResponse,
   SampleDeliveryDTO,
   SourcePreviewEvent,
+  SourcePreviewRequest,
   SourcePreviewResponse,
 } from '../api/contract.js';
 import { eventRaw, sources } from '../db/schema.js';
 import type { Deps } from '../deps.js';
+import { checkDraft } from '../pipeline/door.js';
 import type { LiveSource } from '../plugins/runtime.js';
-import { REDACTED, redactSecretValues } from '../secrets/refs.js';
-
+import { isSecretRef, REDACTED, redactSecretValues } from '../secrets/refs.js';
 import { errorText } from '../util/errors.js';
 import { withTimeout } from '../util/timeout.js';
-import { checkDraft } from './pipeline/ingest.js';
+import { isUuid } from '../util/uuid.js';
+import { isServiceError, notFound, ServiceError, unprocessable } from './errors.js';
+import { validateSettings } from './instance-validation.js';
 
 /**
  * The sample runs through `parse`, never `verify`: the person is trying a mapping, not a
@@ -88,10 +90,85 @@ async function runParse(
   return { drafts: parsed as unknown[], notes: [] };
 }
 
+function getPath(value: unknown, path: string): unknown {
+  let cur: unknown = value;
+  for (const key of path.split('.')) {
+    cur =
+      cur !== null && typeof cur === 'object' ? (cur as Record<string, unknown>)[key] : undefined;
+  }
+  return cur;
+}
+
+function setPath(value: Record<string, unknown>, path: string, next: unknown): void {
+  const keys = path.split('.');
+  let cur: Record<string, unknown> = value;
+  for (const key of keys.slice(0, -1)) {
+    const child = cur[key];
+    if (child === null || typeof child !== 'object') cur[key] = {};
+    cur = cur[key] as Record<string, unknown>;
+  }
+  const last = keys.at(-1);
+  if (last !== undefined) cur[last] = next;
+}
+
+function emptyPreview(errors: string[]): SourcePreviewResponse {
+  return { events: [], errors, notes: [], declaredTypes: [] };
+}
+
 /**
- * `settings` are already validated by the route. Secret values are resolved for `create` and
- * redacted from everything returned.
+ * `POST /sources/preview`: draft settings (for an existing source, a secret field left empty
+ * keeps its stored reference, as a save would) and a sample delivery. Settings that do not
+ * validate are reported in `errors`, not refused.
  */
+export async function previewSource(
+  deps: Deps,
+  builder: PreviewBuilder,
+  request: SourcePreviewRequest,
+): Promise<SourcePreviewResponse> {
+  const { typeId, sourceId } = request;
+  const entry = deps.runtime.sourceType(typeId);
+  if (!entry) throw notFound(`Source type ${typeId}`);
+  if (entry.type.mode === 'pull') {
+    throw unprocessable(
+      `${entry.type.displayName} sources are polled, not pushed: there is no delivery to preview.`,
+    );
+  }
+  const draft = structuredClone(request.settings);
+  let name = `${entry.type.displayName} preview`;
+  if (sourceId !== undefined) {
+    const stored = isUuid(sourceId) ? await sourceForPreview(deps, sourceId) : null;
+    if (!stored) throw notFound(`Source ${sourceId}`);
+    if (stored.typeId !== typeId) {
+      throw unprocessable(`Source ${stored.name} is a ${stored.typeId} source, not ${typeId}.`);
+    }
+    name = stored.name;
+    for (const path of secretPaths(entry.type.settingsSchema)) {
+      const given = getPath(draft, path);
+      const kept = getPath(stored.settings, path);
+      if ((given === undefined || given === '') && isSecretRef(kept)) setPath(draft, path, kept);
+    }
+  }
+  let settings: Record<string, unknown>;
+  try {
+    settings = validateSettings(entry.type.settingsSchema, draft);
+  } catch (err) {
+    if (!isServiceError(err)) throw err;
+    // "must match \"then\" schema" only repeats the branch's own messages.
+    const details = (err.details ?? [err.message]).filter(
+      (d) => !/must match "(then|else)" schema$/.test(d),
+    );
+    return emptyPreview(details.map((d) => `Settings: ${d.replace(/^\(root\) /, '')}`));
+  }
+  return previewSourceDelivery(deps, builder, {
+    typeId,
+    settings,
+    sourceId,
+    name,
+    sample: request.request,
+  });
+}
+
+/** `settings` are already validated. Secret values are resolved for `create` and redacted from everything returned. */
 export async function previewSourceDelivery(
   deps: Deps,
   builder: PreviewBuilder,
@@ -179,9 +256,7 @@ export async function lastDelivery(
     .where(and(eq(eventRaw.sourceId, sourceId), eq(eventRaw.verify, 'ok')))
     .orderBy(desc(eventRaw.receivedAt))
     .limit(20);
-  const row = rows.find(
-    (r) => r.body.length > 0 && r.headers['x-switchboard-origin'] === undefined,
-  );
+  const row = rows.find((r) => r.body.length > 0 && r.origin === 'push');
   if (!row) return null;
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(row.headers)) {
@@ -189,4 +264,13 @@ export async function lastDelivery(
     headers[k] = SENSITIVE_HEADER.test(k) ? REDACTED : v;
   }
   return { receivedAt: row.receivedAt.toISOString(), body: row.body.toString('utf8'), headers };
+}
+
+/** `GET /sources/:id/last-delivery`: a 404 for an unknown source or one with nothing stored. */
+export async function lastDeliveryOf(deps: Deps, sourceId: string): Promise<LastDeliveryResponse> {
+  if (!isUuid(sourceId) || !(await sourceForPreview(deps, sourceId)))
+    throw notFound(`Source ${sourceId}`);
+  const last = await lastDelivery(deps, sourceId);
+  if (!last) throw new ServiceError(404, 'not_found', 'This source has no stored delivery yet.');
+  return last;
 }

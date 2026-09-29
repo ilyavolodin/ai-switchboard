@@ -2,8 +2,9 @@ import { definePlugin } from '@ai-switchboard/sdk';
 
 import { envSecretProviderType } from './provider.js';
 
-export { envSecretProviderType, SecretNotFoundError } from './provider.js';
-export type { EnvSecretSettings } from './provider.js';
+export { SecretNotFoundError } from '@ai-switchboard/sdk';
+export { envSecretProviderType } from './provider.js';
+export type { EnvSecretSettings } from './settings.js';
 
 export default definePlugin({
   id: 'secrets-env',

@@ -1,23 +1,26 @@
 import { MAX_INVOKE_TIMEOUT_SECONDS } from '@ai-switchboard/sdk';
 
 import { errorText } from '../../util/errors.js';
-import { JOBS, type Ctx } from './context.js';
+import { HOUR_MS } from '../../util/time.js';
+
+import type { Ctx } from './context.js';
 import { dispatchBatch } from './dispatch.js';
 import { pollSource } from './ingest.js';
 import { attemptInvoke } from './invoke.js';
+import { JOBS } from './jobs.js';
 import { heartbeat, maintenance } from './maintenance.js';
 import { fireBatch, matchEvent } from './match.js';
 import { readMeters } from './meters.js';
 import { prune } from './retention.js';
 import { deadlineRun, finishRun, pollRun, recoverRuns } from './runs.js';
 import { schedulerTick } from './scheduler.js';
+import { materialiseStats } from './stats.js';
 
 /**
  * An invoke can legitimately run up to the longest invoke timeout plus before steps; expiring
  * sooner makes the queue redeliver a live job (harmless, since the attempt is claimed, but noisy).
  */
 const INVOKE_JOB_EXPIRE_SECONDS = MAX_INVOKE_TIMEOUT_SECONDS + 600;
-import { materialiseStats } from './stats.js';
 
 /** Every handler takes ids and is idempotent. */
 
@@ -90,11 +93,11 @@ export async function registerWorkers(ctx: Ctx): Promise<WorkerHandle> {
   await q.work(JOBS.maintenance, () => maintenance(ctx));
   await q.work(JOBS.stats, async () => {
     const now = ctx.clock.now();
-    await materialiseStats(ctx, new Date(now.getTime() - 3 * 3_600_000), now);
+    await materialiseStats(ctx, new Date(now.getTime() - 3 * HOUR_MS), now);
   });
   await q.work(JOBS.statsDeep, async () => {
     const now = ctx.clock.now();
-    await materialiseStats(ctx, new Date(now.getTime() - 48 * 3_600_000), now);
+    await materialiseStats(ctx, new Date(now.getTime() - 48 * HOUR_MS), now);
   });
   await q.work(JOBS.prune, async () => {
     await prune(ctx);

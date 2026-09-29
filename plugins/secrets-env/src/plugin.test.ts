@@ -9,7 +9,7 @@ import {
 
 import plugin, { envSecretProviderType } from './plugin.js';
 
-runConformance('plugin', pluginConformanceChecks(plugin), { describe, it });
+runConformance('plugin', pluginConformanceChecks(plugin, {}), { describe, it });
 
 describe('with seeded variables', () => {
   beforeAll(() => {
@@ -70,6 +70,12 @@ describe('env secret provider', () => {
 
   it('rejects an invalid prefix', () => {
     expect(() => make({ prefix: 'bad-prefix' })).toThrow(/prefix/);
+  });
+
+  it('is read-only: rotated credentials cannot be stored in the environment', () => {
+    const provider = make();
+    expect(provider).not.toHaveProperty('set');
+    expect(provider).not.toHaveProperty('delete');
   });
 
   describe('list', () => {

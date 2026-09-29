@@ -15,6 +15,7 @@ import {
 import type { CoreLogger } from '../logger.js';
 
 import { errorText } from '../util/errors.js';
+import { createTracedFetch } from './http-client.js';
 import { activeTraceparent, contextFromTraceparent, parseTraceparent } from './trace-context.js';
 
 /** Signal names from the TDD's Observability table. */
@@ -60,6 +61,10 @@ export const HISTOGRAM_BUCKETS: Record<HistogramName, number[]> = {
   ],
   'switchboard.schedule.lag': [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 900, 3600],
 };
+
+export const HTTP_DURATION_BUCKETS = [
+  0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
+];
 
 export type SignalAttributes = Record<string, string | number | boolean | undefined>;
 
@@ -112,6 +117,10 @@ export interface Telemetry {
   traceparent(): string | undefined;
   /** Add attributes to the active span (ids known only once the work ran). */
   annotate(attributes: Record<string, string | number | boolean | string[] | undefined>): void;
+  /** `fetch` that records a client span and propagates the active trace (plugin HTTP calls). */
+  tracedFetch(): typeof fetch;
+  /** `http.server.request.duration`, in seconds, with OTel HTTP semantic attributes. */
+  httpServerDuration(seconds: number, attributes: SignalAttributes): void;
 }
 
 function clean(attrs: SignalAttributes): OtelAttributes {
@@ -144,6 +153,11 @@ export function createTelemetry(
       for (const { value, attrs } of values.values()) result.observe(value, attrs);
     });
   }
+  const httpDuration = meter.createHistogram('http.server.request.duration', {
+    unit: 's',
+    description: 'Duration of HTTP server requests.',
+    advice: { explicitBucketBoundaries: HTTP_DURATION_BUCKETS },
+  });
   const log = logger.child({ component: 'pipeline' });
 
   return {
@@ -233,6 +247,8 @@ export function createTelemetry(
       if (!span?.isRecording()) return;
       for (const [k, v] of Object.entries(attributes)) if (v !== undefined) span.setAttribute(k, v);
     },
+    tracedFetch: () => createTracedFetch(globalThis.fetch, tracer),
+    httpServerDuration: (seconds, attributes) => httpDuration.record(seconds, clean(attributes)),
   };
 }
 
@@ -245,7 +261,7 @@ function failSpan(span: Span, err: unknown): void {
 }
 
 export interface RecordedSignal {
-  kind: 'counter' | 'histogram' | 'gauge' | 'decision';
+  kind: 'counter' | 'histogram' | 'gauge' | 'decision' | 'http';
   name: string;
   value: number;
   attributes: SignalAttributes;
@@ -270,5 +286,13 @@ export function createRecordingTelemetry(): Telemetry & { signals: RecordedSigna
     traceHeaders: () => ({}),
     traceparent: () => undefined,
     annotate: () => undefined,
+    tracedFetch: () => (input, init) => globalThis.fetch(input, init),
+    httpServerDuration: (seconds, attributes) =>
+      signals.push({
+        kind: 'http',
+        name: 'http.server.request.duration',
+        value: seconds,
+        attributes,
+      }),
   };
 }

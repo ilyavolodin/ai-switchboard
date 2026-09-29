@@ -15,7 +15,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { FakeClock } from '../clock.js';
 import { createLogger, silentLogger } from '../logger.js';
-import { MemoryQueue } from '../queue/queue.js';
+import { MemoryQueue } from '../../test/helpers/memory-queue.js';
 import { traceQueue } from '../queue/traced.js';
 
 import { createOtelLogStream, LOCAL_ONLY, toLogRecord } from './log-bridge.js';

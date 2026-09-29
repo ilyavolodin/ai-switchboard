@@ -1,8 +1,13 @@
-import type { CronPreviewRequest, CronPreviewResponse } from '../api/contract.js';
-
 import { describeCron, isValidTimezone, nextTicks, parseCron } from './cron.js';
 
-export function cronPreview(req: CronPreviewRequest, now: Date): CronPreviewResponse {
+export interface CronPreview {
+  valid: boolean;
+  description: string;
+  next: string[];
+  error?: string;
+}
+
+export function cronPreview(req: { cron: string; timezone: string }, now: Date): CronPreview {
   if (!isValidTimezone(req.timezone)) {
     return { valid: false, description: '', next: [], error: `unknown timezone ${req.timezone}` };
   }

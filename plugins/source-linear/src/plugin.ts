@@ -9,5 +9,5 @@ export default definePlugin({
   displayName: 'Linear source',
   description: 'Linear webhooks as Switchboard events, plus live issue state and actions.',
   sources: [linearSource],
-  capabilities: { network: ['api.linear.app'], secrets: ['apiKey', 'webhookSecret'] },
+  capabilities: { network: ['api.linear.app'] },
 });

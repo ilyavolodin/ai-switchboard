@@ -1,13 +1,17 @@
 # REST API
 
 All routes live under `/api/v1` unless noted. Request and response types are in
-[`packages/core/src/api/contract.ts`](../packages/core/src/api/contract.ts) (`@ai-switchboard/core/contract`).
+[`packages/core/src/api/contract.ts`](../packages/core/src/api/contract.ts) (`@ai-switchboard/core/contract`),
+a barrel over one file per resource in `api/contract/`. `ApiRoutes` maps every route
+(`'POST /api/v1/sources'`) to its body, query and response types; a core test fails when it and
+the registered routes differ. Each request body's JSON Schema sits next to its type
+(`createSourceBody` next to `CreateSourceRequest`) and is checked against it at compile time.
 
 - Auth: a session cookie (`sb_session`) from sign-in, or `Authorization: Bearer <api token>`.
 - Roles: `viewer` reads; `operator` also changes sources, destinations, processes, approvals, manual runs and replays; `admin` also manages plugins, users, secret providers, notifiers and settings.
 - Every state-changing body carries `reason` (non-empty). Every change writes `audit_log` rows. An admin can make reasons optional (`GlobalSettings.requireReasons: false`, Settings › General): then a missing or blank `reason` is accepted (a `DELETE` may omit the body) and audited as `(no reason given)`. `MeResponse.requireReasons` tells a client whether to ask. Each replica caches the setting for 5 s; the replica that saves it applies it at once, the others within the cache window.
-- Errors: `{ error, message, details?, usedBy? }` with 400 (validation, including a malformed time or cursor), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, a name already taken, or deleting a source, destination or notifier that processes still use: `usedBy` lists them as `{ id, name }`), 422 (semantic), 429 (too many sign-in attempts), 503.
-- Lists: `?cursor=&limit=` → `Page<T>` (`{ items, nextCursor }`). Filters apply before paging, and a cursor is keyed by time and id, so rows that share a timestamp are neither skipped nor repeated.
+- Errors: `{ error, message, details?, usedBy? }` with 400 (validation: a body that does not match its schema answers `The request did not validate.` with one `details` line per problem; also a malformed time, or a cursor this API did not issue), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, a name already taken, or deleting a source, destination or notifier that processes still use: `usedBy` lists them as `{ id, name }`), 422 (semantic), 429 (too many sign-in attempts), 503.
+- Lists: `?cursor=&limit=` → `Page<T>` (`{ items, nextCursor }`). Filters apply before paging, and a cursor is keyed by time and id, so rows that share a timestamp are neither skipped nor repeated. A cursor that is not one this API returned is a 400, not a restart at the first page.
 
 ## Unauthenticated surfaces
 
@@ -21,19 +25,21 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 
 ## Auth
 
-| Method | Path                  | Body → Response                        | Role                            |
-| ------ | --------------------- | -------------------------------------- | ------------------------------- |
-| GET    | `/auth/me`            | → `MeResponse`                         | any (user null when signed out) |
-| POST   | `/auth/login`         | `LocalLoginRequest` → `MeResponse`     | — (always, alongside OIDC)      |
-| POST   | `/auth/password`      | `ChangePasswordRequest` → `MeResponse` | viewer (own, session only)      |
-| GET    | `/auth/oidc/start`    | redirect to issuer                     | — (OIDC configured)             |
-| GET    | `/auth/oidc/callback` | redirect to `/` (or `/no-access`)      | —                               |
-| POST   | `/auth/logout`        | → 204                                  | any                             |
-| GET    | `/auth/whoami`        | → `{ actor }` (the audit identity)     | viewer                          |
+| Method | Path                  | Body → Response                         | Role                            |
+| ------ | --------------------- | --------------------------------------- | ------------------------------- |
+| GET    | `/auth/me`            | → `MeResponse`                          | any (user null when signed out) |
+| POST   | `/auth/login`         | `LocalLoginRequest` → `MeResponse`      | — (always, alongside OIDC)      |
+| POST   | `/auth/password`      | `ChangePasswordRequest` → `MeResponse`  | viewer (own, session only)      |
+| GET    | `/auth/oidc/start`    | redirect to issuer                      | — (OIDC configured)             |
+| GET    | `/auth/oidc/callback` | redirect to `/` (or `/no-access`)       | —                               |
+| POST   | `/auth/logout`        | → 204                                   | any                             |
+| GET    | `/auth/whoami`        | → `WhoAmIResponse` (the audit identity) | viewer                          |
 
 Local password sign-in works whether or not OIDC is configured; an account can have a password,
 an OIDC identity, or both. `MeResponse.oidcIssuer` names the issuer for the "Sign in with …"
-button.
+button. The first OIDC sign-in binds the account to the issuer's subject and writes an `audit_log`
+row (`scope: user`, `field: oidc_subject`, the subject as `after`, reason "first OIDC sign-in").
+An email already bound to another subject is refused, never re-bound.
 
 `MeResponse.evaluationAdminEmail` is the bootstrap local admin's email (`admin@switchboard.local`,
 or `SWITCHBOARD_BOOTSTRAP_ADMIN`) when the server runs in evaluation mode and that account has a
@@ -97,8 +103,8 @@ through `<img>` only, never as inline markup, and fall back to the kind's generi
 | PUT    | `/sources/:id`                      | `UpdateSourceRequest` → `SourceDetail`           | operator |
 | DELETE | `/sources/:id`                      | `Reasoned` → 204                                 | operator |
 | POST   | `/sources/:id/enable`               | `EnableRequest` → `SourceDetail`                 | operator |
-| POST   | `/sources/:id/provision`            | `Reasoned` → `{ ok, message }`                   | operator |
-| POST   | `/sources/:id/test-event`           | `Reasoned & { type? }` → `{ eventIds }`          | operator |
+| POST   | `/sources/:id/provision`            | `Reasoned` → `ResultResponse`                    | operator |
+| POST   | `/sources/:id/test-event`           | `TestEventRequest` → `EventIdsResponse`          | operator |
 | POST   | `/sources/:id/reload`               | `Reasoned` → `SourceDetail`                      | operator |
 | GET    | `/sources/:id/stats?window=`        | → `SourceStatsResponse`                          | viewer   |
 | GET    | `/sources/:id/events?cursor=&type=` | → `Page<ActivityRow>`                            | viewer   |
@@ -135,6 +141,13 @@ whose names suggest a credential or signature read `[redacted]`.
 | GET    | `/destinations/:id/meters?window=`  | → `MeterHistoryResponse`                         | viewer   |
 | GET    | `/destinations/:id/usage?window=`   | → `UsageHistoryResponse`                         | viewer   |
 
+`MeterGaugeDTO.ceilingState` says where a meter stands against the event ceilings of the
+processes bound to it, decided by the budget stage itself: `throttling` (an event batch would be
+throttled now), `stale` (a ceiling is set but the reading is missing or older than the staleness
+window, so the ceiling does not apply), else `below`. Meters and usage dimensions come from the
+live instance, or without one from what the type declares for the instance's settings.
+`MeterHistoryResponse.runs[]` carries `statusLabel` next to `status`.
+
 `DestinationCapsDTO` (on create and update) carries the core's caps: `runsPerHour`, `runsPerDay`,
 `usagePerDay`, `meterPollSeconds` (30–86 400), `meterStalenessMinutes`, `estimatedLimits` and
 `invokeTimeoutSeconds` (1–3600): how long to wait for `invoke` to answer. It overrides the type's
@@ -149,26 +162,26 @@ on `GET /plugin-types` and `GET /plugins/search`, and an `executor=` filter is r
 
 ## Processes
 
-| Method | Path                                       | Body → Response                                                    | Role     |
-| ------ | ------------------------------------------ | ------------------------------------------------------------------ | -------- |
-| GET    | `/processes`                               | → `ProcessSummary[]`                                               | viewer   |
-| POST   | `/processes`                               | `CreateProcessRequest` → `ProcessDetail`                           | operator |
-| GET    | `/processes/:id`                           | → `ProcessDetail`                                                  | viewer   |
-| PUT    | `/processes/:id`                           | `UpdateProcessRequest` → `ProcessDetail` (409 on version conflict) | operator |
-| DELETE | `/processes/:id`                           | `Reasoned` → 204                                                   | operator |
-| POST   | `/processes/:id/enable`                    | `EnableRequest` → `ProcessDetail`                                  | operator |
-| POST   | `/processes/:id/run`                       | `RunNowRequest` → `{ batchId, runId \| null, outcome }`            | operator |
-| POST   | `/processes/:id/breaker/reset`             | `Reasoned` → `ProcessDetail`                                       | operator |
-| GET    | `/processes/:id/funnel?window=`            | → `FunnelResponse`                                                 | viewer   |
-| GET    | `/processes/:id/stats?window=`             | → `ProcessStatsResponse`                                           | viewer   |
-| GET    | `/processes/:id/versions`                  | → `ProcessVersionSummary[]`                                        | viewer   |
-| GET    | `/processes/:id/versions/:version`         | → `ProcessVersionDetail`                                           | viewer   |
-| POST   | `/processes/:id/versions/:version/restore` | `Reasoned` → `ProcessDetail`                                       | operator |
-| GET    | `/processes/:id/batches?limit=`            | → `RecentBatchDTO[]`                                               | viewer   |
-| GET    | `/processes/:id/activity?cursor=`          | → `Page<ActivityRow>`                                              | viewer   |
-| POST   | `/processes/preview/filter`                | `FilterPreviewRequest` → `FilterPreviewResponse`                   | viewer   |
-| POST   | `/processes/preview/input`                 | `InputPreviewRequest` → `InputPreviewResponse`                     | viewer   |
-| POST   | `/processes/preview/cron`                  | `CronPreviewRequest` → `CronPreviewResponse`                       | viewer   |
+| Method | Path                                       | Body → Response                                                                                   | Role     |
+| ------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------- | -------- |
+| GET    | `/processes`                               | → `ProcessSummary[]`                                                                              | viewer   |
+| POST   | `/processes`                               | `CreateProcessRequest` → `ProcessDetail`                                                          | operator |
+| GET    | `/processes/:id`                           | → `ProcessDetail`                                                                                 | viewer   |
+| PUT    | `/processes/:id`                           | `UpdateProcessRequest` → `ProcessDetail` (409 on version conflict; `expectedVersion` is required) | operator |
+| DELETE | `/processes/:id`                           | `Reasoned` → 204                                                                                  | operator |
+| POST   | `/processes/:id/enable`                    | `EnableRequest` → `ProcessDetail`                                                                 | operator |
+| POST   | `/processes/:id/run`                       | `RunNowRequest` → `RunNowResponse`                                                                | operator |
+| POST   | `/processes/:id/breaker/reset`             | `Reasoned` → `ProcessDetail`                                                                      | operator |
+| GET    | `/processes/:id/funnel?window=`            | → `FunnelResponse`                                                                                | viewer   |
+| GET    | `/processes/:id/stats?window=`             | → `ProcessStatsResponse`                                                                          | viewer   |
+| GET    | `/processes/:id/versions`                  | → `ProcessVersionSummary[]`                                                                       | viewer   |
+| GET    | `/processes/:id/versions/:version`         | → `ProcessVersionDetail`                                                                          | viewer   |
+| POST   | `/processes/:id/versions/:version/restore` | `Reasoned` → `ProcessDetail`                                                                      | operator |
+| GET    | `/processes/:id/batches?limit=`            | → `RecentBatchDTO[]`                                                                              | viewer   |
+| GET    | `/processes/:id/activity?cursor=`          | → `Page<ActivityRow>`                                                                             | viewer   |
+| POST   | `/processes/preview/filter`                | `FilterPreviewRequest` → `FilterPreviewResponse`                                                  | viewer   |
+| POST   | `/processes/preview/input`                 | `InputPreviewRequest` → `InputPreviewResponse`                                                    | viewer   |
+| POST   | `/processes/preview/cron`                  | `CronPreviewRequest` → `CronPreviewResponse`                                                      | viewer   |
 
 `DELETE /processes/:id` removes the process and, in the same transaction, ends what it left
 unfinished: its open batches, closed batches not yet dispatched and batches awaiting approval
@@ -184,9 +197,12 @@ destination or notifier the process used can be deleted afterwards.
 | ------ | -------------------------------------------------------------------------------- | ----------------------------------------------------- | -------- |
 | GET    | `/events?source=&process=&destination=&stage=&type=&artifact=&from=&to=&cursor=` | → `Page<ActivityRow>`                                 | viewer   |
 | GET    | `/events/:id`                                                                    | → `EventDetail`                                       | viewer   |
-| POST   | `/events/:id/replay`                                                             | `Reasoned` → `{ eventIds }`                           | operator |
+| POST   | `/events/:id/replay`                                                             | `Reasoned` → `EventIdsResponse`                       | operator |
 | GET    | `/trace?artifact=`                                                               | → `TraceResponse` (artifact id, `kind:id`, or `#482`) | viewer   |
 | GET    | `/events/:id/trace`                                                              | → `TraceResponse`                                     | viewer   |
+
+`ActivityRow.processes[]` carries `statusLabel` (the run status in words and tone, null while no
+run exists) next to `runStatus`.
 
 "Why nothing ran". Match records a decision for every trigger on the event's source, including
 the ones it never evaluated (`skip`: `process_disabled`, `trigger_disabled`,
@@ -229,13 +245,13 @@ event runs and sweeps.
 
 ## Approvals
 
-| Method | Path                          | Body → Response                           | Role     |
-| ------ | ----------------------------- | ----------------------------------------- | -------- |
-| GET    | `/approvals`                  | → `ApprovalItem[]`                        | viewer   |
-| GET    | `/approvals/history?cursor=`  | → `Page<ApprovalHistoryItem>`             | viewer   |
-| GET    | `/approvals/rules`            | → `ApprovalRulesResponse`                 | viewer   |
-| POST   | `/approvals/:batchId/approve` | `Reasoned` → `{ runId \| null, outcome }` | operator |
-| POST   | `/approvals/:batchId/reject`  | `Reasoned` → 204                          | operator |
+| Method | Path                          | Body → Response                | Role     |
+| ------ | ----------------------------- | ------------------------------ | -------- |
+| GET    | `/approvals`                  | → `ApprovalItem[]`             | viewer   |
+| GET    | `/approvals/history?cursor=`  | → `Page<ApprovalHistoryItem>`  | viewer   |
+| GET    | `/approvals/rules`            | → `ApprovalRulesResponse`      | viewer   |
+| POST   | `/approvals/:batchId/approve` | `Reasoned` → `ApproveResponse` | operator |
+| POST   | `/approvals/:batchId/reject`  | `Reasoned` → 204               | operator |
 
 ## Plugins
 
@@ -272,7 +288,7 @@ API. Re-installing with `POST /plugins` clears the tombstone. A removed plugin l
 
 ## Notifiers and secret providers
 
-`/notifiers` and `/secret-providers` share one shape: `GET` → `InstanceSummary[]`, `POST` `CreateInstanceRequest`, `PUT /:id` `UpdateInstanceRequest`, `POST /:id/enable` `EnableRequest`, `POST /:id/reload`, `DELETE /:id`, and for notifiers `POST /:id/test` (`Reasoned`). Role: admin for writes.
+`/notifiers` and `/secret-providers` share one shape: `GET` → `InstanceSummary[]`, `POST` `CreateInstanceRequest`, `PUT /:id` `UpdateInstanceRequest`, `POST /:id/enable` `EnableRequest`, `POST /:id/reload`, `DELETE /:id`, and for notifiers `POST /:id/test` (`Reasoned` → `ResultResponse`). Role: admin for writes. A secret provider's name is the `<provider>` in `secret://<provider>/<name>`: lower-case letters, digits and dashes.
 
 Secret providers: sources, destinations and notifiers resolve `secret://<provider>/…` references
 when they are built, so creating, enabling or disabling, editing (including renaming) or
@@ -303,25 +319,25 @@ stopped provider, or a failed or timed-out (10 s) listing gives `available: fals
 
 ## Settings, users, tokens, audit, export
 
-| Method | Path                                   | Body → Response                                    | Role                 |
-| ------ | -------------------------------------- | -------------------------------------------------- | -------------------- |
-| GET    | `/settings`                            | → `GlobalSettings`                                 | viewer               |
-| PUT    | `/settings`                            | `UpdateSettingsRequest` → `GlobalSettings`         | admin                |
-| GET    | `/users`                               | → `UserDTO[]`                                      | admin                |
-| GET    | `/users/directory`                     | → `UserDirectoryEntry[]` (email and role only)     | viewer               |
-| POST   | `/users`                               | `CreateUserRequest` → `UserDTO`                    | admin                |
-| PUT    | `/users/:id`                           | `UpdateUserRequest` → `UserDTO`                    | admin                |
-| DELETE | `/users/:id`                           | `Reasoned` → 204                                   | admin                |
-| POST   | `/users/:id/sessions/revoke`           | `Reasoned` → 204 (signs the user out everywhere)   | admin                |
-| PUT    | `/users/:id/password`                  | `SetPasswordRequest` → `UserDTO` (temporary)       | admin (not own)      |
-| DELETE | `/users/:id/password`                  | `Reasoned` → `UserDTO` (OIDC-only from now on)     | admin (OIDC on)      |
-| GET    | `/tokens`                              | → `ApiTokenDTO[]` (own)                            | viewer               |
-| POST   | `/tokens`                              | `CreateApiTokenRequest` → `CreateApiTokenResponse` | viewer (role ≤ own)  |
-| DELETE | `/tokens/:id`                          | `Reasoned` → 204                                   | viewer (own) / admin |
-| GET    | `/audit?scope=&target=&actor=&cursor=` | → `Page<AuditEntry>`                               | viewer               |
-| GET    | `/export`                              | → YAML (`text/yaml`)                               | operator             |
-| POST   | `/apply`                               | `ApplyRequest` → `ApplyResponse`                   | admin                |
-| GET    | `/about`                               | → `AboutResponse`                                  | viewer               |
+| Method | Path                                   | Body → Response                                     | Role                 |
+| ------ | -------------------------------------- | --------------------------------------------------- | -------------------- |
+| GET    | `/settings`                            | → `GlobalSettings`                                  | viewer               |
+| PUT    | `/settings`                            | `UpdateSettingsRequest` → `GlobalSettings`          | admin                |
+| GET    | `/users`                               | → `UserDTO[]`                                       | admin                |
+| GET    | `/users/directory`                     | → `UserDirectoryEntry[]` (email and role only)      | viewer               |
+| POST   | `/users`                               | `CreateUserRequest` → `UserDTO`                     | admin                |
+| PUT    | `/users/:id`                           | `UpdateUserRequest` → `UserDTO`                     | admin                |
+| DELETE | `/users/:id`                           | `Reasoned` → 204                                    | admin                |
+| POST   | `/users/:id/sessions/revoke`           | `Reasoned` → 204 (signs the user out everywhere)    | admin                |
+| PUT    | `/users/:id/password`                  | `SetPasswordRequest` → `UserDTO` (temporary)        | admin (not own)      |
+| DELETE | `/users/:id/password`                  | `Reasoned` → `UserDTO` (OIDC-only from now on)      | admin (OIDC on)      |
+| GET    | `/tokens`                              | → `ApiTokenDTO[]` (own)                             | viewer               |
+| POST   | `/tokens`                              | `CreateApiTokenRequest` → `CreateApiTokenResponse`  | viewer (role ≤ own)  |
+| DELETE | `/tokens/:id`                          | `Reasoned` → 204                                    | viewer (own) / admin |
+| GET    | `/audit?scope=&target=&actor=&cursor=` | → `Page<AuditEntry>` (newest first, by time and id) | viewer               |
+| GET    | `/export`                              | → YAML (`text/yaml`)                                | operator             |
+| POST   | `/apply`                               | `ApplyRequest` → `ApplyResponse`                    | admin                |
+| GET    | `/about`                               | → `AboutResponse`                                   | viewer               |
 
 `GET /about` returns versions, the database, the replicas and `telemetry`
 (`TelemetryStatusDTO`): for each signal (`traces`, `metrics`, `logs`) its exporters (`otlp`,
@@ -339,3 +355,14 @@ password with `POST /auth/password` instead (409 here). `DELETE /users/:id/passw
 password and signs the user out; it is refused (409) while OIDC is not configured, since the
 account could no longer sign in. The audit rows record `password` / `password_reset` with
 `temporary`, `set` or `removed`, never the value.
+
+`POST /tokens` takes an optional `name` (blank or missing: `token`) and a `role` no higher than
+the caller's.
+
+`POST /apply` checks every instance exactly as the instance routes do: settings against the
+type's schema with no literal secret values, caps against `SourceCapsDTO` / `DestinationCapsDTO`,
+names (a secret provider's name rule), and for a push source the verification rule, with
+`caps.unauthenticated` derived from an instance built from the file's settings. A problem is
+reported in `errors` as `<kind> "<name>": <problem>` and the whole change rolls back. Created
+instances are audited against their id (`created`); changed ones get one audit row per changed
+field, with the reason `apply: <reason>`.

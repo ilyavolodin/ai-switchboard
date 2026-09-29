@@ -2,7 +2,7 @@ import { validateAgainst, type JSONSchema } from '@ai-switchboard/sdk';
 
 import { errorText } from '../util/errors.js';
 import type { EvalFunctions, ExpressionEngine } from './engine.js';
-import { replaceSecretRefs } from './engine.js';
+import { replaceSecretMarkers } from './secret-markers.js';
 
 export type MappingOutcome =
   | { ok: true; input: unknown }
@@ -29,7 +29,7 @@ export async function evaluateMapping(
     try {
       check = validateAgainst(
         inputSchema,
-        replaceSecretRefs(out.value, (ref) => ref),
+        replaceSecretMarkers(out.value, (ref) => ref),
       );
     } catch (err) {
       return {

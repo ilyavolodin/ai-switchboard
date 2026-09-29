@@ -253,3 +253,38 @@ export const processDocumentSchema: JSONSchema = {
     trackingDeadlineMinutes: { type: 'integer', minimum: 1, maximum: 100_000 },
   },
 };
+
+/** The instances a process document points at, by role. */
+export interface ProcessReferences {
+  sources: Set<string>;
+  destination: string;
+  /** `before` / `after` step providers (a source or destination id). */
+  providers: Set<string>;
+  notifiers: Set<string>;
+}
+
+export function processReferences(doc: ProcessDocument): ProcessReferences {
+  return {
+    sources: new Set(doc.triggers.map((t) => t.sourceId)),
+    destination: doc.destination.instanceId,
+    providers: new Set([...doc.before, ...doc.after].map((s) => s.provider)),
+    notifiers: new Set(doc.notify.map((n) => n.notifierId)),
+  };
+}
+
+export function referencesInstance(doc: ProcessDocument, instanceId: string): boolean {
+  const refs = processReferences(doc);
+  return (
+    refs.destination === instanceId ||
+    refs.sources.has(instanceId) ||
+    refs.providers.has(instanceId) ||
+    refs.notifiers.has(instanceId)
+  );
+}
+
+/** Every event type the process's triggers on `sourceId` subscribe to, each once. */
+export function eventTypesFrom(doc: ProcessDocument, sourceId: string): string[] {
+  return [
+    ...new Set(doc.triggers.filter((t) => t.sourceId === sourceId).flatMap((t) => t.eventTypes)),
+  ];
+}

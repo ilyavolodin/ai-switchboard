@@ -1,4 +1,15 @@
-import { chmod, mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,7 +24,7 @@ import {
 
 import plugin, { fileSecretProviderType } from './plugin.js';
 
-runConformance('plugin', pluginConformanceChecks(plugin), { describe, it });
+runConformance('plugin', pluginConformanceChecks(plugin, {}), { describe, it });
 
 describe('file secret provider', () => {
   let root: string;
@@ -142,5 +153,87 @@ describe('file secret provider', () => {
 
   it('requires an absolute directory', () => {
     expect(() => make({ directory: 'relative/path' })).toThrow(/directory/);
+  });
+
+  describe('writes', () => {
+    let store: string;
+    beforeAll(async () => {
+      store = join(root, 'store');
+      await mkdir(store);
+    });
+    const writable = () => make({ directory: store, writable: true });
+
+    it('is read-only unless writes are turned on', () => {
+      const provider = make();
+      expect(provider).not.toHaveProperty('set');
+      expect(provider).not.toHaveProperty('delete');
+      expect(writable()).toHaveProperty('set');
+    });
+
+    it('creates, replaces and deletes a secret file', async () => {
+      const provider = writable();
+      await provider.set?.('rotated', 'fixture-secret-one');
+      expect(await provider.resolve('rotated')).toBe('fixture-secret-one');
+      await provider.set?.('rotated', 'fixture-secret-two');
+      expect(await readFile(join(store, 'rotated'), 'utf8')).toBe('fixture-secret-two');
+      await provider.delete?.('rotated');
+      await expect(provider.resolve('rotated')).rejects.toMatchObject({
+        name: 'SecretNotFoundError',
+      });
+      await expect(provider.delete?.('rotated')).resolves.toBeUndefined();
+    });
+
+    it('writes through a temporary file and leaves none behind', async () => {
+      const provider = writable();
+      const set = (value: string): Promise<void> =>
+        provider.set?.('busy', value) ?? Promise.reject(new Error('not writable'));
+      await Promise.all(Array.from({ length: 5 }, (_, i) => set(`fixture-secret-${i}`)));
+      expect((await readdir(store)).filter((n) => n.includes('busy'))).toEqual(['busy']);
+      expect(await provider.resolve('busy')).toMatch(/^fixture-secret-\d$/);
+    });
+
+    it('creates new files 0600 and keeps the mode of an existing one', async () => {
+      const provider = writable();
+      await provider.set?.('fresh', 'fixture-secret-fresh');
+      expect((await stat(join(store, 'fresh'))).mode & 0o777).toBe(0o600);
+      await writeFile(join(store, 'shared'), 'fixture-secret-old');
+      await chmod(join(store, 'shared'), 0o640);
+      await provider.set?.('shared', 'fixture-secret-new');
+      expect((await stat(join(store, 'shared'))).mode & 0o777).toBe(0o640);
+    });
+
+    it.each(['../outside', 'a/b', '', '.hidden', 'x\0y'])(
+      'refuses to write the unsafe name %j without echoing the value',
+      async (name) => {
+        const err: unknown = await writable()
+          .set?.(name, 'fixture-secret-unsafe')
+          .catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(Error);
+        expect((err as Error).message).not.toContain('fixture-secret-unsafe');
+      },
+    );
+
+    it('is unhealthy when writes are on but the directory is read-only', async () => {
+      const readOnly = join(root, 'read-only');
+      await mkdir(readOnly);
+      await chmod(readOnly, 0o500);
+      try {
+        if (process.getuid?.() !== 0) {
+          const health = await make({ directory: readOnly, writable: true }).health();
+          expect(health.status).toBe('unhealthy');
+          expect(health.message).toMatch(/not writable/);
+        }
+      } finally {
+        await chmod(readOnly, 0o700);
+      }
+    });
+
+    it('passes the conformance checks with writes on', async () => {
+      for (const check of secretProviderConformanceChecks(fileSecretProviderType, {
+        settings: { directory: store, writable: true },
+      })) {
+        await check.run();
+      }
+    });
   });
 });

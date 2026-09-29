@@ -5,16 +5,14 @@ import type { UsageDimension } from '@ai-switchboard/sdk';
 import type { DbOrTx } from '../../db/client.js';
 import { runs } from '../../db/schema.js';
 import type { BudgetCounters } from '../../pipeline/budget.js';
+import { DAY_MS, HOUR_MS } from '../../util/time.js';
 
 /**
  * Counters are computed from `runs`, never stored, so a corrected run corrects the budget. A run
- * counts from its reservation (`invoked_at`) unless it is a dry run, `held`, or failed before any
- * invoke attempt (a before-step failure).
+ * counts from its reservation (`invoked_at`).
  */
 
-const HOUR = 3_600_000;
-const DAY = 86_400_000;
-
+/** The SQL form of `countsTowardBudget` (`pipeline/counted.ts`); keep the two in step. */
 export function countedRun(): SQL {
   return sql`(${runs.dryRun} = false AND ${runs.status} <> 'held' AND NOT (${runs.status} = 'failed' AND ${runs.attempts} = 0))`;
 }
@@ -26,13 +24,13 @@ async function runCounts(
 ): Promise<{ hour: number; day: number }> {
   const [row] = await db
     .select({
-      hour: sql<number>`count(*) filter (where ${runs.invokedAt} > ${new Date(now.getTime() - HOUR)})`.mapWith(
+      hour: sql<number>`count(*) filter (where ${runs.invokedAt} > ${new Date(now.getTime() - HOUR_MS)})`.mapWith(
         Number,
       ),
       day: sql<number>`count(*)`.mapWith(Number),
     })
     .from(runs)
-    .where(and(scope, gt(runs.invokedAt, new Date(now.getTime() - DAY)), countedRun()));
+    .where(and(scope, gt(runs.invokedAt, new Date(now.getTime() - DAY_MS)), countedRun()));
   return { hour: row?.hour ?? 0, day: row?.day ?? 0 };
 }
 
@@ -46,7 +44,7 @@ async function usageLastDay(
     SELECT u.key AS key, sum(u.value::float8) AS total, max(u.value::float8) AS peak
     FROM ${runs}, jsonb_each_text(${runs.usage}) AS u(key, value)
     WHERE ${scope}
-      AND ${runs.invokedAt} > ${new Date(now.getTime() - DAY)}
+      AND ${runs.invokedAt} > ${new Date(now.getTime() - DAY_MS)}
       AND ${runs.usage} IS NOT NULL
       AND ${countedRun()}
       AND u.value ~ '^-?[0-9.eE+-]+$'

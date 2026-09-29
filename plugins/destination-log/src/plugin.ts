@@ -3,7 +3,8 @@ import { definePlugin } from '@ai-switchboard/sdk';
 import { logDestinationType } from './destination.js';
 
 export { logDestinationType } from './destination.js';
-export type { LogSettings, LogTarget, Outcome } from './destination.js';
+export type { LogSettings } from './settings.js';
+export type { LogTarget, Outcome } from './target.js';
 
 export default definePlugin({
   id: 'destination-log',

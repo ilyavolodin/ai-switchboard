@@ -228,3 +228,19 @@ describe('telemetryStatus', () => {
     expect(json).not.toContain('token');
   });
 });
+
+describe('OTEL_LOG_LEVEL', () => {
+  const cases: { value: string | undefined; level: string; warns: boolean }[] = [
+    { value: undefined, level: 'warn', warns: false },
+    { value: 'DEBUG', level: 'debug', warns: false },
+    { value: 'none', level: 'none', warns: false },
+    { value: 'loud', level: 'warn', warns: true },
+  ];
+  for (const c of cases) {
+    it(`${c.value ?? 'unset'} → ${c.level}`, () => {
+      const config = parseOtelConfig(c.value === undefined ? {} : { OTEL_LOG_LEVEL: c.value });
+      expect(config.diagLevel).toBe(c.level);
+      expect(config.warnings.some((w) => w.startsWith('OTEL_LOG_LEVEL'))).toBe(c.warns);
+    });
+  }
+});

@@ -1,14 +1,15 @@
-import { and, desc, inArray, isNotNull, isNull, type SQL } from 'drizzle-orm';
+import { desc, inArray, isNotNull, isNull } from 'drizzle-orm';
 
 import { approvals, batches, processes } from '../../db/schema.js';
 import type { ApiContext } from '../context.js';
 import type {
   ApprovalHistoryItem,
+  ApprovalHistoryQuery,
   ApprovalItem,
   ApprovalRulesResponse,
   Page,
 } from '../contract.js';
-import { afterCursor, decodeCursor, encodeCursor, pageLimit } from './paging.js';
+import { keysetPage } from './paging.js';
 import { batchArtifacts } from './runs.js';
 
 type ApprovalRow = typeof approvals.$inferSelect;
@@ -55,37 +56,37 @@ export async function pendingApprovals(ctx: ApiContext): Promise<ApprovalItem[]>
 /** Decided approvals, newest decision first, paged by `(decidedAt, batchId)`. */
 export async function approvalHistory(
   ctx: ApiContext,
-  q: { cursor?: string; limit?: string },
+  q: ApprovalHistoryQuery,
 ): Promise<Page<ApprovalHistoryItem>> {
-  const limit = pageLimit(q.limit);
-  const cursor = decodeCursor(q.cursor);
-  const where: SQL[] = [isNotNull(approvals.decision)];
-  if (cursor) where.push(afterCursor(approvals.decidedAt, approvals.batchId, cursor));
-  const rows = await ctx.db
-    .select()
-    .from(approvals)
-    .where(and(...where))
-    .orderBy(desc(approvals.decidedAt), desc(approvals.batchId))
-    .limit(limit + 1);
-  const page = rows.slice(0, limit);
-  const items = await approvalItems(ctx, page);
-  const last = page[limit - 1];
-  return {
-    items: items.map((item, i) => {
-      const r = page[i];
-      return {
-        ...item,
-        decision: r?.decision ?? 'rejected',
-        decidedBy: r?.decidedBy ?? '',
-        decidedAt: r?.decidedAt?.toISOString() ?? '',
-        reason: r?.reason ?? '',
-      };
-    }),
-    nextCursor:
-      rows.length > limit && last?.decidedAt
-        ? encodeCursor({ t: last.decidedAt.toISOString(), id: last.batchId })
-        : null,
-  };
+  return keysetPage(
+    q,
+    {
+      time: approvals.decidedAt,
+      id: approvals.batchId,
+      keyOf: (r: ApprovalRow) => ({ t: r.decidedAt, id: r.batchId }),
+    },
+    [isNotNull(approvals.decision)],
+    (cond, take) =>
+      ctx.db
+        .select()
+        .from(approvals)
+        .where(cond)
+        .orderBy(desc(approvals.decidedAt), desc(approvals.batchId))
+        .limit(take),
+    async (rows) => {
+      const items = await approvalItems(ctx, rows);
+      return items.map((item, i) => {
+        const r = rows[i];
+        return {
+          ...item,
+          decision: r?.decision ?? 'rejected',
+          decidedBy: r?.decidedBy ?? '',
+          decidedAt: r?.decidedAt?.toISOString() ?? '',
+          reason: r?.reason ?? '',
+        };
+      });
+    },
+  );
 }
 
 /** Processes whose approval gate is not `none`, with their rule. */

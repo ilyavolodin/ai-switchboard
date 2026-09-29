@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { batches, notificationLog, runs, steps } from '../../src/db/schema.js';
 import type { StepPhase, StepStatus } from '../../src/domain/status.js';
-import { JOBS } from '../../src/services/pipeline/context.js';
+import { JOBS } from '../../src/services/pipeline/jobs.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import { callbackRequest } from '../helpers/fake-runtime.js';
 import {

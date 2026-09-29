@@ -16,13 +16,18 @@
   "switchboard": {
     "entry": "./dist/plugin.js",
     "source": "./src/plugin.ts",
-    "sdk": "^2.0.0"
+    "sdk": "^2.2.0"
   },
   "exports": {
     ".": {
       "@ai-switchboard/source": "./src/plugin.ts",
       "types": "./dist/plugin.d.ts",
       "default": "./dist/plugin.js"
+    },
+    "./schemas": {
+      "@ai-switchboard/source": "./src/schemas.ts",
+      "types": "./dist/schemas.d.ts",
+      "default": "./dist/schemas.js"
     }
   },
   "scripts": {
@@ -31,7 +36,7 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@ai-switchboard/sdk": "^2.0.0"
+    "@ai-switchboard/sdk": "^2.2.0"
   },
   "devDependencies": {
     "@ai-switchboard/sdk": "workspace:^"

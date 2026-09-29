@@ -1,20 +1,27 @@
 import { and, count, eq, gte, inArray } from 'drizzle-orm';
 
-import { destinations, events, processes, runs, sources } from '../../db/schema.js';
+import { INSTANCE_TABLES } from '../../db/instance-tables.js';
+import { destinations, events, runs, sources, type notifiers } from '../../db/schema.js';
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import { instanceStatus } from '../../domain/labels.js';
-import type { ProcessDocument } from '../../domain/process.js';
+import { eventTypesFrom, processReferences } from '../../domain/process.js';
 import { collectSecretRefs } from '../../secrets/refs.js';
+import { destinationSpecs } from '../../services/destination-specs.js';
+import { instanceType } from '../../services/instance-validation.js';
+import { LABELS } from '../../services/instances.js';
+import { loadProcessRefs, type ProcessRef } from '../../services/process-refs.js';
 import type { ApiContext } from '../context.js';
 import type {
   DestinationDetail,
   DestinationSummary,
+  InstanceSummary,
   SecretRefDTO,
   SourceDetail,
   SourceSummary,
 } from '../contract.js';
 import { notFound } from '../errors.js';
 import { meterGauges } from './meters.js';
+import { providerDependents } from './secrets.js';
 
 type SourceRow = typeof sources.$inferSelect;
 type DestinationRow = typeof destinations.$inferSelect;
@@ -36,17 +43,10 @@ export function secretRefsOf(
   }));
 }
 
-export interface ProcessRef {
-  id: string;
-  name: string;
-  document: ProcessDocument;
-}
-
-async function allProcesses(ctx: ApiContext): Promise<ProcessRef[]> {
-  return ctx.db
-    .select({ id: processes.id, name: processes.name, document: processes.document })
-    .from(processes);
-}
+const triggeredBy = (sourceId: string) => (p: ProcessRef) =>
+  processReferences(p.document).sources.has(sourceId);
+const boundTo = (destinationId: string) => (p: ProcessRef) =>
+  p.document.destination.instanceId === destinationId;
 
 export async function sourceSummaries(
   ctx: ApiContext,
@@ -69,7 +69,7 @@ export async function sourceSummaries(
       ),
     )
     .groupBy(events.sourceId, events.type);
-  const procs = processList ?? (await allProcesses(ctx));
+  const procs = processList ?? (await loadProcessRefs(ctx.db));
   return list.map((row) => {
     const typeEntry = ctx.runtime.sourceType(row.typeId);
     const error = ctx.runtime.instanceError(row.id);
@@ -93,8 +93,7 @@ export async function sourceSummaries(
       unauthenticated: liveSource
         ? acceptsUnauthenticated(typeEntry?.type, liveSource.source)
         : row.caps.unauthenticated === true,
-      processCount: procs.filter((p) => p.document.triggers.some((t) => t.sourceId === row.id))
-        .length,
+      processCount: procs.filter(triggeredBy(row.id)).length,
     };
   });
 }
@@ -102,7 +101,7 @@ export async function sourceSummaries(
 export async function sourceDetail(ctx: ApiContext, id: string): Promise<SourceDetail> {
   const [row] = await ctx.db.select().from(sources).where(eq(sources.id, id));
   if (!row) throw notFound('Source');
-  const procs = await allProcesses(ctx);
+  const procs = await loadProcessRefs(ctx.db);
   const [summary] = await sourceSummaries(ctx, [row], procs);
   if (!summary) throw notFound('Source');
   const typeEntry = ctx.runtime.sourceType(row.typeId);
@@ -123,16 +122,8 @@ export async function sourceDetail(ctx: ApiContext, id: string): Promise<SourceD
     lastVerifyFailureAt: row.lastVerifyFailureAt?.toISOString() ?? null,
     instanceError: ctx.runtime.instanceError(row.id) ?? null,
     processes: procs
-      .filter((p) => p.document.triggers.some((t) => t.sourceId === row.id))
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        eventTypes: [
-          ...new Set(
-            p.document.triggers.filter((t) => t.sourceId === row.id).flatMap((t) => t.eventTypes),
-          ),
-        ],
-      })),
+      .filter(triggeredBy(row.id))
+      .map((p) => ({ id: p.id, name: p.name, eventTypes: eventTypesFrom(p.document, row.id) })),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -152,7 +143,7 @@ export async function destinationSummaries(
     .from(runs)
     .where(and(inArray(runs.destinationId, ids), gte(runs.createdAt, since)))
     .groupBy(runs.destinationId);
-  const procs = processList ?? (await allProcesses(ctx));
+  const procs = processList ?? (await loadProcessRefs(ctx.db));
   const gauges = await meterGauges(ctx, ids, procs);
   const now = ctx.clock.now().getTime();
   return list.map((row) => {
@@ -180,7 +171,7 @@ export async function destinationSummaries(
       softHoldReason: softHold ? row.softHoldReason : null,
       pluginAvailable: typeEntry !== undefined,
       runs24h: runCounts.find((c) => c.destinationId === row.id)?.n ?? 0,
-      processCount: procs.filter((p) => p.document.destination.instanceId === row.id).length,
+      processCount: procs.filter(boundTo(row.id)).length,
     };
   });
 }
@@ -188,12 +179,12 @@ export async function destinationSummaries(
 export async function destinationDetail(ctx: ApiContext, id: string): Promise<DestinationDetail> {
   const [row] = await ctx.db.select().from(destinations).where(eq(destinations.id, id));
   if (!row) throw notFound('Destination');
-  const procs = await allProcesses(ctx);
+  const procs = await loadProcessRefs(ctx.db);
   const [summary] = await destinationSummaries(ctx, [row], procs);
   if (!summary) throw notFound('Destination');
   const typeEntry = ctx.runtime.destinationType(row.typeId);
-  const live = ctx.runtime.destination(id);
   const type = typeEntry?.type;
+  const specs = destinationSpecs(ctx.runtime, row);
   return {
     ...summary,
     settings: row.settings,
@@ -204,33 +195,70 @@ export async function destinationDetail(ctx: ApiContext, id: string): Promise<De
     inputSchema: type?.inputSchema ?? {},
     tracking: type?.tracking ?? 'none',
     idempotentInvoke: type?.idempotentInvoke ?? false,
-    usage: live?.usage ?? type?.usage ?? [],
-    meterSpecs: live?.meters ?? type?.meters ?? [],
+    usage: specs.usage,
+    meterSpecs: specs.meters,
     actions: type?.actions ?? [],
     callbackUrl: `${ctx.config.publicUrl}/callbacks/${row.id}`,
     secretRefs: secretRefsOf(ctx, row.id, row.settings, row.secretsResolvedAt),
     instanceError: ctx.runtime.instanceError(row.id) ?? null,
-    processes: procs
-      .filter((p) => p.document.destination.instanceId === row.id)
-      .map((p) => ({ id: p.id, name: p.name })),
+    processes: procs.filter(boundTo(row.id)).map((p) => ({ id: p.id, name: p.name })),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-/** Processes referencing an instance, so a delete can refuse while processes still use it. */
-export async function processesUsing(
+type SimpleKind = 'notifier' | 'secret_provider';
+
+function simpleSummary(
   ctx: ApiContext,
-  instanceId: string,
-): Promise<{ id: string; name: string }[]> {
-  const procs = await allProcesses(ctx);
-  return procs
-    .filter(
-      (p) =>
-        p.document.destination.instanceId === instanceId ||
-        p.document.triggers.some((t) => t.sourceId === instanceId) ||
-        [...p.document.before, ...p.document.after].some((s) => s.provider === instanceId) ||
-        p.document.notify.some((n) => n.notifierId === instanceId),
-    )
-    .map((p) => ({ id: p.id, name: p.name }));
+  kind: SimpleKind,
+  row: typeof notifiers.$inferSelect,
+): InstanceSummary {
+  const type = instanceType(ctx.runtime, kind, row.typeId);
+  const error = ctx.runtime.instanceError(row.id);
+  return {
+    id: row.id,
+    kind,
+    typeId: row.typeId,
+    typeName: type?.displayName ?? row.typeId,
+    typeIcon: type?.icon ?? null,
+    name: row.name,
+    enabled: row.enabled,
+    status: instanceStatus({ enabled: row.enabled, health: row.health, instanceError: error }),
+    health: row.health,
+    settings: row.settings,
+    settingsSchema: type?.settingsSchema ?? { type: 'object' },
+    instanceError: error ?? null,
+  };
+}
+
+/** Notifiers or secret providers, by name; a provider lists the instances that reference it. */
+export async function instanceSummaries(
+  ctx: ApiContext,
+  kind: SimpleKind,
+  id?: string,
+): Promise<InstanceSummary[]> {
+  const table = INSTANCE_TABLES[kind];
+  const rows = await ctx.db
+    .select()
+    .from(table)
+    .where(id !== undefined ? eq(table.id, id) : undefined)
+    .orderBy(table.name);
+  const summaries = rows.map((r) => simpleSummary(ctx, kind, r));
+  if (kind !== 'secret_provider') return summaries;
+  const dependents = await providerDependents(
+    ctx,
+    rows.map((r) => r.name),
+  );
+  return summaries.map((s) => ({ ...s, dependents: dependents.get(s.name) ?? [] }));
+}
+
+export async function instanceDetail(
+  ctx: ApiContext,
+  kind: SimpleKind,
+  id: string,
+): Promise<InstanceSummary> {
+  const [one] = await instanceSummaries(ctx, kind, id);
+  if (!one) throw notFound(LABELS[kind]);
+  return one;
 }

@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import type { Db } from '../db/client.js';
+import type { Db, DbOrTx } from '../db/client.js';
 import {
   approvals,
   batches,
@@ -9,16 +9,14 @@ import {
   type GateDecisionRecord,
 } from '../db/schema.js';
 import type { ProcessDocument } from '../domain/process.js';
-import { recordAudit, recordAuditDiff } from './audit.js';
-import { appendDecisions } from './pipeline/context.js';
+import { recordAudit, recordAuditDiff, type ChangeMeta } from './audit.js';
+import { conflict, notFound } from './errors.js';
+import { validateProcessDocument, type ProcessValidationDeps } from './process-validation.js';
+import { appendDecisions } from './pipeline/tx.js';
 
 type ProcessRow = typeof processes.$inferSelect;
 
-export interface SaveMeta {
-  actor: string;
-  reason: string;
-  now: Date;
-}
+export type SaveMeta = ChangeMeta;
 
 export interface ProcessEdit {
   document: ProcessDocument;
@@ -41,40 +39,47 @@ export function flattenForAudit(doc: object): Record<string, unknown> {
   return out;
 }
 
-export async function createProcess(db: Db, doc: ProcessDocument, meta: SaveMeta): Promise<string> {
+/** Inside the caller's transaction (YAML apply uses it for every process it creates). */
+export async function insertProcess(
+  tx: DbOrTx,
+  doc: ProcessDocument,
+  meta: SaveMeta,
+): Promise<string> {
   const { actor, reason, now } = meta;
-  return db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(processes)
-      .values({
-        name: doc.name,
-        document: doc,
-        enabled: doc.enabled,
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning({ id: processes.id });
-    if (!row) throw new Error('process insert returned no row');
-    await tx.insert(processVersions).values({
-      processId: row.id,
-      version: 1,
+  const [row] = await tx
+    .insert(processes)
+    .values({
+      name: doc.name,
       document: doc,
-      savedBy: actor,
-      savedAt: now,
-      reason,
-    });
-    await recordAudit(tx, {
-      actor,
-      scope: 'process',
-      targetId: row.id,
-      field: 'created',
-      after: doc,
-      reason,
-      at: now,
-    });
-    return row.id;
+      enabled: doc.enabled,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning({ id: processes.id });
+  if (!row) throw new Error('process insert returned no row');
+  await tx.insert(processVersions).values({
+    processId: row.id,
+    version: 1,
+    document: doc,
+    savedBy: actor,
+    savedAt: now,
+    reason,
   });
+  await recordAudit(tx, {
+    actor,
+    scope: 'process',
+    targetId: row.id,
+    field: 'created',
+    after: doc,
+    reason,
+    at: now,
+  });
+  return row.id;
+}
+
+export async function createProcess(db: Db, doc: ProcessDocument, meta: SaveMeta): Promise<string> {
+  return db.transaction((tx) => insertProcess(tx, doc, meta));
 }
 
 /**
@@ -87,33 +92,41 @@ export async function saveProcessVersion(
   meta: SaveMeta,
   edit: (before: ProcessRow) => ProcessEdit,
 ): Promise<boolean> {
+  return db.transaction((tx) => saveProcessVersionIn(tx, id, meta, edit));
+}
+
+/** Inside the caller's transaction; the row is locked the same way. */
+export async function saveProcessVersionIn(
+  tx: DbOrTx,
+  id: string,
+  meta: SaveMeta,
+  edit: (before: ProcessRow) => ProcessEdit,
+): Promise<boolean> {
   const { actor, reason, now } = meta;
-  return db.transaction(async (tx) => {
-    const [before] = await tx.select().from(processes).where(eq(processes.id, id)).for('update');
-    if (!before) return false;
-    const change = edit(before);
-    const doc = change.document;
-    const version = before.version + 1;
-    await tx
-      .update(processes)
-      .set({ name: doc.name, document: doc, enabled: doc.enabled, version, updatedAt: now })
-      .where(eq(processes.id, before.id));
-    await tx.insert(processVersions).values({
-      processId: before.id,
-      version,
-      document: doc,
-      savedBy: actor,
-      savedAt: now,
-      reason: change.versionReason ?? reason,
-    });
-    const base = { actor, scope: 'process', targetId: before.id, reason, at: now };
-    if (change.audit === 'diff') {
-      await recordAuditDiff(tx, base, flattenForAudit(before.document), flattenForAudit(doc));
-    } else {
-      await recordAudit(tx, { ...base, ...change.audit });
-    }
-    return true;
+  const [before] = await tx.select().from(processes).where(eq(processes.id, id)).for('update');
+  if (!before) return false;
+  const change = edit(before);
+  const doc = change.document;
+  const version = before.version + 1;
+  await tx
+    .update(processes)
+    .set({ name: doc.name, document: doc, enabled: doc.enabled, version, updatedAt: now })
+    .where(eq(processes.id, before.id));
+  await tx.insert(processVersions).values({
+    processId: before.id,
+    version,
+    document: doc,
+    savedBy: actor,
+    savedAt: now,
+    reason: change.versionReason ?? reason,
   });
+  const base = { actor, scope: 'process', targetId: before.id, reason, at: now };
+  if (change.audit === 'diff') {
+    await recordAuditDiff(tx, base, flattenForAudit(before.document), flattenForAudit(doc));
+  } else {
+    await recordAudit(tx, { ...base, ...change.audit });
+  }
+  return true;
 }
 
 export interface DeletedProcess {
@@ -185,4 +198,84 @@ export async function deleteProcess(
     });
     return { droppedBatches: dropped.length, withdrawnApprovals: withdrawn.length };
   });
+}
+
+export interface ProcessDeps extends ProcessValidationDeps {
+  db: Db;
+}
+
+/** Validates the document, then creates the process at version 1. */
+export async function createProcessFrom(
+  deps: ProcessDeps,
+  document: unknown,
+  meta: SaveMeta,
+): Promise<string> {
+  const doc = await validateProcessDocument(deps, deps.db, document);
+  return createProcess(deps.db, doc, meta);
+}
+
+/** Optimistic concurrency: a 409 when someone saved since `expectedVersion`. */
+export async function updateProcess(
+  deps: ProcessDeps,
+  id: string,
+  document: unknown,
+  expectedVersion: number,
+  meta: SaveMeta,
+): Promise<void> {
+  const doc = await validateProcessDocument(deps, deps.db, document);
+  const saved = await saveProcessVersion(deps.db, id, meta, (before) => {
+    if (expectedVersion !== before.version) {
+      throw conflict(
+        `The process was changed by someone else (version ${before.version}); reload and reapply your edit.`,
+      );
+    }
+    return { document: doc, audit: 'diff' };
+  });
+  if (!saved) throw notFound('Process');
+}
+
+export async function setProcessEnabled(
+  db: Db,
+  id: string,
+  enabled: boolean,
+  meta: SaveMeta,
+): Promise<void> {
+  const saved = await saveProcessVersion(db, id, meta, (before) => ({
+    document: { ...before.document, enabled },
+    audit: { field: 'enabled', before: before.enabled, after: enabled },
+  }));
+  if (!saved) throw notFound('Process');
+}
+
+/** `version` comes from the path: anything but a positive integer is a 404, not a 500. */
+export async function savedVersion(
+  db: DbOrTx,
+  processId: string,
+  version: string | number,
+): Promise<typeof processVersions.$inferSelect> {
+  const n = Number(version);
+  if (!Number.isSafeInteger(n) || n < 1) throw notFound('Version');
+  const [row] = await db
+    .select()
+    .from(processVersions)
+    .where(and(eq(processVersions.processId, processId), eq(processVersions.version, n)));
+  if (!row) throw notFound('Version');
+  return row;
+}
+
+/** Saves an old version's document as the newest version (checked like any save). */
+export async function restoreProcessVersion(
+  deps: ProcessDeps,
+  id: string,
+  version: string | number,
+  meta: SaveMeta,
+): Promise<void> {
+  const old = await savedVersion(deps.db, id, version);
+  const doc = await validateProcessDocument(deps, deps.db, old.document);
+  const saved = await saveProcessVersion(deps.db, id, meta, (before) => ({
+    document: doc,
+    versionReason: `restore v${old.version}: ${meta.reason}`,
+    audit: { field: 'restored', before: before.version, after: old.version },
+  }));
+  if (!saved) throw notFound('Process');
 }

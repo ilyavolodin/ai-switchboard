@@ -6,14 +6,14 @@ import {
 } from '@ai-switchboard/sdk';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 
-import type { ApiContext } from '../../src/api/context.js';
+import { buildApiContext, type ApiContext } from '../../src/api/context.js';
 import type { PipelinePort, PreviewPort } from '../../src/api/pipeline-port.js';
 import { bootstrapAdmin } from '../../src/auth/bootstrap.js';
 import { FakeClock } from '../../src/clock.js';
 import { testConfig } from '../../src/config.js';
 import { silentLogger } from '../../src/logger.js';
 import { PluginHost } from '../../src/plugins/host.js';
-import { MemoryQueue } from '../../src/queue/queue.js';
+import { MemoryQueue } from './memory-queue.js';
 import { buildServer } from '../../src/server.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
 import type { TestDatabase } from './db.js';
@@ -211,6 +211,7 @@ export const stubPreview: PreviewPort = {
 export interface ApiHarness {
   app: FastifyInstance;
   ctx: ApiContext;
+  host: PluginHost;
   clock: FakeClock;
   calls: RecordedCall[];
   adminCookie: string;
@@ -259,21 +260,23 @@ export async function createApiHarness(
   });
   await host.boot();
   const calls: RecordedCall[] = [];
-  const ctx: ApiContext = {
-    db: tdb.db,
-    clock,
-    runtime: host,
-    queue: new MemoryQueue(clock),
-    logger,
-    telemetry,
-    config,
+  const ctx = buildApiContext({
+    deps: {
+      db: tdb.db,
+      clock,
+      runtime: host,
+      queue: new MemoryQueue(clock),
+      logger,
+      telemetry,
+      config,
+    },
     host,
     pipeline: stubPipeline(calls),
     preview: stubPreview,
     oidc: undefined,
-    ...(options.runNpm ? { runNpm: options.runNpm } : {}),
-    ...(options.registryFetch ? { registryFetch: options.registryFetch } : {}),
-  };
+    runNpm: options.runNpm,
+    registryFetch: options.registryFetch,
+  });
   await bootstrapAdmin(tdb.db, config, logger, clock.now(), { password: ADMIN_PASSWORD });
   const app = await buildServer(ctx, { serveUi: false });
   await app.ready();
@@ -297,5 +300,5 @@ export async function createApiHarness(
     return cookie;
   };
   const adminCookie = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
-  return { app, ctx, clock, calls, adminCookie, login, request, close: () => app.close() };
+  return { app, ctx, host, clock, calls, adminCookie, login, request, close: () => app.close() };
 }

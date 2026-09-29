@@ -263,7 +263,12 @@ describe('an existing source', () => {
     const url = `/api/v1/sources/${source.id}/last-delivery`;
     expect((await h.request('GET', url, { cookie: h.adminCookie })).statusCode).toBe(404);
 
-    const insert = (at: string, body: string, headers: Record<string, string>) =>
+    const insert = (
+      at: string,
+      body: string,
+      headers: Record<string, string>,
+      origin: 'push' | 'test' = 'push',
+    ) =>
       h.ctx.db.insert(eventRaw).values({
         ref: randomUUID(),
         sourceId: source.id,
@@ -271,6 +276,7 @@ describe('an existing source', () => {
         headers,
         receivedAt: new Date(at),
         verify: 'ok',
+        origin,
       });
     await insert('2026-03-02T09:00:00Z', '{"old": true}', { 'x-event-type': 'issue.created' });
     await insert('2026-03-02T09:30:00Z', '{"new": true}', {
@@ -279,7 +285,7 @@ describe('an existing source', () => {
       'x-api-key': 'k',
     });
     // Newer, but not a delivery a person could reuse: a test event and a rejected one.
-    await insert('2026-03-02T09:40:00Z', '[]', { 'x-switchboard-origin': 'test' });
+    await insert('2026-03-02T09:40:00Z', '[]', {}, 'test');
     await h.ctx.db.insert(eventRaw).values({
       ref: randomUUID(),
       sourceId: source.id,

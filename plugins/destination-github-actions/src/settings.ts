@@ -1,10 +1,5 @@
-import {
-  parseWith,
-  type JSONSchema,
-  type MeterSpec,
-  type Settings,
-  type UsageDimension,
-} from '@ai-switchboard/sdk';
+import type { JSONSchema, MeterSpec, Settings, UsageDimension } from '@ai-switchboard/sdk';
+import { parseWith } from '@ai-switchboard/sdk/schema';
 
 export interface GithubActionsSettings {
   /** `app`: a GitHub App installation token (recommended). `token`: a fine-grained PAT. */

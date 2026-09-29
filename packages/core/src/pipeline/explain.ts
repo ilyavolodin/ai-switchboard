@@ -1,7 +1,10 @@
 import type { ProcessDocument, Trigger } from '../domain/process.js';
 import type { DispatchOutcome, EventStage, MatchSkip } from '../domain/status.js';
 
+import { DEDUPE_WINDOW_SECONDS } from './dedupe.js';
 import { candidateTriggers, skippedTriggers } from './match.js';
+
+const DEDUPE_WINDOW_DAYS = DEDUPE_WINDOW_SECONDS / 86_400;
 
 /**
  * "Why nothing ran" for one event. Recorded decisions win; a process with nothing recorded (an
@@ -162,7 +165,7 @@ export function explainEvent(input: ExplainInput): Explanation[] {
         processName: name,
         taken: true,
         reason: deduped
-          ? `${triggerName(t, hit.triggerId)} matched, but it was deduped (already dispatched in the last 7 days)`
+          ? `${triggerName(t, hit.triggerId)} matched, but it was deduped (already dispatched in the last ${DEDUPE_WINDOW_DAYS} days)`
           : `${triggerName(t, hit.triggerId)} matched`,
         basis: 'recorded',
         tone: deduped ? 'off' : 'ok',

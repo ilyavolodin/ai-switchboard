@@ -2,16 +2,20 @@ import jsonata from 'jsonata';
 
 import type { ArtifactRef } from '@ai-switchboard/sdk';
 
+import { errorText } from '../util/errors.js';
+import { withTimeout } from '../util/timeout.js';
+
+import type { SwitchboardFunctionName } from './context-descriptors.js';
+import {
+  SECRET_MARKER_KEY,
+  neutralizeSecretMarkers,
+  secretRefString,
+  type SecretRefMarker,
+} from './secret-markers.js';
+
 export const DEFAULT_TIMEOUT_MS = 2000;
 export const DEFAULT_MAX_RESOLVE_CALLS = 10;
 export const ENV_PREFIX = 'SWITCHBOARD_VAR_';
-
-const SECRET_REF_KEY = '$secretRef';
-
-/** What `$secretRef(name)` returns: a reference the destination bridge resolves after evaluation. */
-export interface SecretRefMarker {
-  $secretRef: string;
-}
 
 export type ExprErrorCode = 'syntax' | 'timeout' | 'resolve_limit' | 'runtime';
 
@@ -80,70 +84,6 @@ export function toPlain(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value)) as unknown;
 }
 
-export function secretRefString(name: string): string {
-  const trimmed = name.trim();
-  const bare = trimmed.startsWith('secret://') ? trimmed.slice('secret://'.length) : trimmed;
-  const slash = bare.indexOf('/');
-  if (slash <= 0 || slash === bare.length - 1) {
-    throw new ExprLimitError(
-      `$secretRef expects "<provider>/<name>" or "secret://<provider>/<name>", got "${name}"`,
-      'runtime',
-    );
-  }
-  return `secret://${bare}`;
-}
-
-export function isSecretRefMarker(value: unknown): value is SecretRefMarker {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  return (
-    keys.length === 1 &&
-    keys[0] === SECRET_REF_KEY &&
-    typeof (value as Record<string, unknown>)[SECRET_REF_KEY] === 'string'
-  );
-}
-
-export function collectSecretRefs(value: unknown, out = new Set<string>()): Set<string> {
-  if (isSecretRefMarker(value)) {
-    out.add(value.$secretRef);
-  } else if (Array.isArray(value)) {
-    for (const item of value) collectSecretRefs(item, out);
-  } else if (value !== null && typeof value === 'object') {
-    for (const item of Object.values(value)) collectSecretRefs(item, out);
-  }
-  return out;
-}
-
-export function replaceSecretRefs(value: unknown, replace: (ref: string) => unknown): unknown {
-  if (isSecretRefMarker(value)) return replace(value.$secretRef);
-  if (Array.isArray(value)) return value.map((item) => replaceSecretRefs(item, replace));
-  if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = replaceSecretRefs(v, replace);
-    return out;
-  }
-  return value;
-}
-
-/** Called by the destination bridge immediately before `invoke`; the result is never stored. */
-export async function resolveSecretRefs(
-  value: unknown,
-  resolve: (ref: string) => Promise<string>,
-): Promise<unknown> {
-  const refs = [...collectSecretRefs(value)];
-  const values = new Map<string, string>();
-  for (const ref of refs) values.set(ref, await resolve(ref));
-  return replaceSecretRefs(value, (ref) => values.get(ref));
-}
-
-/**
- * Only `$secretRef` inside the expression may make a marker; one in the data it reads is forged
- * and becomes null, so the bridge never resolves a secret a payload asked for.
- */
-export function neutralizeSecretRefs(value: unknown): unknown {
-  return collectSecretRefs(value).size === 0 ? value : replaceSecretRefs(value, () => null);
-}
-
 function filterEnv(env: Record<string, string | undefined>): Map<string, string> {
   const out = new Map<string, string>();
   for (const [k, v] of Object.entries(env)) {
@@ -206,7 +146,7 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
         }
       };
       const nowIso = fns.now.toISOString();
-      const bindings: Record<string, unknown> = {
+      const bindings: Record<SwitchboardFunctionName, unknown> = {
         now: () => nowIso,
         millis: () => fns.now.getTime(),
         env: (name: unknown) => {
@@ -218,7 +158,7 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
           if (typeof name !== 'string') {
             throw new ExprLimitError('$secretRef expects a string name', 'runtime');
           }
-          return { [SECRET_REF_KEY]: secretRefString(name) };
+          return { [SECRET_MARKER_KEY]: secretRefString(name) };
         },
         secret: () => {
           throw new ExprLimitError(
@@ -240,7 +180,7 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
           if (!fns.resolve) throw new ExprLimitError('$resolve is not available here', 'runtime');
           const value = await fns.resolve({ kind: ref.kind, id: ref.id, ...rest(ref) });
           if (aborted) throw new ExprLimitError(`evaluation exceeded ${timeoutMs} ms`, 'timeout');
-          return neutralizeSecretRefs(value) ?? undefined;
+          return neutralizeSecretMarkers(value) ?? undefined;
         },
         linked: async (ref: unknown) => {
           guard('$linked');
@@ -250,22 +190,16 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
           if (!fns.linked) throw new ExprLimitError('$linked is not available here', 'runtime');
           const value = await fns.linked({ kind: ref.kind, id: ref.id, ...rest(ref) });
           if (aborted) throw new ExprLimitError(`evaluation exceeded ${timeoutMs} ms`, 'timeout');
-          return neutralizeSecretRefs(value);
+          return neutralizeSecretMarkers(value);
         },
       };
 
-      let timer: NodeJS.Timeout | undefined;
-      const timeout = new Promise<EvalResult>((resolve) => {
-        timer = setTimeout(() => {
-          // JSONata's own guardrail stops pure loops at the next step; `aborted` stops lookups.
-          aborted = true;
-          resolve({ ok: false, error: `evaluation exceeded ${timeoutMs} ms`, code: 'timeout' });
-        }, timeoutMs);
-        timer.unref();
-      });
       const run = (async (): Promise<EvalResult> => {
         try {
-          const value: unknown = await compiled.evaluate(neutralizeSecretRefs(context), bindings);
+          const value: unknown = await compiled.evaluate(
+            neutralizeSecretMarkers(context),
+            bindings,
+          );
           return { ok: true, value: toPlain(value) };
         } catch (err) {
           if (err instanceof ExprLimitError)
@@ -278,10 +212,13 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
         }
       })();
       try {
-        return await Promise.race([run, timeout]);
+        return await withTimeout(run, timeoutMs, `evaluation exceeded ${timeoutMs} ms`);
+      } catch (err) {
+        // Only the timeout rejects: `run` turns every failure into a result.
+        return { ok: false, error: errorText(err), code: 'timeout' };
       } finally {
+        // JSONata's own guardrail stops pure loops at the next step; `aborted` stops lookups.
         aborted = true;
-        clearTimeout(timer);
       }
     },
   };

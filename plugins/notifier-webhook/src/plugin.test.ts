@@ -42,7 +42,19 @@ function setup(
   };
 }
 
-runConformance('plugin', pluginConformanceChecks(plugin), { describe, it });
+runConformance(
+  'webhook notifier plugin',
+  pluginConformanceChecks(plugin, {
+    notifiers: {
+      [webhookNotifierType.id]: {
+        settings: { url: URL_, secret: SECRET },
+        http: () => ({ status: 204 }),
+        message,
+      },
+    },
+  }),
+  { describe, it },
+);
 
 describe('webhook notifier', () => {
   it('uses the id webhook', () => {

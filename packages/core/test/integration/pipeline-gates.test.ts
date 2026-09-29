@@ -13,6 +13,8 @@ import {
   runs,
   steps,
 } from '../../src/db/schema.js';
+import type { Db } from '../../src/db/client.js';
+import { createPipeline, type Pipeline } from '../../src/services/pipeline/index.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import { EXEC_TYPE, callbackRequest } from '../helpers/fake-runtime.js';
 import {
@@ -398,5 +400,59 @@ describe('steps and notifications', () => {
     const texts = notifier.messages.map((m) => m.text).sort();
     expect(texts[0]).toMatch(/^held: quiet_hours/);
     expect(texts[1]).toMatch(/^throttled: /);
+  });
+});
+
+function serializationFailures(db: Db, count: number): Db {
+  let left = count;
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop === 'transaction' && left > 0) {
+        return () => {
+          left--;
+          return Promise.reject(
+            Object.assign(new Error('could not serialize access'), { code: '40001' }),
+          );
+        };
+      }
+      const value: unknown = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? (value.bind(target) as unknown) : value;
+    },
+  });
+}
+
+function pipelineOver(db: Db): Pipeline {
+  return createPipeline({
+    ...h.deps,
+    db,
+    heartbeatIntervalMs: 0,
+    secrets: { resolve: () => Promise.reject(new Error('no secrets')) },
+  });
+}
+
+describe('manual actions retry a serialization failure', () => {
+  it('run now', async () => {
+    const ex = await seedDestination(h);
+    const pid = await seedProcess(h, ex.id, null);
+    const out = await pipelineOver(serializationFailures(h.db, 1)).runNow(pid, {
+      actor: 'op@example.com',
+      reason: 'go',
+    });
+    expect(out.outcome).toBe('ok');
+    expect(await runsOf(h.db, pid)).toHaveLength(1);
+  });
+
+  it('approve', async () => {
+    const src = await seedSource(h);
+    const ex = await seedDestination(h);
+    const pid = await seedProcess(h, ex.id, src.id, { gates: { approval: 'always' } });
+    await fireOne(src.id, '1');
+    const [batch] = await batchesOf(h.db, pid);
+    const out = await pipelineOver(serializationFailures(h.db, 1)).approve(
+      batch!.id,
+      'op@example.com',
+      'looks right',
+    );
+    expect(out.outcome).toBe('ok');
   });
 });

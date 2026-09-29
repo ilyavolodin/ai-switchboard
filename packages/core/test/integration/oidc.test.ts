@@ -2,11 +2,11 @@ import { createHash, createSign, generateKeyPairSync, randomBytes } from 'node:c
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { OidcClient } from '../../src/auth/oidc.js';
-import { users } from '../../src/db/schema.js';
+import { auditLog, users } from '../../src/db/schema.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD, createApiHarness, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
@@ -170,6 +170,42 @@ describe('OIDC sign-in', () => {
       email: 'alice@acme.test',
       role: 'operator',
     });
+  });
+
+  it('audits binding the issuer subject on the first sign-in, once', async () => {
+    const [alice] = await tdb.db.select().from(users).where(eq(users.email, 'alice@acme.test'));
+    expect(alice?.oidcSubject).not.toBeNull();
+    const bound = await tdb.db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.targetId, alice!.id), eq(auditLog.field, 'oidc_subject')));
+    expect(bound).toHaveLength(1);
+    expect(bound[0]).toMatchObject({
+      actor: 'alice@acme.test',
+      scope: 'user',
+      before: null,
+      after: alice!.oidcSubject,
+      reason: 'first OIDC sign-in',
+    });
+    await signIn('alice@acme.test');
+    const again = await tdb.db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.targetId, alice!.id), eq(auditLog.field, 'oidc_subject')));
+    expect(again).toHaveLength(1);
+  });
+
+  it('refuses an email already bound to another subject, and never re-binds it', async () => {
+    await tdb.db.insert(users).values({
+      email: 'carol@acme.test',
+      role: 'viewer',
+      oidcSubject: 'someone-else',
+    });
+    const { location, cookie } = await signIn('carol@acme.test');
+    expect(decodeURIComponent(location)).toMatch(/linked to a different identity/);
+    expect(cookie).toBeUndefined();
+    const [carol] = await tdb.db.select().from(users).where(eq(users.email, 'carol@acme.test'));
+    expect(carol?.oidcSubject).toBe('someone-else');
   });
 
   it('sends a valid token for an unknown email to the ask-an-admin page', async () => {

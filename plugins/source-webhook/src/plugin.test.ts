@@ -4,6 +4,7 @@ import { signHmac, validatePlugin, type RawRequest, type Settings } from '@ai-sw
 import {
   createTestContext,
   rawRequest,
+  pluginConformanceChecks,
   runConformance,
   sourceConformanceChecks,
   type SourceFixtures,
@@ -75,10 +76,14 @@ const hmacFixtures: SourceFixtures = {
   },
 };
 
-runConformance('webhook source (hmac)', sourceConformanceChecks(webhookSource, hmacFixtures), {
-  describe,
-  it,
-});
+runConformance(
+  'webhook source (hmac)',
+  pluginConformanceChecks(plugin, { sources: { [webhookSource.id]: hmacFixtures } }),
+  {
+    describe,
+    it,
+  },
+);
 
 runConformance(
   'webhook source (shared secret)',

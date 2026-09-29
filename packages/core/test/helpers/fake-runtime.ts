@@ -2,11 +2,10 @@ import {
   InvokeError,
   TransportError,
   dedupeKey,
-  isInvokeError,
-  isTransportError,
   signHmac,
   verifyHmac,
   type ActionResult,
+  type ActionSpec,
   type ArtifactRef,
   type ArtifactSnapshot,
   type EventDraft,
@@ -30,12 +29,15 @@ import {
 } from '@ai-switchboard/sdk';
 import { rawRequest } from '@ai-switchboard/sdk/testing';
 
+import { guardActions } from '../../src/plugins/actions.js';
+import { attribute } from '../../src/plugins/attribution.js';
 import type {
   LiveDestination,
   LiveNotifier,
   LiveSource,
   PluginRuntime,
 } from '../../src/plugins/runtime.js';
+import { errorText } from '../../src/util/errors.js';
 
 /** The destination's behaviour per invoke is scripted. */
 
@@ -255,42 +257,19 @@ async function behave(
   }
 }
 
-/** Mirrors `PluginHost`'s attribution proxy: the pipeline relies on this layer. */
+/** The host's own wrappers: exceptions count against the plugin and actions are checked. */
 function attributed<T extends object>(
   target: T,
   pluginName: string,
   runtime: { recordPluginError: PluginRuntime['recordPluginError'] },
+  actions?: readonly ActionSpec[],
 ): T {
-  const record = (err: unknown, method: string): void => {
-    if (isTransportError(err) || isInvokeError(err)) return;
-    runtime.recordPluginError(
-      pluginName,
-      'exception',
-      `${method}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  };
-  return new Proxy(target, {
-    get(obj, prop, receiver) {
-      const value: unknown = Reflect.get(obj, prop, receiver);
-      if (typeof value !== 'function') return value;
-      const fn = value as (...args: unknown[]) => unknown;
-      return (...args: unknown[]) => {
-        try {
-          const out = fn.apply(obj, args);
-          if (out instanceof Promise) {
-            return out.catch((err: unknown) => {
-              record(err, String(prop));
-              throw err;
-            });
-          }
-          return out;
-        } catch (err) {
-          record(err, String(prop));
-          throw err;
-        }
-      };
-    },
-  });
+  return guardActions(
+    attribute(target, (err, method) => {
+      runtime.recordPluginError(pluginName, 'exception', `${method}: ${errorText(err)}`);
+    }),
+    actions,
+  );
 }
 
 export interface FakeNotifierState {
@@ -322,7 +301,7 @@ export class FakeRuntime implements PluginRuntime {
   }
 
   notifierType(typeId: string) {
-    if (typeId !== NOTIFIER_TYPE) return undefined;
+    if (typeId !== NOTIFIER_TYPE || this.unavailableTypes.has(typeId)) return undefined;
     const type: NotifierType = {
       id: NOTIFIER_TYPE,
       displayName: 'Fake notifier',
@@ -353,11 +332,14 @@ export class FakeRuntime implements PluginRuntime {
   }
 
   notifier(id: string): LiveNotifier | undefined {
-    return this.notifiers.get(id);
+    const live = this.notifiers.get(id);
+    return live && !this.unavailableTypes.has(live.typeId) && !this.instanceErrors.has(id)
+      ? live
+      : undefined;
   }
 
   instanceError(id: string): string | undefined {
-    const live = this.sources.get(id) ?? this.destinations.get(id);
+    const live = this.sources.get(id) ?? this.destinations.get(id) ?? this.notifiers.get(id);
     if (live && this.unavailableTypes.has(live.typeId)) return 'plugin_unavailable';
     return this.instanceErrors.get(id);
   }
@@ -431,6 +413,7 @@ export class FakeRuntime implements PluginRuntime {
         },
         HOOK_PLUGIN,
         this,
+        type.actions,
       ),
     });
     this.sourceStates.set(id, state);
@@ -501,6 +484,7 @@ export class FakeRuntime implements PluginRuntime {
         },
         EXEC_PLUGIN,
         this,
+        type.actions,
       ),
     });
     this.destinationStates.set(id, state);

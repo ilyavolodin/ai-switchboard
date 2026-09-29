@@ -1,4 +1,4 @@
-import { parseWith, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
+import type { JSONSchema } from '@ai-switchboard/sdk';
 
 export interface LinearSettings {
   apiKey: string;
@@ -42,11 +42,4 @@ export const settingsSchema: JSONSchema = {
 
 export class LinearSettingsError extends Error {
   override readonly name = 'LinearSettingsError';
-}
-
-/** Validates a copy, so defaults do not leak back. */
-export function readSettings(settings: Settings): LinearSettings {
-  return parseWith<LinearSettings>(settingsSchema, settings, 'linear settings', {
-    error: LinearSettingsError,
-  });
 }

@@ -7,7 +7,6 @@ import {
   createMemoryState,
   createStubHttp,
   createTestContext,
-  destinationConformanceChecks,
   pluginConformanceChecks,
   runConformance,
   runHandle,
@@ -97,14 +96,16 @@ async function thrown(p: Promise<unknown>): Promise<unknown> {
 const run = (overrides: Parameters<typeof runHandle>[0] = {}): ReturnType<typeof runHandle> =>
   runHandle({ id: SWITCHBOARD_RUN, ...overrides });
 
-runConformance('plugin', pluginConformanceChecks(plugin), { describe, it });
-
 runConformance(
   'github-actions destination',
-  destinationConformanceChecks(githubActionsDestinationType, {
-    settings: tokenSettings,
-    http: github(),
-    now: () => new Date(NOW),
+  pluginConformanceChecks(plugin, {
+    destinations: {
+      [githubActionsDestinationType.id]: {
+        settings: tokenSettings,
+        http: github(),
+        now: () => new Date(NOW),
+      },
+    },
   }),
   { describe, it },
 );

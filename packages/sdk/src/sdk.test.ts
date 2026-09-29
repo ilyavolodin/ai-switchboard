@@ -2,17 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CapabilityError,
-  createHttpClient,
   dedupeKey,
   definePlugin,
-  hostMatches,
   ICON_DATA_URI_PREFIX,
   ICON_NAMES,
   iconProblem,
   InvokeError,
   invokeErrorForStatus,
+  isCapabilityError,
   isInvokeError,
+  isSecretNotFoundError,
   isTransportError,
+  SecretNotFoundError,
   parseRetryAfter,
   parseWith,
   safeEqual,
@@ -27,6 +28,7 @@ import {
   type DestinationType,
   type SourceType,
 } from './index.js';
+import { createHttpClient, hostMatches } from './host.js';
 import { createStubHttp, rawRequest, scrubRequest } from './testing/index.js';
 
 const sourceType = (overrides: Partial<SourceType> = {}): SourceType => ({
@@ -462,5 +464,57 @@ describe('fixture recorder', () => {
     expect(rec.headers['x-sig']).toBe(
       signHmac({ secret: 'fixture', payload: Buffer.from(rec.body) }),
     );
+  });
+});
+
+describe('definePlugin derives capabilities.secrets', () => {
+  const settingsSchema = {
+    type: 'object',
+    properties: {
+      token: { type: 'string', 'x-secret': true },
+      nested: { type: 'object', properties: { key: { type: 'string', 'x-secret': true } } },
+      url: { type: 'string' },
+    },
+  };
+  const notifier = {
+    id: 'n',
+    displayName: 'N',
+    settingsSchema,
+    create: () => ({
+      send: () => Promise.resolve(),
+      health: () => Promise.resolve({ status: 'unknown' as const, checkedAt: '' }),
+    }),
+  };
+
+  it.each([
+    ['no secret fields and none listed', {}, [], undefined],
+    ['x-secret fields', {}, [notifier], ['nested.key', 'token']],
+    [
+      'a listed name plus fields, deduplicated',
+      { secrets: ['token', 'extra'] },
+      [notifier],
+      ['extra', 'nested.key', 'token'],
+    ],
+  ])('%s', (_label, capabilities, notifiers, expected) => {
+    const plugin = definePlugin({
+      id: 'p',
+      displayName: 'P',
+      capabilities: { network: [], ...capabilities },
+      notifiers,
+    });
+    expect(plugin.capabilities.secrets).toEqual(expected);
+    expect(plugin.capabilities.network).toEqual([]);
+  });
+});
+
+describe('error guards', () => {
+  it.each([
+    [isCapabilityError, new CapabilityError('x'), true],
+    [isCapabilityError, new Error('x'), false],
+    [isSecretNotFoundError, new SecretNotFoundError('x'), true],
+    [isSecretNotFoundError, Object.assign(new Error('x'), { name: 'SecretNotFoundError' }), true],
+    [isSecretNotFoundError, { name: 'SecretNotFoundError' }, false],
+  ])('%o(%o) is %s', (guard, err, expected) => {
+    expect(guard(err)).toBe(expected);
   });
 });

@@ -3,13 +3,25 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { definePlugin, TransportError } from '@ai-switchboard/sdk';
+import {
+  definePlugin,
+  SecretNotFoundError,
+  TransportError,
+  type PluginContext,
+} from '@ai-switchboard/sdk';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { FakeClock } from '../../src/clock.js';
 import { testConfig } from '../../src/config.js';
-import { plugins, pluginTypes, secretProviders, sources } from '../../src/db/schema.js';
+import {
+  instanceState,
+  notifiers,
+  plugins,
+  pluginTypes,
+  secretProviders,
+  sources,
+} from '../../src/db/schema.js';
 import { silentLogger } from '../../src/logger.js';
 import { PluginHost } from '../../src/plugins/host.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
@@ -100,7 +112,7 @@ describe('plugin host', () => {
     expect(byName['@acme/good']).toMatchObject({ status: 'loaded' });
     expect(byName['@acme/incompatible']).toMatchObject({
       status: 'incompatible',
-      message: expect.stringMatching(/\^1\.0\.0; running SDK is 2\.0\.0/),
+      message: expect.stringMatching(/\^1\.0\.0; running SDK is 2\.\d+\.\d+/),
     });
     expect(byName['@acme/broken']).toMatchObject({
       status: 'failed',
@@ -226,6 +238,212 @@ describe('plugin host', () => {
     expect(p?.errorCount).toBe(1);
     expect(telemetry.signals.filter((s) => s.name === 'switchboard.plugin.errors')).toHaveLength(1);
   });
+  it("checks a source action against its argsSchema before the plugin's act", async () => {
+    const acted: { action: string; args: unknown }[] = [];
+    const acting = definePlugin({
+      id: 'acting',
+      displayName: 'Acting',
+      sources: [
+        {
+          ...testSourceType,
+          id: 'acting-source',
+          eventTypes: testSourceType.eventTypes.map((e) => ({
+            ...e,
+            type: 'acting-source.item.created',
+          })),
+          actions: [
+            {
+              id: 'addLabel',
+              title: 'Add label',
+              argsSchema: {
+                type: 'object',
+                required: ['label'],
+                properties: { label: { type: 'string' } },
+              },
+            },
+          ],
+          create: () => ({
+            act: (action: string, args: unknown) => {
+              acted.push({ action, args });
+              return Promise.resolve({ ok: true });
+            },
+            health: () =>
+              Promise.resolve({ status: 'healthy', checkedAt: new Date().toISOString() }),
+          }),
+        },
+      ],
+    });
+    const h = host({ builtin: [{ name: 'acting', version: '1.0.0', definition: acting }] });
+    await h.boot();
+    const [src] = await tdb.db
+      .insert(sources)
+      .values({ typeId: 'acting-source', name: 'Acts', settings: {} })
+      .returning();
+    await h.reload('source', src!.id);
+    const live = h.source(src!.id)!.source;
+    const act = (action: string, args: unknown) => live.act!(action, args);
+    await expect(act('addLabel', { label: 'x' })).resolves.toEqual({ ok: true });
+    await expect(act('merge', {})).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/unknown action "merge"/),
+    });
+    await expect(act('addLabel', { label: 7 })).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/invalid args for action "addLabel"/),
+    });
+    expect(acted).toEqual([{ action: 'addLabel', args: { label: 'x' } }]);
+    await h.stop();
+  });
+
+  it('counts a create() that throws against the plugin for every kind', async () => {
+    const telemetry = createRecordingTelemetry();
+    const failing = definePlugin({
+      id: 'failing',
+      displayName: 'Failing',
+      notifiers: [
+        {
+          id: 'failing-notifier',
+          displayName: 'Failing notifier',
+          settingsSchema: { type: 'object' },
+          create: () => {
+            throw new Error('notifier create exploded');
+          },
+        },
+      ],
+      secretProviders: [
+        {
+          id: 'failing-provider',
+          displayName: 'Failing provider',
+          settingsSchema: { type: 'object' },
+          create: () => {
+            throw new Error('provider create exploded');
+          },
+        },
+      ],
+    });
+    const h = host({
+      telemetry,
+      builtin: [{ name: 'failing', version: '1.0.0', definition: failing }],
+    });
+    await h.boot();
+    const [n] = await tdb.db
+      .insert(notifiers)
+      .values({ typeId: 'failing-notifier', name: 'Fails', settings: {} })
+      .returning();
+    const [p] = await tdb.db
+      .insert(secretProviders)
+      .values({ typeId: 'failing-provider', name: 'fails', settings: {} })
+      .returning();
+    await h.reload('notifier', n!.id);
+    await h.reload('secret_provider', p!.id);
+    expect(h.instanceError(n!.id)).toMatch(/^create_failed: notifier create exploded/);
+    expect(h.instanceError(p!.id)).toMatch(/^create_failed: provider create exploded/);
+    await h.stop();
+    const errors = telemetry.signals.filter((s) => s.name === 'switchboard.plugin.errors');
+    expect(errors.map((e) => e.attributes)).toEqual([
+      { plugin: 'failing', kind: 'exception' },
+      { plugin: 'failing', kind: 'exception' },
+    ]);
+    const [row] = await tdb.db.select().from(plugins).where(eq(plugins.name, 'failing'));
+    expect(row?.errorCount).toBe(2);
+    await tdb.db.delete(notifiers).where(eq(notifiers.id, n!.id));
+    await tdb.db.delete(secretProviders).where(eq(secretProviders.id, p!.id));
+  });
+
+  it('keeps rotated credentials in the referenced writable provider, never in instance_state', async () => {
+    const vault = new Map<string, string>([['seed', 'fixture-secret-seed-value']]);
+    let ctxRef: PluginContext | undefined;
+    const rotating = definePlugin({
+      id: 'rotating',
+      displayName: 'Rotating',
+      secretProviders: [
+        {
+          id: 'vault',
+          displayName: 'Vault',
+          settingsSchema: { type: 'object' },
+          create: () => ({
+            resolve: (name: string) => {
+              const v = vault.get(name);
+              return v === undefined
+                ? Promise.reject(new SecretNotFoundError(`${name} is not stored`))
+                : Promise.resolve(v);
+            },
+            list: () => Promise.resolve([...vault.keys()].map((name) => ({ name }))),
+            set: (name: string, value: string) => {
+              vault.set(name, value);
+              return Promise.resolve();
+            },
+            delete: (name: string) => {
+              vault.delete(name);
+              return Promise.resolve();
+            },
+            health: () => Promise.resolve({ status: 'healthy', checkedAt: '' }),
+          }),
+        },
+      ],
+      notifiers: [
+        {
+          id: 'rotating-notifier',
+          displayName: 'Rotating notifier',
+          settingsSchema: {
+            type: 'object',
+            properties: { token: { type: 'string', 'x-secret': true } },
+          },
+          create: (_settings, ctx) => {
+            ctxRef = ctx;
+            return {
+              send: () => Promise.resolve(),
+              health: () => Promise.resolve({ status: 'healthy', checkedAt: '' }),
+            };
+          },
+        },
+      ],
+    });
+    const h = host({ builtin: [{ name: 'rotating', version: '1.0.0', definition: rotating }] });
+    await h.boot();
+    const [p] = await tdb.db
+      .insert(secretProviders)
+      .values({ typeId: 'vault', name: 'vault', settings: {} })
+      .returning();
+    await h.reload('secret_provider', p!.id);
+    const [n] = await tdb.db
+      .insert(notifiers)
+      .values({
+        typeId: 'rotating-notifier',
+        name: 'Rotates',
+        settings: { token: 'secret://vault/seed' },
+      })
+      .returning();
+    await h.reload('notifier', n!.id);
+    const ctx = ctxRef!;
+
+    expect(await ctx.secrets.check()).toEqual({ writable: true, provider: 'vault' });
+    await ctx.secrets.set('refresh', 'fixture-secret-rotated-1');
+    expect(vault.get(`switchboard-${n!.id}-refresh`)).toBe('fixture-secret-rotated-1');
+    expect(await ctx.secrets.get('refresh')).toBe('fixture-secret-rotated-1');
+
+    await expect(
+      ctx.state.set('oauth', { token: 'fixture-secret-rotated-1' }),
+    ).rejects.toMatchObject({ name: 'SecretInStateError' });
+    await expect(ctx.state.set('seed', 'fixture-secret-seed-value')).rejects.toMatchObject({
+      name: 'SecretInStateError',
+    });
+    await ctx.state.set('oauth', { expiresAt: '2026-01-01T00:00:00Z' });
+    const rows = await tdb.db
+      .select()
+      .from(instanceState)
+      .where(eq(instanceState.instanceId, n!.id));
+    expect(JSON.stringify(rows)).not.toContain('fixture-secret');
+
+    await tdb.db.delete(notifiers).where(eq(notifiers.id, n!.id));
+    await h.reload('notifier', n!.id);
+    expect(vault.has(`switchboard-${n!.id}-refresh`)).toBe(false);
+    expect(vault.get('seed')).toBe('fixture-secret-seed-value');
+    await tdb.db.delete(instanceState).where(eq(instanceState.instanceId, n!.id));
+    await tdb.db.delete(secretProviders).where(eq(secretProviders.id, p!.id));
+    await h.stop();
+  });
+
   it('keeps the live instance through a reload and lets the newest reload win a race', async () => {
     // A secret provider whose resolve can be held open, to interleave two reloads.
     let held: { promise: Promise<string>; release: () => void } | undefined;

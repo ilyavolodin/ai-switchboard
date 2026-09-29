@@ -30,6 +30,7 @@ import type {
   MatchSkip,
   PluginOrigin,
   PluginStatus,
+  RawOrigin,
   Role,
   RunStatusValue,
   StepPhase,
@@ -46,8 +47,6 @@ const id = () => uuid('id').primaryKey().defaultRandom();
  * replica can tell which instances it must rebuild. Caps and target defaults need no rebuild.
  */
 const configVersion = () => integer('config_version').notNull().default(1);
-
-export type PluginKindColumn = InstanceKind;
 
 /** Core-added per-instance caps for sources. */
 export interface SourceCaps {
@@ -108,7 +107,7 @@ export const pluginTypes = pgTable(
   'plugin_types',
   {
     plugin: text('plugin').notNull(),
-    kind: text('kind').$type<PluginKindColumn>().notNull(),
+    kind: text('kind').$type<InstanceKind>().notNull(),
     typeId: text('type_id').notNull(),
     displayName: text('display_name').notNull(),
     /** `json`, not `jsonb`: jsonb reorders object keys, and a settings form must keep field order. */
@@ -306,6 +305,7 @@ export const eventRaw = pgTable(
     receivedAt: ts('received_at').notNull(),
     /** `ok` | `rejected:<reason>` | `unverified:source_disabled` (body not kept) */
     verify: text('verify').notNull().default('ok'),
+    origin: text('origin').$type<RawOrigin>().notNull().default('push'),
   },
   (t) => [index('event_raw_received').on(t.receivedAt)],
 );

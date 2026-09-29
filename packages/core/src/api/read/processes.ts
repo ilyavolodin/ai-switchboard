@@ -13,6 +13,7 @@ import {
 } from '../../db/schema.js';
 import { processStatus } from '../../domain/labels.js';
 import { countedRun } from '../../services/pipeline/counters.js';
+import { savedVersion } from '../../services/processes.js';
 import type { ProcessDocument } from '../../domain/process.js';
 import type { StatusTone } from '../../domain/status.js';
 import type { ApiContext } from '../context.js';
@@ -290,19 +291,12 @@ export async function processVersionList(
   return rows.map((r) => ({ ...r, savedAt: r.savedAt.toISOString() }));
 }
 
-/** `version` comes from the path: anything but a positive integer is a 404, not a 500. */
 export async function processVersion(
   ctx: ApiContext,
   processId: string,
   version: string | number,
 ): Promise<ProcessVersionDetail> {
-  const n = Number(version);
-  if (!Number.isSafeInteger(n) || n < 1) throw notFound('Version');
-  const [row] = await ctx.db
-    .select()
-    .from(processVersions)
-    .where(and(eq(processVersions.processId, processId), eq(processVersions.version, n)));
-  if (!row) throw notFound('Version');
+  const row = await savedVersion(ctx.db, processId, version);
   return {
     version: row.version,
     savedBy: row.savedBy,
@@ -315,7 +309,7 @@ export async function processVersion(
 export async function recentBatches(
   ctx: ApiContext,
   processId: string,
-  limit: string | undefined,
+  limit: number | string | undefined,
 ): Promise<RecentBatchDTO[]> {
   const rows = await ctx.db
     .select()

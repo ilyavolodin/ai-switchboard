@@ -1,30 +1,17 @@
 import type { FastifyError, FastifyInstance } from 'fastify';
 
+import { badRequest, isServiceError, type ServiceError } from '../services/errors.js';
 import { isPipelineError } from '../services/pipeline/errors.js';
 import type { ApiError } from './contract.js';
 
-export class HttpError extends Error {
-  override readonly name = 'HttpError';
-
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-    readonly details?: string[],
-    readonly usedBy?: { id: string; name: string }[],
-  ) {
-    super(message);
-  }
-}
-
-export const notFound = (what: string): HttpError =>
-  new HttpError(404, 'not_found', `${what} not found`);
-export const badRequest = (message: string, details?: string[]): HttpError =>
-  new HttpError(400, 'bad_request', message, details);
-export const conflict = (message: string, usedBy?: { id: string; name: string }[]): HttpError =>
-  new HttpError(409, 'conflict', message, undefined, usedBy);
-export const unprocessable = (message: string, details?: string[]): HttpError =>
-  new HttpError(422, 'unprocessable', message, details);
+export {
+  badRequest,
+  conflict,
+  forbidden,
+  notFound,
+  ServiceError as HttpError,
+  unprocessable,
+} from '../services/errors.js';
 
 /**
  * When `requireReasons` is off, the `preValidation` hook in `reasons.ts` has already filled a
@@ -42,8 +29,8 @@ export function requireReason(body: unknown): string {
 }
 
 export function registerErrorHandler(app: FastifyInstance): void {
-  app.setErrorHandler((err: FastifyError | HttpError | Error, req, reply) => {
-    if (err instanceof HttpError) {
+  app.setErrorHandler((err: FastifyError | ServiceError | Error, req, reply) => {
+    if (isServiceError(err)) {
       const body: ApiError = {
         error: err.code,
         message: err.message,

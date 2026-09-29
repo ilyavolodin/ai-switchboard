@@ -11,22 +11,19 @@ import {
   type GateDecisionRecord,
 } from '../../db/schema.js';
 import { isTerminalRunStatus, type SettledRunStatus } from '../../domain/status.js';
-import { isUuid } from '../../util/uuid.js';
 import { recordAudit } from '../audit.js';
 
-import { appendDecisions, withTx, type Ctx } from './context.js';
+import { closeBreaker } from './breaker.js';
+import type { Ctx } from './context.js';
 import { dispatchBatch, type DispatchResult } from './dispatch.js';
-import { PipelineError } from './errors.js';
+import { PipelineError, findOrThrow } from './errors.js';
 import { batchEvents } from './load.js';
 import { readMeters } from './meters.js';
 import { closeRun } from './runs.js';
+import { appendDecisions, lockBatch, withTx } from './tx.js';
 
 function requireReason(reason: string): void {
   if (reason.trim() === '') throw new PipelineError('invalid', 'a reason is required');
-}
-
-function notFound(what: string, id: string): PipelineError {
-  return new PipelineError('not_found', `${what} ${id} not found`);
 }
 
 /**
@@ -39,14 +36,17 @@ export async function runNow(
   opts: { dryRun?: boolean; batchId?: string; actor: string; reason: string },
 ): Promise<DispatchResult> {
   requireReason(opts.reason);
-  if (!isUuid(processId)) throw notFound('process', processId);
-  const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, processId));
-  if (!proc) throw notFound('process', processId);
+  await findOrThrow('process', processId, async () => {
+    const [row] = await ctx.db.select().from(processes).where(eq(processes.id, processId));
+    return row;
+  });
   let size = 0;
-  if (opts.batchId !== undefined) {
-    if (!isUuid(opts.batchId)) throw notFound('batch', opts.batchId);
-    const [from] = await ctx.db.select().from(batches).where(eq(batches.id, opts.batchId));
-    if (from?.processId !== processId) throw notFound('batch', opts.batchId);
+  const fromId = opts.batchId;
+  if (fromId !== undefined) {
+    const from = await findOrThrow('batch', fromId, async () => {
+      const [row] = await ctx.db.select().from(batches).where(eq(batches.id, fromId));
+      return row?.processId === processId ? row : undefined;
+    });
     size = (await batchEvents(ctx.db, from)).length;
   }
   const now = ctx.clock.now();
@@ -58,7 +58,7 @@ export async function runNow(
     detail: `${opts.dryRun === true ? 'test run' : 'run now'} by ${opts.actor}: ${opts.reason}`,
     at: now.toISOString(),
   };
-  await ctx.db.transaction(async (tx) => {
+  await withTx(ctx.db, async (tx) => {
     await tx.insert(batches).values({
       id: batchId,
       processId,
@@ -122,11 +122,9 @@ async function decide(
   actor: string,
   reason: string,
 ): Promise<{ processId: string; kind: string }> {
-  if (!isUuid(batchId)) throw notFound('batch', batchId);
   const now = ctx.clock.now();
-  return ctx.db.transaction(async (tx) => {
-    const [b] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('update');
-    if (!b) throw notFound('batch', batchId);
+  return withTx(ctx.db, async (tx) => {
+    const b = await findOrThrow('batch', batchId, () => lockBatch(tx, batchId));
     if (b.outcome !== 'awaiting_approval' || b.approvalState !== 'pending') {
       throw new PipelineError(
         'conflict',
@@ -175,9 +173,10 @@ export async function closeRunByHand(
   reason: string,
 ): Promise<void> {
   requireReason(reason);
-  if (!isUuid(runId)) throw notFound('run', runId);
-  const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
-  if (!run) throw notFound('run', runId);
+  const run = await findOrThrow('run', runId, async () => {
+    const [row] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
+    return row;
+  });
   if (isTerminalRunStatus(run.status)) {
     throw new PipelineError('conflict', `run ${runId} is already ${run.status}`);
   }
@@ -206,15 +205,17 @@ export async function resetBreaker(
   reason: string,
 ): Promise<void> {
   requireReason(reason);
-  if (!isUuid(processId)) throw notFound('process', processId);
   const now = ctx.clock.now();
   await withTx(ctx.db, async (tx) => {
-    const [p] = await tx.select().from(processes).where(eq(processes.id, processId)).for('update');
-    if (!p) throw notFound('process', processId);
-    await tx
-      .update(processes)
-      .set({ breakerState: 'closed', breakerOpenedAt: null, breakerResetAt: now })
-      .where(eq(processes.id, processId));
+    const p = await findOrThrow('process', processId, async () => {
+      const [row] = await tx
+        .select()
+        .from(processes)
+        .where(eq(processes.id, processId))
+        .for('update');
+      return row;
+    });
+    await closeBreaker(tx, processId, now);
     await recordAudit(tx, {
       actor,
       scope: 'process',
@@ -236,15 +237,16 @@ export async function clearSoftHold(
   reason: string,
 ): Promise<void> {
   requireReason(reason);
-  if (!isUuid(destinationId)) throw notFound('destination', destinationId);
   const now = ctx.clock.now();
   await withTx(ctx.db, async (tx) => {
-    const [e] = await tx
-      .select()
-      .from(destinations)
-      .where(eq(destinations.id, destinationId))
-      .for('update');
-    if (!e) throw notFound('destination', destinationId);
+    const e = await findOrThrow('destination', destinationId, async () => {
+      const [row] = await tx
+        .select()
+        .from(destinations)
+        .where(eq(destinations.id, destinationId))
+        .for('update');
+      return row;
+    });
     await tx
       .update(destinations)
       .set({ softHoldUntil: null, softHoldReason: null })
@@ -263,12 +265,13 @@ export async function clearSoftHold(
 }
 
 export async function readMetersNow(ctx: Ctx, destinationId: string): Promise<void> {
-  if (!isUuid(destinationId)) throw notFound('destination', destinationId);
-  const [e] = await ctx.db
-    .select({ id: destinations.id })
-    .from(destinations)
-    .where(eq(destinations.id, destinationId));
-  if (!e) throw notFound('destination', destinationId);
+  await findOrThrow('destination', destinationId, async () => {
+    const [row] = await ctx.db
+      .select({ id: destinations.id })
+      .from(destinations)
+      .where(eq(destinations.id, destinationId));
+    return row;
+  });
   if (!ctx.runtime.destination(destinationId)) {
     throw new PipelineError('unavailable', `destination ${destinationId} has no live instance`);
   }

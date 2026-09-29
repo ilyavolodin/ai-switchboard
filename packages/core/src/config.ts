@@ -2,6 +2,7 @@ import { hostname } from 'node:os';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { DEFAULT_HOME, DEFAULT_PORT } from './domain/defaults.js';
 import { parseOtelConfig, type OtelConfig } from './telemetry/otel-config.js';
 
 export interface OidcConfig {
@@ -21,7 +22,14 @@ export interface CoreConfig {
   /** Local admin password, unauthenticated webhooks allowed. */
   evaluation: boolean;
   bootstrapAdmin: string | undefined;
+  /** `SWITCHBOARD_ADMIN_PASSWORD`: the bootstrap admin's password instead of a generated one. */
+  adminPassword: string | undefined;
   oidc: OidcConfig | undefined;
+  /**
+   * `SWITCHBOARD_OIDC_CLIENT_SECRET`, also used with an issuer configured in Settings (the secret
+   * is never stored).
+   */
+  oidcClientSecret: string | undefined;
   logLevel: string;
   prettyLogs: boolean;
   telemetry: OtelConfig;
@@ -41,6 +49,8 @@ export interface CoreConfig {
   workers: boolean;
   trustProxy: boolean;
   secureCookies: boolean;
+  /** How long a starting replica waits for Postgres. */
+  databaseWait: { attempts: number; delayMs: number };
 }
 
 export const CORE_VERSION = '1.0.0';
@@ -48,6 +58,10 @@ export const CORE_VERSION = '1.0.0';
 function bool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined || value === '') return fallback;
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  return value === undefined || value === '' ? undefined : value;
 }
 
 function list(value: string | undefined): string[] {
@@ -58,7 +72,7 @@ function list(value: string | undefined): string[] {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
-  const port = Number(env.PORT ?? env.SWITCHBOARD_PORT ?? 8080);
+  const port = Number(env.PORT ?? env.SWITCHBOARD_PORT ?? DEFAULT_PORT);
   const publicUrl = (env.SWITCHBOARD_PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/$/, '');
   const issuer = env.SWITCHBOARD_OIDC_ISSUER;
   const registry = env.SWITCHBOARD_NPM_REGISTRY;
@@ -77,10 +91,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     host: env.HOST ?? '0.0.0.0',
     port,
     publicUrl,
-    home: resolve(env.SWITCHBOARD_HOME ?? '.switchboard'),
+    home: resolve(env.SWITCHBOARD_HOME ?? DEFAULT_HOME),
     evaluation: bool(env.SWITCHBOARD_EVALUATION, false),
     bootstrapAdmin: env.SWITCHBOARD_BOOTSTRAP_ADMIN,
+    adminPassword: nonEmpty(env.SWITCHBOARD_ADMIN_PASSWORD),
     oidc,
+    oidcClientSecret: env.SWITCHBOARD_OIDC_CLIENT_SECRET,
     logLevel: env.LOG_LEVEL ?? 'info',
     prettyLogs: bool(env.SWITCHBOARD_PRETTY_LOGS, false),
     telemetry: parseOtelConfig(env),
@@ -98,6 +114,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     workers: bool(env.SWITCHBOARD_WORKERS, true),
     trustProxy: bool(env.SWITCHBOARD_TRUST_PROXY, false),
     secureCookies: bool(env.SWITCHBOARD_SECURE_COOKIES, publicUrl.startsWith('https://')),
+    databaseWait: { attempts: 30, delayMs: 2000 },
   };
 }
 
@@ -111,6 +128,7 @@ export function testConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
     telemetry: parseOtelConfig({ SWITCHBOARD_PROMETHEUS: 'false' }),
     replicaId: 'test-replica',
     secureCookies: false,
+    databaseWait: { attempts: 1, delayMs: 0 },
     ...overrides,
   };
 }

@@ -1,22 +1,32 @@
+import { randomUUID } from 'node:crypto';
+
 import { validateAgainst, type JSONSchema } from '@ai-switchboard/sdk';
-import { eq } from 'drizzle-orm';
 import { parse, stringify } from 'yaml';
 
-import type { ApplyResponse, GlobalSettings } from '../api/contract.js';
+import type { ApplyResponse } from '../api/contract.js';
+import type { Clock } from '../clock.js';
 import type { Db, DbOrTx } from '../db/client.js';
-import {
-  destinations,
-  notifiers,
-  processes,
-  processVersions,
-  secretProviders,
-  sources,
-} from '../db/schema.js';
+import { INSTANCE_TABLES, type InstanceTable } from '../db/instance-tables.js';
+import { destinations, notifiers, processes, secretProviders, sources } from '../db/schema.js';
 import type { ProcessDocument } from '../domain/process.js';
+import { mergeSettings, type GlobalSettings } from '../domain/settings.js';
 import type { InstanceKind } from '../domain/status.js';
+import type { PluginRuntime } from '../plugins/runtime.js';
 import { errorText } from '../util/errors.js';
-import { recordAudit } from './audit.js';
-import { nextConfigVersion } from './instances.js';
+import { auditChange, type ChangeMeta } from './audit.js';
+import { problemsOf } from './errors.js';
+import { instanceType, type SourceProbe } from './instance-validation.js';
+import {
+  checkInstanceChange,
+  checkNewInstance,
+  insertInstance,
+  loadInstance,
+  writeInstanceChange,
+  type InstanceDraft,
+  type InstanceRecord,
+} from './instances.js';
+import { validateProcessDocument } from './process-validation.js';
+import { insertProcess, saveProcessVersionIn } from './processes.js';
 import { getSettings, putSettings } from './settings.js';
 
 /**
@@ -201,23 +211,51 @@ export interface ApplyOptions {
   reason: string;
   now: Date;
   dryRun: boolean;
-  /** Undefined when the type is not installed. */
-  validateSettings: (
-    kind: InstanceKind,
-    typeId: string,
-    settings: Record<string, unknown>,
-  ) => string[] | undefined;
-  validateProcess: (doc: ProcessDocument, tx: DbOrTx) => Promise<string[]>;
+}
+
+export interface ApplyDeps {
+  db: Db;
+  runtime: PluginRuntime;
+  clock: Clock;
+  probe: SourceProbe;
 }
 
 type Change = ApplyResponse['changes'][number];
 
+type SpecOf<K extends InstanceKind> = K extends 'source'
+  ? NonNullable<ConfigurationFile['sources']>[number]
+  : K extends 'destination'
+    ? NonNullable<ConfigurationFile['destinations']>[number]
+    : InstanceSpec;
+
+function draftOf(spec: InstanceSpec & { caps?: unknown; targetDefaults?: unknown }): InstanceDraft {
+  return {
+    typeId: spec.type,
+    name: spec.name,
+    settings: spec.settings ?? {},
+    enabled: spec.enabled ?? true,
+    caps: (spec.caps ?? {}) as Record<string, unknown>,
+    targetDefaults: (spec.targetDefaults ?? {}) as Record<string, unknown>,
+  };
+}
+
+/** What apply compares to tell an unchanged instance from a changed one. */
+function comparable(r: InstanceRecord) {
+  return {
+    typeId: r.typeId,
+    settings: r.settings,
+    enabled: r.enabled,
+    caps: r.caps,
+    targetDefaults: r.targetDefaults,
+  };
+}
+
 /**
  * One transaction, matched by name. Additive: nothing missing from the file is deleted. A dry run
- * rolls back.
+ * rolls back. Instances and processes go through the same checks and writes as the API.
  */
 export async function applyConfiguration(
-  db: Db,
+  deps: ApplyDeps,
   yamlText: string,
   opts: ApplyOptions,
 ): Promise<ApplyResponse> {
@@ -225,11 +263,7 @@ export async function applyConfiguration(
   try {
     file = parse(yamlText) as ConfigurationFile;
   } catch (err) {
-    return {
-      dryRun: opts.dryRun,
-      changes: [],
-      errors: [`YAML: ${errorText(err)}`],
-    };
+    return { dryRun: opts.dryRun, changes: [], errors: [`YAML: ${errorText(err)}`] };
   }
   const upgraded = upgradeLegacyConfiguration(file);
   if (upgraded.errors.length > 0) {
@@ -242,91 +276,46 @@ export async function applyConfiguration(
   const changes: Change[] = [];
   const errors: string[] = [];
   const rollback = new Error('rollback');
+  const meta: ChangeMeta = { actor: opts.actor, reason: `apply: ${opts.reason}`, now: opts.now };
 
   try {
-    await db.transaction(async (tx) => {
-      const audit = (scope: string, targetId: string, field: string, after: unknown) =>
-        recordAudit(tx, {
-          actor: opts.actor,
-          scope,
-          targetId,
-          field,
-          after,
-          reason: `apply: ${opts.reason}`,
-          at: opts.now,
-        });
-
-      const upsert = async (
-        kind: 'secret_provider' | 'source' | 'destination' | 'notifier',
-        specs:
-          | (InstanceSpec & {
-              caps?: Record<string, unknown>;
-              targetDefaults?: Record<string, unknown>;
-            })[]
-          | undefined,
+    await deps.db.transaction(async (tx) => {
+      const upsert = async <K extends InstanceKind>(
+        kind: K,
+        specs: SpecOf<K>[] | undefined,
       ): Promise<void> => {
-        const table = {
-          secret_provider: secretProviders,
-          source: sources,
-          destination: destinations,
-          notifier: notifiers,
-        }[kind];
-        const existing = await tx.select().from(table);
+        const table: InstanceTable = INSTANCE_TABLES[kind];
+        const existing = await tx.select({ id: table.id, name: table.name }).from(table);
         for (const spec of specs ?? []) {
-          const problems = opts.validateSettings(kind, spec.type, spec.settings ?? {});
-          if (problems === undefined) {
-            errors.push(`${kind} "${spec.name}": no installed plugin provides type ${spec.type}`);
+          const where = `${kind} "${spec.name}"`;
+          if (!instanceType(deps.runtime, kind, spec.type)) {
+            errors.push(`${where}: no installed plugin provides type ${spec.type}`);
             continue;
           }
-          if (problems.length > 0) {
-            errors.push(...problems.map((p) => `${kind} "${spec.name}": ${p}`));
-            continue;
-          }
+          const draft = draftOf(spec);
           const row = existing.find((r) => r.name === spec.name);
-          const values: Record<string, unknown> = {
-            typeId: spec.type,
-            name: spec.name,
-            settings: spec.settings ?? {},
-            enabled: spec.enabled ?? true,
-            updatedAt: opts.now,
-          };
-          if (kind === 'source' || kind === 'destination') values.caps = spec.caps ?? {};
-          if (kind === 'destination') values.targetDefaults = spec.targetDefaults ?? {};
-          if (!row) {
-            await tx.insert(table).values({ ...values, createdAt: opts.now } as never);
-            changes.push({ kind, name: spec.name, action: 'create' });
-            await audit(kind, spec.name, 'created', values);
-          } else {
-            const before = {
-              typeId: row.typeId,
-              settings: row.settings,
-              enabled: row.enabled,
-              caps: 'caps' in row ? row.caps : undefined,
-              targetDefaults: 'targetDefaults' in row ? row.targetDefaults : undefined,
-            };
-            const after = {
-              typeId: values.typeId,
-              settings: values.settings,
-              enabled: values.enabled,
-              caps: values.caps,
-              targetDefaults: values.targetDefaults,
-            };
-            if (canonical(before) === canonical(after)) {
+          try {
+            if (!row) {
+              const record = await checkNewInstance(deps, kind, randomUUID(), draft);
+              await insertInstance(tx, kind, record, meta);
+              changes.push({ kind, name: spec.name, action: 'create' });
+              continue;
+            }
+            const before = await loadInstance(tx, kind, row.id);
+            if (before.typeId !== spec.type) {
+              errors.push(`${where} exists with type ${before.typeId}; a type cannot change`);
+              continue;
+            }
+            const checked = await checkInstanceChange(deps, kind, before, draft);
+            const after = { ...checked, enabled: draft.enabled ?? true };
+            if (canonical(comparable(before)) === canonical(comparable(after))) {
               changes.push({ kind, name: spec.name, action: 'unchanged' });
               continue;
             }
-            if (row.typeId !== spec.type) {
-              errors.push(
-                `${kind} "${spec.name}" exists with type ${row.typeId}; a type cannot change`,
-              );
-              continue;
-            }
-            await tx
-              .update(table)
-              .set({ ...values, configVersion: nextConfigVersion(table) })
-              .where(eq(table.id, row.id));
+            await writeInstanceChange(tx, kind, before, after, meta);
             changes.push({ kind, name: spec.name, action: 'update' });
-            await audit(kind, row.id, 'applied', after);
+          } catch (err) {
+            errors.push(...problemsOf(err).map((p) => `${where}: ${p}`));
           }
         }
       };
@@ -337,14 +326,11 @@ export async function applyConfiguration(
       await upsert('notifier', file.notifiers);
 
       const ids = new Map<string, string>();
-      for (const r of await tx.select({ id: sources.id, name: sources.name }).from(sources))
-        ids.set(`source:${r.name}`, r.id);
-      for (const r of await tx
-        .select({ id: destinations.id, name: destinations.name })
-        .from(destinations))
-        ids.set(`destination:${r.name}`, r.id);
-      for (const r of await tx.select({ id: notifiers.id, name: notifiers.name }).from(notifiers))
-        ids.set(`notifier:${r.name}`, r.id);
+      for (const kind of ['source', 'destination', 'notifier'] as const) {
+        const table = INSTANCE_TABLES[kind];
+        for (const r of await tx.select({ id: table.id, name: table.name }).from(table))
+          ids.set(`${kind}:${r.name}`, r.id);
+      }
       const idOf = (kind: string, name: string, where: string): string => {
         const id = ids.get(`${kind}:${name}`);
         if (!id) {
@@ -362,10 +348,8 @@ export async function applyConfiguration(
         const current = await getSettings(tx);
         const s = file.settings;
         const next: GlobalSettings = {
-          ...current,
-          ...s,
+          ...mergeSettings(current, s),
           oidc: current.oidc,
-          retention: { ...current.retention, ...s.retention },
           export: {
             ...current.export,
             ...s.export,
@@ -382,7 +366,12 @@ export async function applyConfiguration(
         if (canonical(next) !== canonical(current)) {
           await putSettings(tx, next, opts.now);
           changes.push({ kind: 'settings', name: 'global', action: 'update' });
-          await audit('settings', 'global', 'applied', next);
+          await auditChange(tx, meta, {
+            scope: 'settings',
+            targetId: 'global',
+            field: 'applied',
+            after: next,
+          });
         } else {
           changes.push({ kind: 'settings', name: 'global', action: 'unchanged' });
         }
@@ -392,7 +381,7 @@ export async function applyConfiguration(
       // YAML is untrusted input: every nested list may be missing.
       for (const p of (file.processes ?? []) as (Partial<PortableProcess> & { name: string })[]) {
         const where = `process "${p.name}"`;
-        const doc = {
+        const draft = {
           ...p,
           triggers: (p.triggers ?? []).map(({ source, ...t }) => ({
             ...t,
@@ -408,54 +397,25 @@ export async function applyConfiguration(
             ...n,
             notifierId: idOf('notifier', notifier, where),
           })),
-        } as ProcessDocument;
-        const problems = await opts.validateProcess(doc, tx);
-        if (problems.length > 0) {
-          errors.push(...problems.map((m) => `${where}: ${m}`));
+        };
+        let doc: ProcessDocument;
+        try {
+          doc = await validateProcessDocument(deps, tx, draft);
+        } catch (err) {
+          errors.push(...problemsOf(err).map((m) => `${where}: ${m}`));
           continue;
         }
         const row = existingProcs.find((r) => r.name === p.name);
         if (!row) {
-          const [created] = await tx
-            .insert(processes)
-            .values({
-              name: doc.name,
-              document: doc,
-              enabled: doc.enabled,
-              version: 1,
-              createdAt: opts.now,
-              updatedAt: opts.now,
-            })
-            .returning({ id: processes.id });
-          if (created) {
-            await tx.insert(processVersions).values({
-              processId: created.id,
-              version: 1,
-              document: doc,
-              savedBy: opts.actor,
-              savedAt: opts.now,
-              reason: `apply: ${opts.reason}`,
-            });
-            await audit('process', created.id, 'created', doc);
-          }
+          await insertProcess(tx, doc, meta);
           changes.push({ kind: 'process', name: p.name, action: 'create' });
         } else if (canonical(row.document) === canonical(doc)) {
           changes.push({ kind: 'process', name: p.name, action: 'unchanged' });
         } else {
-          const version = row.version + 1;
-          await tx
-            .update(processes)
-            .set({ document: doc, enabled: doc.enabled, version, updatedAt: opts.now })
-            .where(eq(processes.id, row.id));
-          await tx.insert(processVersions).values({
-            processId: row.id,
-            version,
+          await saveProcessVersionIn(tx, row.id, meta, () => ({
             document: doc,
-            savedBy: opts.actor,
-            savedAt: opts.now,
-            reason: `apply: ${opts.reason}`,
-          });
-          await audit('process', row.id, 'applied', doc);
+            audit: { field: 'applied', after: doc },
+          }));
           changes.push({ kind: 'process', name: p.name, action: 'update' });
         }
       }

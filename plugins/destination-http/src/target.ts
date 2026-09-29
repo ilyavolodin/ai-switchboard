@@ -1,11 +1,5 @@
-import {
-  InvokeError,
-  type JSONSchema,
-  type TrackingMode,
-  SchemaMismatchError,
-  parseWith,
-  tryParse,
-} from '@ai-switchboard/sdk';
+import type { JSONSchema, TrackingMode } from '@ai-switchboard/sdk';
+import { tryParse } from '@ai-switchboard/sdk/schema';
 
 import { headersSchema } from './settings.js';
 
@@ -96,17 +90,6 @@ export const inputSchema: JSONSchema = {
   title: 'Request body',
   description: 'Any JSON value; sent as the request body with content-type application/json.',
 };
-
-/** A bad target is definitive: retrying cannot fix it. */
-export function readTarget(target: unknown): HttpTarget {
-  try {
-    return parseWith<HttpTarget>(targetSchema, target, 'http target');
-  } catch (err) {
-    if (err instanceof SchemaMismatchError)
-      throw new InvokeError(err.message, { definitive: true });
-    throw err;
-  }
-}
 
 export function trackingFor(target: unknown): TrackingMode {
   return tryParse<HttpTarget>(targetSchema, target)?.tracking ?? 'sync';

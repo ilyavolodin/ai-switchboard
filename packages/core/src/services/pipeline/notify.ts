@@ -3,18 +3,15 @@ import { eq } from 'drizzle-orm';
 import type { Event, NotificationMessage } from '@ai-switchboard/sdk';
 
 import { notificationLog, systemAlerts } from '../../db/schema.js';
-import type { NotifyOn } from '../../domain/status.js';
-import { renderTemplate } from '../../expr/index.js';
+import type { BatchKind, NotifyOn } from '../../domain/status.js';
+import { renderTemplate, templateContext } from '../../expr/index.js';
 import { getSettings } from '../settings.js';
 
-import {
-  callPlugin,
-  evalFunctions,
-  processView,
-  withTx,
-  type Ctx,
-  type ProcessRow,
-} from './context.js';
+import type { Ctx } from './context.js';
+import { evalFunctions } from './eval.js';
+import { callPlugin } from './plugin-call.js';
+import { withTx } from './tx.js';
+import { processView, type ProcessRow } from './views.js';
 
 /** Every send is logged in `notification_log` for the trace. */
 
@@ -24,8 +21,12 @@ export interface ProcessNotification {
   batchId: string;
   runId?: string | null;
   events: readonly Event[];
-  /** Template context: `run`, `batch`, `reason`. */
-  context: Record<string, unknown>;
+  context: {
+    batch: { id: string; kind: BatchKind };
+    reason: string | null;
+    run?: Record<string, unknown>;
+    bindingLimit?: string | null;
+  };
   url?: string | null;
 }
 
@@ -81,7 +82,12 @@ async function notifyProcessInSpan(ctx: Ctx, n: ProcessNotification): Promise<vo
     const rendered = await renderTemplate(
       ctx.engine,
       target.template,
-      { process: processView(n.process), events: n.events, status: n.on, ...n.context },
+      templateContext({
+        process: processView(n.process),
+        events: n.events,
+        status: n.on,
+        ...n.context,
+      }),
       evalFunctions(ctx, n.events, now),
     );
     const text =

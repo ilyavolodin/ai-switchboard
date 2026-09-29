@@ -1,3 +1,5 @@
+import type { SecretProvider } from './types/notifier.js';
+
 /**
  * Thrown by `HttpClient` when a request could not complete. `sent` says whether the request may
  * have reached the server: the core retries a non-idempotent invoke only when `sent` is false.
@@ -58,6 +60,38 @@ export function isTransportError(err: unknown): err is TransportError {
 
 export function isInvokeError(err: unknown): err is InvokeError {
   return err instanceof Error && err.name === 'InvokeError' && 'definitive' in err;
+}
+
+export function isCapabilityError(err: unknown): err is CapabilityError {
+  return err instanceof Error && err.name === 'CapabilityError';
+}
+
+/** Thrown by a secret provider's `resolve` for an unknown name. The message never carries a value. */
+export class SecretNotFoundError extends Error {
+  override readonly name = 'SecretNotFoundError';
+}
+
+export function isSecretNotFoundError(err: unknown): err is SecretNotFoundError {
+  return err instanceof Error && err.name === 'SecretNotFoundError';
+}
+
+/** Thrown by `ctx.secrets` when a rotated credential cannot be stored. Never carries the value. */
+export class SecretStoreError extends Error {
+  override readonly name = 'SecretStoreError';
+}
+
+export function isSecretStoreError(err: unknown): err is SecretStoreError {
+  return err instanceof Error && err.name === 'SecretStoreError';
+}
+
+/** Keys of `ctx.secrets`: lower-case letters, digits, `-` and `_`, at most 64. */
+export const SECRET_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** A provider that can store rotated credentials: it implements both `set` and `delete`. */
+export function isWritableSecretProvider(
+  provider: SecretProvider,
+): provider is SecretProvider & Required<Pick<SecretProvider, 'set' | 'delete'>> {
+  return typeof provider.set === 'function' && typeof provider.delete === 'function';
 }
 
 /**

@@ -7,6 +7,7 @@ import { parse, stringify } from 'yaml';
 import type {
   ActivityRow,
   ApiError,
+  AuditEntry,
   EventDetail,
   DestinationDetail,
   MeResponse,
@@ -23,6 +24,7 @@ import {
   batches,
   dispatches,
   events,
+  meterReadings,
   runs,
   sources,
   users,
@@ -889,6 +891,10 @@ describe('edge cases', () => {
       '/api/v1/events?to=2026-13-45',
       `/api/v1/events?cursor=${Buffer.from(JSON.stringify({ t: 'soon' })).toString('base64url')}`,
       `/api/v1/runs?cursor=${Buffer.from(JSON.stringify({ t: 'soon' })).toString('base64url')}`,
+      '/api/v1/events?cursor=garbage',
+      '/api/v1/runs?cursor=garbage',
+      '/api/v1/audit?cursor=garbage',
+      '/api/v1/approvals/history?cursor=garbage',
     ]) {
       const res = await h.request('GET', url, { cookie: h.adminCookie });
       expect(res.statusCode, url).toBe(400);
@@ -967,5 +973,120 @@ describe('edge cases', () => {
     // The actor filter is a substring match: LIKE wildcards in it are literal.
     const wildcard = await h.request('GET', '/api/v1/audit?actor=%25', { cookie: h.adminCookie });
     expect(wildcard.json<Page<unknown>>().items).toEqual([]);
+  });
+});
+
+describe('audit paging', () => {
+  it('walks every entry once, newest first, by time and id', async () => {
+    await createSource('Audit walk');
+    const all: AuditEntry[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 500; i++) {
+      const res = await h.request(
+        'GET',
+        `/api/v1/audit?limit=7${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+        { cookie: h.adminCookie },
+      );
+      expect(res.statusCode, res.body).toBe(200);
+      const page = res.json<Page<AuditEntry>>();
+      all.push(...page.items);
+      cursor = page.nextCursor;
+      if (!cursor) break;
+    }
+    const rows = await tdb.db.select({ id: auditLog.id }).from(auditLog);
+    expect(new Set(all.map((e) => e.id)).size).toBe(rows.length);
+    expect(all).toHaveLength(rows.length);
+    for (let i = 1; i < all.length; i++) {
+      const [prev, cur] = [all[i - 1]!, all[i]!];
+      expect(prev.at > cur.at || (prev.at === cur.at && prev.id > cur.id)).toBe(true);
+    }
+  });
+});
+
+describe('meter gauges', () => {
+  it('carry the ceiling state the budget stage would decide', async () => {
+    const src = await createSource('Ceiling source');
+    const ex = await createDestination('Ceiling dest');
+    const doc = processDoc(src.id, ex.id, 'Ceiling');
+    doc.budgets.meterCeilings = { window: { events: 80, sweeps: 95 } };
+    const created = await h.request('POST', '/api/v1/processes', {
+      cookie: h.adminCookie,
+      body: { document: doc, reason },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const gauge = async () => {
+      const res = await h.request('GET', `/api/v1/destinations/${ex.id}`, {
+        cookie: h.adminCookie,
+      });
+      return res.json<DestinationDetail>().meters[0];
+    };
+    expect((await gauge())?.ceilingState).toBe('stale');
+    const read = (utilization: number) =>
+      tdb.db.insert(meterReadings).values({
+        destinationId: ex.id,
+        meterId: 'window',
+        observedAt: h.clock.now(),
+        utilization,
+        estimated: false,
+      });
+    await read(40);
+    expect(await gauge()).toMatchObject({ ceilingState: 'below', stale: false });
+    h.clock.advance(60_000);
+    await read(85);
+    expect((await gauge())?.ceilingState).toBe('throttling');
+  });
+});
+
+describe('run labels', () => {
+  it('labels the run status of every process on an activity row', async () => {
+    const res = await h.request('GET', '/api/v1/events?limit=50', { cookie: h.adminCookie });
+    const rows = res.json<Page<ActivityRow>>().items;
+    for (const p of rows.flatMap((r) => r.processes)) {
+      if (p.runStatus === null) expect(p.statusLabel).toBeNull();
+      else expect(p.statusLabel?.label).toBeTypeOf('string');
+    }
+  });
+});
+
+describe('apply checks instances like the API', () => {
+  const file = (sources: unknown[]) =>
+    stringify({ apiVersion: 'switchboard/v1', kind: 'Configuration', sources });
+
+  it('refuses invalid caps and a push source that cannot verify, and writes nothing', async () => {
+    const res = await h.request('POST', '/api/v1/apply', {
+      cookie: h.adminCookie,
+      body: {
+        yaml: file([
+          { name: 'Bad caps', type: 'test-open', settings: {}, caps: { eventCapPerHour: -1 } },
+          { name: 'No verify', type: 'test-noverify', settings: {} },
+        ]),
+        reason,
+      },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const errors = res.json<{ errors: string[] }>().errors.join('\n');
+    expect(errors).toMatch(/source "Bad caps": .*eventCapPerHour/);
+    expect(errors).toMatch(/source "No verify": .*must verify deliveries/);
+    const rows = await tdb.db.select().from(sources).where(eq(sources.name, 'No verify'));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('audits a created instance against its id', async () => {
+    const res = await h.request('POST', '/api/v1/apply', {
+      cookie: h.adminCookie,
+      body: {
+        yaml: file([
+          { name: 'Applied open', type: 'test-open', settings: { verification: 'none' } },
+        ]),
+        reason,
+      },
+    });
+    expect(res.json<{ errors: string[] }>().errors).toEqual([]);
+    const [row] = await tdb.db.select().from(sources).where(eq(sources.name, 'Applied open'));
+    expect(row?.caps).toEqual({ unauthenticated: true });
+    const audit = await tdb.db.select().from(auditLog).where(eq(auditLog.targetId, row!.id));
+    expect(audit).toEqual([
+      expect.objectContaining({ scope: 'source', field: 'created', reason: `apply: ${reason}` }),
+    ]);
   });
 });

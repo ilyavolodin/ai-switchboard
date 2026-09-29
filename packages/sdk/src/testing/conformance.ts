@@ -1,6 +1,8 @@
+import { isCapabilityError, isSecretNotFoundError, isWritableSecretProvider } from '../errors.js';
+import type { HttpClient } from '../http.js';
 import { definePlugin, validatePlugin, type PluginDefinition } from '../plugin.js';
-import { isValidSchema, validateAgainst } from '../schema/index.js';
-import type { RawRequest, Settings } from '../types/common.js';
+import { isValidSchema, validateAgainst, xSecret } from '../schema/index.js';
+import type { JSONSchema, RawRequest, Settings } from '../types/common.js';
 import type { ArtifactRef, EventDraft, EventTypeSpec } from '../types/events.js';
 import type {
   Destination,
@@ -12,7 +14,13 @@ import type {
   TrackingMode,
   UsageReport,
 } from '../types/destination.js';
-import type { SecretProvider, SecretProviderType } from '../types/notifier.js';
+import type {
+  NotificationMessage,
+  Notifier,
+  NotifierType,
+  SecretProvider,
+  SecretProviderType,
+} from '../types/notifier.js';
 import type { Source, SourceType } from '../types/source.js';
 import { createStubHttp, createTestContext, runHandle, type StubHandler } from './stubs.js';
 
@@ -24,6 +32,30 @@ export interface ConformanceCheck {
 
 export class ConformanceFailure extends Error {
   override readonly name = 'ConformanceFailure';
+}
+
+/** Where calls outside the declared network capability are recorded. */
+type Violations = string[];
+
+function guarded(client: HttpClient, violations: Violations): HttpClient {
+  const record = <T>(work: Promise<T>): Promise<T> =>
+    work.catch((err: unknown) => {
+      if (isCapabilityError(err)) violations.push(err.message);
+      throw err;
+    });
+  return {
+    request: (req) => record(client.request(req)),
+    get: (url, options) => record(client.get(url, options)),
+    post: (url, options) => record(client.post(url, options)),
+  };
+}
+
+function testHttp(
+  handler: StubHandler | undefined,
+  allowedHosts: string[] | undefined,
+  violations: Violations,
+): HttpClient {
+  return guarded(createStubHttp(handler, allowedHosts).client, violations);
 }
 
 function fail(message: string): never {
@@ -41,6 +73,8 @@ export interface SourceFixtures {
   secrets?: string[];
   /** Stubs the source's outbound API (resolve, linked, poll, provision). */
   http?: StubHandler;
+  /** The declared network capability; `pluginConformanceChecks` fills it from the plugin. */
+  allowedHosts?: string[];
   now?: () => Date;
   push?: {
     /** Correctly signed deliveries; each must verify and parse to ≥ 0 conforming events. */
@@ -111,11 +145,19 @@ export function sourceConformanceChecks(
   type: SourceType,
   fixtures: SourceFixtures,
 ): ConformanceCheck[] {
-  const stub = createStubHttp(fixtures.http);
+  return sourceChecks(type, fixtures, []);
+}
+
+function sourceChecks(
+  type: SourceType,
+  fixtures: SourceFixtures,
+  violations: Violations,
+): ConformanceCheck[] {
+  const http = testHttp(fixtures.http, fixtures.allowedHosts, violations);
   const make = (): Source =>
     type.create(
       fixtures.settings,
-      createTestContext({ http: stub.client, ...(fixtures.now ? { now: fixtures.now } : {}) }),
+      createTestContext({ http, ...(fixtures.now ? { now: fixtures.now } : {}) }),
     );
   const secrets = fixtures.secrets ?? [];
   const specs = (): EventTypeSpec[] => eventTypesFor(type, fixtures.settings);
@@ -315,6 +357,8 @@ export interface DestinationFixtures {
   run?: Partial<RunHandle>;
   /** Required for callback tracking: a callback without a valid signature. */
   unsignedCallback?: RawRequest;
+  /** The declared network capability; `pluginConformanceChecks` fills it from the plugin. */
+  allowedHosts?: string[];
   now?: () => Date;
 }
 
@@ -352,16 +396,25 @@ export function destinationConformanceChecks(
   type: DestinationType,
   fixtures: DestinationFixtures,
 ): ConformanceCheck[] {
+  return destinationChecks(type, fixtures, []);
+}
+
+function destinationChecks(
+  type: DestinationType,
+  fixtures: DestinationFixtures,
+  violations: Violations,
+): ConformanceCheck[] {
   const example = type.examples?.[0];
   const target = fixtures.target ?? example?.target;
   const input = fixtures.input ?? example?.input;
-  const make = (): Destination => {
-    const stub = createStubHttp(fixtures.http);
-    return type.create(
+  const make = (): Destination =>
+    type.create(
       fixtures.settings,
-      createTestContext({ http: stub.client, ...(fixtures.now ? { now: fixtures.now } : {}) }),
+      createTestContext({
+        http: testHttp(fixtures.http, fixtures.allowedHosts, violations),
+        ...(fixtures.now ? { now: fixtures.now } : {}),
+      }),
     );
-  };
   const tracking = (): TrackingMode =>
     type.trackingFor ? type.trackingFor(target) : type.tracking;
 
@@ -490,6 +543,100 @@ export interface SecretProviderFixtures {
   /** Extra values that must never appear in the listing, besides every value `resolve` returns. */
   secrets?: string[];
   now?: () => Date;
+  /** Where the write checks store their probe value (a writable provider only). */
+  writableName?: string;
+}
+
+function probeValue(): string {
+  return `conformance-probe-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
+function errorTexts(err: unknown): string {
+  if (err instanceof Error) return `${err.message}\n${err.stack ?? ''}`;
+  return String(err);
+}
+
+async function expectMissing(provider: SecretProvider, name: string, when: string): Promise<void> {
+  try {
+    await provider.resolve(name);
+  } catch (err) {
+    assert(isSecretNotFoundError(err), `resolve() ${when} must throw SecretNotFoundError`);
+    return;
+  }
+  throw new ConformanceFailure(`resolve() ${when} still returns a value`);
+}
+
+function writableProviderChecks(
+  type: SecretProviderType,
+  fixtures: SecretProviderFixtures,
+): ConformanceCheck[] {
+  const context = () => createTestContext(fixtures.now ? { now: fixtures.now } : {});
+  const name = fixtures.writableName ?? 'switchboard-conformance-probe';
+  return [
+    {
+      name: 'set() and delete() come together',
+      run: () => {
+        const provider = type.create(fixtures.settings, context());
+        const hasSet = typeof provider.set === 'function';
+        const hasDelete = typeof provider.delete === 'function';
+        assert(hasSet === hasDelete, 'a writable provider implements both set() and delete()');
+        return Promise.resolve();
+      },
+    },
+    {
+      name: 'set() and delete() round-trip through resolve()',
+      run: async () => {
+        const provider = type.create(fixtures.settings, context());
+        if (!isWritableSecretProvider(provider)) return;
+        const first = probeValue();
+        const second = probeValue();
+        try {
+          await provider.set(name, first);
+          assert(
+            (await provider.resolve(name).catch(() => undefined)) === first,
+            'resolve() after set() must return the stored value',
+          );
+          await provider.set(name, second);
+          assert(
+            (await provider.resolve(name).catch(() => undefined)) === second,
+            'resolve() after a second set() must return the new value',
+          );
+        } finally {
+          await provider.delete(name);
+        }
+        await expectMissing(provider, name, 'after delete()');
+        await provider.delete(name);
+      },
+    },
+    {
+      name: 'writes never put the value in an error or a log line',
+      run: async () => {
+        const ctx = context();
+        const provider = type.create(fixtures.settings, ctx);
+        if (!isWritableSecretProvider(provider)) return;
+        const value = probeValue();
+        for (const bad of ['', '../escape', 'a/b', 'x\0y']) {
+          try {
+            await provider.set(bad, value);
+            await provider.delete(bad);
+          } catch (err) {
+            assert(
+              !errorTexts(err).includes(value),
+              `set() put the value in an error for "${bad}"`,
+            );
+          }
+        }
+        try {
+          await provider.set(name, value);
+          await provider.delete(name);
+        } catch (err) {
+          // Whether the write works is the round-trip check's business; here only leaks count.
+          assert(!errorTexts(err).includes(value), 'a write put the value in an error');
+        }
+        assert(!JSON.stringify(ctx.logs).includes(value), 'a write put the value in a log line');
+      },
+    },
+  ];
 }
 
 const LISTING_KEYS = new Set(['name', 'description', 'updatedAt']);
@@ -588,20 +735,238 @@ export function secretProviderConformanceChecks(
         }
       },
     },
+    ...writableProviderChecks(type, fixtures),
   ];
 }
 
-export function pluginConformanceChecks(plugin: PluginDefinition): ConformanceCheck[] {
+export interface NotifierFixtures {
+  settings: Settings;
+  /** Stubs the backend; the default answers 200 `{"ok":true}`. */
+  http?: StubHandler;
+  /** Defaults to an `error` notification with a title, text, URL and fields. */
+  message?: NotificationMessage;
+  /** The declared network capability; `pluginConformanceChecks` fills it from the plugin. */
+  allowedHosts?: string[];
+  now?: () => Date;
+}
+
+const EXAMPLE_NOTIFICATION: NotificationMessage = {
+  on: 'error',
+  severity: 'error',
+  title: 'Run failed: Triage alerts',
+  text: 'The destination answered 500.',
+  url: 'https://switchboard.test/runs/1',
+  fields: { process: 'Triage alerts', status: 'failed' },
+};
+
+const OK_REPLY: StubHandler = () => ({ status: 200, json: { ok: true } });
+
+export function notifierConformanceChecks(
+  type: NotifierType,
+  fixtures: NotifierFixtures,
+): ConformanceCheck[] {
+  return notifierChecks(type, fixtures, []);
+}
+
+function notifierChecks(
+  type: NotifierType,
+  fixtures: NotifierFixtures,
+  violations: Violations,
+): ConformanceCheck[] {
+  const make = (handler: StubHandler): { notifier: Notifier; calls: () => number } => {
+    const stub = createStubHttp(handler, fixtures.allowedHosts);
+    const notifier = type.create(
+      fixtures.settings,
+      createTestContext({
+        http: guarded(stub.client, violations),
+        ...(fixtures.now ? { now: fixtures.now } : {}),
+      }),
+    );
+    return { notifier, calls: () => stub.calls.length };
+  };
+  const message = fixtures.message ?? EXAMPLE_NOTIFICATION;
   return [
     {
-      name: `plugin ${plugin.id} manifest validates`,
+      name: 'manifest validates',
       run: () => {
-        const errors = validatePlugin(plugin);
+        const errors = validatePlugin(
+          definePlugin({ id: 'conformance', displayName: 'Conformance', notifiers: [type] }),
+        );
         assert(errors.length === 0, errors.join('\n'));
         return Promise.resolve();
       },
     },
+    {
+      name: 'health() resolves to a Health',
+      run: async () => {
+        const h = await make(fixtures.http ?? OK_REPLY).notifier.health();
+        assert(['healthy', 'unhealthy', 'unknown'].includes(h.status), 'health status is invalid');
+      },
+    },
+    {
+      name: 'send delivers a message with one or more requests',
+      run: async () => {
+        const { notifier, calls } = make(fixtures.http ?? OK_REPLY);
+        await notifier.send(message);
+        assert(calls() > 0, 'send made no request');
+      },
+    },
+    {
+      name: 'send rejects when the backend refuses',
+      run: async () => {
+        const { notifier } = make(() => ({ status: 500, body: 'unavailable' }));
+        let rejected = false;
+        try {
+          await notifier.send(message);
+        } catch {
+          rejected = true;
+        }
+        assert(rejected, 'send resolved although the backend answered 500');
+      },
+    },
   ];
+}
+
+export interface SettingsSchemaOptions {
+  /** Field names that look like credentials but are not (e.g. a header *name*). */
+  notSecret?: string[];
+}
+
+const CREDENTIAL_NAME =
+  /(token|secret|password|passphrase|apikey|appkey|privatekey|accesskey|signingkey)$/i;
+
+function fieldsOf(schema: JSONSchema, prefix = ''): [string, JSONSchema][] {
+  const props = schema.properties;
+  if (props === null || typeof props !== 'object') return [];
+  return Object.entries(props as Record<string, JSONSchema>).flatMap(([key, sub]) => {
+    const path = prefix === '' ? key : `${prefix}.${key}`;
+    return [[path, sub] as [string, JSONSchema], ...fieldsOf(sub, path)];
+  });
+}
+
+/**
+ * The settings-form rules: every field has a `title` and a `description` (the UI renders the
+ * form from them), and every credential-looking field is marked `x-secret: true`.
+ */
+export function settingsSchemaChecks(
+  schema: JSONSchema,
+  options: SettingsSchemaOptions = {},
+): ConformanceCheck[] {
+  const notSecret = new Set(options.notSecret ?? []);
+  return [
+    {
+      name: 'every settings field has a title and a description',
+      run: () => {
+        const missing = fieldsOf(schema).flatMap(([path, sub]) => {
+          const gaps = [
+            typeof sub.title === 'string' && sub.title !== '' ? [] : ['title'],
+            typeof sub.description === 'string' && sub.description !== '' ? [] : ['description'],
+          ].flat();
+          return gaps.length > 0 ? [`${path} (${gaps.join(', ')})`] : [];
+        });
+        assert(missing.length === 0, `settings fields missing: ${missing.join('; ')}`);
+        return Promise.resolve();
+      },
+    },
+    {
+      name: 'credential settings fields are marked x-secret',
+      run: () => {
+        const unmarked = fieldsOf(schema)
+          .filter(([path, sub]) => {
+            const name = path.split('.').at(-1) ?? path;
+            return CREDENTIAL_NAME.test(name) && !notSecret.has(path) && !xSecret(sub);
+          })
+          .map(([path]) => path);
+        assert(unmarked.length === 0, `credential fields without x-secret: ${unmarked.join(', ')}`);
+        return Promise.resolve();
+      },
+    },
+  ];
+}
+
+/** Fixtures per type id; a type without fixtures gets only its manifest and settings checks. */
+export interface PluginFixtures {
+  sources?: Record<string, SourceFixtures>;
+  destinations?: Record<string, DestinationFixtures>;
+  notifiers?: Record<string, NotifierFixtures>;
+  secretProviders?: Record<string, SecretProviderFixtures>;
+  settings?: SettingsSchemaOptions;
+}
+
+function prefixed(prefix: string, checks: ConformanceCheck[]): ConformanceCheck[] {
+  return checks.map((c) => ({ name: `${prefix}: ${c.name}`, run: () => c.run() }));
+}
+
+/**
+ * The manifest check; with `fixtures`, also every type's settings-form checks and type checks,
+ * run with the plugin's `capabilities.network` enforced, and a final check that no call left it.
+ */
+export function pluginConformanceChecks(
+  plugin: PluginDefinition,
+  fixtures?: PluginFixtures,
+): ConformanceCheck[] {
+  const manifest: ConformanceCheck = {
+    name: `plugin ${plugin.id} manifest validates`,
+    run: () => {
+      const errors = validatePlugin(plugin);
+      assert(errors.length === 0, errors.join('\n'));
+      return Promise.resolve();
+    },
+  };
+  if (!fixtures) return [manifest];
+
+  const allowedHosts = plugin.capabilities.network ?? [];
+  const violations: Violations = [];
+  const settings = (schema: JSONSchema): ConformanceCheck[] =>
+    settingsSchemaChecks(schema, fixtures.settings);
+  const checks: ConformanceCheck[] = [manifest];
+  for (const t of plugin.sources) {
+    const f = fixtures.sources?.[t.id];
+    checks.push(
+      ...prefixed(`source ${t.id}`, [
+        ...settings(t.settingsSchema),
+        ...(f ? sourceChecks(t, { allowedHosts, ...f }, violations) : []),
+      ]),
+    );
+  }
+  for (const t of plugin.destinations) {
+    const f = fixtures.destinations?.[t.id];
+    checks.push(
+      ...prefixed(`destination ${t.id}`, [
+        ...settings(t.settingsSchema),
+        ...(f ? destinationChecks(t, { allowedHosts, ...f }, violations) : []),
+      ]),
+    );
+  }
+  for (const t of plugin.notifiers) {
+    const f = fixtures.notifiers?.[t.id];
+    checks.push(
+      ...prefixed(`notifier ${t.id}`, [
+        ...settings(t.settingsSchema),
+        ...(f ? notifierChecks(t, { allowedHosts, ...f }, violations) : []),
+      ]),
+    );
+  }
+  for (const t of plugin.secretProviders) {
+    const f = fixtures.secretProviders?.[t.id];
+    checks.push(
+      ...prefixed(`secret provider ${t.id}`, [
+        ...settings(t.settingsSchema),
+        ...(f ? secretProviderConformanceChecks(t, f) : []),
+      ]),
+    );
+  }
+  checks.push({
+    name: `plugin ${plugin.id} calls only the hosts in capabilities.network`,
+    run: () => {
+      assert(
+        violations.length === 0,
+        `calls outside capabilities.network: ${[...new Set(violations)].join('; ')}`,
+      );
+      return Promise.resolve();
+    },
+  });
+  return checks;
 }
 
 interface TestApi {

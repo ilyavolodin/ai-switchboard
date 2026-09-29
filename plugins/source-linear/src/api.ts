@@ -1,6 +1,4 @@
-import type { HttpClient } from '@ai-switchboard/sdk';
-
-import { arr, obj, str, type Json } from './json.js';
+import { type HttpClient, asArray, asObject, asString, type JsonObject } from '@ai-switchboard/sdk';
 
 export const GRAPHQL_URL = 'https://api.linear.app/graphql';
 
@@ -18,7 +16,7 @@ const NOT_FOUND = /not found|could not find/i;
 
 export interface LinearApi {
   /** Throws `LinearApiError` on any error, including GraphQL errors. */
-  graphql(query: string, variables?: Record<string, unknown>): Promise<Json>;
+  graphql(query: string, variables?: Record<string, unknown>): Promise<JsonObject>;
 }
 
 /** Personal API keys go in `Authorization` as-is; OAuth tokens already carry `Bearer`. */
@@ -29,17 +27,17 @@ export function createApi(http: HttpClient, apiKey: string): LinearApi {
         headers: { authorization: apiKey, 'user-agent': 'ai-switchboard' },
         json: { query, variables },
       });
-      let body: Json | undefined;
+      let body: JsonObject | undefined;
       try {
-        body = obj(res.json());
+        body = asObject(res.json());
       } catch {
         body = undefined;
       }
-      const errors = arr(body?.errors).map((e) => {
-        const o = obj(e);
+      const errors = asArray(body?.errors).map((e) => {
+        const o = asObject(e);
         return {
-          message: str(o?.message) ?? 'unknown error',
-          presentable: str(obj(o?.extensions)?.userPresentableMessage),
+          message: asString(o?.message) ?? 'unknown error',
+          presentable: asString(asObject(o?.extensions)?.userPresentableMessage),
         };
       });
       if (errors.length > 0) {
@@ -53,7 +51,7 @@ export function createApi(http: HttpClient, apiKey: string): LinearApi {
       }
       if (!res.ok || !body)
         throw new LinearApiError(`Linear answered ${res.status}`, res.status === 404);
-      return obj(body.data) ?? {};
+      return asObject(body.data) ?? {};
     },
   };
 }

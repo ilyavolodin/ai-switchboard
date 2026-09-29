@@ -9,8 +9,5 @@ export default definePlugin({
   displayName: 'GitHub source',
   description: 'GitHub webhooks as Switchboard events, plus live state, links and actions.',
   sources: [githubSource],
-  capabilities: {
-    network: ['api.github.com'],
-    secrets: ['privateKey', 'token', 'webhookSecret'],
-  },
+  capabilities: { network: ['api.github.com'] },
 });

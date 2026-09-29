@@ -1,33 +1,37 @@
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte } from 'drizzle-orm';
 
 import type { RawRequest, RunHandle, RunStatus } from '@ai-switchboard/sdk';
 
 import { batches, destinations, processes, runUpdates, runs } from '../../db/schema.js';
 import {
   OPEN_RUN_STATUSES,
-  TERMINAL_RUN_STATUSES,
   TRACKED_RUN_STATUSES,
-  isSettledRunStatus,
   isTerminalRunStatus,
   type NotifyOn,
   type RunStatusValue,
 } from '../../domain/status.js';
-import { breakerAfterRun } from '../../pipeline/breaker.js';
+import { neverInvoked } from '../../pipeline/counted.js';
 import {
   deadlinePassed,
+  isTrackingState,
+  lostPollCutoff,
   nextPollAt,
   recoverInvoking,
   statusFromTracking,
 } from '../../pipeline/tracking.js';
 import { mergeUsage, sanitizeUsage } from '../../pipeline/usage.js';
-
-import { TRACEPARENT_KEY } from '../../queue/traced.js';
-
 import { isUuid } from '../../util/uuid.js';
-import { JOBS, callPlugin, withTx, type Ctx } from './context.js';
+
+import { evaluateBreakerAfterClose } from './breaker.js';
+import type { Ctx } from './context.js';
+import { JOBS, runJob } from './jobs.js';
 import { batchEvents } from './load.js';
 import { notifyProcess, sendSystemAlert } from './notify.js';
-import { beforeStepsSettled, runSteps, runView, type RunRow } from './steps.js';
+import { callPlugin } from './plugin-call.js';
+import { beforeStepsSettled, runSteps } from './steps.js';
+import { runTarget } from './target.js';
+import { withTx } from './tx.js';
+import { runView, type RunRow } from './views.js';
 
 export type UpdateSource = 'invoke' | 'poll' | 'callback' | 'deadline' | 'manual' | 'recovery';
 
@@ -70,16 +74,13 @@ export function runHandle(ctx: Ctx, run: RunRow, processName: string): RunHandle
 export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Promise<boolean> {
   const now = ctx.clock.now();
   const live = (destinationId: string) => ctx.runtime.destination(destinationId);
-  let dropped: { plugin: string; keys: string[] } | null = null;
-  let opened: { processId: string; name: string; failures: number } | null = null;
 
-  const closed = await withTx(ctx.db, async (tx) => {
-    dropped = null;
-    opened = null;
+  const out = await withTx(ctx.db, async (tx) => {
     const [run] = await tx.select().from(runs).where(eq(runs.id, runId)).for('update');
     if (!run || isTerminalRunStatus(run.status)) return null;
     const ex = live(run.destinationId);
     let usage = run.usage;
+    let dropped: { plugin: string; keys: string[] } | null = null;
     if (input.usage !== undefined) {
       const clean = sanitizeUsage(input.usage, ex?.usage ?? []);
       if (clean.dropped.length > 0 && ex) dropped = { plugin: ex.pluginName, keys: clean.dropped };
@@ -113,55 +114,19 @@ export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Prom
         ...(input.detail ?? {}),
       },
     });
-
-    if (!run.dryRun && isSettledRunStatus(input.status)) {
-      const [proc] = await tx
-        .select()
-        .from(processes)
-        .where(eq(processes.id, run.processId))
-        .for('update');
-      if (proc?.breakerState === 'closed') {
-        const threshold = proc.document.gates.breaker.threshold;
-        const recent = await tx
-          .select({ status: runs.status })
-          .from(runs)
-          .where(
-            and(
-              eq(runs.processId, run.processId),
-              eq(runs.dryRun, false),
-              inArray(runs.status, [...TERMINAL_RUN_STATUSES]),
-              isNotNull(runs.finishedAt),
-              proc.breakerResetAt ? gt(runs.finishedAt, proc.breakerResetAt) : sql`true`,
-            ),
-          )
-          .orderBy(desc(runs.finishedAt), desc(runs.createdAt))
-          .limit(Math.max(threshold * 4, 50));
-        const next = breakerAfterRun(
-          { state: 'closed', openedAt: null },
-          recent.map((r) => r.status),
-          threshold,
-          now,
-        );
-        if (next.transition === 'opened') {
-          await tx
-            .update(processes)
-            .set({ breakerState: 'open', breakerOpenedAt: now })
-            .where(eq(processes.id, run.processId));
-          opened = { processId: proc.id, name: proc.name, failures: next.failures };
-        }
-      }
-    }
-    return updated ?? null;
+    const opened = await evaluateBreakerAfterClose(tx, run, input.status, now);
+    return updated ? { closed: updated, dropped, opened } : null;
   });
-  if (!closed) return false;
+  if (!out) return false;
+  const { closed, dropped, opened } = out;
 
-  const d = dropped as { plugin: string; keys: string[] } | null;
-  if (d)
+  if (dropped) {
     ctx.runtime.recordPluginError(
-      d.plugin,
+      dropped.plugin,
       'invalid_usage',
-      `undeclared usage keys: ${d.keys.join(', ')}`,
+      `undeclared usage keys: ${dropped.keys.join(', ')}`,
     );
+  }
   const attrs = { process: closed.processId, destination: closed.destinationId };
   ctx.telemetry.decision(
     'switchboard.runs',
@@ -185,19 +150,22 @@ export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Prom
     const unit = ex?.usage.find((u) => u.id === dim)?.unit ?? 'count';
     ctx.telemetry.counter('switchboard.run.usage', { ...attrs, unit, dimension: dim }, value);
   }
-  const o = opened as { processId: string; name: string; failures: number } | null;
-  if (o) {
-    ctx.telemetry.gauge('switchboard.breaker', 1, { process: o.processId });
+  if (opened) {
+    ctx.telemetry.gauge('switchboard.breaker', 1, { process: opened.processId });
     await sendSystemAlert(ctx, {
-      key: `breaker:${o.processId}`,
-      title: `Breaker opened: ${o.name}`,
-      text: `Process ${o.name} had ${o.failures} consecutive failed runs; its batches and sweeps are held until the breaker is reset or its cooldown passes.`,
+      key: `breaker:${opened.processId}`,
+      title: `Breaker opened: ${opened.name}`,
+      text: `Process ${opened.name} had ${opened.failures} consecutive failed runs; its batches and sweeps are held until the breaker is reset or its cooldown passes.`,
       severity: 'error',
       rateLimitMinutes: 1,
     });
   }
   await ctx.queue.send(JOBS.finish, { runId });
   return true;
+}
+
+function closeAtDeadline(ctx: Ctx, runId: string): Promise<boolean> {
+  return closeRun(ctx, runId, { status: 'unknown', source: 'deadline', reason: 'deadline' });
 }
 
 function notifyOnFor(status: RunStatusValue): NotifyOn | null {
@@ -217,14 +185,6 @@ function notifyOnFor(status: RunStatusValue): NotifyOn | null {
   }
 }
 
-/** The job continues the run's trace (`queue/traced.ts`). */
-function runJob(run: { id: string; traceContext: string | null }): Record<string, unknown> {
-  return {
-    runId: run.id,
-    ...(run.traceContext !== null ? { [TRACEPARENT_KEY]: run.traceContext } : {}),
-  };
-}
-
 export async function finishRun(ctx: Ctx, runId: string): Promise<void> {
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
   if (!run || !isTerminalRunStatus(run.status)) return;
@@ -240,8 +200,7 @@ export async function finishRun(ctx: Ctx, runId: string): Promise<void> {
     externalUrl: run.externalUrl,
     reason: run.statusReason,
   };
-  // A run that failed before invoke has no after phase.
-  if (!(run.status === 'failed' && run.attempts === 0)) {
+  if (!neverInvoked(run)) {
     await runSteps(ctx, 'after', run, proc, events, result);
   }
   const on = notifyOnFor(run.status);
@@ -307,10 +266,9 @@ export async function markUncertain(
 export async function scheduleTracking(ctx: Ctx, run: RunRow, pollCount: number): Promise<void> {
   const now = ctx.clock.now();
   const deadline = run.deadlineAt ?? now;
-  const live = ctx.runtime.destination(run.destinationId);
-  const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, run.processId));
-  const tracking = live && proc ? live.trackingFor(proc.document.destination.target) : 'none';
-  if (tracking === 'poll' && live?.destination.poll) {
+  const resolved = await runTarget(ctx, run);
+  const tracking = resolved.ready ? resolved.live.trackingFor(resolved.target) : 'none';
+  if (tracking === 'poll' && resolved.live?.destination.poll) {
     const next = nextPollAt(now, pollCount, deadline);
     await ctx.db.update(runs).set({ nextPollAt: next.at }).where(eq(runs.id, run.id));
     await ctx.queue.send(JOBS.poll, { runId: run.id }, { startAfter: next.at });
@@ -320,10 +278,7 @@ export async function scheduleTracking(ctx: Ctx, run: RunRow, pollCount: number)
 
 function validStatus(value: unknown): RunStatus | null {
   if (value === null || typeof value !== 'object') return null;
-  const s = value as Partial<RunStatus>;
-  if (s.state !== 'running' && s.state !== 'ok' && s.state !== 'error' && s.state !== 'unknown')
-    return null;
-  return s as RunStatus;
+  return isTrackingState((value as Partial<RunStatus>).state) ? (value as RunStatus) : null;
 }
 
 async function applyTracking(
@@ -387,21 +342,17 @@ async function pollRunInSpan(ctx: Ctx, runId: string): Promise<void> {
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
   if (!run || !isOpen(run.status) || run.status === 'invoking') return;
   if (deadlinePassed(run.deadlineAt, now)) {
-    await closeRun(ctx, runId, { status: 'unknown', source: 'deadline', reason: 'deadline' });
+    await closeAtDeadline(ctx, runId);
     return;
   }
   if (run.nextPollAt && run.nextPollAt.getTime() > now.getTime()) {
     // An early (duplicate) job: the next poll is already scheduled.
     return;
   }
-  const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, run.processId));
-  const live = ctx.runtime.destination(run.destinationId);
-  if (
-    !proc ||
-    !live?.destination.poll ||
-    live.trackingFor(proc.document.destination.target) !== 'poll'
-  )
-    return;
+  const resolved = await runTarget(ctx, run);
+  if (!resolved.ready) return;
+  const { proc, live } = resolved;
+  if (!live.destination.poll || live.trackingFor(resolved.target) !== 'poll') return;
   const poll = live.destination.poll.bind(live.destination);
   const next = nextPollAt(now, run.pollCount + 1, run.deadlineAt ?? now);
   // Claim this poll by moving `next_poll_at` on from the value read: a duplicate job running on
@@ -467,7 +418,7 @@ async function deadlineRunInSpan(ctx: Ctx, runId: string): Promise<void> {
       await ctx.queue.send(JOBS.deadline, { runId }, { startAfter: run.deadlineAt });
     return;
   }
-  await closeRun(ctx, runId, { status: 'unknown', source: 'deadline', reason: 'deadline' });
+  await closeAtDeadline(ctx, runId);
 }
 
 export async function handleCallback(
@@ -550,9 +501,9 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
   const now = ctx.clock.now();
   const invoking = await ctx.db.select().from(runs).where(eq(runs.status, 'invoking'));
   for (const run of invoking) {
-    const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, run.processId));
-    const live = ctx.runtime.destination(run.destinationId);
-    const idempotent = live && proc ? live.idempotentFor(proc.document.destination.target) : false;
+    const resolved = await runTarget(ctx, run);
+    const { proc } = resolved;
+    const idempotent = resolved.ready ? resolved.live.idempotentFor(resolved.target) : false;
     let action = recoverInvoking(
       {
         status: run.status,
@@ -600,16 +551,12 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
     .select({ id: runs.id })
     .from(runs)
     .where(and(inArray(runs.status, TRACKED_RUN_STATUSES), lte(runs.deadlineAt, now)));
-  for (const r of overdue)
-    await closeRun(ctx, r.id, { status: 'unknown', source: 'deadline', reason: 'deadline' });
+  for (const r of overdue) await closeAtDeadline(ctx, r.id);
   const lostPolls = await ctx.db
     .select({ id: runs.id, traceContext: runs.traceContext })
     .from(runs)
     .where(
-      and(
-        inArray(runs.status, TRACKED_RUN_STATUSES),
-        lte(runs.nextPollAt, new Date(now.getTime() - 60_000)),
-      ),
+      and(inArray(runs.status, TRACKED_RUN_STATUSES), lte(runs.nextPollAt, lostPollCutoff(now))),
     );
   for (const r of lostPolls) await ctx.queue.send(JOBS.poll, runJob(r));
 }

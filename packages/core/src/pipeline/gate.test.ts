@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { gate, type GateInput } from './gate.js';
+import { approvalNeedsEvaluation, approvalRequired, gate, type GateInput } from './gate.js';
 import { inQuietHours } from './quiet-hours.js';
 
 const now = new Date('2026-01-07T15:00:00Z'); // Wednesday
 
 function input(patch: Partial<GateInput> = {}): GateInput {
   return {
-    kind: 'event',
     dryRun: false,
     process: { enabled: true },
     sources: [{ id: 's1', enabled: true }],
@@ -218,5 +217,29 @@ describe('quiet hours', () => {
     ],
   ])('%s', (_name, window, at, expected) => {
     expect(inQuietHours(window, new Date(at), 'UTC')).toBe(expected);
+  });
+});
+
+describe('approval rule', () => {
+  it.each([
+    ['none', false, 'none', false],
+    ['always', false, 'none', false],
+    ['size > 1', false, 'none', true],
+    ['size > 1', true, 'none', false],
+    ['size > 1', false, 'approved', false],
+    ['size > 1', false, 'pending', true],
+  ] as const)('%s (dry run %s, state %s) evaluates: %s', (rule, dryRun, approvalState, want) => {
+    expect(approvalNeedsEvaluation(rule, { dryRun, approvalState })).toBe(want);
+  });
+
+  it.each([
+    ['always', null, true],
+    ['none', null, false],
+    ['size > 1', null, false],
+    ['size > 1', { result: true }, true],
+    ['size > 1', { result: false }, false],
+    ['size > 1', { result: false, error: 'boom' }, true],
+  ] as const)('%s with %j is required: %s', (rule, evaluated, want) => {
+    expect(approvalRequired(rule, evaluated)).toBe(want);
   });
 });

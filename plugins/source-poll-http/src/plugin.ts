@@ -11,5 +11,5 @@ export default definePlugin({
     'The pull twin of the webhook source: poll a JSON endpoint and map items with JSONata.',
   sources: [pollHttpSource],
   // The endpoint is whatever the instance's URL says, so no narrower host list is possible.
-  capabilities: { network: ['*'], secrets: ['token'] },
+  capabilities: { network: ['*'] },
 });

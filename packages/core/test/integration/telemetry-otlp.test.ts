@@ -12,7 +12,7 @@ import { testConfig } from '../../src/config.js';
 import { destinations, processes, runs, sources } from '../../src/db/schema.js';
 import { defaultProcessDocument } from '../../src/domain/process.js';
 import { createLogger } from '../../src/logger.js';
-import { MemoryQueue } from '../../src/queue/queue.js';
+import { MemoryQueue } from '../helpers/memory-queue.js';
 import { parseOtelConfig } from '../../src/telemetry/otel-config.js';
 import { setupTelemetry, type TelemetryRuntime } from '../../src/telemetry/setup.js';
 import { createTelemetry } from '../../src/telemetry/telemetry.js';

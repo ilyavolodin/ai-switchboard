@@ -201,3 +201,32 @@ describe('meter ceilings with fresh and stale readings', () => {
     });
   });
 });
+
+describe('budget check windows', () => {
+  it('tags run caps with their window so gauges need not parse check names', () => {
+    const out = budget(
+      {
+        kind: 'event',
+        process: { runsPerHour: 5, runsPerDay: 20, meterCeilings: {} },
+        destination: { runsPerDay: 50, softHoldUntil: null, stalenessMinutes: 10 },
+        counters: {
+          processRunsHour: 1,
+          processRunsDay: 2,
+          destinationRunsHour: 3,
+          destinationRunsDay: 4,
+          processUsageDay: {},
+          destinationUsageDay: {},
+        },
+        dimensions: [],
+        meters: {},
+      },
+      new Date('2026-01-05T09:00:00Z'),
+    );
+    expect(out.checks.map((c) => [c.check, c.window])).toEqual([
+      ['runs_per_hour', 'hour'],
+      ['runs_per_day', 'day'],
+      ['destination_runs_per_day', 'day'],
+      ['soft_hold', undefined],
+    ]);
+  });
+});

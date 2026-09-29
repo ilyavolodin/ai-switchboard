@@ -131,6 +131,25 @@ describe('tracking', () => {
     expect(run).toMatchObject({ status: 'error', errors: ['boom'], usage: { tokens: 5 } });
   });
 
+  it("tracks a run with the destination's target defaults, as its invoke did", async () => {
+    const src = await seedSource(h);
+    const ex = await seedDestination(h, { tracking: 'poll' });
+    await h.db
+      .update(destinations)
+      .set({ targetDefaults: { tracked: true } })
+      .where(eq(destinations.id, ex.id));
+    const live = h.runtime.destinations.get(ex.id)!;
+    live.trackingFor = (target) =>
+      (target as { tracked?: boolean } | undefined)?.tracked === true ? 'poll' : 'none';
+    const pid = await seedProcess(h, ex.id, src.id);
+    ex.state.pollScript.push({ state: 'ok' });
+    await fireOne(src.id, '1');
+    expect(await onlyRun(pid)).toMatchObject({ status: 'running' });
+    await h.advance(30);
+    expect(ex.state.polls).toHaveLength(1);
+    expect(await onlyRun(pid)).toMatchObject({ status: 'ok' });
+  });
+
   it('a lost response on a non-idempotent destination is uncertain and never re-invoked', async () => {
     const src = await seedSource(h);
     const ex = await seedDestination(h, { tracking: 'callback', idempotent: false });

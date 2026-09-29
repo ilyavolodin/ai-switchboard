@@ -9,5 +9,5 @@ export default definePlugin({
   displayName: 'Datadog source',
   description: 'Datadog monitor alerts as Switchboard events, with live monitor state.',
   sources: [datadogSource],
-  capabilities: { network: API_HOSTS, secrets: ['sharedSecret', 'apiKey', 'appKey'] },
+  capabilities: { network: API_HOSTS },
 });

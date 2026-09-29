@@ -10,16 +10,8 @@ import type { ApiContext } from './api/context.js';
 import { registerErrorHandler } from './api/errors.js';
 import { rewriteLegacyUrl } from './api/legacy.js';
 import { createReasonPolicy, registerReasonPolicy } from './api/reasons.js';
-import { registerAdminRoutes } from './api/routes/admin.js';
-import { registerAuthRoutes } from './api/routes/auth.js';
-import { registerConfigRoutes } from './api/routes/config.js';
+import { registerApiRoutes } from './api/routes/index.js';
 import { registerIngressRoutes } from './api/routes/ingress.js';
-import { registerInstanceRoutes } from './api/routes/instances.js';
-import { registerPluginRoutes } from './api/routes/plugins.js';
-import { registerProcessRoutes } from './api/routes/processes.js';
-import { registerReadRoutes } from './api/routes/read.js';
-import { registerSecretRoutes } from './api/routes/secrets.js';
-import { registerSourcePreviewRoutes } from './api/routes/source-preview.js';
 import { getSettings } from './services/settings.js';
 import { registerHttpTelemetry } from './telemetry/http.js';
 import type { TelemetryRuntime } from './telemetry/setup.js';
@@ -53,7 +45,7 @@ export async function buildServer(
     },
   }) as unknown as FastifyInstance;
   // Before any route, so its onRoute hook wraps every handler in the request's span.
-  registerHttpTelemetry(app);
+  registerHttpTelemetry(app, ctx.telemetry);
   registerErrorHandler(app);
   await app.register(cookie, options.cookieSecret ? { secret: options.cookieSecret } : {});
   await app.register(rateLimit, { global: false });
@@ -67,15 +59,7 @@ export async function buildServer(
     prometheus: options.telemetry?.prometheus,
     ready: options.ready ?? (() => true),
   });
-  registerAuthRoutes(app, ctx);
-  registerSourcePreviewRoutes(app, ctx);
-  registerInstanceRoutes(app, ctx);
-  registerSecretRoutes(app, ctx);
-  registerProcessRoutes(app, ctx);
-  registerPluginRoutes(app, ctx);
-  registerAdminRoutes(app, ctx);
-  registerConfigRoutes(app, ctx);
-  registerReadRoutes(app, ctx);
+  registerApiRoutes(app, ctx);
 
   app.all('/api/*', (_req, reply) =>
     reply.code(404).send({ error: 'not_found', message: 'No such API route.' }),

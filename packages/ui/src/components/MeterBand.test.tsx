@@ -21,8 +21,22 @@ describe('MeterBand', () => {
           },
         ]}
         runs={[
-          { t: iso(5_000), runId: 'r1', processId: 'p1', processName: 'Healthy', status: 'ok' },
-          { t: iso(6_000), runId: 'r2', processId: 'p2', processName: 'Breaker', status: 'error' },
+          {
+            t: iso(5_000),
+            runId: 'r1',
+            processId: 'p1',
+            processName: 'Healthy',
+            status: 'ok',
+            statusLabel: { tone: 'ok', label: 'ok' },
+          },
+          {
+            t: iso(6_000),
+            runId: 'r2',
+            processId: 'p2',
+            processName: 'Breaker',
+            status: 'error',
+            statusLabel: { tone: 'error', label: 'error' },
+          },
         ]}
       />,
     );

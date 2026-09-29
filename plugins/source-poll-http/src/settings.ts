@@ -1,10 +1,9 @@
+import type { JSONSchema, Settings } from '@ai-switchboard/sdk';
 import {
   eventTypeDefinitionSchema,
   parseWith,
   type EventTypeDefinition,
-  type JSONSchema,
-  type Settings,
-} from '@ai-switchboard/sdk';
+} from '@ai-switchboard/sdk/schema';
 
 /** The source id, which is also the namespace of every event type an instance defines. */
 export const SOURCE_ID = 'poll-http';

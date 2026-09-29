@@ -3,10 +3,10 @@ import {
   SpanKind,
   SpanStatusCode,
   context,
-  metrics,
   propagation,
   trace,
   type Span,
+  type Tracer,
 } from '@opentelemetry/api';
 import {
   ATTR_CLIENT_ADDRESS,
@@ -21,9 +21,7 @@ import {
 } from '@opentelemetry/semantic-conventions';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
-export const HTTP_DURATION_BUCKETS = [
-  0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
-];
+import type { Telemetry } from './telemetry.js';
 
 const TRACED_PREFIXES = ['/api/', '/hooks/', '/callbacks/'];
 
@@ -36,13 +34,11 @@ interface Inflight {
   start: bigint;
 }
 
-export function registerHttpTelemetry(app: FastifyInstance): void {
-  const tracer = trace.getTracer('switchboard');
-  const duration = metrics.getMeter('switchboard').createHistogram('http.server.request.duration', {
-    unit: 's',
-    description: 'Duration of HTTP server requests.',
-    advice: { explicitBucketBoundaries: HTTP_DURATION_BUCKETS },
-  });
+export function registerHttpTelemetry(
+  app: FastifyInstance,
+  telemetry: Pick<Telemetry, 'httpServerDuration'>,
+  tracer: Tracer = trace.getTracer('switchboard'),
+): void {
   const inflight = new WeakMap<FastifyRequest, Inflight>();
 
   app.addHook('onRequest', (req, _reply, done) => {
@@ -111,7 +107,7 @@ export function registerHttpTelemetry(app: FastifyInstance): void {
     f.span.setAttributes(attrs);
     if (status === undefined || status >= 500) f.span.setStatus({ code: SpanStatusCode.ERROR });
     f.span.end();
-    duration.record(Number(process.hrtime.bigint() - f.start) / 1e9, attrs);
+    telemetry.httpServerDuration(Number(process.hrtime.bigint() - f.start) / 1e9, attrs);
   };
 
   app.addHook('onResponse', (req, reply, done) => {

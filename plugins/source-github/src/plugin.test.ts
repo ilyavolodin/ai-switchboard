@@ -8,8 +8,8 @@ import {
   createStubHttp,
   createTestContext,
   rawRequest,
+  pluginConformanceChecks,
   runConformance,
-  sourceConformanceChecks,
   type StubHandler,
 } from '@ai-switchboard/sdk/testing';
 
@@ -111,29 +111,33 @@ const allDeliveries = [
 
 runConformance(
   'github source',
-  sourceConformanceChecks(githubSource, {
-    settings: tokenSettings,
-    secrets: [SECRET, TOKEN],
-    http: githubApi(),
-    now: () => NOW,
-    push: {
-      deliveries: allDeliveries.map((d) => deliver(d)),
-      sameChange: [
-        deliver(prLabeled),
-        deliver(prLabeled, undefined, { 'x-github-delivery': 'redelivery-of-5d1f0a20' }),
-      ],
-      differentChange: [
-        deliver(prLabeled),
-        deliver(prLabeled, (b) => {
-          b.label = { ...b.label, name: 'backend-urgent' };
-        }),
-      ],
-      wrongSignature: deliver(prOpened, undefined, {
-        'x-hub-signature-256': `sha256=${'ab'.repeat(32)}`,
-      }),
-      missingHeader: deliver(prOpened, undefined, { 'x-hub-signature-256': undefined }),
+  pluginConformanceChecks(plugin, {
+    sources: {
+      [githubSource.id]: {
+        settings: tokenSettings,
+        secrets: [SECRET, TOKEN],
+        http: githubApi(),
+        now: () => NOW,
+        push: {
+          deliveries: allDeliveries.map((d) => deliver(d)),
+          sameChange: [
+            deliver(prLabeled),
+            deliver(prLabeled, undefined, { 'x-github-delivery': 'redelivery-of-5d1f0a20' }),
+          ],
+          differentChange: [
+            deliver(prLabeled),
+            deliver(prLabeled, (b) => {
+              b.label = { ...b.label, name: 'backend-urgent' };
+            }),
+          ],
+          wrongSignature: deliver(prOpened, undefined, {
+            'x-hub-signature-256': `sha256=${'ab'.repeat(32)}`,
+          }),
+          missingHeader: deliver(prOpened, undefined, { 'x-hub-signature-256': undefined }),
+        },
+        resolveNotFound: { kind: 'github.pr', id: 'acme/api#404' },
+      },
     },
-    resolveNotFound: { kind: 'github.pr', id: 'acme/api#404' },
   }),
   { describe, it },
 );

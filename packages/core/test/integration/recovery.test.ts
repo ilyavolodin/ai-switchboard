@@ -8,7 +8,7 @@ import { emailKey } from '../../src/auth/throttle.js';
 import { FakeClock } from '../../src/clock.js';
 import { testConfig } from '../../src/config.js';
 import { auditLog, loginAttempts, sessions, users } from '../../src/db/schema.js';
-import { accountRecovery } from '../../src/recovery.js';
+import { accountRecovery } from '../../src/account-recovery.js';
 import {
   createAdmin,
   isRecoveryError,

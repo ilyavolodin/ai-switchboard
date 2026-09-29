@@ -1,108 +1,42 @@
 import {
+  asArray,
+  asNumber,
+  asObject,
+  asString,
+  checkHealth,
+  getPath,
+  parseJsonObject,
   validateAgainst,
-  verifyHmac,
+  verifyHmacHeader,
+  withSettings,
   type ActionResult,
-  type ActionSpec,
   type ArtifactRef,
   type ArtifactSnapshot,
   type Health,
-  type JSONSchema,
+  type JsonObject,
   type PluginContext,
   type ProvisionResult,
   type RawRequest,
-  type Settings,
   type Source,
   type SourceType,
   type VerifyResult,
 } from '@ai-switchboard/sdk';
 
+import {
+  actions,
+  actionsById,
+  COMMENT_CREATE,
+  ISSUE_UPDATE,
+  LABELS_QUERY,
+  STATES_QUERY,
+} from './actions.js';
 import { createApi, LinearApiError, type LinearApi } from './api.js';
 import { eventTypes } from './events.js';
-import { arr, num, obj, parseJsonObject, path, str, type Json } from './json.js';
 import { parseDelivery } from './parse.js';
-import { readSettings, settingsSchema, type LinearSettings } from './settings.js';
+import { LinearSettingsError, settingsSchema, type LinearSettings } from './settings.js';
 
 /** Linear's documented replay window: reject deliveries whose timestamp is further off. */
 export const MAX_SKEW_MS = 60_000;
-
-const artifactArg: JSONSchema = {
-  type: 'object',
-  title: 'Artifact',
-  description: 'The issue to act on, e.g. `{ kind: "linear.issue", id: "LOL-1712" }`.',
-  required: ['kind', 'id'],
-  properties: {
-    kind: { const: 'linear.issue' },
-    id: { type: 'string', minLength: 1 },
-    url: { type: 'string' },
-    version: { type: 'string' },
-  },
-};
-
-export const actions: ActionSpec[] = [
-  {
-    id: 'addLabel',
-    // Repeating it leaves the same state, so a step in doubt may run again.
-    idempotent: true,
-    title: 'Add label',
-    description: 'Add an existing label (team or workspace) to the issue, by name.',
-    describe: 'Add label {{label}}',
-    argsSchema: {
-      type: 'object',
-      required: ['artifact', 'label'],
-      properties: {
-        artifact: artifactArg,
-        label: {
-          type: 'string',
-          minLength: 1,
-          title: 'Label',
-          description: 'Label name (case-insensitive).',
-        },
-      },
-    },
-  },
-  {
-    id: 'setState',
-    // Repeating it leaves the same state, so a step in doubt may run again.
-    idempotent: true,
-    title: 'Set state',
-    description: 'Move the issue to a workflow state of its team, by name.',
-    describe: 'Move to {{state}}',
-    argsSchema: {
-      type: 'object',
-      required: ['artifact', 'state'],
-      properties: {
-        artifact: artifactArg,
-        state: {
-          type: 'string',
-          minLength: 1,
-          title: 'State',
-          description: 'Workflow state name, e.g. `In Review`.',
-        },
-      },
-    },
-  },
-  {
-    id: 'comment',
-    title: 'Comment',
-    description: 'Post a comment on the issue.',
-    describe: 'Comment on the issue',
-    argsSchema: {
-      type: 'object',
-      required: ['artifact', 'body'],
-      properties: {
-        artifact: artifactArg,
-        body: {
-          type: 'string',
-          minLength: 1,
-          title: 'Body',
-          description: 'Markdown comment text.',
-        },
-      },
-    },
-  },
-];
-
-const actionsById = new Map(actions.map((a) => [a.id, a]));
 
 const ISSUE_QUERY = `query Issue($id: String!) {
   issue(id: $id) {
@@ -114,22 +48,6 @@ const ISSUE_QUERY = `query Issue($id: String!) {
   }
 }`;
 
-const LABELS_QUERY = `query Labels($name: String!) {
-  issueLabels(filter: { name: { eqIgnoreCase: $name } }) { nodes { id name team { id } } }
-}`;
-
-const STATES_QUERY = `query States($teamId: ID!, $name: String!) {
-  workflowStates(filter: { team: { id: { eq: $teamId } }, name: { eqIgnoreCase: $name } }) { nodes { id name } }
-}`;
-
-const ISSUE_UPDATE = `mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) {
-  issueUpdate(id: $id, input: $input) { success }
-}`;
-
-const COMMENT_CREATE = `mutation CommentCreate($input: CommentCreateInput!) {
-  commentCreate(input: $input) { success comment { id url } }
-}`;
-
 const TEAMS_QUERY = `query Teams($keys: [String!]) {
   teams(filter: { key: { in: $keys } }) { nodes { id key } }
 }`;
@@ -138,9 +56,9 @@ const WEBHOOK_CREATE = `mutation WebhookCreate($input: WebhookCreateInput!) {
   webhookCreate(input: $input) { success webhook { id enabled } }
 }`;
 
-function nodes(value: unknown): Json[] {
-  return arr(path(value, 'nodes')).flatMap((n) => {
-    const o = obj(n);
+function nodes(value: unknown): JsonObject[] {
+  return asArray(getPath(value, 'nodes')).flatMap((n) => {
+    const o = asObject(n);
     return o ? [o] : [];
   });
 }
@@ -150,12 +68,9 @@ function nodes(value: unknown): Json[] {
  * must be within a minute of now so a captured delivery cannot be replayed later.
  */
 export function verifyDelivery(secret: string, req: RawRequest, now: Date): VerifyResult {
-  const signature = req.headers['linear-signature'];
-  if (signature === undefined || signature === '')
-    return { ok: false, reason: 'missing linear-signature header' };
-  if (!verifyHmac({ secret, payload: req.body, signature }))
-    return { ok: false, reason: 'signature mismatch' };
-  const timestamp = num(parseJsonObject(req.body.toString('utf8'))?.webhookTimestamp);
+  const signed = verifyHmacHeader(req, { header: 'linear-signature', secret });
+  if (!signed.ok) return signed;
+  const timestamp = asNumber(parseJsonObject(req.body.toString('utf8'))?.webhookTimestamp);
   if (timestamp === undefined) return { ok: false, reason: 'missing webhookTimestamp' };
   if (Math.abs(now.getTime() - timestamp) > MAX_SKEW_MS) {
     return { ok: false, reason: 'webhookTimestamp is more than 60 s from now' };
@@ -163,14 +78,13 @@ export function verifyDelivery(secret: string, req: RawRequest, now: Date): Veri
   return { ok: true };
 }
 
-function createLinearSource(settings: Settings, ctx: PluginContext): Source {
-  const s: LinearSettings = readSettings(settings);
+function createLinearSource(s: LinearSettings, ctx: PluginContext): Source {
   const api: LinearApi = createApi(ctx.http, s.apiKey);
 
-  async function fetchIssue(id: string): Promise<Json | null> {
+  async function fetchIssue(id: string): Promise<JsonObject | null> {
     try {
       const data = await api.graphql(ISSUE_QUERY, { id });
-      return obj(data.issue) ?? null;
+      return asObject(data.issue) ?? null;
     } catch (err) {
       if (err instanceof LinearApiError && err.notFound) return null;
       throw err;
@@ -179,7 +93,7 @@ function createLinearSource(settings: Settings, ctx: PluginContext): Source {
 
   async function withIssue(
     ref: ArtifactRef,
-    run: (issue: Json) => Promise<ActionResult>,
+    run: (issue: JsonObject) => Promise<ActionResult>,
   ): Promise<ActionResult> {
     const issue = await fetchIssue(ref.id);
     if (!issue) return { ok: false, message: `${ref.id} was not found` };
@@ -191,9 +105,13 @@ function createLinearSource(settings: Settings, ctx: PluginContext): Source {
     }
   }
 
-  async function update(issue: Json, input: Json, message: string): Promise<ActionResult> {
-    const data = await api.graphql(ISSUE_UPDATE, { id: str(issue.id) ?? '', input });
-    return path(data, 'issueUpdate', 'success') === true
+  async function update(
+    issue: JsonObject,
+    input: JsonObject,
+    message: string,
+  ): Promise<ActionResult> {
+    const data = await api.graphql(ISSUE_UPDATE, { id: asString(issue.id) ?? '', input });
+    return getPath(data, 'issueUpdate', 'success') === true
       ? { ok: true, message }
       : { ok: false, message: 'Linear did not apply the update' };
   }
@@ -210,53 +128,53 @@ function createLinearSource(settings: Settings, ctx: PluginContext): Source {
         return withIssue(a.artifact, async (issue) => {
           const wanted = (a.label ?? '').toLowerCase();
           const current = nodes(issue.labels);
-          if (current.some((l) => str(l.name)?.toLowerCase() === wanted)) {
+          if (current.some((l) => asString(l.name)?.toLowerCase() === wanted)) {
             return { ok: true, message: `${id} already has label ${a.label ?? ''}` };
           }
-          const teamId = str(path(issue, 'team', 'id'));
+          const teamId = asString(getPath(issue, 'team', 'id'));
           const candidates = nodes(
             (await api.graphql(LABELS_QUERY, { name: a.label })).issueLabels,
           );
           // Prefer the issue's team label over a workspace label of the same name.
           const label =
-            candidates.find((l) => str(path(l, 'team', 'id')) === teamId) ??
-            candidates.find((l) => path(l, 'team') == null);
-          const labelId = str(label?.id);
+            candidates.find((l) => asString(getPath(l, 'team', 'id')) === teamId) ??
+            candidates.find((l) => getPath(l, 'team') == null);
+          const labelId = asString(label?.id);
           if (labelId === undefined)
             return {
               ok: false,
               message: `No label named ${a.label ?? ''} in the issue's team or workspace`,
             };
-          const labelIds = [...current.flatMap((l) => str(l.id) ?? []), labelId];
-          return update(issue, { labelIds }, `Added label ${str(label?.name) ?? ''} to ${id}`);
+          const labelIds = [...current.flatMap((l) => asString(l.id) ?? []), labelId];
+          return update(issue, { labelIds }, `Added label ${asString(label?.name) ?? ''} to ${id}`);
         });
       case 'setState':
         return withIssue(a.artifact, async (issue) => {
-          const teamId = str(path(issue, 'team', 'id')) ?? '';
+          const teamId = asString(getPath(issue, 'team', 'id')) ?? '';
           const states = nodes(
             (await api.graphql(STATES_QUERY, { teamId, name: a.state })).workflowStates,
           );
-          const stateId = str(states[0]?.id);
+          const stateId = asString(states[0]?.id);
           if (stateId === undefined)
             return {
               ok: false,
               message: `No workflow state named ${a.state ?? ''} in the issue's team`,
             };
-          if (str(path(issue, 'state', 'id')) === stateId)
+          if (asString(getPath(issue, 'state', 'id')) === stateId)
             return { ok: true, message: `${id} is already in ${a.state ?? ''}` };
-          return update(issue, { stateId }, `Moved ${id} to ${str(states[0]?.name) ?? ''}`);
+          return update(issue, { stateId }, `Moved ${id} to ${asString(states[0]?.name) ?? ''}`);
         });
       case 'comment':
         return withIssue(a.artifact, async (issue) => {
           const data = await api.graphql(COMMENT_CREATE, {
-            input: { issueId: str(issue.id) ?? '', body: a.body },
+            input: { issueId: asString(issue.id) ?? '', body: a.body },
           });
-          const comment = obj(path(data, 'commentCreate', 'comment'));
-          return path(data, 'commentCreate', 'success') === true
+          const comment = asObject(getPath(data, 'commentCreate', 'comment'));
+          return getPath(data, 'commentCreate', 'success') === true
             ? {
                 ok: true,
                 message: `Commented on ${id}`,
-                data: { id: str(comment?.id), url: str(comment?.url) },
+                data: { id: asString(comment?.id), url: asString(comment?.url) },
               }
             : { ok: false, message: 'Linear did not create the comment' };
         });
@@ -272,22 +190,22 @@ function createLinearSource(settings: Settings, ctx: PluginContext): Source {
       secret: s.webhookSecret,
       label: 'AI Switchboard',
     };
-    let inputs: Json[] = [{ ...base, allPublicTeams: true }];
+    let inputs: JsonObject[] = [{ ...base, allPublicTeams: true }];
     try {
       if (s.teamKeys.length > 0) {
         const teams = nodes((await api.graphql(TEAMS_QUERY, { keys: s.teamKeys })).teams);
         const missing = s.teamKeys.filter(
-          (k) => !teams.some((t) => str(t.key)?.toLowerCase() === k.toLowerCase()),
+          (k) => !teams.some((t) => asString(t.key)?.toLowerCase() === k.toLowerCase()),
         );
         if (missing.length > 0)
           return { ok: false, message: `Unknown team keys: ${missing.join(', ')}` };
-        inputs = teams.map((t) => ({ ...base, teamId: str(t.id) }));
+        inputs = teams.map((t) => ({ ...base, teamId: asString(t.id) }));
       }
       const created: string[] = [];
       for (const input of inputs) {
         const data = await api.graphql(WEBHOOK_CREATE, { input });
-        const webhookId = str(path(data, 'webhookCreate', 'webhook', 'id'));
-        if (path(data, 'webhookCreate', 'success') !== true || webhookId === undefined) {
+        const webhookId = asString(getPath(data, 'webhookCreate', 'webhook', 'id'));
+        if (getPath(data, 'webhookCreate', 'success') !== true || webhookId === undefined) {
           return {
             ok: false,
             ...(created.length > 0 ? { externalId: created.join(',') } : {}),
@@ -311,37 +229,35 @@ function createLinearSource(settings: Settings, ctx: PluginContext): Source {
     if (ref.kind !== 'linear.issue') throw new Error(`linear cannot look up ${ref.kind}`);
     const issue = await fetchIssue(ref.id);
     if (!issue) return null;
-    const url = str(issue.url) ?? '';
-    const updatedAt = str(issue.updatedAt) ?? '';
+    const url = asString(issue.url) ?? '';
+    const updatedAt = asString(issue.updatedAt) ?? '';
     return {
-      ref: { kind: 'linear.issue', id: str(issue.identifier) ?? ref.id, url, version: updatedAt },
-      title: str(issue.title) ?? '',
-      state: str(path(issue, 'state', 'name')) ?? '',
-      stateType: str(path(issue, 'state', 'type')) ?? '',
-      labels: nodes(issue.labels).flatMap((l) => str(l.name) ?? []),
-      priority: num(issue.priority) ?? 0,
-      assignee: str(path(issue, 'assignee', 'name')) ?? null,
+      ref: {
+        kind: 'linear.issue',
+        id: asString(issue.identifier) ?? ref.id,
+        url,
+        version: updatedAt,
+      },
+      title: asString(issue.title) ?? '',
+      state: asString(getPath(issue, 'state', 'name')) ?? '',
+      stateType: asString(getPath(issue, 'state', 'type')) ?? '',
+      labels: nodes(issue.labels).flatMap((l) => asString(l.name) ?? []),
+      priority: asNumber(issue.priority) ?? 0,
+      assignee: asString(getPath(issue, 'assignee', 'name')) ?? null,
       url,
       updatedAt,
     };
   }
 
-  async function health(): Promise<Health> {
-    try {
+  function health(): Promise<Health> {
+    return checkHealth(ctx, async () => {
       const data = await api.graphql('query Viewer { viewer { id name } }');
-      const name = str(path(data, 'viewer', 'name'));
+      const name = asString(getPath(data, 'viewer', 'name'));
       return {
         status: 'healthy',
         ...(name !== undefined ? { message: `Authenticated as ${name}` } : {}),
-        checkedAt: ctx.now().toISOString(),
       };
-    } catch (err) {
-      return {
-        status: 'unhealthy',
-        message: err instanceof Error ? err.message : String(err),
-        checkedAt: ctx.now().toISOString(),
-      };
-    }
+    });
   }
 
   return {
@@ -364,5 +280,7 @@ export const linearSource: SourceType = {
   settingsSchema,
   eventTypes,
   actions,
-  create: createLinearSource,
+  create: withSettings(settingsSchema, 'linear settings', createLinearSource, {
+    error: LinearSettingsError,
+  }),
 };

@@ -1,8 +1,13 @@
 import {
+  checkHealth,
   InvokeError,
-  invokeErrorForStatus,
   isTransportError,
   parseRetryAfter,
+  parseWith,
+  refusalFor,
+  SchemaMismatchError,
+  tryJson,
+  withSettings,
   type Destination,
   type DestinationType,
   type Health,
@@ -35,20 +40,17 @@ import {
   METERS,
   RATE_LIMIT_METER,
   USAGE_DIMENSIONS,
-  readSettings,
   settingsSchema,
   type GithubActionsSettings,
 } from './settings.js';
 import {
   RUN_ID_INPUT,
   inputSchema,
-  readInputs,
-  readTarget,
   targetSchema,
+  type WorkflowInputs,
   type WorkflowTarget,
 } from './target.js';
 
-const DEFAULT_RETRY_AFTER_SECONDS = 60;
 /** Look this far back from the dispatch when listing runs, for clock skew between us and GitHub. */
 const CORRELATION_SKEW_MS = 2 * 60_000;
 const CORRELATION_PAGE_SIZE = 50;
@@ -65,16 +67,27 @@ export interface PendingDispatch {
 
 export const pendingKey = (runId: string): string => `dispatch:${runId}`;
 
-function jsonBody(res: HttpResponse): unknown {
+function definitive<T>(fn: () => T): T {
   try {
-    return res.json();
-  } catch {
-    return undefined;
+    return fn();
+  } catch (err) {
+    if (err instanceof SchemaMismatchError) {
+      throw new InvokeError(err.message, { definitive: true });
+    }
+    throw err;
   }
 }
 
+export function readTarget(target: unknown): WorkflowTarget {
+  return definitive(() => parseWith<WorkflowTarget>(targetSchema, target, 'workflow target'));
+}
+
+export function readInputs(input: unknown): WorkflowInputs {
+  return definitive(() => parseWith<WorkflowInputs>(inputSchema, input ?? {}, 'workflow inputs'));
+}
+
 function messageOf(res: HttpResponse): string {
-  const body = jsonBody(res);
+  const body = tryJson(res);
   if (body !== null && typeof body === 'object' && 'message' in body) {
     const message = body.message;
     if (typeof message === 'string') return message;
@@ -83,31 +96,35 @@ function messageOf(res: HttpResponse): string {
 }
 
 /** GitHub signals rate limits with 429, or 403 and `x-ratelimit-remaining: 0`. */
-function rateLimitedFor(res: HttpResponse, now: Date): number | undefined {
-  const limited =
+function isRateLimited(res: HttpResponse): boolean {
+  return (
     res.status === 429 ||
     (res.status === 403 &&
-      (res.headers['x-ratelimit-remaining'] === '0' || /rate limit/i.test(messageOf(res))));
-  if (!limited) return undefined;
+      (res.headers['x-ratelimit-remaining'] === '0' || /rate limit/i.test(messageOf(res))))
+  );
+}
+
+function retryAfterSeconds(res: HttpResponse, now: Date): number | undefined {
   const retryAfter = parseRetryAfter(res.headers['retry-after'], now);
   if (retryAfter !== undefined) return retryAfter;
   const reset = Number(res.headers['x-ratelimit-reset']);
   if (Number.isFinite(reset) && reset > 0) {
     return Math.max(0, Math.ceil(reset - now.getTime() / 1000));
   }
-  return DEFAULT_RETRY_AFTER_SECONDS;
+  return undefined;
 }
 
-/** Rate limits are returned; everything else throws. */
+/**
+ * Rate limits are returned; everything else throws. 404 (no such workflow or no access), 422 (no
+ * workflow_dispatch trigger, unknown input, bad ref) and the other 4xx repeat on retry, so they
+ * are definitive.
+ */
 export function refusal(res: HttpResponse, now: Date): InvokeResult {
-  const retryAfterSeconds = rateLimitedFor(res, now);
-  const message = `GitHub answered ${res.status} to the dispatch: ${messageOf(res)}`;
-  if (retryAfterSeconds !== undefined) {
-    return { status: 'failed', retryAfterSeconds, errors: [message] };
-  }
-  // 404 (no such workflow or no access), 422 (no workflow_dispatch trigger, unknown input,
-  // bad ref) and the other 4xx repeat on retry, so they are definitive.
-  throw invokeErrorForStatus(res.status, message);
+  return refusalFor(res, now, {
+    message: (r) => `GitHub answered ${r.status} to the dispatch: ${messageOf(r)}`,
+    isRateLimited,
+    retryAfterSeconds,
+  });
 }
 
 function createGithubActionsDestination(
@@ -175,7 +192,7 @@ function createGithubActionsDestination(
           },
         });
         if (!res.ok) return undefined;
-        const list = tryParse<{ workflow_runs: WorkflowRun[] }>(runListSchema, jsonBody(res));
+        const list = tryParse<{ workflow_runs: WorkflowRun[] }>(runListSchema, tryJson(res));
         const found = list?.workflow_runs.find((r) => matchesRun(r, runId));
         if (found || !list || list.workflow_runs.length < CORRELATION_PAGE_SIZE) return found;
       }
@@ -210,7 +227,7 @@ function createGithubActionsDestination(
     if (!res.ok) return refusal(res, ctx.now());
 
     // Newer GitHub answers 200 with the run; older answers 204 and we find the run by name.
-    const details = jsonBody(res) as
+    const details = tryJson(res) as
       { workflow_run_id?: unknown; html_url?: unknown; run_url?: unknown } | undefined;
     if (typeof details?.workflow_run_id === 'number') {
       return started(
@@ -264,7 +281,7 @@ function createGithubActionsDestination(
     const usage: UsageReport = {};
     try {
       const timing = await api({ method: 'GET', url: `${base}/timing` });
-      if (timing.ok) Object.assign(usage, usageFromTiming(jsonBody(timing)));
+      if (timing.ok) Object.assign(usage, usageFromTiming(tryJson(timing)));
     } catch (err) {
       ctx.logger.warn('workflow run timing unavailable', {
         error: err instanceof Error ? err.message : String(err),
@@ -280,7 +297,7 @@ function createGithubActionsDestination(
         url: `${base}/jobs`,
         query: { filter: 'latest', per_page: 1 },
       });
-      const total = (jsonBody(jobs) as { total_count?: unknown } | undefined)?.total_count;
+      const total = (tryJson(jobs) as { total_count?: unknown } | undefined)?.total_count;
       if (jobs.ok && typeof total === 'number') usage.jobs = total;
     } catch (err) {
       ctx.logger.warn('workflow run jobs unavailable', {
@@ -304,7 +321,7 @@ function createGithubActionsDestination(
       return { state: 'unknown', errors: [`Workflow run ${ref.runId} no longer exists`] };
     }
     if (!res.ok) throw new Error(`GitHub answered ${res.status} for workflow run ${ref.runId}`);
-    const wf = tryParse<WorkflowRun>(workflowRunSchema, jsonBody(res));
+    const wf = tryParse<WorkflowRun>(workflowRunSchema, tryJson(res));
     if (!wf) throw new Error(`Unexpected workflow run shape for ${ref.runId}`);
     const state = stateOf(wf);
     const externalUrl = wf.html_url !== undefined ? { externalUrl: wf.html_url } : {};
@@ -325,7 +342,7 @@ function createGithubActionsDestination(
     const res = await api({ method: 'GET', url: '/rate_limit' });
     if (!res.ok) throw new Error(`GitHub answered ${res.status} to /rate_limit`);
     const core = (
-      jsonBody(res) as
+      tryJson(res) as
         { resources?: { core?: { limit?: unknown; used?: unknown; reset?: unknown } } } | undefined
     )?.resources?.core;
     if (typeof core?.limit !== 'number' || typeof core.used !== 'number' || core.limit <= 0) {
@@ -345,24 +362,12 @@ function createGithubActionsDestination(
     ];
   }
 
-  async function health(): Promise<Health> {
-    const checkedAt = (): string => ctx.now().toISOString();
-    try {
+  const health = (): Promise<Health> =>
+    checkHealth(ctx, async () => {
       const res = await api({ method: 'GET', url: '/rate_limit' });
-      if (res.ok) return { status: 'healthy', checkedAt: checkedAt() };
-      return {
-        status: 'unhealthy',
-        message: `GitHub answered ${res.status}: ${messageOf(res)}`,
-        checkedAt: checkedAt(),
-      };
-    } catch (err) {
-      return {
-        status: 'unhealthy',
-        message: err instanceof Error ? err.message : String(err),
-        checkedAt: checkedAt(),
-      };
-    }
-  }
+      if (res.ok) return { status: 'healthy' };
+      return { status: 'unhealthy', message: `GitHub answered ${res.status}: ${messageOf(res)}` };
+    });
 
   return { invoke, poll, readMeters, health };
 }
@@ -389,5 +394,5 @@ export const githubActionsDestinationType: DestinationType = {
   invokeTimeoutSeconds: 120,
   usage: USAGE_DIMENSIONS,
   meters: METERS,
-  create: (settings, ctx) => createGithubActionsDestination(readSettings(settings), ctx),
+  create: withSettings(settingsSchema, 'github-actions settings', createGithubActionsDestination),
 };

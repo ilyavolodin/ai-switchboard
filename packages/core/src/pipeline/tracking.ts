@@ -9,6 +9,24 @@ export const POLL_BACKOFF_SECONDS = [30, 60, 120, 300] as const;
  */
 export const INVOKING_STALE_SECONDS = 60;
 
+/** A tracked run whose poll is this overdue lost its job, and recovery sends it again. */
+export const LOST_POLL_GRACE_SECONDS = 60;
+
+export function lostPollCutoff(now: Date): Date {
+  return new Date(now.getTime() - LOST_POLL_GRACE_SECONDS * 1000);
+}
+
+export const TRACKING_STATES = [
+  'running',
+  'ok',
+  'error',
+  'unknown',
+] as const satisfies readonly RunStatus['state'][];
+
+export function isTrackingState(value: unknown): value is RunStatus['state'] {
+  return (TRACKING_STATES as readonly unknown[]).includes(value);
+}
+
 export function pollDelaySeconds(pollCount: number): number {
   return POLL_BACKOFF_SECONDS[Math.max(0, pollCount)] ?? 300;
 }

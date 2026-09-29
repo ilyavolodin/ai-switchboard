@@ -12,6 +12,24 @@ export interface AuditInput {
   at: Date;
 }
 
+/** Who made a change, why and when: what every audited service call takes. */
+export interface ChangeMeta {
+  actor: string;
+  reason: string;
+  now: Date;
+}
+
+export type AuditChange = Omit<AuditInput, 'actor' | 'reason' | 'at'>;
+
+/** Call inside the same transaction as the change it records. */
+export async function auditChange(
+  db: DbOrTx,
+  meta: ChangeMeta,
+  change: AuditChange,
+): Promise<void> {
+  await recordAudit(db, { ...change, actor: meta.actor, reason: meta.reason, at: meta.now });
+}
+
 /** Call inside the same transaction as the change it records. */
 export async function recordAudit(db: DbOrTx, entry: AuditInput): Promise<void> {
   await db.insert(auditLog).values({

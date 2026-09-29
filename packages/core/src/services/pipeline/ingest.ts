@@ -2,128 +2,36 @@ import { randomUUID } from 'node:crypto';
 
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 
-import {
-  validateAgainst,
-  type ArtifactRef,
-  type Attributes,
-  type EventDraft,
-  type RawRequest,
-} from '@ai-switchboard/sdk';
+import type { EventDraft, RawRequest } from '@ai-switchboard/sdk';
 
 import type { Tx } from '../../db/client.js';
 import { eventRaw, events, sources } from '../../db/schema.js';
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
-import type { EventStage } from '../../domain/status.js';
+import type { EventStage, RawOrigin } from '../../domain/status.js';
+import {
+  ACCEPTED_STAGES,
+  capsApply,
+  checkDraft,
+  doorStage,
+  sourceNotes,
+  storedHeaders,
+  type DoorCounts,
+} from '../../pipeline/door.js';
 import type { LiveSource } from '../../plugins/runtime.js';
-import { errorText } from '../../util/errors.js';
+import { DAY_MS, HOUR_MS } from '../../util/time.js';
 import { isUuid } from '../../util/uuid.js';
 import { recordAudit } from '../audit.js';
 
-import { JOBS, callPlugin, lockKey, withTx, type Ctx } from './context.js';
-import { PipelineError } from './errors.js';
+import type { Ctx } from './context.js';
+import { PipelineError, findOrThrow } from './errors.js';
+import { JOBS } from './jobs.js';
+import { callPlugin } from './plugin-call.js';
+import { lockKey, withTx } from './tx.js';
+
+/** Kept for `services/source-preview.ts`; new code imports it from `pipeline/door.js`. */
+export { checkDraft } from '../../pipeline/door.js';
 
 type SourceRow = typeof sources.$inferSelect;
-
-const DROPPED_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization']);
-/** Stages that count against a source's event caps. */
-const ACCEPTED_STAGES: EventStage[] = ['received', 'matched', 'unmatched'];
-
-/** Headers as stored: credentials dropped, any header carrying a secret value redacted. */
-function storedHeaders(
-  headers: Record<string, string | undefined>,
-  secretValues: readonly string[],
-): Record<string, string | undefined> {
-  const out: Record<string, string | undefined> = {};
-  const secrets = secretValues.filter((s) => s.length >= 4);
-  for (const [k, v] of Object.entries(headers)) {
-    if (DROPPED_HEADERS.has(k.toLowerCase())) continue;
-    out[k] = v !== undefined && secrets.some((s) => v.includes(s)) ? '[redacted]' : v;
-  }
-  return out;
-}
-
-interface CheckedDraft {
-  stage: EventStage | null;
-  reason: string | null;
-  /** `reason` joins them. */
-  problems: string[];
-  type: string;
-  occurredAt: Date;
-  artifact: ArtifactRef;
-  attributes: Attributes;
-  dedupeKey: string;
-  deliveryId: string | null;
-}
-
-function isFlatValue(v: unknown): boolean {
-  return (
-    typeof v === 'string' ||
-    typeof v === 'number' ||
-    typeof v === 'boolean' ||
-    (Array.isArray(v) && v.every((x) => typeof x === 'string'))
-  );
-}
-
-export function checkDraft(draft: unknown, live: LiveSource, now: Date): CheckedDraft {
-  const d = (draft !== null && typeof draft === 'object' ? draft : {}) as Partial<
-    Record<keyof EventDraft, unknown>
-  >;
-  const problems: string[] = [];
-  const type = typeof d.type === 'string' && d.type !== '' ? d.type : '(invalid)';
-  const rawArtifact = (
-    d.artifact !== null && typeof d.artifact === 'object' ? d.artifact : {}
-  ) as Record<string, unknown>;
-  const artifact: ArtifactRef = {
-    kind: typeof rawArtifact.kind === 'string' ? rawArtifact.kind : '(invalid)',
-    id: typeof rawArtifact.id === 'string' ? rawArtifact.id : '',
-    ...(typeof rawArtifact.url === 'string' ? { url: rawArtifact.url } : {}),
-    ...(typeof rawArtifact.version === 'string' ? { version: rawArtifact.version } : {}),
-  };
-  const attributes = (
-    d.attributes !== null && typeof d.attributes === 'object' && !Array.isArray(d.attributes)
-      ? structuredClone(d.attributes)
-      : {}
-  ) as Attributes;
-  const occurred = typeof d.occurredAt === 'string' ? new Date(d.occurredAt) : new Date(Number.NaN);
-  const dedupeKey = typeof d.dedupeKey === 'string' ? d.dedupeKey : '';
-
-  if (draft === null || typeof draft !== 'object') problems.push('event is not an object');
-  const spec = live.eventTypes.find((t) => t.type === type);
-  if (!spec) problems.push(`event type ${type} is not declared by ${live.typeId}`);
-  if (artifact.kind === '(invalid)' || artifact.kind === '' || artifact.id === '') {
-    problems.push('artifact must have a kind and an id');
-  }
-  if (dedupeKey === '') problems.push('dedupeKey is missing');
-  if (Number.isNaN(occurred.getTime())) problems.push('occurredAt is not an ISO-8601 time');
-  for (const [k, v] of Object.entries(attributes)) {
-    if (!isFlatValue(v)) problems.push(`attribute ${k} is not a scalar or a string array`);
-  }
-  if (spec) {
-    try {
-      const check = validateAgainst(spec.attributes, structuredClone(attributes));
-      problems.push(...check.errors);
-    } catch (err) {
-      problems.push(`declared attribute schema is invalid: ${errorText(err)}`);
-    }
-  }
-  const secrets = live.secretValues.filter((s) => s.length >= 4);
-  if (secrets.length > 0) {
-    const text = JSON.stringify(attributes);
-    if (secrets.some((s) => text.includes(s)))
-      problems.push('an attribute contains a secret value');
-  }
-  return {
-    stage: problems.length > 0 ? 'event_invalid' : null,
-    reason: problems.length > 0 ? problems.join('; ').slice(0, 1000) : null,
-    problems,
-    type,
-    occurredAt: Number.isNaN(occurred.getTime()) ? now : occurred,
-    artifact,
-    attributes: problems.length > 0 && !spec ? {} : attributes,
-    dedupeKey,
-    deliveryId: typeof d.deliveryId === 'string' && d.deliveryId !== '' ? d.deliveryId : null,
-  };
-}
 
 export interface StoreOptions {
   rawRef: string;
@@ -139,7 +47,33 @@ export interface StoreResult {
   received: string[];
 }
 
-export async function storeDrafts(
+interface StoredEvent {
+  id: string;
+  type: string;
+  stage: EventStage;
+  reason: string | null;
+}
+
+async function acceptedCounts(tx: Tx, sourceId: string, now: Date): Promise<DoorCounts> {
+  const [counts] = await tx
+    .select({
+      hour: sql<number>`count(*) filter (where ${events.receivedAt} > ${new Date(now.getTime() - HOUR_MS)})`.mapWith(
+        Number,
+      ),
+      day: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(events)
+    .where(
+      and(
+        eq(events.sourceId, sourceId),
+        gt(events.receivedAt, new Date(now.getTime() - DAY_MS)),
+        inArray(events.stage, ACCEPTED_STAGES),
+      ),
+    );
+  return { hour: counts?.hour ?? 0, day: counts?.day ?? 0 };
+}
+
+async function storeDrafts(
   ctx: Ctx,
   row: SourceRow,
   live: LiveSource,
@@ -148,63 +82,18 @@ export async function storeDrafts(
 ): Promise<StoreResult> {
   const now = ctx.clock.now();
   const checked = drafts.map((d) => checkDraft(d, live, now));
-  const caps = row.caps;
   // The ingest span: each event's match job continues it, and its batch's dispatch links to it.
   const traceContext = ctx.telemetry.traceparent() ?? null;
 
-  const result = await withTx(ctx.db, async (tx) => {
-    const eventIds: string[] = [];
-    const received: { id: string; type: string; stage: EventStage }[] = [];
-    const all: { id: string; type: string; stage: EventStage; reason: string | null }[] = [];
+  const all = await withTx(ctx.db, async (tx) => {
+    const stored: StoredEvent[] = [];
     await lockKey(tx, `source-door:${row.id}`);
-    let hourCount = 0;
-    let dayCount = 0;
-    const capsApply =
-      options.bypassCaps !== true &&
-      (caps.eventCapPerHour !== undefined || caps.eventCapPerDay !== undefined);
-    if (capsApply) {
-      const [counts] = await tx
-        .select({
-          hour: sql<number>`count(*) filter (where ${events.receivedAt} > ${new Date(now.getTime() - 3_600_000)})`.mapWith(
-            Number,
-          ),
-          day: sql<number>`count(*)`.mapWith(Number),
-        })
-        .from(events)
-        .where(
-          and(
-            eq(events.sourceId, row.id),
-            gt(events.receivedAt, new Date(now.getTime() - 86_400_000)),
-            inArray(events.stage, ACCEPTED_STAGES),
-          ),
-        );
-      hourCount = counts?.hour ?? 0;
-      dayCount = counts?.day ?? 0;
-    }
+    let counts = capsApply(row.caps, options.bypassCaps === true)
+      ? await acceptedCounts(tx, row.id, now)
+      : null;
     for (const c of checked) {
-      let stage: EventStage;
-      let reason = c.reason;
-      if (!row.enabled) {
-        stage = 'source_disabled';
-      } else if (c.stage === 'event_invalid') {
-        stage = 'event_invalid';
-      } else if (caps.eventTypesEnabled !== undefined && !caps.eventTypesEnabled.includes(c.type)) {
-        stage = 'type_muted';
-      } else if (
-        capsApply &&
-        ((caps.eventCapPerHour !== undefined && hourCount >= caps.eventCapPerHour) ||
-          (caps.eventCapPerDay !== undefined && dayCount >= caps.eventCapPerDay))
-      ) {
-        stage = 'source_throttled';
-        reason =
-          caps.eventCapPerHour !== undefined && hourCount >= caps.eventCapPerHour
-            ? `eventCapPerHour ${caps.eventCapPerHour}`
-            : `eventCapPerDay ${caps.eventCapPerDay}`;
-      } else {
-        stage = 'received';
-        hourCount++;
-        dayCount++;
-      }
+      const door = doorStage(c, row, counts);
+      counts = door.counts;
       const id = randomUUID();
       const inserted = await tx
         .insert(events)
@@ -221,8 +110,8 @@ export async function storeDrafts(
           dedupeKey: c.dedupeKey,
           deliveryId: c.deliveryId,
           rawRef: options.rawRef,
-          stage,
-          stageReason: reason,
+          stage: door.stage,
+          stageReason: door.reason,
           replayOf: options.replayOf ?? null,
           traceContext,
         })
@@ -230,21 +119,20 @@ export async function storeDrafts(
         .onConflictDoNothing()
         .returning({ id: events.id });
       if (inserted.length === 0) continue;
-      eventIds.push(id);
-      all.push({ id, type: c.type, stage, reason });
-      if (stage === 'received') received.push({ id, type: c.type, stage });
+      stored.push({ id, type: c.type, stage: door.stage, reason: door.reason });
     }
-    if (received.length > 0) {
+    if (stored.some((e) => e.stage === 'received')) {
       await tx
         .update(sources)
         .set({ lastEventAt: now, silenceAlertedAt: null })
         .where(eq(sources.id, row.id));
     }
     if (options.inTx) await options.inTx(tx);
-    return { eventIds, received, all };
+    return stored;
   });
+  const received = all.filter((e) => e.stage === 'received');
 
-  for (const e of result.all) {
+  for (const e of all) {
     ctx.telemetry.decision(
       'switchboard.events',
       { source: row.id, type: e.type, stage: e.stage },
@@ -257,32 +145,51 @@ export async function storeDrafts(
   ctx.telemetry.annotate({
     plugin: live.pluginName,
     'switchboard.source.type': live.typeId,
-    'switchboard.events.count': result.all.length,
-    'switchboard.events.received': result.received.length,
-    event_ids: result.all.map((e) => e.id),
-    ...(result.all.length === 1 ? { event_id: result.all[0]?.id } : {}),
+    'switchboard.events.count': all.length,
+    'switchboard.events.received': received.length,
+    event_ids: all.map((e) => e.id),
+    ...(all.length === 1 ? { event_id: all[0]?.id } : {}),
   });
-  for (const e of result.received) await ctx.queue.send(JOBS.match, { eventId: e.id });
-  return { eventIds: result.eventIds, received: result.received.map((e) => e.id) };
+  for (const e of received) await ctx.queue.send(JOBS.match, { eventId: e.id });
+  return { eventIds: all.map((e) => e.id), received: received.map((e) => e.id) };
 }
 
 async function storeRaw(
   ctx: Ctx,
   sourceId: string,
-  body: Buffer,
-  headers: Record<string, string | undefined>,
-  verify: string,
+  raw: {
+    body: Buffer;
+    headers: Record<string, string | undefined>;
+    verify: string;
+    origin: RawOrigin;
+  },
 ): Promise<string> {
   const ref = randomUUID();
-  await ctx.db.insert(eventRaw).values({
-    ref,
-    sourceId,
-    body,
-    headers,
-    receivedAt: ctx.clock.now(),
-    verify,
-  });
+  await ctx.db.insert(eventRaw).values({ ref, sourceId, ...raw, receivedAt: ctx.clock.now() });
   return ref;
+}
+
+function unverifiedRaw(verify: string) {
+  return { body: Buffer.alloc(0), headers: {}, verify, origin: 'push' as const };
+}
+
+/**
+ * `parse` goes through the plugin-call wrapper (timeout, attribution); a result that is not an
+ * array is counted against the plugin and yields no events.
+ */
+async function parseDrafts(
+  ctx: Ctx,
+  live: LiveSource,
+  req: RawRequest,
+): Promise<{ ok: true; drafts: unknown[] } | { ok: false; error: string }> {
+  const parse = live.source.parse?.bind(live.source);
+  if (!parse) return { ok: true, drafts: [] };
+  const out = await callPlugin(ctx, live.pluginName, 'parse', () => parse(req));
+  if (!out.ok) return out;
+  const parsed: unknown = out.value;
+  if (Array.isArray(parsed)) return { ok: true, drafts: parsed as unknown[] };
+  ctx.runtime.recordPluginError(live.pluginName, 'invalid_event', 'parse did not return an array');
+  return { ok: true, drafts: [] };
 }
 
 export function ingestPush(
@@ -314,7 +221,7 @@ async function ingestPushInSpan(
     if (!live && !row.enabled) {
       // A disabled source always answers 200 so the sender does not enter a retry storm. With
       // no live instance the delivery cannot be verified, so its body is not kept.
-      await storeRaw(ctx, sourceId, Buffer.alloc(0), {}, 'unverified:source_disabled');
+      await storeRaw(ctx, sourceId, unverifiedRaw('unverified:source_disabled'));
       return { status: 200 };
     }
     if (!live) {
@@ -327,66 +234,53 @@ async function ingestPushInSpan(
       return { status: 503 };
     }
 
-    // Derived from the built instance (the webhook's `verification: none`), never from a flag
-    // alone, so a type that must verify can never skip it.
-    const unauthenticated = acceptsUnauthenticated(live.type, live.source);
-    if (!unauthenticated) {
-      let verdict: { ok: boolean; reason?: string };
-      if (!live.source.verify) {
-        verdict = { ok: false, reason: 'source has no verify and its type requires one' };
-      } else {
-        try {
-          verdict = live.source.verify(req);
-        } catch {
-          // Counted against the plugin by the runtime's attribution wrapper.
-          verdict = { ok: false, reason: 'verify threw' };
-        }
-      }
-      if (!verdict.ok) {
-        const reason = verdict.reason ?? 'rejected';
-        ctx.log.warn(
-          { source_id: sourceId, remote_address: req.remoteAddress, reason },
-          'hook rejected by verify',
-        );
-        // Counted for the source's verify-failure chart; the unauthenticated body is not kept.
-        await storeRaw(ctx, sourceId, Buffer.alloc(0), {}, `rejected:${reason}`.slice(0, 200));
-        await ctx.db
-          .update(sources)
-          .set({ lastVerifyFailureAt: ctx.clock.now() })
-          .where(eq(sources.id, sourceId));
-        return { status: 401 };
-      }
+    const verdict = verifyDelivery(live, req);
+    if (!verdict.ok) {
+      const reason = verdict.reason ?? 'rejected';
+      ctx.log.warn(
+        { source_id: sourceId, remote_address: req.remoteAddress, reason },
+        'hook rejected by verify',
+      );
+      // Counted for the source's verify-failure chart; the unauthenticated body is not kept.
+      await storeRaw(ctx, sourceId, unverifiedRaw(`rejected:${reason}`.slice(0, 200)));
+      await ctx.db
+        .update(sources)
+        .set({ lastVerifyFailureAt: ctx.clock.now() })
+        .where(eq(sources.id, sourceId));
+      return { status: 401 };
     }
 
-    const rawRef = await storeRaw(
-      ctx,
-      sourceId,
-      req.body,
-      storedHeaders(req.headers, live.secretValues),
-      'ok',
-    );
-    let drafts: unknown[] = [];
-    if (live.source.parse) {
-      try {
-        const parsed: unknown = await live.source.parse(req);
-        drafts = Array.isArray(parsed) ? parsed : [];
-        if (!Array.isArray(parsed)) {
-          ctx.runtime.recordPluginError(
-            live.pluginName,
-            'invalid_event',
-            'parse did not return an array',
-          );
-        }
-      } catch {
-        // Counted against the plugin by the runtime's attribution wrapper; the raw body is kept.
-        return { status: 200 };
-      }
-    }
-    await storeDrafts(ctx, row, live, drafts, { rawRef });
+    const rawRef = await storeRaw(ctx, sourceId, {
+      body: req.body,
+      headers: storedHeaders(req.headers, live.secretValues),
+      verify: 'ok',
+      origin: 'push',
+    });
+    const parsed = await parseDrafts(ctx, live, req);
+    // A failed parse keeps the raw body for a replay; the sender must not redeliver.
+    if (!parsed.ok) return { status: 200 };
+    await storeDrafts(ctx, row, live, parsed.drafts, { rawRef });
     return { status: 200 };
   } catch (err) {
     ctx.log.error({ err, source_id: sourceId }, 'ingest failed; asking the sender to retry');
     return { status: 503 };
+  }
+}
+
+/**
+ * Derived from the built instance (the webhook's `verification: none`), never from a flag alone,
+ * so a type that must verify can never skip it.
+ */
+function verifyDelivery(live: LiveSource, req: RawRequest): { ok: boolean; reason?: string } {
+  if (acceptsUnauthenticated(live.type, live.source)) return { ok: true };
+  if (!live.source.verify) {
+    return { ok: false, reason: 'source has no verify and its type requires one' };
+  }
+  try {
+    return live.source.verify(req);
+  } catch {
+    // Counted against the plugin by the runtime's attribution wrapper.
+    return { ok: false, reason: 'verify threw' };
   }
 }
 
@@ -415,19 +309,28 @@ async function pollSourceInSpan(ctx: Ctx, sourceId: string): Promise<void> {
     ctx.runtime.recordPluginError(live.pluginName, 'exception', 'poll returned no result object');
     return;
   }
-  const { events: polledEvents, watermark: next } = out as {
+  const {
+    events: polledEvents,
+    watermark: next,
+    notes: rawNotes,
+  } = out as {
     events?: unknown;
     watermark?: unknown;
+    notes?: unknown;
   };
   const drafts = Array.isArray(polledEvents) ? (polledEvents as unknown[]) : [];
+  const notes = sourceNotes(rawNotes);
+  ctx.telemetry.annotate({ 'switchboard.poll.notes': notes.length });
+  if (notes.length > 0) {
+    ctx.log.info({ source_id: sourceId, notes }, 'poll dropped part of its results');
+  }
   const watermark = typeof next === 'string' ? next : row.watermark;
-  const rawRef = await storeRaw(
-    ctx,
-    sourceId,
-    Buffer.from(JSON.stringify(drafts)),
-    { 'x-switchboard-origin': 'poll' },
-    'ok',
-  );
+  const rawRef = await storeRaw(ctx, sourceId, {
+    body: Buffer.from(JSON.stringify(drafts)),
+    headers: {},
+    verify: 'ok',
+    origin: 'poll',
+  });
   try {
     await storeDrafts(ctx, row, live, drafts, {
       rawRef,
@@ -454,6 +357,19 @@ class WatermarkMoved extends Error {
   override readonly name = 'WatermarkMoved';
 }
 
+async function liveSourceOrThrow(
+  ctx: Ctx,
+  sourceId: string,
+): Promise<{ row: SourceRow; live: LiveSource }> {
+  const row = await findOrThrow('source', sourceId, async () => {
+    const [found] = await ctx.db.select().from(sources).where(eq(sources.id, sourceId));
+    return found;
+  });
+  const live = ctx.runtime.source(sourceId);
+  if (!live) throw new PipelineError('unavailable', `source ${row.name} has no live instance`);
+  return { row, live };
+}
+
 export function replayEvent(
   ctx: Ctx,
   eventId: string,
@@ -473,18 +389,15 @@ async function replayEventInSpan(
   actor: string,
   reason: string,
 ): Promise<{ eventIds: string[] }> {
-  if (!isUuid(eventId)) throw new PipelineError('not_found', `event ${eventId} not found`);
-  const [event] = await ctx.db.select().from(events).where(eq(events.id, eventId));
-  if (!event) throw new PipelineError('not_found', `event ${eventId} not found`);
+  const event = await findOrThrow('event', eventId, async () => {
+    const [found] = await ctx.db.select().from(events).where(eq(events.id, eventId));
+    return found;
+  });
   const [raw] = await ctx.db.select().from(eventRaw).where(eq(eventRaw.ref, event.rawRef));
-  const [row] = await ctx.db.select().from(sources).where(eq(sources.id, event.sourceId));
-  if (!row) throw new PipelineError('not_found', `source ${event.sourceId} not found`);
-  const live = ctx.runtime.source(event.sourceId);
-  if (!live) throw new PipelineError('unavailable', `source ${row.name} has no live instance`);
+  const { row, live } = await liveSourceOrThrow(ctx, event.sourceId);
 
-  const origin = raw?.headers['x-switchboard-origin'];
   let drafts: unknown[];
-  if (!raw || origin === 'poll' || origin === 'test' || !live.source.parse) {
+  if (raw?.origin !== 'push' || !live.source.parse) {
     if (!raw && live.source.parse) {
       throw new PipelineError('not_found', 'the raw body is no longer stored (retention)');
     }
@@ -500,21 +413,18 @@ async function replayEventInSpan(
       },
     ];
   } else {
-    const req: RawRequest = {
+    const parsed = await parseDrafts(ctx, live, {
       method: 'POST',
       path: `/hooks/${event.sourceId}`,
       headers: raw.headers,
       query: {},
       body: raw.body,
       receivedAt: raw.receivedAt.toISOString(),
-    };
-    try {
-      const parsed: unknown = await live.source.parse(req);
-      drafts = Array.isArray(parsed) ? parsed : [];
-    } catch (err) {
-      // Already counted against the plugin by the runtime's attribution wrapper.
-      throw new PipelineError('invalid', `parse failed on replay: ${errorText(err)}`);
+    });
+    if (!parsed.ok) {
+      throw new PipelineError('invalid', `parse failed on replay: ${parsed.error}`);
     }
+    drafts = parsed.drafts;
   }
   const out = await storeDrafts(ctx, row, live, drafts, {
     rawRef: event.rawRef,
@@ -554,11 +464,7 @@ async function injectTestEventInSpan(
   actor: string,
   reason: string,
 ): Promise<{ eventIds: string[] }> {
-  if (!isUuid(sourceId)) throw new PipelineError('not_found', `source ${sourceId} not found`);
-  const [row] = await ctx.db.select().from(sources).where(eq(sources.id, sourceId));
-  if (!row) throw new PipelineError('not_found', `source ${sourceId} not found`);
-  const live = ctx.runtime.source(sourceId);
-  if (!live) throw new PipelineError('unavailable', `source ${row.name} has no live instance`);
+  const { row, live } = await liveSourceOrThrow(ctx, sourceId);
   const spec =
     type === undefined ? live.eventTypes[0] : live.eventTypes.find((t) => t.type === type);
   if (!spec) {
@@ -577,13 +483,12 @@ async function injectTestEventInSpan(
     attributes,
     dedupeKey: `${spec.type}:test:${nonce}`,
   };
-  const rawRef = await storeRaw(
-    ctx,
-    sourceId,
-    Buffer.from(JSON.stringify(draft)),
-    { 'x-switchboard-origin': 'test' },
-    'ok',
-  );
+  const rawRef = await storeRaw(ctx, sourceId, {
+    body: Buffer.from(JSON.stringify(draft)),
+    headers: {},
+    verify: 'ok',
+    origin: 'test',
+  });
   const out = await storeDrafts(ctx, row, live, [draft], { rawRef, bypassCaps: true });
   await recordAudit(ctx.db, {
     actor,

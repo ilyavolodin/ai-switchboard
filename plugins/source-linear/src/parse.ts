@@ -4,9 +4,14 @@ import {
   type Attributes,
   type EventDraft,
   type RawRequest,
+  asArray,
+  asNumber,
+  asObject,
+  parseJsonObject,
+  getPath,
+  asString,
+  type JsonObject,
 } from '@ai-switchboard/sdk';
-
-import { arr, num, obj, parseJsonObject, path, str, type Json } from './json.js';
 
 /** `updatedFrom` keys that are bookkeeping, not a change a person would filter on. */
 const BOOKKEEPING = new Set([
@@ -30,21 +35,21 @@ const DEDICATED = new Set([
 ]);
 
 function strings(value: unknown): string[] {
-  return arr(value).filter((v): v is string => typeof v === 'string');
+  return asArray(value).filter((v): v is string => typeof v === 'string');
 }
 
 function iso(value: unknown): string | undefined {
-  const s = str(value);
+  const s = asString(value);
   if (s === undefined) return undefined;
   const ms = Date.parse(s);
   return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
 }
 
 /** Team key from the payload, or the identifier's prefix (`LOL-1712` → `LOL`). */
-export function teamKey(data: Json): string | undefined {
-  const key = str(path(data, 'team', 'key'));
+export function teamKey(data: JsonObject): string | undefined {
+  const key = asString(getPath(data, 'team', 'key'));
   if (key !== undefined) return key;
-  const identifier = str(data.identifier);
+  const identifier = asString(data.identifier);
   const dash = identifier?.lastIndexOf('-') ?? -1;
   return identifier !== undefined && dash > 0 ? identifier.slice(0, dash) : undefined;
 }
@@ -55,39 +60,43 @@ function teamAllowed(key: string | undefined, allowlist: string[]): boolean {
   return allowlist.some((k) => k.toLowerCase() === key.toLowerCase());
 }
 
-function actorName(body: Json): string {
-  return str(path(body, 'actor', 'name')) ?? str(path(body, 'data', 'user', 'name')) ?? '';
+function actorName(body: JsonObject): string {
+  return (
+    asString(getPath(body, 'actor', 'name')) ??
+    asString(getPath(body, 'data', 'user', 'name')) ??
+    ''
+  );
 }
 
-function issueAttributes(data: Json, actor: string): Attributes {
+function issueAttributes(data: JsonObject, actor: string): Attributes {
   const attrs: Attributes = {
     team: teamKey(data) ?? '',
-    identifier: str(data.identifier) ?? '',
-    title: str(data.title) ?? '',
-    labels: arr(data.labels).flatMap((l) => {
-      const name = str(obj(l)?.name);
+    identifier: asString(data.identifier) ?? '',
+    title: asString(data.title) ?? '',
+    labels: asArray(data.labels).flatMap((l) => {
+      const name = asString(asObject(l)?.name);
       return name === undefined ? [] : [name];
     }),
     actor,
   };
-  const state = str(path(data, 'state', 'name'));
+  const state = asString(getPath(data, 'state', 'name'));
   if (state !== undefined) attrs.state = state;
-  const stateType = str(path(data, 'state', 'type'));
+  const stateType = asString(getPath(data, 'state', 'type'));
   if (stateType !== undefined) attrs.stateType = stateType;
-  const priority = num(data.priority);
+  const priority = asNumber(data.priority);
   if (priority !== undefined && Number.isInteger(priority)) attrs.priority = priority;
-  const priorityLabel = str(data.priorityLabel);
+  const priorityLabel = asString(data.priorityLabel);
   if (priorityLabel !== undefined) attrs.priorityLabel = priorityLabel;
-  const assignee = str(path(data, 'assignee', 'name'));
+  const assignee = asString(getPath(data, 'assignee', 'name'));
   if (assignee !== undefined) attrs.assignee = assignee;
   return attrs;
 }
 
-function issueArtifact(data: Json, version: string | undefined): ArtifactRef | undefined {
-  const identifier = str(data.identifier);
+function issueArtifact(data: JsonObject, version: string | undefined): ArtifactRef | undefined {
+  const identifier = asString(data.identifier);
   if (identifier === undefined || identifier === '') return undefined;
   const ref: ArtifactRef = { kind: 'linear.issue', id: identifier };
-  const url = str(data.url);
+  const url = asString(data.url);
   if (url !== undefined) ref.url = url;
   if (version !== undefined && version !== '') ref.version = version;
   return ref;
@@ -100,10 +109,10 @@ interface Draft {
   occurredAt: string;
 }
 
-function issueEvents(body: Json, data: Json, fallback: string): Draft[] {
-  const action = str(body.action);
+function issueEvents(body: JsonObject, data: JsonObject, fallback: string): Draft[] {
+  const action = asString(body.action);
   const actor = actorName(body);
-  const updatedAt = str(data.updatedAt);
+  const updatedAt = asString(data.updatedAt);
   const base = issueAttributes(data, actor);
 
   if (action === 'create') {
@@ -114,7 +123,7 @@ function issueEvents(body: Json, data: Json, fallback: string): Draft[] {
   }
   if (action !== 'update') return [];
 
-  const from = obj(body.updatedFrom) ?? {};
+  const from = asObject(body.updatedFrom) ?? {};
   const occurredAt = iso(updatedAt) ?? iso(body.createdAt) ?? fallback;
   const drafts: Draft[] = [];
 
@@ -123,10 +132,10 @@ function issueEvents(body: Json, data: Json, fallback: string): Draft[] {
     const after = strings(data.labelIds);
     const afterSet = new Set(after);
     const names = new Map(
-      arr(data.labels).flatMap((l) => {
-        const o = obj(l);
-        const id = str(o?.id);
-        const name = str(o?.name);
+      asArray(data.labels).flatMap((l) => {
+        const o = asObject(l);
+        const id = asString(o?.id);
+        const name = asString(o?.name);
         return id !== undefined && name !== undefined ? [[id, name] as const] : [];
       }),
     );
@@ -151,17 +160,17 @@ function issueEvents(body: Json, data: Json, fallback: string): Draft[] {
     }
   }
 
-  const fromStateId = str(from.stateId);
+  const fromStateId = asString(from.stateId);
   if (fromStateId !== undefined) {
     const artifact = issueArtifact(data, updatedAt);
     if (artifact) {
       const attributes: Attributes = {
         ...base,
         fromStateId,
-        toState: str(path(data, 'state', 'name')) ?? '',
-        toStateId: str(data.stateId) ?? str(path(data, 'state', 'id')) ?? '',
+        toState: asString(getPath(data, 'state', 'name')) ?? '',
+        toStateId: asString(data.stateId) ?? asString(getPath(data, 'state', 'id')) ?? '',
       };
-      const fromState = str(path(from, 'state', 'name'));
+      const fromState = asString(getPath(from, 'state', 'name'));
       if (fromState !== undefined) attributes.fromState = fromState;
       drafts.push({ type: 'linear.issue.state_changed', artifact, attributes, occurredAt });
     }
@@ -185,24 +194,24 @@ function issueEvents(body: Json, data: Json, fallback: string): Draft[] {
   return drafts;
 }
 
-function commentEvents(body: Json, data: Json, fallback: string): Draft[] {
-  if (str(body.action) !== 'create') return [];
-  const issue = obj(data.issue) ?? {};
-  const commentId = str(data.id);
+function commentEvents(body: JsonObject, data: JsonObject, fallback: string): Draft[] {
+  if (asString(body.action) !== 'create') return [];
+  const issue = asObject(data.issue) ?? {};
+  const commentId = asString(data.id);
   // Linear names the issue by identifier when it includes one; the issue id also resolves.
-  const identifier = str(issue.identifier) ?? str(issue.id) ?? str(data.issueId);
+  const identifier = asString(issue.identifier) ?? asString(issue.id) ?? asString(data.issueId);
   if (commentId === undefined || identifier === undefined) return [];
   const artifact: ArtifactRef = {
     kind: 'linear.issue',
     id: identifier,
     version: `comment:${commentId}`,
   };
-  const url = str(issue.url);
+  const url = asString(issue.url);
   if (url !== undefined) artifact.url = url;
   const attributes: Attributes = { identifier, actor: actorName(body), commentId };
   const team = teamKey(issue);
   if (team !== undefined) attributes.team = team;
-  const title = str(issue.title);
+  const title = asString(issue.title);
   if (title !== undefined) attributes.title = title;
   return [
     {
@@ -216,10 +225,10 @@ function commentEvents(body: Json, data: Json, fallback: string): Draft[] {
 
 export function parseDelivery(req: RawRequest, teamKeys: string[]): EventDraft[] {
   const body = parseJsonObject(req.body.toString('utf8'));
-  const data = obj(body?.data);
+  const data = asObject(body?.data);
   if (!body || !data) return [];
-  const type = str(body.type);
-  const scope = type === 'Comment' ? (obj(data.issue) ?? {}) : data;
+  const type = asString(body.type);
+  const scope = type === 'Comment' ? (asObject(data.issue) ?? {}) : data;
   if (!teamAllowed(teamKey(scope), teamKeys)) return [];
   const header = req.headers['linear-delivery'];
   const deliveryId = header === undefined || header === '' ? undefined : header;

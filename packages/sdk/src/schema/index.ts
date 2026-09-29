@@ -45,3 +45,12 @@ export {
   formatSecretRef,
 } from './secret-refs.js';
 export type { SecretRef } from './secret-refs.js';
+
+export {
+  ATTRIBUTE_KINDS,
+  ATTRIBUTE_NAME_PATTERN,
+  customEventTypePattern,
+  eventTypeDefinitionSchema,
+  openAttributesSchema,
+} from '../custom-events.js';
+export type { AttributeKind, AttributeDefinition, EventTypeDefinition } from '../custom-events.js';

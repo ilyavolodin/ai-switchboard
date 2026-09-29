@@ -2,13 +2,12 @@ import { resolve } from 'node:path';
 
 import { Command } from 'commander';
 
+import { DEFAULT_HOME } from '@ai-switchboard/core/domain';
 import { SDK_VERSION } from '@ai-switchboard/sdk';
 
 import type { CliDeps } from '../deps.js';
 import { fields, formatCapabilities, shortIntegrity, table } from '../output.js';
 import { run } from './run.js';
-
-export const DEFAULT_HOME = './.switchboard';
 
 interface HomeOptions {
   home?: string;
@@ -28,7 +27,7 @@ function typesLine(types: { kind: string; typeId: string }[] | undefined): strin
 const homeOption = (cmd: Command): Command =>
   cmd.option(
     '--home <dir>',
-    `$SWITCHBOARD_HOME: installs go to <dir>/plugins (env SWITCHBOARD_HOME, default ${DEFAULT_HOME})`,
+    `$SWITCHBOARD_HOME: installs go to <dir>/plugins (env SWITCHBOARD_HOME, default ./${DEFAULT_HOME})`,
   );
 
 export function pluginsCommand(deps: CliDeps): Command {

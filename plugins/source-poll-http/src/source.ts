@@ -1,7 +1,10 @@
 import {
+  checkHealth,
   compileEventTypes,
-  dedupeKey,
+  describeMappedDrop,
+  draftFromMapped,
   narrowMapped,
+  withSettings,
   type EventDraft,
   type EventTypeSpec,
   type Health,
@@ -15,7 +18,13 @@ import {
 } from '@ai-switchboard/sdk';
 
 import { asList, compileExpression } from './mapping.js';
-import { readSettings, settingsSchema, SOURCE_ID, type PollHttpSettings } from './settings.js';
+import {
+  PollHttpSettingsError,
+  readSettings,
+  settingsSchema,
+  SOURCE_ID,
+  type PollHttpSettings,
+} from './settings.js';
 import { decodeWatermark, encodeWatermark, selectNew } from './watermark.js';
 
 export class PollError extends Error {
@@ -56,8 +65,7 @@ function readJson(res: HttpResponse, host: string): unknown {
   }
 }
 
-function createPollSource(settings: Settings, ctx: PluginContext): Source {
-  const s = readSettings(settings);
+function createPollSource(s: PollHttpSettings, ctx: PluginContext): Source {
   const types = compileEventTypes(SOURCE_ID, s.eventTypes);
   const itemsExpr = compileExpression(s.itemsExpression, 'items expression');
   const mapping = compileExpression(s.mapping, 'mapping');
@@ -77,22 +85,26 @@ function createPollSource(settings: Settings, ctx: PluginContext): Source {
     const items = asList(await itemsExpr.evaluate(body, pollTime));
 
     const drafts: EventDraft[] = [];
+    const notes: string[] = [];
     for (const item of items) {
-      for (const result of asList(await mapping.evaluate({ item, response }, pollTime))) {
+      const results = asList(await mapping.evaluate({ item, response }, pollTime));
+      for (const [i, result] of results.entries()) {
         const mapped = narrowMapped(result, types);
-        if (!mapped) continue;
-        const occurredAt = mapped.occurredAt ?? pollTime;
-        drafts.push({
-          type: mapped.type,
-          occurredAt,
-          artifact: mapped.artifact,
-          attributes: mapped.attributes,
-          // Without a version or delivery id, the item's time tells two changes apart.
-          dedupeKey: dedupeKey(mapped.type, mapped.artifact, mapped.deliveryId ?? occurredAt),
-          ...(mapped.deliveryId !== undefined ? { deliveryId: mapped.deliveryId } : {}),
-        });
+        if (!mapped) {
+          notes.push(describeMappedDrop(result, types, i));
+          continue;
+        }
+        // Without a version or delivery id, the item's time tells two changes apart.
+        drafts.push(
+          draftFromMapped(mapped, {
+            occurredAt: pollTime,
+            fallbackDiscriminator: mapped.occurredAt ?? pollTime,
+          }),
+        );
       }
     }
+    if (notes.length > 0)
+      ctx.logger.warn('poll-http dropped mapping results', { dropped: notes.length });
 
     const selected = selectNew(drafts, state);
     let cursor = selected.at ?? state.cursor;
@@ -108,23 +120,19 @@ function createPollSource(settings: Settings, ctx: PluginContext): Source {
     return {
       events: selected.events,
       watermark: encodeWatermark({ cursor, at: selected.at, seen: selected.seen }),
+      ...(notes.length > 0 ? { notes } : {}),
     };
   }
 
-  async function health(): Promise<Health> {
-    const checkedAt = ctx.now().toISOString();
-    if (s.healthUrl === undefined) {
-      return { status: 'unknown', message: 'No health URL configured.', checkedAt };
-    }
-    try {
+  function health(): Promise<Health> {
+    return checkHealth(ctx, async () => {
+      if (s.healthUrl === undefined)
+        return { status: 'unknown', message: 'No health URL configured.' };
       const res = await ctx.http.get(s.healthUrl, { headers: authHeaders(s) });
       return res.ok
-        ? { status: 'healthy', checkedAt }
-        : { status: 'unhealthy', message: `Health URL answered ${res.status}`, checkedAt };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return { status: 'unhealthy', message, checkedAt };
-    }
+        ? { status: 'healthy' }
+        : { status: 'unhealthy', message: `Health URL answered ${res.status}` };
+    });
   }
 
   return { poll, health };
@@ -165,5 +173,7 @@ export const pollHttpSource: SourceType = {
     },
   ],
   instanceEventTypes,
-  create: createPollSource,
+  create: withSettings(settingsSchema, 'poll-http settings', createPollSource, {
+    error: PollHttpSettingsError,
+  }),
 };

@@ -1,3 +1,5 @@
+import { isUuid } from '../../util/uuid.js';
+
 export type PipelineErrorCode = 'not_found' | 'conflict' | 'invalid' | 'unavailable';
 
 export class PipelineError extends Error {
@@ -31,4 +33,19 @@ export class PipelineError extends Error {
 
 export function isPipelineError(err: unknown): err is PipelineError {
   return err instanceof Error && err.name === 'PipelineError' && 'code' in err;
+}
+
+export function notFound(what: string, id: string): PipelineError {
+  return new PipelineError('not_found', `${what} ${id} not found`);
+}
+
+/** A malformed id is as absent as an unknown one; `load` runs only for a well-formed id. */
+export async function findOrThrow<T>(
+  what: string,
+  id: string,
+  load: () => Promise<T | undefined>,
+): Promise<T> {
+  const row = isUuid(id) ? await load() : undefined;
+  if (row === undefined) throw notFound(what, id);
+  return row;
 }

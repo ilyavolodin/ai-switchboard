@@ -2,41 +2,35 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { Health, InvokeResult, TrackingMode } from '@ai-switchboard/sdk';
 
-import { batches, destinations, processes, runs } from '../../db/schema.js';
-import { resolveSecretRefs } from '../../expr/index.js';
-import { redactSecretValues } from '../../secrets/refs.js';
+import { batches, destinations, runs } from '../../db/schema.js';
 import {
   classifyInvoke,
   effectiveInvokeTimeoutSeconds,
   invokeAttemptDeadline,
   MAX_INVOKE_ATTEMPTS,
+  NO_LIVE_INSTANCE_RETRY_SECONDS,
   statusAfterStart,
   type InvokeClassification,
   type InvokeOutcome,
 } from '../../pipeline/invoke.js';
-
+import { redactSecretValues } from '../../secrets/refs.js';
 import { errorText } from '../../util/errors.js';
-import { JOBS, addSeconds, beforeStepBudgetSeconds, withTimeout, type Ctx } from './context.js';
+import { addSeconds } from '../../util/time.js';
+
+import type { Ctx } from './context.js';
+import { JOBS } from './jobs.js';
 import { batchEvents } from './load.js';
 import { sendSystemAlert } from './notify.js';
+import { beforeStepBudgetSeconds, resolveForPluginCall, timedCall } from './plugin-call.js';
 import { closeRun, markUncertain, recordUpdate, runHandle, scheduleTracking } from './runs.js';
-import { runSteps, type RunRow } from './steps.js';
+import { runSteps } from './steps.js';
+import { runTarget } from './target.js';
+import type { RunRow } from './views.js';
 
 /**
  * The attempt is claimed with a conditional update, so two replicas never invoke the same run.
  * Secret references in the input are resolved immediately before the call and never stored.
  */
-
-function targetFor(
-  document: { destination: { target: unknown } },
-  defaults: Record<string, unknown>,
-): unknown {
-  const t = document.destination.target;
-  if (t !== null && typeof t === 'object' && !Array.isArray(t)) {
-    return { ...defaults, ...(t as Record<string, unknown>) };
-  }
-  return t ?? defaults;
-}
 
 function isInvokeResult(value: unknown): value is InvokeResult {
   return (
@@ -55,16 +49,10 @@ export function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
 async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
   const [pending] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
   if (pending?.status !== 'invoking' || pending.invokeStartedAt !== null) return;
-  const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, pending.processId));
-  const [exRow] = await ctx.db
-    .select()
-    .from(destinations)
-    .where(eq(destinations.id, pending.destinationId));
-  const live = ctx.runtime.destination(pending.destinationId);
-  const target = proc && exRow ? targetFor(proc.document, exRow.targetDefaults) : undefined;
+  const resolved = await runTarget(ctx, pending);
   const timeoutSeconds = effectiveInvokeTimeoutSeconds({
-    cap: exRow?.caps.invokeTimeoutSeconds,
-    perTarget: live && proc && exRow ? live.invokeTimeoutFor(target) : undefined,
+    cap: resolved.row?.caps.invokeTimeoutSeconds,
+    perTarget: resolved.ready ? resolved.live.invokeTimeoutFor(resolved.target) : undefined,
   });
 
   // Claim the attempt with its recovery deadline: until then recovery leaves it alone, since the
@@ -73,7 +61,7 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
   const deadline = invokeAttemptDeadline(
     now,
     timeoutSeconds,
-    beforeStepBudgetSeconds(ctx, proc?.document.before.length ?? 0),
+    beforeStepBudgetSeconds(ctx, resolved.proc?.document.before.length ?? 0),
   );
   const [run] = await ctx.db
     .update(runs)
@@ -90,16 +78,16 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
     process_id: run.processId,
     batch_id: run.batchId,
     destination_id: run.destinationId,
-    plugin: live?.pluginName,
+    plugin: resolved.live?.pluginName,
     'switchboard.invoke.attempt': run.attempts,
     'switchboard.run.dry_run': run.dryRun,
   });
-  if (!proc || !exRow || !live) {
+  if (!resolved.ready) {
     // Nothing was sent: retry later, like a connection refused.
     const reason = `destination ${run.destinationId} has no live instance`;
     const cls: InvokeClassification =
       run.attempts < MAX_INVOKE_ATTEMPTS
-        ? { action: 'retry', reason, delaySeconds: 30 }
+        ? { action: 'retry', reason, delaySeconds: NO_LIVE_INSTANCE_RETRY_SECONDS }
         : {
             action: 'failed',
             reason: 'destination_unavailable',
@@ -108,6 +96,7 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
     await apply(ctx, run, cls, 'none');
     return;
   }
+  const { proc, live, target } = resolved;
   const tracking = live.trackingFor(target);
   const idempotent = live.idempotentFor(target);
 
@@ -133,14 +122,14 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
     }
   }
 
-  const secretValues: string[] = [...(live.secretValues ?? [])];
   let input: unknown;
+  let secretValues: readonly string[];
   try {
-    input = await resolveSecretRefs(run.input, async (ref) => {
-      const value = await ctx.secrets.resolve(ref);
-      secretValues.push(value);
-      return value;
-    });
+    ({ value: input, secretValues } = await resolveForPluginCall(
+      ctx,
+      run.input,
+      live.secretValues ?? [],
+    ));
   } catch (err) {
     await apply(
       ctx,
@@ -156,7 +145,7 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
   let outcome: InvokeOutcome;
   try {
     const handle = runHandle(ctx, run, proc.name);
-    const answered = await withTimeout(timeoutSeconds * 1000, () =>
+    const answered = await timedCall(timeoutSeconds * 1000, () =>
       live.destination.invoke(target, input, handle),
     );
     if (answered.timedOut) {

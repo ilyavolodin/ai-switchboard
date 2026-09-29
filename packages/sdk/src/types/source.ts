@@ -26,6 +26,8 @@ export interface ParseReport {
 export interface PollResult {
   events: EventDraft[];
   watermark: string;
+  /** Why parts of the response produced no event. Never a secret or the raw body. */
+  notes?: string[];
 }
 
 export interface Source {

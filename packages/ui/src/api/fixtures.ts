@@ -1,5 +1,6 @@
 // Mirrors the "AI Switchboard UI" design canvas. Times are relative to `now`, so a fixed `now`
 // gives stable data in tests.
+import { runStatusLabel } from '@ai-switchboard/core/domain';
 import type {
   AboutResponse,
   ActivityRow,
@@ -391,6 +392,7 @@ export function buildFixtures(now: number) {
       { processId: P.autofix, processName: 'Autofix', events: 85, sweeps: 95 },
       { processId: P.triage, processName: 'Triage', events: 85, sweeps: 95 },
     ],
+    ceilingState: 'below',
     primary: true,
   };
   const weekly: MeterGaugeDTO = {
@@ -433,6 +435,7 @@ export function buildFixtures(now: number) {
     estimated: false,
     stale: false,
     ceilings: [],
+    ceilingState: 'below',
     primary: true,
   };
   const routinesMeters = [fiveHour, weekly, dailyRuns];
@@ -1217,7 +1220,7 @@ export function buildFixtures(now: number) {
     reached: 0 | 1 | 2 | 3 | 4 | 5,
     tone: StatusTone,
     label: string,
-    procs: ActivityRow['processes'],
+    procs: Omit<ActivityRow['processes'][number], 'statusLabel'>[],
   ): ActivityRow => ({
     eventId,
     sourceId,
@@ -1228,7 +1231,10 @@ export function buildFixtures(now: number) {
     artifact,
     stage: reached === 1 ? 'unmatched' : 'matched',
     indicator: { reached, tone, label },
-    processes: procs,
+    processes: procs.map((p) => ({
+      ...p,
+      statusLabel: p.runStatus ? runStatusLabel(p.runStatus) : null,
+    })),
     replayOf: null,
     whyNothingRan: null,
   });
@@ -1776,6 +1782,7 @@ export function buildFixtures(now: number) {
       processId: r.processId,
       processName: r.processName,
       status: r.status,
+      statusLabel: runStatusLabel(r.status),
     })),
   };
 

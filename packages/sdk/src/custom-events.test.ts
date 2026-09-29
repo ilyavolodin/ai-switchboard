@@ -4,6 +4,8 @@ import {
   coerceAttribute,
   compileEventTypes,
   customEventTypePattern,
+  describeMappedDrop,
+  draftFromMapped,
   eventTypeDefinitionSchema,
   attributeKey,
   flattenAttributes,
@@ -128,5 +130,72 @@ describe('open attribute schemas (1.4)', () => {
     for (const key of Object.keys(flattenAttributes(body))) {
       expect(key).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
     }
+  });
+});
+
+describe('describeMappedDrop', () => {
+  const types = compileEventTypes('poll-http', defs);
+  it.each([
+    ['not an object', 'x', 'Mapping result 2 is not an object, so it was dropped.'],
+    ['no type', {}, 'Mapping result 2 has no "type", so it was dropped.'],
+    [
+      'an undeclared type',
+      { type: 'poll-http.other.thing' },
+      `Mapping result 2 has type poll-http.other.thing, which is not one of the event types (${[...types.keys()].join(', ')}), so it was dropped.`,
+    ],
+    [
+      'no artifact',
+      { type: 'poll-http.deploy.finished' },
+      'Mapping result 2 (poll-http.deploy.finished) needs an artifact with a "kind" and an "id", so it was dropped.',
+    ],
+  ])('names why a result with %s was dropped', (_label, item, expected) => {
+    expect(describeMappedDrop(item, types, 1)).toBe(expected);
+  });
+});
+
+describe('draftFromMapped', () => {
+  const artifact = { kind: 'deploy', id: 'd1' };
+  const mapped = {
+    type: 'poll-http.deploy.finished',
+    artifact,
+    attributes: {},
+    occurredAt: undefined,
+    deliveryId: undefined,
+  };
+  it.each([
+    [
+      'the fallbacks when the mapping gave nothing',
+      mapped,
+      { occurredAt: 't0', fallbackDiscriminator: 'hash' },
+      { occurredAt: 't0', dedupeKey: 'poll-http.deploy.finished:deploy:d1:hash' },
+    ],
+    [
+      'the option delivery id over the discriminator',
+      mapped,
+      { occurredAt: 't0', deliveryId: 'del-1', fallbackDiscriminator: 'hash' },
+      { deliveryId: 'del-1', dedupeKey: 'poll-http.deploy.finished:deploy:d1:del-1' },
+    ],
+    [
+      'the mapped values over the options',
+      { ...mapped, occurredAt: 't1', deliveryId: 'del-2' },
+      { occurredAt: 't0', deliveryId: 'del-1' },
+      {
+        occurredAt: 't1',
+        deliveryId: 'del-2',
+        dedupeKey: 'poll-http.deploy.finished:deploy:d1:del-2',
+      },
+    ],
+    [
+      'the artifact version over any delivery id',
+      { ...mapped, artifact: { ...artifact, version: 'v3' }, deliveryId: 'del-2' },
+      { occurredAt: 't0' },
+      { dedupeKey: 'poll-http.deploy.finished:deploy:d1:v3' },
+    ],
+  ])('uses %s', (_label, input, options, expected) => {
+    expect(draftFromMapped(input, options)).toMatchObject(expected);
+  });
+
+  it('omits deliveryId when there is none', () => {
+    expect(draftFromMapped(mapped, { occurredAt: 't0' })).not.toHaveProperty('deliveryId');
   });
 });

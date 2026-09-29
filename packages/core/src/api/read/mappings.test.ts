@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { instanceStatus, processStatus, runStatusLabel } from '../../domain/labels.js';
 import { RUN_STATUSES } from '../../domain/status.js';
 import { indicatorFor, safeHeaders } from './activity.js';
-import { decodeCursor, encodeCursor, pageLimit } from './paging.js';
 import { dotsFrom, nextSweepAt } from './processes.js';
 import { defaultProcessDocument } from '../../domain/process.js';
 
@@ -132,24 +131,6 @@ describe('pipeline dots', () => {
     );
     doc.schedules = [];
     expect(nextSweepAt(doc, new Date())).toBeNull();
-  });
-});
-
-describe('paging', () => {
-  it('round-trips cursors and clamps limits', () => {
-    const c = encodeCursor({ t: '2026-01-01T00:00:00.000Z', id: 'x' });
-    expect(decodeCursor(c)).toEqual({ t: '2026-01-01T00:00:00.000Z', id: 'x' });
-    expect(decodeCursor('garbage')).toBeNull();
-    expect(pageLimit(undefined)).toBe(50);
-    expect(pageLimit('1000')).toBe(200);
-    expect(pageLimit(-1)).toBe(50);
-  });
-});
-
-describe('paging edge cases', () => {
-  it('refuses a cursor whose time is not a time', () => {
-    const bad = encodeCursor({ t: 'soon' });
-    expect(() => decodeCursor(bad)).toThrow(/cursor is not a valid time/);
   });
 });
 

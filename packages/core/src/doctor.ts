@@ -4,13 +4,22 @@ import { sql } from 'drizzle-orm';
 
 import { systemClock } from './clock.js';
 import type { CoreConfig } from './config.js';
-import { connect, migrationsFolder } from './db/client.js';
-import { destinations, notifiers, secretProviders, sources } from './db/schema.js';
+import { connect, migrationsFolder, type Db } from './db/client.js';
+import { INSTANCE_TABLES, type InstanceTable } from './db/instance-tables.js';
+import type { InstanceKind } from './domain/status.js';
 import { silentLogger } from './logger.js';
+import { probeHealth } from './plugins/health.js';
 import { PluginHost } from './plugins/host.js';
+import { BUILD_ORDER, KIND_SPECS } from './plugins/instances/kind-specs.js';
 import { createRecordingTelemetry } from './telemetry/telemetry.js';
 import { errorText } from './util/errors.js';
-import { withTimeout } from './util/timeout.js';
+
+const KIND_LABELS: Record<InstanceKind, string> = {
+  source: 'source',
+  destination: 'destination',
+  notifier: 'notifier',
+  secret_provider: 'secret provider',
+};
 
 export interface DoctorCheck {
   name: string;
@@ -18,7 +27,35 @@ export interface DoctorCheck {
   detail: string;
 }
 
-/** Read-only except for the plugin registry refresh the host does. */
+async function instanceChecks<K extends InstanceKind>(
+  db: Db,
+  host: PluginHost,
+  kind: K,
+): Promise<DoctorCheck[]> {
+  const t: InstanceTable = INSTANCE_TABLES[kind];
+  const rows = await db.select({ id: t.id, name: t.name, enabled: t.enabled }).from(t);
+  const checks: DoctorCheck[] = [];
+  for (const row of rows) {
+    if (!row.enabled) continue;
+    const name = `${KIND_LABELS[kind]} ${row.name}`;
+    const error = host.instanceError(row.id);
+    const live = host.instance(kind, row.id);
+    if (!live || (error !== undefined && error !== 'disabled')) {
+      checks.push({ name, ok: false, detail: error ?? 'not running' });
+      continue;
+    }
+    const object = KIND_SPECS[kind].objectOf(live);
+    const h = await probeHealth(() => object.health(), systemClock);
+    checks.push({
+      name,
+      ok: h.status !== 'unhealthy',
+      detail: `secrets resolved; health ${h.status}${h.message ? `: ${h.message}` : ''}`,
+    });
+  }
+  return checks;
+}
+
+/** Writes nothing: the host neither records what it loads nor installs what replicas recorded. */
 export async function runDoctor(config: CoreConfig): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const database = connect(config.databaseUrl, { max: 2 });
@@ -64,8 +101,9 @@ export async function runDoctor(config: CoreConfig): Promise<DoctorCheck[]> {
       logger: silentLogger(),
       telemetry: createRecordingTelemetry(),
       config,
+      persist: false,
     });
-    await host.boot();
+    await host.boot({ sync: false });
     for (const p of host.loaded) {
       checks.push({
         name: `plugin ${p.name}@${p.version}`,
@@ -73,54 +111,7 @@ export async function runDoctor(config: CoreConfig): Promise<DoctorCheck[]> {
         detail: p.message ?? p.status,
       });
     }
-
-    const kinds = [
-      {
-        kind: 'secret provider',
-        rows: await database.db.select().from(secretProviders),
-        live: (id: string) => host.secretProvider(id)?.provider,
-      },
-      {
-        kind: 'source',
-        rows: await database.db.select().from(sources),
-        live: (id: string) => host.source(id)?.source,
-      },
-      {
-        kind: 'destination',
-        rows: await database.db.select().from(destinations),
-        live: (id: string) => host.destination(id)?.destination,
-      },
-      {
-        kind: 'notifier',
-        rows: await database.db.select().from(notifiers),
-        live: (id: string) => host.notifier(id)?.notifier,
-      },
-    ];
-    for (const { kind, rows, live } of kinds) {
-      for (const row of rows) {
-        if (!row.enabled) continue;
-        const error = host.instanceError(row.id);
-        const obj = live(row.id);
-        if (!obj || (error !== undefined && error !== 'disabled')) {
-          checks.push({ name: `${kind} ${row.name}`, ok: false, detail: error ?? 'not running' });
-          continue;
-        }
-        try {
-          const h = await withTimeout(obj.health(), 10_000, 'timed out after 10000 ms');
-          checks.push({
-            name: `${kind} ${row.name}`,
-            ok: h.status !== 'unhealthy',
-            detail: `secrets resolved; health ${h.status}${h.message ? `: ${h.message}` : ''}`,
-          });
-        } catch (err) {
-          checks.push({
-            name: `${kind} ${row.name}`,
-            ok: false,
-            detail: `health() threw: ${errorText(err)}`,
-          });
-        }
-      }
-    }
+    for (const kind of BUILD_ORDER) checks.push(...(await instanceChecks(database.db, host, kind)));
     await host.stop();
     return checks;
   } finally {

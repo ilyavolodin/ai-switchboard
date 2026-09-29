@@ -39,11 +39,25 @@ export interface OtelConfig {
     exportTimeoutMillis: number;
   };
   logs: SignalConfig;
+  /** `OTEL_LOG_LEVEL`: the OTel SDK's own diagnostics. */
+  diagLevel: DiagLevel;
   warnings: string[];
 }
 
 const SIGNALS: readonly OtelSignal[] = ['traces', 'metrics', 'logs'];
 const PROTOCOLS: readonly OtlpProtocol[] = ['http/protobuf', 'http/json', 'grpc'];
+export const DIAG_LEVELS = ['none', 'error', 'warn', 'info', 'debug', 'verbose', 'all'] as const;
+export type DiagLevel = (typeof DIAG_LEVELS)[number];
+
+function diagLevelOf(env: Env, warnings: string[]): DiagLevel {
+  const v = get(env, 'OTEL_LOG_LEVEL')?.toLowerCase();
+  if (v === undefined) return 'warn';
+  const level = DIAG_LEVELS.find((l) => l === v);
+  if (level) return level;
+  warnings.push(`OTEL_LOG_LEVEL=${v} is not one of ${DIAG_LEVELS.join(', ')}; using warn`);
+  return 'warn';
+}
+
 const SAMPLERS: readonly SamplerName[] = [
   'always_on',
   'always_off',
@@ -324,6 +338,7 @@ export function parseOtelConfig(env: Env): OtelConfig {
       ),
     },
     logs: { exporters: logs.exporters, otlp: logs.otlp },
+    diagLevel: diagLevelOf(env, warnings),
     warnings,
   };
 }

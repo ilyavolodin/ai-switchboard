@@ -5,9 +5,7 @@ import type { Event } from '@ai-switchboard/sdk';
 import type { DbOrTx } from '../../db/client.js';
 import { batches, dispatches, events } from '../../db/schema.js';
 
-import { toEvent } from './context.js';
-
-export type BatchRow = typeof batches.$inferSelect;
+import { toEvent, type BatchRow } from './views.js';
 
 /**
  * Includes events of event batches a sweep merged and, for a manual test run, of the batch it

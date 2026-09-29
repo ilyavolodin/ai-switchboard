@@ -10,6 +10,7 @@ import {
 } from 'pino';
 
 import { createOtelLogStream } from './telemetry/log-bridge.js';
+import { exportsSignal, type OtelConfig } from './telemetry/otel-config.js';
 
 export type CoreLogger = PinoLogger;
 
@@ -31,7 +32,7 @@ function traceMixin(): Record<string, string> {
 
 export function createLogger(options: LoggerOptions = {}): CoreLogger {
   const config = {
-    level: options.level ?? process.env.LOG_LEVEL ?? 'info',
+    level: options.level ?? 'info',
     base: { service: 'switchboard' },
     timestamp: pino.stdTimeFunctions.isoTime,
     formatters: { level: (label: string) => ({ level: label }) },
@@ -69,6 +70,18 @@ export function createLogger(options: LoggerOptions = {}): CoreLogger {
       { level: 'trace', stream: createOtelLogStream() },
     ]),
   );
+}
+
+export function loggerFor(config: {
+  logLevel: string;
+  prettyLogs: boolean;
+  telemetry: OtelConfig;
+}): CoreLogger {
+  return createLogger({
+    level: config.logLevel,
+    pretty: config.prettyLogs,
+    exportLogs: exportsSignal(config.telemetry, 'logs'),
+  });
 }
 
 export function toPluginLogger(logger: CoreLogger): Logger {

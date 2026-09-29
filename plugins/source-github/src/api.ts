@@ -1,8 +1,14 @@
 import { createPrivateKey, sign, type KeyObject } from 'node:crypto';
 
-import type { HttpClient, HttpResponse, PluginContext } from '@ai-switchboard/sdk';
+import {
+  asObject,
+  asString,
+  tryJson,
+  type HttpClient,
+  type HttpResponse,
+  type PluginContext,
+} from '@ai-switchboard/sdk';
 
-import { obj, str } from './json.js';
 import type { GitHubSettings } from './settings.js';
 
 export const API_BASE = 'https://api.github.com';
@@ -82,9 +88,9 @@ export function createAuth(s: GitHubSettings, ctx: PluginContext): GitHubAuth {
         `GitHub refused the installation token (${res.status}): ${errorMessage(res)}`,
       );
     }
-    const body = obj(res.json());
-    const token = str(body?.token);
-    const expiresAt = Date.parse(str(body?.expires_at) ?? '');
+    const body = asObject(res.json());
+    const token = asString(body?.token);
+    const expiresAt = Date.parse(asString(body?.expires_at) ?? '');
     if (token === undefined || Number.isNaN(expiresAt)) {
       throw new GitHubAuthError('GitHub returned an installation token response without a token');
     }
@@ -105,17 +111,8 @@ export function createAuth(s: GitHubSettings, ctx: PluginContext): GitHubAuth {
   };
 }
 
-/** The JSON body, or `undefined` when there is none (a proxy page, an empty 201). */
-export function jsonOf(res: HttpResponse): unknown {
-  try {
-    return res.json();
-  } catch {
-    return undefined;
-  }
-}
-
 export function errorMessage(res: HttpResponse): string {
-  return str(obj(jsonOf(res))?.message) ?? `HTTP ${res.status}`;
+  return asString(asObject(tryJson(res))?.message) ?? `HTTP ${res.status}`;
 }
 
 export interface GitHubApi {

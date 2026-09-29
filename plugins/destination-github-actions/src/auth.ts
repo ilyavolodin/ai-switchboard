@@ -1,6 +1,6 @@
 import { sign } from 'node:crypto';
 
-import type { PluginContext } from '@ai-switchboard/sdk';
+import { tryJson, type PluginContext } from '@ai-switchboard/sdk';
 
 import { GITHUB_API, type GithubActionsSettings } from './settings.js';
 
@@ -74,12 +74,7 @@ export function createAuth(settings: GithubActionsSettings, ctx: PluginContext):
     if (!res.ok) {
       throw new GithubAuthError(`GitHub refused an installation token (${res.status})`, res.status);
     }
-    let body: unknown;
-    try {
-      body = res.json();
-    } catch {
-      body = undefined;
-    }
+    const body = tryJson(res);
     const token = (body as { token?: unknown } | undefined)?.token;
     const expiresAt = (body as { expires_at?: unknown } | undefined)?.expires_at;
     if (typeof token !== 'string' || token === '') {

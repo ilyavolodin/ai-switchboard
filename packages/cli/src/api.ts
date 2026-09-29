@@ -1,8 +1,9 @@
 import type { ApiError } from '@ai-switchboard/core/contract';
+import { DEFAULT_PORT } from '@ai-switchboard/core/domain';
 
 import type { CliDeps } from './deps.js';
 
-export const DEFAULT_URL = 'http://localhost:8080';
+export const DEFAULT_URL = `http://localhost:${String(DEFAULT_PORT)}`;
 
 export interface ServerOptions {
   url: string;

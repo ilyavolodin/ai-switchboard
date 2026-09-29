@@ -1,13 +1,18 @@
 import jsonata from 'jsonata';
 
 import {
+  checkHealth,
   InvokeError,
-  invokeErrorForStatus,
-  isTransportError,
-  parseRetryAfter,
+  parseWith,
+  pickDeclaredUsage,
+  refusalFor,
+  SchemaMismatchError,
+  SWITCHBOARD_RUN_ID_HEADER,
+  tryJson,
+  tryParse,
+  withSettings,
   type Destination,
   type DestinationType,
-  type Health,
   type HttpResponse,
   type InvokeResult,
   type JSONSchema,
@@ -15,17 +20,16 @@ import {
   type PluginContext,
   type RunHandle,
   type UsageReport,
-  tryParse,
 } from '@ai-switchboard/sdk';
 
-import { declaredUsage, verifySignedCallback } from './callback.js';
+import { verifySignedCallback } from './callback.js';
 import {
   DEFAULT_USAGE_DIMENSIONS,
   ENDPOINT_METER_ID,
   metersFor,
-  readSettings,
   settingsSchema,
   usageFor,
+  validateSettings,
   type HttpSettings,
 } from './settings.js';
 import {
@@ -34,14 +38,12 @@ import {
   INVOKE_TIMEOUT_MARGIN_SECONDS,
   inputSchema,
   invokeTimeoutFor,
-  readTarget,
   targetSchema,
   trackingFor,
   type HttpTarget,
 } from './target.js';
 
 const PAUSED_STATUS = 423;
-const DEFAULT_RETRY_AFTER_SECONDS = 60;
 const USAGE_EXPRESSION_TIMEOUT_MS = 2_000;
 const USAGE_EXPRESSION_MAX_DEPTH = 500;
 const ERROR_SNIPPET_CHARS = 200;
@@ -71,14 +73,21 @@ function defaultHeadersFor(settings: HttpSettings, url: string): Record<string, 
     : {};
 }
 
+/** A bad target is definitive: retrying cannot fix it. */
+export function readTarget(target: unknown): HttpTarget {
+  try {
+    return parseWith<HttpTarget>(targetSchema, target, 'http target');
+  } catch (err) {
+    if (err instanceof SchemaMismatchError)
+      throw new InvokeError(err.message, { definitive: true });
+    throw err;
+  }
+}
+
 function parseBody(res: HttpResponse): unknown {
   const text = res.text();
   if (text === '') return null;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
+  return tryJson(res) ?? text;
 }
 
 function snippet(res: HttpResponse): string {
@@ -92,22 +101,11 @@ function snippet(res: HttpResponse): string {
  * refused, nothing ran); 423 is `held: paused`; everything else throws an `InvokeError`.
  */
 export function refusal(res: HttpResponse, now: Date, what: string): InvokeResult {
-  const status = res.status;
-  const retryAfter = parseRetryAfter(res.headers['retry-after'], now);
-  if (status === 429) {
-    return {
-      status: 'failed',
-      retryAfterSeconds: retryAfter ?? DEFAULT_RETRY_AFTER_SECONDS,
-      errors: [`${what} answered 429 Too Many Requests${snippet(res)}`],
-    };
-  }
-  if (status === PAUSED_STATUS) return { status: 'held', reason: 'paused' };
-  const message = `${what} answered ${status}${snippet(res)}`;
-  throw invokeErrorForStatus(
-    status,
-    message,
-    retryAfter !== undefined ? { retryAfterSeconds: retryAfter } : {},
-  );
+  return refusalFor(res, now, {
+    message: (r) => `${what} answered ${r.status}${snippet(r)}`,
+    rateLimitMessage: (r) => `${what} answered 429 Too Many Requests${snippet(r)}`,
+    held: (r) => (r.status === PAUSED_STATUS ? 'paused' : undefined),
+  });
 }
 
 function externalIdOf(body: unknown): string | undefined {
@@ -194,7 +192,7 @@ function createHttpDestination(settings: HttpSettings, ctx: PluginContext): Dest
         });
       }
     }
-    return declaredUsage(measured, declared);
+    return pickDeclaredUsage(measured, declared);
   }
 
   return {
@@ -205,7 +203,7 @@ function createHttpDestination(settings: HttpSettings, ctx: PluginContext): Dest
         accept: 'application/json, text/plain;q=0.9, */*;q=0.5',
         ...defaultHeadersFor(settings, url),
         ...lowerKeys(target.headers),
-        'x-switchboard-run-id': run.id,
+        [SWITCHBOARD_RUN_ID_HEADER]: run.id,
         'x-switchboard-callback-url': run.callbackUrl,
         ...(run.dryRun ? { 'x-switchboard-dry-run': '1' } : {}),
       };
@@ -259,17 +257,15 @@ function createHttpDestination(settings: HttpSettings, ctx: PluginContext): Dest
       ];
     },
 
-    async health(): Promise<Health> {
-      const checkedAt = (): string => ctx.now().toISOString();
-      if (settings.baseUrl === undefined) {
-        return {
-          status: 'unknown',
-          message: 'No base URL configured; targets name their own URLs.',
-          checkedAt: checkedAt(),
-        };
-      }
-      const headers = defaultHeadersFor(settings, settings.baseUrl);
-      try {
+    health: () =>
+      checkHealth(ctx, async () => {
+        if (settings.baseUrl === undefined) {
+          return {
+            status: 'unknown',
+            message: 'No base URL configured; targets name their own URLs.',
+          };
+        }
+        const headers = defaultHeadersFor(settings, settings.baseUrl);
         let res = await ctx.http.request({ method: 'HEAD', url: settings.baseUrl, headers });
         if (res.status === 405 || res.status === 501) {
           res = await ctx.http.get(settings.baseUrl, { headers });
@@ -278,29 +274,13 @@ function createHttpDestination(settings: HttpSettings, ctx: PluginContext): Dest
           return {
             status: 'unhealthy',
             message: `Base URL rejected the credentials (${res.status})`,
-            checkedAt: checkedAt(),
           };
         }
         if (res.status >= 500) {
-          return {
-            status: 'unhealthy',
-            message: `Base URL answered ${res.status}`,
-            checkedAt: checkedAt(),
-          };
+          return { status: 'unhealthy', message: `Base URL answered ${res.status}` };
         }
-        return {
-          status: 'healthy',
-          message: `Base URL answered ${res.status}`,
-          checkedAt: checkedAt(),
-        };
-      } catch (err) {
-        return {
-          status: 'unhealthy',
-          message: isTransportError(err) || err instanceof Error ? err.message : String(err),
-          checkedAt: checkedAt(),
-        };
-      }
-    },
+        return { status: 'healthy', message: `Base URL answered ${res.status}` };
+      }),
   };
 }
 
@@ -336,5 +316,7 @@ export const httpDestinationType: DestinationType = {
   usageFor,
   meters: [],
   metersFor,
-  create: (settings, ctx) => createHttpDestination(readSettings(settings), ctx),
+  create: withSettings(settingsSchema, 'http destination settings', (s: HttpSettings, ctx) =>
+    createHttpDestination(validateSettings(s), ctx),
+  ),
 };

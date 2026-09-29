@@ -1,12 +1,16 @@
 import type { RawRequest } from '@ai-switchboard/sdk';
 
 import type {
+  ApproveResponse,
   CronPreviewRequest,
   CronPreviewResponse,
   FilterPreviewRequest,
   FilterPreviewResponse,
   InputPreviewRequest,
   InputPreviewResponse,
+  EventIdsResponse,
+  RunNowRequest,
+  RunNowResponse,
   SettledRunStatus,
   TraceResponse,
 } from './contract.js';
@@ -17,21 +21,17 @@ export interface PipelinePort {
   handleCallback(destinationId: string, req: RawRequest): Promise<{ status: number }>;
   runNow(
     processId: string,
-    opts: { dryRun?: boolean; batchId?: string; actor: string; reason: string },
-  ): Promise<{ batchId: string; runId: string | null; outcome: string }>;
-  approve(
-    batchId: string,
-    actor: string,
-    reason: string,
-  ): Promise<{ runId: string | null; outcome: string }>;
+    opts: Pick<RunNowRequest, 'dryRun' | 'batchId'> & { actor: string; reason: string },
+  ): Promise<RunNowResponse>;
+  approve(batchId: string, actor: string, reason: string): Promise<ApproveResponse>;
   reject(batchId: string, actor: string, reason: string): Promise<void>;
-  replay(eventId: string, actor: string, reason: string): Promise<{ eventIds: string[] }>;
+  replay(eventId: string, actor: string, reason: string): Promise<EventIdsResponse>;
   injectTestEvent(
     sourceId: string,
     type: string | undefined,
     actor: string,
     reason: string,
-  ): Promise<{ eventIds: string[] }>;
+  ): Promise<EventIdsResponse>;
   closeRun(runId: string, status: SettledRunStatus, actor: string, reason: string): Promise<void>;
   resetBreaker(processId: string, actor: string, reason: string): Promise<void>;
   clearSoftHold(destinationId: string, actor: string, reason: string): Promise<void>;

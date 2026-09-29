@@ -1,10 +1,4 @@
-import {
-  InvokeError,
-  type JSONSchema,
-  type RunHandle,
-  SchemaMismatchError,
-  parseWith,
-} from '@ai-switchboard/sdk';
+import type { JSONSchema, RunHandle } from '@ai-switchboard/sdk';
 
 export interface RoutineTarget {
   routineId: string;
@@ -50,24 +44,6 @@ export const inputSchema: JSONSchema = {
     },
   },
 };
-
-function definitive<T>(fn: () => T): T {
-  try {
-    return fn();
-  } catch (err) {
-    if (err instanceof SchemaMismatchError)
-      throw new InvokeError(err.message, { definitive: true });
-    throw err;
-  }
-}
-
-export function readTarget(target: unknown): RoutineTarget {
-  return definitive(() => parseWith<RoutineTarget>(targetSchema, target, 'routine target'));
-}
-
-export function readInput(input: unknown): RoutineInput {
-  return definitive(() => parseWith<RoutineInput>(inputSchema, input, 'routine input'));
-}
 
 export const TRAILER_START = '--- switchboard ---';
 export const TRAILER_END = '--- end switchboard ---';

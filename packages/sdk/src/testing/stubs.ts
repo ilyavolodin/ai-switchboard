@@ -1,7 +1,13 @@
 import { createHttpClient, type HttpClient } from '../http.js';
 import { createMemoryLogger, type MemoryLogEntry } from '../logger.js';
 import type { RawRequest } from '../types/common.js';
-import type { InstanceState, PluginContext } from '../types/context.js';
+import { SECRET_KEY_PATTERN, SecretStoreError } from '../errors.js';
+import type {
+  InstanceSecrets,
+  InstanceState,
+  PluginContext,
+  SecretStoreStatus,
+} from '../types/context.js';
 import type { RunHandle } from '../types/destination.js';
 
 export interface StubRequest {
@@ -94,12 +100,54 @@ export function createMemoryState(
   };
 }
 
+/**
+ * `ctx.secrets` in memory. `writable: false` behaves like an instance whose settings reference
+ * only read-only providers: `set` and `delete` throw `SecretStoreError`.
+ */
+export function createMemorySecrets(
+  initial: Record<string, string> = {},
+  options: { writable?: boolean } = {},
+): InstanceSecrets & { data: Record<string, string> } {
+  const data = { ...initial };
+  const status: SecretStoreStatus =
+    options.writable === false
+      ? { writable: false, reason: 'no writable secret provider (test)' }
+      : { writable: true, provider: 'memory' };
+  const checkKey = (key: string): void => {
+    if (!SECRET_KEY_PATTERN.test(key)) throw new SecretStoreError(`"${key}" is not a valid key`);
+  };
+  const writable = (): void => {
+    if (!status.writable) throw new SecretStoreError(status.reason);
+  };
+  return {
+    data,
+    get: (key) => {
+      checkKey(key);
+      return Promise.resolve(data[key]);
+    },
+    set: (key, value) => {
+      checkKey(key);
+      writable();
+      data[key] = value;
+      return Promise.resolve();
+    },
+    delete: (key) => {
+      checkKey(key);
+      writable();
+      Reflect.deleteProperty(data, key);
+      return Promise.resolve();
+    },
+    check: () => Promise.resolve(status),
+  };
+}
+
 export interface TestContextOptions {
   http?: HttpClient;
   now?: () => Date;
   instanceId?: string;
   publicUrl?: string;
   state?: InstanceState;
+  secrets?: InstanceSecrets;
 }
 
 export function createTestContext(
@@ -115,6 +163,7 @@ export function createTestContext(
     now: options.now ?? (() => new Date()),
     publicUrl: options.publicUrl ?? 'https://switchboard.test',
     state: options.state ?? createMemoryState(),
+    secrets: options.secrets ?? createMemorySecrets(),
   };
 }
 

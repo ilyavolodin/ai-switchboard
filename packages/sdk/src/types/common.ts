@@ -59,6 +59,9 @@ export interface ActionResult {
 export interface Capabilities {
   /** Host globs the plugin's HttpClient may reach, e.g. `*.atlassian.net`. */
   network?: string[];
-  /** Documentation only; resolution is by reference. */
+  /**
+   * Documentation only; resolution is by reference. `definePlugin` fills it from the `x-secret`
+   * settings fields.
+   */
   secrets?: string[];
 }

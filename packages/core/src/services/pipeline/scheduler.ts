@@ -6,7 +6,10 @@ import { batches, processes, scheduleTicks, type GateDecisionRecord } from '../.
 import type { Schedule } from '../../domain/process.js';
 import { dueSweep, type DueSweep } from '../../scheduler/due.js';
 
-import { JOBS, appendDecisions, withTx, type Ctx, type ProcessRow } from './context.js';
+import type { Ctx } from './context.js';
+import { JOBS } from './jobs.js';
+import { appendDecisions, withTx } from './tx.js';
+import type { ProcessRow } from './views.js';
 
 /**
  * The `schedule_ticks` primary key makes each tick fire once across replicas. Open event batches
@@ -34,7 +37,7 @@ export async function schedulerTick(ctx: Ctx): Promise<string[]> {
   return fired;
 }
 
-export async function createSweep(
+async function createSweep(
   ctx: Ctx,
   proc: ProcessRow,
   schedule: Schedule,

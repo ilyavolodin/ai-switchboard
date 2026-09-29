@@ -1,3 +1,5 @@
+import { isRecord } from '@ai-switchboard/sdk/json';
+
 /**
  * Dotted paths into a delivery, for the quick and mapped modes: `body.issue.id`,
  * `headers.x-github-event`, `query.env`, `body.labels.0`, `body.labels.name`. Pure: no I/O.
@@ -18,10 +20,6 @@ const PATH_RE = new RegExp(PATH_PATTERN);
 
 export function isDeliveryPath(path: string): boolean {
   return PATH_RE.test(path);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function step(value: unknown, segment: string): unknown {

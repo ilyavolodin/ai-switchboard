@@ -1,15 +1,12 @@
 import {
-  verifyHmac,
+  pickDeclaredUsage,
+  readSignedJson,
+  tryParse,
   type CallbackResult,
   type JSONSchema,
   type RawRequest,
   type RunStatus,
-  type UsageReport,
-  tryParse,
 } from '@ai-switchboard/sdk';
-
-export const SIGNATURE_HEADER = 'x-switchboard-signature';
-export const SIGNATURE_PREFIX = 'sha256=';
 
 export interface HttpCallbackBody {
   runId: string;
@@ -35,18 +32,6 @@ export const callbackBodySchema: JSONSchema = {
   },
 };
 
-export function declaredUsage(
-  usage: Record<string, unknown> | undefined,
-  declared: ReadonlySet<string>,
-): UsageReport | undefined {
-  if (!usage) return undefined;
-  const out: UsageReport = {};
-  for (const [key, value] of Object.entries(usage)) {
-    if (declared.has(key) && typeof value === 'number' && Number.isFinite(value)) out[key] = value;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
-
 /**
  * HMAC-SHA256 of the raw body. `null` for anything unsigned, wrongly signed or malformed; never
  * throws. Undeclared usage keys are dropped.
@@ -56,23 +41,9 @@ export function verifySignedCallback(
   secret: string | undefined,
   declared: ReadonlySet<string>,
 ): CallbackResult | null {
-  if (secret === undefined || secret === '') return null;
-  const ok = verifyHmac({
-    secret,
-    payload: req.body,
-    signature: req.headers[SIGNATURE_HEADER],
-    prefix: SIGNATURE_PREFIX,
-  });
-  if (!ok) return null;
-  let json: unknown;
-  try {
-    json = JSON.parse(req.body.toString('utf8'));
-  } catch {
-    return null;
-  }
-  const body = tryParse<HttpCallbackBody>(callbackBodySchema, json);
+  const body = tryParse<HttpCallbackBody>(callbackBodySchema, readSignedJson(req, secret));
   if (!body) return null;
-  const usage = declaredUsage(body.usage, declared);
+  const usage = pickDeclaredUsage(body.usage, declared);
   const status: RunStatus = {
     state: body.status,
     ...(body.outputs !== undefined ? { outputs: body.outputs } : {}),

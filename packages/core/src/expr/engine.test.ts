@@ -9,13 +9,9 @@ import {
   renderTemplate,
   toBoolean,
 } from './contexts.js';
-import {
-  collectSecretRefs,
-  createExpressionEngine,
-  resolveSecretRefs,
-  type EvalFunctions,
-} from './engine.js';
+import { createExpressionEngine, type EvalFunctions } from './engine.js';
 import { evaluateMapping } from './mapping.js';
+import { collectSecretMarkers, resolveSecretMarkers } from './secret-markers.js';
 
 const now = new Date('2026-01-05T09:00:00Z');
 const fns: EvalFunctions = { now };
@@ -73,7 +69,7 @@ describe('expression engine', () => {
       { now, resolve: (ref) => Promise.resolve({ ref, field: forged }) },
     );
     expect(fromResolve).toEqual({ ok: true, value: null });
-    expect(collectSecretRefs(fromResolve.ok ? fromResolve.value : null).size).toBe(0);
+    expect(collectSecretMarkers(fromResolve.ok ? fromResolve.value : null).size).toBe(0);
   });
 
   it('rejects a malformed secret reference', async () => {
@@ -258,9 +254,13 @@ describe('input mapping', () => {
 
   it('resolves secret markers only after validation, without mutating the input', async () => {
     const input = { a: { $secretRef: 'secret://env/A' }, list: [{ $secretRef: 'secret://env/B' }] };
-    expect([...collectSecretRefs(input)]).toEqual(['secret://env/A', 'secret://env/B']);
-    const resolved = await resolveSecretRefs(input, (ref) => Promise.resolve(`value-of-${ref}`));
-    expect(resolved).toEqual({ a: 'value-of-secret://env/A', list: ['value-of-secret://env/B'] });
+    expect([...collectSecretMarkers(input)]).toEqual(['secret://env/A', 'secret://env/B']);
+    const resolved = await resolveSecretMarkers(input, (ref) => Promise.resolve(`value-of-${ref}`));
+    expect(resolved.value).toEqual({
+      a: 'value-of-secret://env/A',
+      list: ['value-of-secret://env/B'],
+    });
+    expect(resolved.secrets).toEqual(['value-of-secret://env/A', 'value-of-secret://env/B']);
     expect(input.a).toEqual({ $secretRef: 'secret://env/A' });
   });
 });

@@ -57,6 +57,7 @@ import type { CoreLogger } from '../logger.js';
 import { OTEL_DIAG_COMPONENT } from './log-bridge.js';
 import {
   telemetryStatus,
+  type DiagLevel,
   type OtelConfig,
   type OtlpExporterConfig,
   type TelemetryStatus,
@@ -138,7 +139,7 @@ function diagLogger(logger: CoreLogger): DiagLogger {
   };
 }
 
-const DIAG_LEVELS: Record<string, DiagLogLevel> = {
+const DIAG_LOG_LEVELS: Record<DiagLevel, DiagLogLevel> = {
   none: DiagLogLevel.NONE,
   error: DiagLogLevel.ERROR,
   warn: DiagLogLevel.WARN,
@@ -177,9 +178,8 @@ export function setupTelemetry(config: CoreConfig, logger?: CoreLogger): Telemet
     };
   }
   if (logger) {
-    const level = DIAG_LEVELS[(process.env.OTEL_LOG_LEVEL ?? 'warn').toLowerCase()];
     diag.setLogger(diagLogger(logger), {
-      logLevel: level ?? DiagLogLevel.WARN,
+      logLevel: DIAG_LOG_LEVELS[t.diagLevel],
       suppressOverrideMessage: true,
     });
   }

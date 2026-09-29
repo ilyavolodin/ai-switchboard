@@ -1,6 +1,7 @@
 export {
   createStubHttp,
   createMemoryState,
+  createMemorySecrets,
   createTestContext,
   rawRequest,
   runHandle,
@@ -22,6 +23,8 @@ export {
   destinationConformanceChecks,
   pluginConformanceChecks,
   secretProviderConformanceChecks,
+  notifierConformanceChecks,
+  settingsSchemaChecks,
   runConformance,
   ConformanceFailure,
 } from './conformance.js';
@@ -30,4 +33,7 @@ export type {
   SourceFixtures,
   DestinationFixtures,
   SecretProviderFixtures,
+  NotifierFixtures,
+  PluginFixtures,
+  SettingsSchemaOptions,
 } from './conformance.js';

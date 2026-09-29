@@ -151,8 +151,13 @@ the usage URL with `anthropic-beta: oauth-2025-04-20`, expecting
   Anthropic changes or removes it, `readMeters` fails, the core shows the windows as stale, and
   ceilings fall back to the estimated meter and the run counters. Nothing else breaks.
 - The token endpoint rotates the refresh token on every refresh. The newest refresh token and
-  the access token with its expiry are kept in the instance state and preferred over the
-  settings on later reads. Pasting a new token into the settings restarts the chain. Give this
+  the access token go to `ctx.secrets`: the host stores them in the secret provider that
+  `usage.oauthRefreshToken` references, which must be **writable** (the `file` provider with writes
+  on, shared by every replica). Only the seed's fingerprint and the expiry are kept in the
+  instance state (Postgres). With a read-only provider (`env`), no token is spent: `readMeters`
+  fails with "rotated OAuth tokens need a writable secret provider" and the instance is unhealthy.
+  Tokens an older version kept in the instance state move to the provider on the first read.
+  Pasting a new token into the settings restarts the chain. Give this
   instance its **own** login: a Claude Code CLI sharing the same refresh token would rotate it
   away from the instance (and vice versa).
 - Without `usage.oauthRefreshToken`, `readMeters` returns nothing and all three meters are
@@ -165,7 +170,8 @@ Code-credentials" keychain item), then sign that machine out without revoking.
 ## Health
 
 `unknown`: the Routines API has no read-only call that checks a trigger token. A 401/403 on the
-first fire marks the instance unhealthy.
+first fire marks the instance unhealthy. With `usage.oauthRefreshToken` set and no writable secret
+provider to keep the rotated token in, health is `unhealthy` and says so.
 
 ## Credentials
 

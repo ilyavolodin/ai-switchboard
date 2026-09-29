@@ -1,9 +1,10 @@
 import { and, count, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import { approvals, dispatches, events, plugins, processes, runs } from '../../db/schema.js';
+import { attentionItems } from '../../domain/attention.js';
 import { getSettings } from '../../services/settings.js';
 import type { ApiContext } from '../context.js';
-import type { AttentionItem, BoardEdge, BoardResponse, StatusStripResponse } from '../contract.js';
+import type { BoardEdge, BoardResponse, StatusStripResponse } from '../contract.js';
 import { destinationSummaries, sourceSummaries } from './instances.js';
 import { meterGauges } from './meters.js';
 import { processSummaries } from './processes.js';
@@ -110,207 +111,32 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
     }
   }
 
-  const attention: AttentionItem[] = [];
-  for (const p of procs) {
-    const row = procRows.find((r) => r.id === p.id);
-    if (p.breakerState === 'open') {
-      attention.push({
-        id: `breaker:${p.id}`,
-        kind: 'breaker',
-        tone: 'error',
-        title: `${p.name}: breaker open`,
-        detail: 'Batches and sweeps are held until the breaker is reset or the cooldown passes.',
-        targetKind: 'process',
-        targetId: p.id,
-        action: { id: 'reset_breaker', label: 'Reset' },
-        since: row?.breakerOpenedAt?.toISOString() ?? null,
-      });
-    }
-    if (p.awaitingApproval > 0) {
-      attention.push({
-        id: `approval:${p.id}`,
-        kind: 'approval',
-        tone: 'warn',
-        title: `${p.name}: ${p.awaitingApproval} awaiting approval`,
-        detail: 'A person must approve or reject before the run starts.',
-        targetKind: 'approval',
-        targetId: p.id,
-        action: { id: 'open_approvals', label: 'Review' },
-        since: null,
-      });
-    }
-  }
-  const silenceMs = settings.sourceSilenceMinutes * 60_000;
-  for (const s of srcs) {
-    if (!s.pluginAvailable) {
-      attention.push({
-        id: `plugin:${s.id}`,
-        kind: 'plugin_unavailable',
-        tone: 'warn',
-        title: `${s.name}: plugin unavailable`,
-        detail: `The ${s.typeId} plugin is not loaded; processes using it are held.`,
-        targetKind: 'source',
-        targetId: s.id,
-        action: { id: 'open', label: 'Open' },
-        since: null,
-      });
-    } else if (s.enabled && s.status.tone === 'error') {
-      attention.push({
-        id: `unhealthy:${s.id}`,
-        kind: 'unhealthy',
-        tone: 'error',
-        title: `${s.name}: ${s.status.label}`,
-        detail: s.health?.message ?? 'The source failed its last health check.',
-        targetKind: 'source',
-        targetId: s.id,
-        action: { id: 'reload', label: 'Reload' },
-        since: s.health?.checkedAt ?? null,
-      });
-    }
-    if (s.enabled && s.mode !== 'pull' && s.processCount > 0) {
-      const last = s.lastEventAt ? new Date(s.lastEventAt).getTime() : null;
-      if (last === null || now.getTime() - last > silenceMs) {
-        attention.push({
-          id: `silent:${s.id}`,
-          kind: 'source_silent',
-          tone: 'warn',
-          title: `${s.name}: silent`,
-          detail:
-            last === null ? 'No events received yet.' : 'No events within the silence window.',
-          targetKind: 'source',
-          targetId: s.id,
-          action: { id: 'test_event', label: 'Send test event' },
-          since: s.lastEventAt,
-        });
-      }
-    }
-  }
-  for (const e of exs) {
-    if (!e.pluginAvailable) {
-      attention.push({
-        id: `plugin:${e.id}`,
-        kind: 'plugin_unavailable',
-        tone: 'warn',
-        title: `${e.name}: plugin unavailable`,
-        detail: `The ${e.typeId} plugin is not loaded; processes bound to it are held.`,
-        targetKind: 'destination',
-        targetId: e.id,
-        action: { id: 'open', label: 'Open' },
-        since: null,
-      });
-    } else if (e.enabled && e.status.tone === 'error') {
-      attention.push({
-        id: `unhealthy:${e.id}`,
-        kind: 'unhealthy',
-        tone: 'error',
-        title: `${e.name}: ${e.status.label}`,
-        detail: e.health?.message ?? 'Processes bound to it are held.',
-        targetKind: 'destination',
-        targetId: e.id,
-        action: { id: 'reload', label: 'Reload' },
-        since: e.health?.checkedAt ?? null,
-      });
-    }
-    for (const m of e.meters) {
-      if (e.enabled && m.stale && !m.estimated) {
-        attention.push({
-          id: `stale:${e.id}:${m.meterId}`,
-          kind: 'meter_stale',
-          tone: 'warn',
-          title: `${e.name}: ${m.title} is stale`,
-          detail: m.observedAt
-            ? 'Ceilings fall back to run counters until a fresh reading.'
-            : 'Never read.',
-          targetKind: 'destination',
-          targetId: e.id,
-          action: { id: 'read_meters', label: 'Read now' },
-          since: m.observedAt,
-        });
-      }
-    }
-  }
-  const uncertain = await ctx.db
-    .select({ processId: runs.processId, n: count() })
-    .from(runs)
-    .where(eq(runs.status, 'uncertain'))
-    .groupBy(runs.processId);
-  for (const u of uncertain) {
-    const p = procs.find((x) => x.id === u.processId);
-    attention.push({
-      id: `uncertain:${u.processId}`,
-      kind: 'uncertain_runs',
-      tone: 'warn',
-      title: `${p?.name ?? 'A process'}: ${u.n} uncertain run${u.n === 1 ? '' : 's'}`,
-      detail:
-        'The invoke response was lost; tracking will settle it or the deadline marks it unknown.',
-      targetKind: 'process',
-      targetId: u.processId,
-      action: { id: 'open', label: 'Open' },
-      since: null,
-    });
-  }
-  // A disabled process that has never run but whose triggers turned events away: most likely
-  // created disabled and forgotten. One that ran before was paused on purpose, so it stays quiet.
   const idle = procRows.filter((p) => !p.enabled && p.document.triggers.length > 0);
-  if (idle.length > 0) {
-    const [missed, ran] = await Promise.all([
-      ctx.db.execute<{ process_id: string; n: string }>(sql`
-        SELECT d->>'processId' AS process_id, count(*)::text AS n
-        FROM ${events}, jsonb_array_elements(${events.matchDecisions}) AS d
-        WHERE ${events.receivedAt} >= ${day}
-          AND d->>'skip' = 'process_disabled'
-          AND d->>'processId' IN (${sql.join(
-            idle.map((p) => sql`${p.id}`),
-            sql`, `,
-          )})
-        GROUP BY 1`),
-      ctx.db
-        .selectDistinct({ processId: runs.processId })
-        .from(runs)
-        .where(
-          inArray(
-            runs.processId,
-            idle.map((p) => p.id),
-          ),
-        ),
-    ]);
-    for (const m of missed.rows) {
-      const p = idle.find((x) => x.id === m.process_id);
-      const n = Number(m.n);
-      if (!p || n === 0 || ran.some((r) => r.processId === p.id)) continue;
-      attention.push({
-        id: `disabled:${p.id}`,
-        kind: 'process_disabled',
-        tone: 'warn',
-        title: `${p.name} is disabled and turned away ${n} event${n === 1 ? '' : 's'} in 24 h`,
-        detail: 'It has never run. Enable it if it should take these events.',
-        targetKind: 'process',
-        targetId: p.id,
-        action: { id: 'enable_process', label: 'Enable' },
-        since: null,
-      });
-    }
-  }
-  const failed = await ctx.db
-    .select({ name: plugins.name, status: plugins.status })
-    .from(plugins)
-    .where(inArray(plugins.status, ['failed', 'incompatible']));
-  for (const f of failed) {
-    attention.push({
-      id: `pluginload:${f.name}`,
-      kind: 'plugin_unavailable',
-      tone: 'error',
-      title: `${f.name}: ${f.status}`,
-      detail: 'The plugin failed to load.',
-      targetKind: 'plugin',
-      targetId: f.name,
-      action: { id: 'open', label: 'Open' },
-      since: null,
-    });
-  }
-
-  const toneRank = { error: 0, warn: 1, ok: 2, off: 3 } as const;
-  attention.sort((a, b) => toneRank[a.tone] - toneRank[b.tone]);
+  const [uncertain, turnedAway, failedPlugins] = await Promise.all([
+    ctx.db
+      .select({ processId: runs.processId, n: count() })
+      .from(runs)
+      .where(eq(runs.status, 'uncertain'))
+      .groupBy(runs.processId),
+    turnedAwayByIdle(ctx, idle, day),
+    ctx.db
+      .select({ name: plugins.name, status: plugins.status })
+      .from(plugins)
+      .where(inArray(plugins.status, ['failed', 'incompatible'])),
+  ]);
+  const attention = attentionItems({
+    now,
+    sourceSilenceMinutes: settings.sourceSilenceMinutes,
+    processes: procs.map((p) => ({
+      ...p,
+      breakerOpenedAt: procRows.find((r) => r.id === p.id)?.breakerOpenedAt?.toISOString() ?? null,
+    })),
+    sources: srcs,
+    destinations: exs,
+    uncertain,
+    turnedAway,
+    failedPlugins,
+  });
 
   return {
     sources: srcs.map((s) => ({
@@ -353,4 +179,42 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
     attention,
     generatedAt: now.toISOString(),
   };
+}
+
+/**
+ * A disabled process that has never run but whose triggers turned events away: most likely
+ * created disabled and forgotten. One that ran before was paused on purpose, so it stays quiet.
+ */
+async function turnedAwayByIdle(
+  ctx: ApiContext,
+  idle: { id: string; name: string }[],
+  since: Date,
+): Promise<{ processId: string; name: string; n: number }[]> {
+  if (idle.length === 0) return [];
+  const [missed, ran] = await Promise.all([
+    ctx.db.execute<{ process_id: string; n: string }>(sql`
+      SELECT d->>'processId' AS process_id, count(*)::text AS n
+      FROM ${events}, jsonb_array_elements(${events.matchDecisions}) AS d
+      WHERE ${events.receivedAt} >= ${since}
+        AND d->>'skip' = 'process_disabled'
+        AND d->>'processId' IN (${sql.join(
+          idle.map((p) => sql`${p.id}`),
+          sql`, `,
+        )})
+      GROUP BY 1`),
+    ctx.db
+      .selectDistinct({ processId: runs.processId })
+      .from(runs)
+      .where(
+        inArray(
+          runs.processId,
+          idle.map((p) => p.id),
+        ),
+      ),
+  ]);
+  return missed.rows.flatMap((m) => {
+    const p = idle.find((x) => x.id === m.process_id);
+    if (!p || ran.some((r) => r.processId === p.id)) return [];
+    return [{ processId: p.id, name: p.name, n: Number(m.n) }];
+  });
 }

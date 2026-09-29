@@ -1,13 +1,14 @@
+import type { ProcessDocument } from '../domain/process.js';
+
 /**
  * Each join pushes `fireAfter` to `now + debounceSeconds`. A batch closes at `maxSize`, at
  * `maxAgeSeconds` since it opened (`0` means no age cap), or when the debounce elapses.
  */
 
-export interface BatchingConfig {
-  debounceSeconds: number;
-  maxSize: number;
-  maxAgeSeconds: number;
-}
+export type BatchingConfig = Pick<
+  ProcessDocument['batching'],
+  'debounceSeconds' | 'maxSize' | 'maxAgeSeconds'
+>;
 
 export interface OpenBatchState {
   id: string;
@@ -88,25 +89,4 @@ export function closeCheck(batch: OpenBatchState, config: BatchingConfig, now: D
     close: false,
     checkAt: new Date(Math.min(batch.fireAfter.getTime(), ageLimit(batch.openedAt, config))),
   };
-}
-
-export type OpenBatches = Readonly<Record<string, OpenBatchState | undefined>>;
-
-/** A batch that closes on this arrival leaves the state. */
-export function batchArrival(
-  state: OpenBatches,
-  key: string,
-  config: BatchingConfig,
-  now: Date,
-  newId: () => string,
-): { state: OpenBatches; decision: JoinDecision & { key: string; batchId: string } } {
-  const decision = joinBatch(state[key] ?? null, config, now);
-  const batchId = decision.action === 'join' ? decision.batchId : newId();
-  const openedAt = decision.action === 'join' ? (state[key]?.openedAt ?? now) : decision.openedAt;
-  const next: Record<string, OpenBatchState | undefined> = { ...state };
-  next[key] =
-    decision.closeNow === null
-      ? { id: batchId, openedAt, fireAfter: decision.fireAfter, size: decision.size }
-      : undefined;
-  return { state: next, decision: { ...decision, key, batchId } };
 }

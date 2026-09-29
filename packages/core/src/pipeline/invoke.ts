@@ -15,6 +15,8 @@ import { errorText } from '../util/errors.js';
  */
 
 export const MAX_INVOKE_ATTEMPTS = 5;
+/** Nothing was sent, like a connection refused: wait for the instance to come back. */
+export const NO_LIVE_INSTANCE_RETRY_SECONDS = 30;
 export const RETRY_DELAYS_SECONDS = [5, 10, 20, 40] as const;
 
 export function retryDelaySeconds(attempt: number): number {
@@ -26,7 +28,7 @@ export const MIN_INVOKE_TIMEOUT_SECONDS = 1;
 /** Matches the SDK's `MAX_INVOKE_TIMEOUT_SECONDS`. */
 export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;
 
-function usableSeconds(n: unknown): number | undefined {
+function positive(n: unknown): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
@@ -37,9 +39,9 @@ export function effectiveInvokeTimeoutSeconds(levels: {
   typeDefault?: unknown;
 }): number {
   const chosen =
-    usableSeconds(levels.cap) ??
-    usableSeconds(levels.perTarget) ??
-    usableSeconds(levels.typeDefault) ??
+    positive(levels.cap) ??
+    positive(levels.perTarget) ??
+    positive(levels.typeDefault) ??
     DEFAULT_INVOKE_TIMEOUT_SECONDS;
   return Math.min(MAX_INVOKE_TIMEOUT_SECONDS, Math.max(MIN_INVOKE_TIMEOUT_SECONDS, chosen));
 }
@@ -91,10 +93,6 @@ export type InvokeClassification =
       unhealthy?: boolean;
     }
   | { action: 'uncertain'; reason: string };
-
-function positive(n: unknown): number | undefined {
-  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
-}
 
 export interface ClassifyInput {
   idempotent: boolean;

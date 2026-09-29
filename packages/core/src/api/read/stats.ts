@@ -10,7 +10,10 @@ import {
   processes,
   runs,
 } from '../../db/schema.js';
+import { runStatusLabel } from '../../domain/labels.js';
 import type { EventStage, RunStatusValue } from '../../domain/status.js';
+import { destinationSpecs } from '../../services/destination-specs.js';
+import { isUuid } from '../../util/uuid.js';
 import type { ApiContext } from '../context.js';
 import type {
   FunnelResponse,
@@ -21,7 +24,7 @@ import type {
   UsageHistoryResponse,
 } from '../contract.js';
 import { notFound } from '../errors.js';
-import { meterGauges, meterSpecsFor } from './meters.js';
+import { meterGauges } from './meters.js';
 
 export function windowMs(window: StatsWindow | undefined): number {
   if (window === '7d') return 7 * 86_400_000;
@@ -112,7 +115,7 @@ export async function meterHistory(
   if (!ex) throw notFound('Destination');
   const now = ctx.clock.now();
   const from = new Date(now.getTime() - windowMs(window));
-  const specs = meterSpecsFor(ctx, ex.id, ex.typeId);
+  const specs = destinationSpecs(ctx.runtime, ex).meters;
   const [readings, runRows, gauges] = await Promise.all([
     ctx.db
       .select()
@@ -158,6 +161,7 @@ export async function meterHistory(
       processId: r.processId,
       processName: r.processName ?? '(deleted process)',
       status: r.status,
+      statusLabel: runStatusLabel(r.status),
     })),
   };
 }
@@ -171,8 +175,7 @@ export async function usageHistory(
   if (!ex) throw notFound('Destination');
   const now = ctx.clock.now();
   const from = new Date(now.getTime() - windowMs(window === '24h' ? '7d' : window));
-  const live = ctx.runtime.destination(ex.id);
-  const dims = live?.usage ?? ctx.runtime.destinationType(ex.typeId)?.type.usage ?? [];
+  const dims = destinationSpecs(ctx.runtime, ex).usage;
   const rows = await ctx.db
     .select({ day: dayExpr(runs.createdAt), status: runs.status, usage: runs.usage })
     .from(runs)
@@ -342,8 +345,18 @@ export async function processStats(
       .groupBy(sql`1`, batches.outcome),
   ]);
   const days = daysBetween(from, now);
-  const live = ctx.runtime.destination(proc.document.destination.instanceId);
-  const dims = live?.usage ?? [];
+  const boundId = proc.document.destination.instanceId;
+  const [bound] = isUuid(boundId)
+    ? await ctx.db
+        .select({
+          id: destinations.id,
+          typeId: destinations.typeId,
+          settings: destinations.settings,
+        })
+        .from(destinations)
+        .where(eq(destinations.id, boundId))
+    : [];
+  const dims = bound ? destinationSpecs(ctx.runtime, bound).usage : [];
   return {
     window,
     days: days.map((day) => {

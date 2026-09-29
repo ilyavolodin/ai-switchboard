@@ -1,28 +1,18 @@
-import { compileEventTypes, narrowMapped, type EventTypeDefinition } from '@ai-switchboard/sdk';
+import {
+  compileEventTypes,
+  describeMappedDrop,
+  narrowMapped,
+  type EventTypeDefinition,
+} from '@ai-switchboard/sdk';
 
 import { draftFor, type Delivery, type Mapper } from './mapper.js';
 import { asList, compileExpression } from './mapping.js';
 import { SOURCE_ID } from './settings.js';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function dropReason(item: unknown, declared: string[], index: number): string {
-  const which = `Mapping result ${index + 1}`;
-  if (!isRecord(item)) return `${which} is not an object, so it was dropped.`;
-  if (typeof item.type !== 'string') return `${which} has no "type", so it was dropped.`;
-  if (!declared.includes(item.type)) {
-    return `${which} has type ${item.type}, which is not one of the event types (${declared.join(', ') || 'none'}), so it was dropped.`;
-  }
-  return `${which} (${item.type}) needs an artifact with a "kind" and an "id", so it was dropped.`;
-}
-
 /** The only mode before 1.1. */
 export function compileJsonata(eventTypes: EventTypeDefinition[], mapping: string): Mapper {
   const types = compileEventTypes(SOURCE_ID, eventTypes);
   const expression = compileExpression(mapping, 'mapping');
-  const declared = [...types.keys()];
   return {
     eventTypes: [...types.values()].map((t) => t.spec),
     async map(delivery: Delivery) {
@@ -35,7 +25,7 @@ export function compileJsonata(eventTypes: EventTypeDefinition[], mapping: strin
       for (const [i, item] of items.entries()) {
         const mapped = narrowMapped(item, types);
         if (!mapped) {
-          notes.push(dropReason(item, declared, i));
+          notes.push(describeMappedDrop(item, types, i));
           continue;
         }
         events.push(draftFor(delivery, mapped, { hashFallback: false }));

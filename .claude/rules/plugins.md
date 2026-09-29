@@ -8,10 +8,27 @@ paths:
 - A plugin package is `plugins/<kind>-<name>/` named `@ai-switchboard/<kind>-<name>`. Its
   `package.json` has `"keywords": ["switchboard-plugin"]` and a `switchboard` field
   (`entry`, `source`, `sdk`), and the SDK is a peer dependency.
-- `src/plugin.ts` default-exports `definePlugin({...})`. Put types in their own files
-  (`src/source.ts`, `src/destination.ts`, `src/events.ts`) once they grow.
+- `src/plugin.ts` default-exports `definePlugin({...})`. Every plugin uses the same layout:
+  - `settings.ts`: the settings type and `settingsSchema` (plus `readSettings` if something
+    besides `create` needs parsed settings).
+  - `schemas.ts`: re-exports `settingsSchema` (and `targetSchema` / `inputSchema` for a
+    destination). It's published as `<package>/schemas` for the UI, so it and everything it
+    imports must be browser-safe: no `node:` imports, no jsonata, and no value imports from the SDK
+    root. Use `@ai-switchboard/sdk/schema` or `/json` for values, and `import type` from the root.
+  - `api.ts`: the backend client (base URL, auth headers, requests, its error class).
+  - Sources: `events.ts` (event type specs), `parse.ts` (pure `parseDelivery`), `actions.ts`
+    (action specs and pure helpers) and `source.ts` (`create`: verify, resolve, act, health).
+  - Destinations: `target.ts` (`targetSchema`, `inputSchema` and their types), `callback.ts` and
+    `destination.ts`.
+  - Notifiers and secret providers: `notifier.ts` or `provider.ts`.
+- Use the SDK helpers instead of writing your own: `withSettings` for `create`, the JSON
+  narrowing helpers and `tryJson`, `verifyHmacHeader` / `verifySharedSecretHeader`, `checkHealth`,
+  `refusalFor`, the Switchboard protocol helpers (`readSignedJson`, `signSwitchboardBody`,
+  `pickDeclaredUsage`), and `draftFromMapped` / `describeMappedDrop`. Backend quirks (a 529, a
+  403 rate limit) stay in the plugin as `refusalFor` hooks.
 - Declare `capabilities.network` with the exact hosts you call. Use `ctx.http` (the SDK's
   `HttpClient`), never raw `fetch`, so the capability check and tracing apply.
+- Don't list `capabilities.secrets`: `definePlugin` derives it from the `x-secret` fields.
 - Settings schemas are JSON Schema 2020-12. Mark every credential with `"x-secret": true`. The
   core stores a `secret://` reference and hands `create()` the resolved value. Group fields with
   `x-group` and give every field a `title` and a `description`. The UI renders the form from these.

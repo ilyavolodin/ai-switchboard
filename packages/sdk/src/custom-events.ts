@@ -1,6 +1,12 @@
 /** Event types a person defines in a source's settings (the generic webhook and poll-http sources). */
 import type { JSONSchema } from './types/common.js';
-import type { ArtifactRef, Attributes, EventTypeSpec } from './types/events.js';
+import {
+  dedupeKey,
+  type ArtifactRef,
+  type Attributes,
+  type EventDraft,
+  type EventTypeSpec,
+} from './types/events.js';
 
 export const ATTRIBUTE_KINDS = ['string', 'number', 'boolean', 'string[]'] as const;
 export type AttributeKind = (typeof ATTRIBUTE_KINDS)[number];
@@ -246,6 +252,50 @@ export function narrowMapped(
     attributes,
     occurredAt: toIsoTime(item.occurredAt),
     deliveryId: scalarString(item.deliveryId),
+  };
+}
+
+/**
+ * Why `narrowMapped` returned `null` for a mapping result, for the notes a person previewing a
+ * sample sees. `index` is zero-based.
+ */
+export function describeMappedDrop(
+  item: unknown,
+  types: Map<string, CompiledEventType>,
+  index: number,
+): string {
+  const which = `Mapping result ${index + 1}`;
+  const declared = [...types.keys()];
+  if (!isRecord(item)) return `${which} is not an object, so it was dropped.`;
+  if (typeof item.type !== 'string') return `${which} has no "type", so it was dropped.`;
+  if (!types.has(item.type)) {
+    return `${which} has type ${item.type}, which is not one of the event types (${declared.join(', ') || 'none'}), so it was dropped.`;
+  }
+  return `${which} (${item.type}) needs an artifact with a "kind" and an "id", so it was dropped.`;
+}
+
+export interface DraftOptions {
+  /** Used when the mapping gave no `occurredAt`. */
+  occurredAt: string;
+  /** Used when the mapping gave no `deliveryId`, e.g. the webhook's delivery header. */
+  deliveryId?: string | undefined;
+  /** Tells changes apart when there is no delivery id, e.g. a body hash or the item's time. */
+  fallbackDiscriminator?: string | undefined;
+}
+
+/**
+ * The event for a mapped result. The dedupe key uses the artifact version, else the delivery id,
+ * else `fallbackDiscriminator`.
+ */
+export function draftFromMapped(mapped: MappedEvent, options: DraftOptions): EventDraft {
+  const deliveryId = mapped.deliveryId ?? options.deliveryId;
+  return {
+    type: mapped.type,
+    occurredAt: mapped.occurredAt ?? options.occurredAt,
+    artifact: mapped.artifact,
+    attributes: mapped.attributes,
+    dedupeKey: dedupeKey(mapped.type, mapped.artifact, deliveryId ?? options.fallbackDiscriminator),
+    ...(deliveryId !== undefined ? { deliveryId } : {}),
   };
 }
 

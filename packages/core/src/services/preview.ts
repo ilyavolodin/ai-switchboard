@@ -11,18 +11,18 @@ import type {
 import type { Clock } from '../clock.js';
 import { batches, events, destinations } from '../db/schema.js';
 import type { Deps } from '../deps.js';
-import {
-  createExpressionEngine,
-  evaluateFilter,
-  evaluateMapping,
-  filterContext,
-  mappingContext,
-} from '../expr/index.js';
+import type { BatchKind } from '../domain/status.js';
+import { evaluateFilter, evaluateMapping, filterContext, mappingContext } from '../expr/index.js';
+import { runMode } from '../pipeline/run-mode.js';
 import { cronPreview as previewCron } from '../scheduler/preview.js';
-
 import { isUuid } from '../util/uuid.js';
-import { evalFunctions, toEvent } from './pipeline/context.js';
+
+import { evalFunctions, expressionEngine } from './pipeline/eval.js';
 import { batchEvents } from './pipeline/load.js';
+import { toEvent } from './pipeline/views.js';
+
+/** `env` holds the non-secret values `$env` reads, as the pipeline's does. */
+export type PreviewDeps = Deps & { env?: Record<string, string | undefined> };
 
 /**
  * Previews evaluate with the same engine, contexts and limits as the pipeline, against real
@@ -30,7 +30,7 @@ import { batchEvents } from './pipeline/load.js';
  */
 
 export async function filterPreview(
-  deps: Deps,
+  deps: PreviewDeps,
   req: FilterPreviewRequest,
 ): Promise<FilterPreviewResponse> {
   if (!isUuid(req.sourceId) || req.eventTypes.length === 0) return { rows: [] };
@@ -47,7 +47,7 @@ export async function filterPreview(
     )
     .orderBy(desc(events.receivedAt))
     .limit(limit);
-  const engine = createExpressionEngine({ env: process.env });
+  const engine = expressionEngine(deps);
   const now = deps.clock.now();
   const out: FilterPreviewResponse['rows'] = [];
   for (const row of rows) {
@@ -72,20 +72,21 @@ export async function filterPreview(
 }
 
 export async function inputPreview(
-  deps: Deps,
+  deps: PreviewDeps,
   req: InputPreviewRequest,
 ): Promise<InputPreviewResponse> {
   const doc = req.document;
   const now = deps.clock.now();
   let evs: ReturnType<typeof toEvent>[] = [];
-  let mode: 'event' | 'sweep' = req.mode ?? 'sweep';
+  let kind: BatchKind = 'manual';
   if (req.batchId !== undefined && isUuid(req.batchId)) {
     const [batch] = await deps.db.select().from(batches).where(eq(batches.id, req.batchId));
     if (batch) {
       evs = await batchEvents(deps.db, batch);
-      if (req.mode === undefined) mode = batch.kind === 'event' ? 'event' : 'sweep';
+      kind = batch.kind;
     }
   }
+  const mode = req.mode ?? runMode(kind, evs.length);
   let schema = deps.runtime.destination(doc.destination.instanceId)?.type.inputSchema;
   if (schema === undefined && isUuid(doc.destination.instanceId)) {
     const [row] = await deps.db
@@ -94,7 +95,7 @@ export async function inputPreview(
       .where(eq(destinations.id, doc.destination.instanceId));
     if (row) schema = deps.runtime.destinationType(row.typeId)?.type.inputSchema;
   }
-  const engine = createExpressionEngine({ env: process.env });
+  const engine = expressionEngine(deps);
   const out = await evaluateMapping(
     engine,
     doc.input,
@@ -109,7 +110,7 @@ export async function inputPreview(
       run: {
         id: '00000000-0000-4000-8000-000000000000',
         dryRun: true,
-        mode,
+        mode: req.mode ?? kind,
         processId: 'preview',
         processName: doc.name,
       },

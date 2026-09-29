@@ -9,8 +9,14 @@ import {
   type GateDecisionRecord,
   type MatchDecisionRecord,
 } from '../../db/schema.js';
+import type { DispatchOutcome } from '../../domain/status.js';
 import { evaluateBatchKey, evaluateFilter, filterContext } from '../../expr/index.js';
-import { closeCheck, joinBatch, type BatchingConfig } from '../../pipeline/batch.js';
+import {
+  closeCheck,
+  joinBatch,
+  type BatchingConfig,
+  type OpenBatchState,
+} from '../../pipeline/batch.js';
 import { dedupe, dedupeWindowStart } from '../../pipeline/dedupe.js';
 import {
   candidateTriggers,
@@ -20,17 +26,11 @@ import {
   type FilterEvaluation,
 } from '../../pipeline/match.js';
 
-import {
-  JOBS,
-  appendDecisions,
-  evalFunctions,
-  lockKey,
-  processView,
-  toEvent,
-  withTx,
-  type Ctx,
-  type ProcessRow,
-} from './context.js';
+import type { Ctx } from './context.js';
+import { evalFunctions } from './eval.js';
+import { JOBS } from './jobs.js';
+import { appendDecisions, lockBatch, lockKey, withTx } from './tx.js';
+import { processView, toEvent, type BatchRow, type ProcessRow } from './views.js';
 
 /**
  * Filters are evaluated outside the transaction because they may call `$resolve`; dedupe and
@@ -43,9 +43,24 @@ interface PendingJob {
   startAfter?: Date;
 }
 
-export function batchingOf(row: ProcessRow): BatchingConfig {
-  const b = row.document.batching;
-  return { debounceSeconds: b.debounceSeconds, maxSize: b.maxSize, maxAgeSeconds: b.maxAgeSeconds };
+/** A batch whose process is gone closes at once and is held at the gate. */
+const CLOSE_AT_ONCE: BatchingConfig = { debounceSeconds: 0, maxSize: 1, maxAgeSeconds: 0 };
+
+function openBatchState(row: BatchRow): OpenBatchState {
+  return { id: row.id, openedAt: row.openedAt, fireAfter: row.fireAfter, size: row.size };
+}
+
+function closeRecord(reason: string, at: string): GateDecisionRecord {
+  return { stage: 'batch', check: 'close', pass: true, detail: reason, at };
+}
+
+async function insertDispatch(
+  tx: Tx,
+  base: Omit<typeof dispatches.$inferInsert, 'outcome' | 'batchId'>,
+  outcome: DispatchOutcome,
+  batchId?: string,
+): Promise<void> {
+  await tx.insert(dispatches).values({ ...base, outcome, ...(batchId ? { batchId } : {}) });
 }
 
 export function matchEvent(ctx: Ctx, eventId: string): Promise<void> {
@@ -143,16 +158,16 @@ async function matchEventInSpan(ctx: Ctx, eventId: string): Promise<void> {
         signals.push({ processId: m.processId, outcome: 'filtered' });
         continue;
       }
+      const base = {
+        eventId,
+        processId: m.processId,
+        triggerId: m.triggerId,
+        dedupeKey: event.dedupeKey,
+        filter,
+        createdAt: now,
+      };
       if (m.outcome === 'filter_error') {
-        await tx.insert(dispatches).values({
-          eventId,
-          processId: m.processId,
-          triggerId: m.triggerId,
-          dedupeKey: event.dedupeKey,
-          outcome: 'filter_error',
-          filter,
-          createdAt: now,
-        });
+        await insertDispatch(tx, base, 'filter_error');
         signals.push({ processId: m.processId, outcome: 'filter_error' });
         continue;
       }
@@ -170,30 +185,13 @@ async function matchEventInSpan(ctx: Ctx, eventId: string): Promise<void> {
         );
       const dd = dedupe(prior, now);
       if (dd.outcome === 'deduped') {
-        await tx.insert(dispatches).values({
-          eventId,
-          processId: m.processId,
-          triggerId: m.triggerId,
-          dedupeKey: event.dedupeKey,
-          outcome: 'deduped',
-          filter,
-          createdAt: now,
-        });
+        await insertDispatch(tx, base, 'deduped');
         signals.push({ processId: m.processId, outcome: 'deduped' });
         continue;
       }
       const batchKey = keys.get(m.processId)?.key ?? '';
       const batchId = await joinOrOpen(tx, proc, batchKey, now, jobs);
-      await tx.insert(dispatches).values({
-        eventId,
-        processId: m.processId,
-        triggerId: m.triggerId,
-        dedupeKey: event.dedupeKey,
-        outcome: 'batched',
-        filter,
-        batchId,
-        createdAt: now,
-      });
+      await insertDispatch(tx, base, 'batched', batchId);
       signals.push({ processId: m.processId, outcome: 'batched', batchId });
     }
     await tx
@@ -228,7 +226,7 @@ async function joinOrOpen(
   now: Date,
   jobs: PendingJob[],
 ): Promise<string> {
-  const config = batchingOf(proc);
+  const config = proc.document.batching;
   const [open] = await tx
     .select()
     .from(batches)
@@ -242,20 +240,7 @@ async function joinOrOpen(
     )
     .for('update');
   const at = now.toISOString();
-  const decision = joinBatch(
-    open
-      ? { id: open.id, openedAt: open.openedAt, fireAfter: open.fireAfter, size: open.size }
-      : null,
-    config,
-    now,
-  );
-  const closeRecord = (reason: string): GateDecisionRecord => ({
-    stage: 'batch',
-    check: 'close',
-    pass: true,
-    detail: reason,
-    at,
-  });
+  const decision = joinBatch(open ? openBatchState(open) : null, config, now);
   if (open) {
     const closing = decision.closeNow !== null;
     await tx
@@ -267,7 +252,7 @@ async function joinOrOpen(
           ? {
               outcome: 'closed' as const,
               closedAt: now,
-              decisions: appendDecisions([closeRecord(decision.closeNow ?? '')]),
+              decisions: appendDecisions([closeRecord(decision.closeNow ?? '', at)]),
             }
           : {}),
       })
@@ -285,7 +270,7 @@ async function joinOrOpen(
       at,
     },
   ];
-  if (closing) decisions.push(closeRecord(decision.closeNow ?? ''));
+  if (closing) decisions.push(closeRecord(decision.closeNow ?? '', at));
   // A racing replica may open the same (process, key) batch: the partial unique index rejects
   // the second insert and `withTx` retries, which then joins the winner's batch.
   const [created] = await tx
@@ -320,23 +305,12 @@ export function fireBatch(ctx: Ctx, batchId: string): Promise<void> {
 async function fireBatchInSpan(ctx: Ctx, batchId: string): Promise<void> {
   const now = ctx.clock.now();
   const out = await withTx(ctx.db, async (tx) => {
-    const [b] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('update');
+    const b = await lockBatch(tx, batchId);
     if (b?.outcome !== 'open') return null;
     const [proc] = await tx.select().from(processes).where(eq(processes.id, b.processId));
-    const config = proc ? batchingOf(proc) : { debounceSeconds: 0, maxSize: 1, maxAgeSeconds: 0 };
-    const check = closeCheck(
-      { id: b.id, openedAt: b.openedAt, fireAfter: b.fireAfter, size: b.size },
-      config,
-      now,
-    );
+    const check = closeCheck(openBatchState(b), proc?.document.batching ?? CLOSE_AT_ONCE, now);
     if (!check.close) return { later: check.checkAt };
-    const record: GateDecisionRecord = {
-      stage: 'batch',
-      check: 'close',
-      pass: true,
-      detail: check.reason,
-      at: now.toISOString(),
-    };
+    const record = closeRecord(check.reason, now.toISOString());
     await tx
       .update(batches)
       .set({

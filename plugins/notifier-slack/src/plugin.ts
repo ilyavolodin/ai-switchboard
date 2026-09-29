@@ -3,7 +3,7 @@ import { definePlugin } from '@ai-switchboard/sdk';
 import { slackNotifierType } from './notifier.js';
 
 export { buildMessage, slackNotifierType } from './notifier.js';
-export type { SlackSettings } from './notifier.js';
+export type { SlackSettings } from './settings.js';
 
 export default definePlugin({
   id: 'notifier-slack',

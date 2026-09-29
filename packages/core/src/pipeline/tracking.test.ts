@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { MeterSpec, UsageDimension } from '@ai-switchboard/sdk';
 
-import { breakerAfterRun, breakerAtGate, consecutiveFailures } from './breaker.js';
+import {
+  breakerAtGate,
+  breakerHistoryLimit,
+  breakerOpensAfterRun,
+  consecutiveFailures,
+} from './breaker.js';
 import {
   ceilingCrossed,
   estimatedLimit,
@@ -13,6 +18,8 @@ import {
 } from './meters.js';
 import {
   deadlinePassed,
+  isTrackingState,
+  lostPollCutoff,
   nextPollAt,
   pollDelaySeconds,
   recoverInvoking,
@@ -180,16 +187,19 @@ describe('breaker', () => {
     expect(consecutiveFailures(statuses)).toBe(n);
   });
 
-  it('opens after threshold consecutive error/unknown runs', () => {
-    const closed = { state: 'closed' as const, openedAt: null };
-    expect(breakerAfterRun(closed, ['error', 'error'], 3, now).transition).toBeNull();
-    const out = breakerAfterRun(closed, ['unknown', 'error', 'error'], 3, now);
-    expect(out).toMatchObject({ transition: 'opened', next: { state: 'open', openedAt: now } });
+  it.each([
+    ['below the threshold', ['error', 'error'], 3, false],
+    ['at the threshold', ['unknown', 'error', 'error'], 3, true],
+    ['a zero threshold never opens', ['error', 'error', 'error'], 0, false],
+  ] as const)('%s', (_name, statuses, threshold, opens) => {
+    expect(breakerOpensAfterRun(statuses, threshold)).toEqual({ opens, failures: statuses.length });
   });
 
-  it('an already open breaker is not re-opened', () => {
-    const open = { state: 'open' as const, openedAt: new Date(0) };
-    expect(breakerAfterRun(open, ['error', 'error', 'error'], 3, now).transition).toBeNull();
+  it.each([
+    [1, 50],
+    [20, 80],
+  ])('reads enough history for threshold %d', (threshold, limit) => {
+    expect(breakerHistoryLimit(threshold)).toBe(limit);
   });
 
   it('closes after the cooldown, not before', () => {
@@ -268,5 +278,23 @@ describe('usage', () => {
       peak: 5,
     });
     expect(mergeUsage(null, { tokens: 1 }, dims)).toEqual({ tokens: 1 });
+  });
+});
+
+describe('tracking states and lost polls', () => {
+  it.each([
+    ['running', true],
+    ['ok', true],
+    ['error', true],
+    ['unknown', true],
+    ['done', false],
+    [undefined, false],
+  ])('%s is a tracking state: %s', (state, want) => {
+    expect(isTrackingState(state)).toBe(want);
+  });
+
+  it('a poll more than a minute overdue is lost', () => {
+    const at = new Date('2026-01-05T09:00:00Z');
+    expect(lostPollCutoff(at).toISOString()).toBe('2026-01-05T08:59:00.000Z');
   });
 });

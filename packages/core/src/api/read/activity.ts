@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
+import { desc, eq, gte, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 
 import {
   batches,
@@ -9,13 +9,14 @@ import {
   runs,
   sources,
 } from '../../db/schema.js';
+import { runStatusLabel } from '../../domain/labels.js';
 import type { BatchOutcome, RunStatusValue } from '../../domain/status.js';
 import { summarizeWhy } from '../../pipeline/explain.js';
 import { explanationsFor } from '../../services/explain.js';
 import type { ApiContext } from '../context.js';
 import type { ActivityQuery, ActivityRow, EventDetail, Page, StageIndicator } from '../contract.js';
 import { notFound } from '../errors.js';
-import { afterCursor, decodeCursor, encodeCursor, pageLimit, parseTime } from './paging.js';
+import { keysetPage, parseTime } from './paging.js';
 
 type EventRow = typeof events.$inferSelect;
 
@@ -166,6 +167,7 @@ export async function activityRows(ctx: ApiContext, rows: EventRow[]): Promise<A
         outcome: d.batchOutcome ?? d.outcome,
         runId: d.runId,
         runStatus: d.runStatus,
+        statusLabel: d.runStatus ? runStatusLabel(d.runStatus) : null,
       })),
       replayOf: e.replayOf,
       whyNothingRan: summarizeWhy(e.stage, why.get(e.id) ?? []),
@@ -192,8 +194,6 @@ export function artifactCondition(query: string): SQL {
 }
 
 export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<Page<ActivityRow>> {
-  const limit = pageLimit(q.limit);
-  const cursor = decodeCursor(q.cursor);
   const where: SQL[] = [];
   if (q.source) where.push(eq(events.sourceId, q.source));
   if (q.stage) where.push(inArray(events.stage, q.stage.split(',') as EventRow['stage'][]));
@@ -228,22 +228,23 @@ export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<P
       ),
     );
   }
-  if (cursor) where.push(afterCursor(events.receivedAt, events.id, cursor));
-  const rows = await ctx.db
-    .select()
-    .from(events)
-    .where(where.length > 0 ? and(...where) : undefined)
-    .orderBy(desc(events.receivedAt), desc(events.id))
-    .limit(limit + 1);
-  const items = await activityRows(ctx, rows.slice(0, limit));
-  const last = rows[limit - 1];
-  return {
-    items,
-    nextCursor:
-      rows.length > limit && last
-        ? encodeCursor({ t: last.receivedAt.toISOString(), id: last.id })
-        : null,
-  };
+  return keysetPage(
+    q,
+    {
+      time: events.receivedAt,
+      id: events.id,
+      keyOf: (r: EventRow) => ({ t: r.receivedAt, id: r.id }),
+    },
+    where,
+    (cond, take) =>
+      ctx.db
+        .select()
+        .from(events)
+        .where(cond)
+        .orderBy(desc(events.receivedAt), desc(events.id))
+        .limit(take),
+    (rows) => activityRows(ctx, rows),
+  );
 }
 
 /** Whether an event row exists (a replay of a pruned or unknown event is a 404). */

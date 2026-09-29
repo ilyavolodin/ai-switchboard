@@ -1,3 +1,4 @@
+import type { JSONSchema, Settings } from '@ai-switchboard/sdk';
 import {
   ATTRIBUTE_KINDS,
   ATTRIBUTE_NAME_PATTERN,
@@ -6,9 +7,7 @@ import {
   parseWith,
   type AttributeKind,
   type EventTypeDefinition,
-  type JSONSchema,
-  type Settings,
-} from '@ai-switchboard/sdk';
+} from '@ai-switchboard/sdk/schema';
 
 import { PATH_PATTERN } from './paths.js';
 

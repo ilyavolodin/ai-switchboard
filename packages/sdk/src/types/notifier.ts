@@ -47,6 +47,13 @@ export interface SecretProvider {
    * appears anywhere in the listing. Providers that cannot enumerate omit this method.
    */
   list?(): Promise<SecretListing[]>;
+  /**
+   * A writable provider (SDK 2.2) implements both `set` and `delete`; the host stores rotated
+   * instance credentials through them. `set` creates or replaces atomically; `delete` of a
+   * missing name succeeds. Errors and logs never carry the value.
+   */
+  set?(name: string, value: string): Promise<void>;
+  delete?(name: string): Promise<void>;
 }
 
 export interface SecretProviderType {

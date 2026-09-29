@@ -2,8 +2,9 @@ import { definePlugin } from '@ai-switchboard/sdk';
 
 import { fileSecretProviderType } from './provider.js';
 
-export { fileSecretProviderType, SecretNotFoundError } from './provider.js';
-export type { FileSecretSettings } from './provider.js';
+export { SecretNotFoundError } from '@ai-switchboard/sdk';
+export { fileSecretProviderType } from './provider.js';
+export type { FileSecretSettings } from './settings.js';
 
 export default definePlugin({
   id: 'secrets-file',

@@ -5,8 +5,8 @@ import {
   createStubHttp,
   createTestContext,
   rawRequest,
+  pluginConformanceChecks,
   runConformance,
-  sourceConformanceChecks,
   type StubHandler,
 } from '@ai-switchboard/sdk/testing';
 
@@ -65,27 +65,31 @@ const parse = (req: RawRequest, s: Settings = settings) => make(s).source.parse!
 
 runConformance(
   'datadog source',
-  sourceConformanceChecks(datadogSource, {
-    settings,
-    secrets: [SECRET, API_KEY, APP_KEY],
-    http: datadogApi(),
-    now: () => NOW,
-    push: {
-      deliveries: [triggered, renotify, recovered, noData, warn].map((p) => deliver(p)),
-      // Datadog retries a 5xx with the same payload; a second delivery in the same cycle collapses.
-      sameChange: [deliver(triggered), deliver(triggered, { id: '7716548234011234999' })],
-      differentChange: [
-        deliver(triggered),
-        deliver(triggered, { alertCycleKey: '7716548234099990000' }),
-      ],
-      wrongSignature: deliver(
-        triggered,
-        {},
-        { 'x-switchboard-secret': 'fixture-secret-0123456780' },
-      ),
-      missingHeader: deliver(triggered, {}, { 'x-switchboard-secret': undefined }),
+  pluginConformanceChecks(plugin, {
+    sources: {
+      [datadogSource.id]: {
+        settings,
+        secrets: [SECRET, API_KEY, APP_KEY],
+        http: datadogApi(),
+        now: () => NOW,
+        push: {
+          deliveries: [triggered, renotify, recovered, noData, warn].map((p) => deliver(p)),
+          // Datadog retries a 5xx with the same payload; a second delivery in the same cycle collapses.
+          sameChange: [deliver(triggered), deliver(triggered, { id: '7716548234011234999' })],
+          differentChange: [
+            deliver(triggered),
+            deliver(triggered, { alertCycleKey: '7716548234099990000' }),
+          ],
+          wrongSignature: deliver(
+            triggered,
+            {},
+            { 'x-switchboard-secret': 'fixture-secret-0123456780' },
+          ),
+          missingHeader: deliver(triggered, {}, { 'x-switchboard-secret': undefined }),
+        },
+        resolveNotFound: { kind: 'datadog.monitor', id: '999' },
+      },
     },
-    resolveNotFound: { kind: 'datadog.monitor', id: '999' },
   }),
   { describe, it },
 );

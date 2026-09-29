@@ -1,9 +1,9 @@
 import { sql } from 'drizzle-orm';
 
-import { DEDUPE_WINDOW_SECONDS } from '../../pipeline/dedupe.js';
-import { getSettings } from '../settings.js';
-
 import type { Deps } from '../../deps.js';
+import { DEDUPE_WINDOW_SECONDS } from '../../pipeline/dedupe.js';
+import { DAY_MS } from '../../util/time.js';
+import { getSettings } from '../settings.js';
 
 /**
  * Runs, steps, approvals, audit and process versions are kept indefinitely; unmatched events go
@@ -14,7 +14,7 @@ export async function prune(
 ): Promise<Record<string, number>> {
   const now = ctx.clock.now();
   const r = (await getSettings(ctx.db)).retention;
-  const ago = (days: number) => new Date(now.getTime() - Math.max(1, days) * 86_400_000);
+  const ago = (days: number) => new Date(now.getTime() - Math.max(1, days) * DAY_MS);
   const counts: Record<string, number> = {};
   const run = async (name: string, query: ReturnType<typeof sql>) => {
     const out = await ctx.db.execute(query);
@@ -27,7 +27,10 @@ export async function prune(
   );
   await run('event_raw', sql`DELETE FROM event_raw WHERE received_at < ${ago(r.rawBodiesDays)}`);
   // Dedupe reads batched dispatches of the last 7 days: never prune inside that window.
-  const dispatchDays = Math.max(r.dispatchesDays, Math.ceil(DEDUPE_WINDOW_SECONDS / 86_400) + 1);
+  const dispatchDays = Math.max(
+    r.dispatchesDays,
+    Math.ceil((DEDUPE_WINDOW_SECONDS * 1000) / DAY_MS) + 1,
+  );
   await run('dispatches', sql`DELETE FROM dispatches WHERE created_at < ${ago(dispatchDays)}`);
   await run(
     'batches',

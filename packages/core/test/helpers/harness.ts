@@ -19,7 +19,7 @@ import {
 import type { Deps } from '../../src/deps.js';
 import { defaultProcessDocument, type ProcessDocument } from '../../src/domain/process.js';
 import { silentLogger } from '../../src/logger.js';
-import { MemoryQueue } from '../../src/queue/queue.js';
+import { MemoryQueue } from './memory-queue.js';
 import { putSettings, DEFAULT_SETTINGS } from '../../src/services/settings.js';
 import { createPipeline, type Pipeline } from '../../src/services/pipeline/index.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';

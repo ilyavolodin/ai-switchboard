@@ -4,9 +4,9 @@ import {
   type Attributes,
   type EventDraft,
   type RawRequest,
+  parseJsonObject,
+  type JsonObject,
 } from '@ai-switchboard/sdk';
-
-import { parseJsonObject, type Json } from './json.js';
 
 export type MonitorVerb = 'triggered' | 'recovered' | 'warn' | 'no_data' | 'renotify';
 
@@ -32,7 +32,7 @@ export function transitionVerb(transition: string): MonitorVerb {
  * A template value, or `undefined` when it is empty or Datadog left the variable unsubstituted
  * (`"$HOSTNAME"` when the monitor has no host).
  */
-function field(body: Json, key: string): string | undefined {
+function field(body: JsonObject, key: string): string | undefined {
   const value = body[key];
   const s =
     typeof value === 'number' && Number.isFinite(value)

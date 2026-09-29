@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { errorText } from './errors.js';
 import { isRecord, str } from './guards.js';
-import { withTimeout } from './timeout.js';
+import { addSeconds, DAY_MS, HOUR_MS } from './time.js';
+import { isTimeoutError, withTimeout } from './timeout.js';
 import { isUuid } from './uuid.js';
 
 describe('util', () => {
@@ -36,11 +37,31 @@ describe('util', () => {
     vi.useFakeTimers();
     try {
       const pending = withTimeout(new Promise<never>(() => undefined), 5_000, 'slow');
-      const outcome = expect(pending).rejects.toThrow('slow');
+      const outcome = pending.then(
+        () => {
+          throw new Error('resolved');
+        },
+        (err: unknown) => {
+          expect(isTimeoutError(err)).toBe(true);
+          expect(err).toHaveProperty('message', 'slow');
+        },
+      );
       await vi.advanceTimersByTimeAsync(5_000);
       await outcome;
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('isTimeoutError tells a timeout from any other failure', () => {
+    expect(isTimeoutError(new Error('slow'))).toBe(false);
+    expect(isTimeoutError('slow')).toBe(false);
+  });
+
+  it('time helpers add seconds and name the rolling windows', () => {
+    expect(addSeconds(new Date('2026-01-05T09:00:00Z'), 90).toISOString()).toBe(
+      '2026-01-05T09:01:30.000Z',
+    );
+    expect(DAY_MS).toBe(24 * HOUR_MS);
   });
 });

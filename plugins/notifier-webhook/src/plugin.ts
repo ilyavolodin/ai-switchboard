@@ -3,7 +3,7 @@ import { definePlugin } from '@ai-switchboard/sdk';
 import { webhookNotifierType } from './notifier.js';
 
 export { webhookNotifierType } from './notifier.js';
-export type { WebhookNotifierSettings } from './notifier.js';
+export type { WebhookNotifierSettings } from './settings.js';
 
 export default definePlugin({
   id: 'notifier-webhook',

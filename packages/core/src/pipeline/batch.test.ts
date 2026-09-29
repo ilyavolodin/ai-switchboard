@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FakeClock } from '../clock.js';
 
-import {
-  batchArrival,
-  closeCheck,
-  joinBatch,
-  type BatchingConfig,
-  type OpenBatchState,
-} from './batch.js';
+import { closeCheck, joinBatch, type BatchingConfig, type OpenBatchState } from './batch.js';
 
 const config: BatchingConfig = { debounceSeconds: 30, maxSize: 3, maxAgeSeconds: 120 };
 
@@ -123,41 +117,5 @@ describe('batching', () => {
     expect(
       joinBatch(null, { ...off, debounceSeconds: 300, maxAgeSeconds: 600 }, now).closeNow,
     ).toBe('size');
-  });
-});
-
-describe('batch keys', () => {
-  it('separate batches per key, and each joins its own', () => {
-    const cfg = { debounceSeconds: 30, maxSize: 100, maxAgeSeconds: 600 };
-    let n = 0;
-    const newId = () => `b${++n}`;
-    let state = {};
-    const now = new Date('2026-01-05T09:00:00Z');
-    const arrivals = ['acme/api', 'acme/web', 'acme/api', 'acme/api', 'acme/web'];
-    const decisions = arrivals.map((key, i) => {
-      const out = batchArrival(state, key, cfg, new Date(now.getTime() + i * 1000), newId);
-      state = out.state;
-      return out.decision;
-    });
-    expect(decisions.map((d) => [d.key, d.action, d.batchId, d.size])).toEqual([
-      ['acme/api', 'open', 'b1', 1],
-      ['acme/web', 'open', 'b2', 1],
-      ['acme/api', 'join', 'b1', 2],
-      ['acme/api', 'join', 'b1', 3],
-      ['acme/web', 'join', 'b2', 2],
-    ]);
-  });
-
-  it('a batch that closes on size leaves the state and the next arrival opens a new one', () => {
-    const cfg = { debounceSeconds: 30, maxSize: 2, maxAgeSeconds: 600 };
-    let n = 0;
-    const newId = () => `b${++n}`;
-    const now = new Date('2026-01-05T09:00:00Z');
-    const a = batchArrival({}, 'k', cfg, now, newId);
-    const b = batchArrival(a.state, 'k', cfg, now, newId);
-    expect(b.decision).toMatchObject({ action: 'join', closeNow: 'size', batchId: 'b1' });
-    expect(b.state.k).toBeUndefined();
-    const c = batchArrival(b.state, 'k', cfg, now, newId);
-    expect(c.decision).toMatchObject({ action: 'open', batchId: 'b2' });
   });
 });

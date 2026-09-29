@@ -1,11 +1,9 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import { evaluationAdminEmail } from '../../auth/bootstrap.js';
-import { generatePassword, hashPassword, verifyPassword } from '../../auth/crypto.js';
+import { generatePassword, hashPassword } from '../../auth/crypto.js';
 import { actorOf, requireRole } from '../../auth/fastify.js';
 import { OIDC_FLOW_COOKIE, OidcError } from '../../auth/oidc.js';
-import { PASSWORD_MAX_LENGTH, passwordProblem } from '../../auth/password-policy.js';
 import {
   createSession,
   revokeSession,
@@ -21,24 +19,24 @@ import {
   MAX_FAILURES_PER_PASSWORD_CHANGE,
   type ThrottleLimit,
 } from '../../auth/throttle.js';
-import { users } from '../../db/schema.js';
-import { storePassword } from '../../services/users.js';
+import { isServiceError } from '../../services/errors.js';
+import {
+  changeOwnPassword,
+  getUser,
+  passwordLogin,
+  userForOidcIdentity,
+} from '../../services/users.js';
 import type { ApiContext } from '../context.js';
-import type { ChangePasswordRequest, LocalLoginRequest, MeResponse, UserDTO } from '../contract.js';
-import { badRequest, conflict, HttpError } from '../errors.js';
-
-export function toUserDTO(row: typeof users.$inferSelect): UserDTO {
-  return {
-    id: row.id,
-    email: row.email,
-    role: row.role,
-    hasPassword: row.passwordHash !== null,
-    hasOidc: row.oidcSubject !== null,
-    mustChangePassword: row.mustChangePassword,
-    lastLoginAt: row.lastLoginAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-  };
-}
+import {
+  changePasswordBody,
+  localLoginBody,
+  type ChangePasswordRequest,
+  type LocalLoginRequest,
+  type MeResponse,
+  type WhoAmIResponse,
+} from '../contract.js';
+import { forbidden, HttpError } from '../errors.js';
+import { toUserDTO } from '../read/users.js';
 
 export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void {
   const { db, clock, config } = ctx;
@@ -60,7 +58,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
   };
 
   const me = async (userId: string | undefined, restricted: boolean): Promise<MeResponse> => {
-    const row = userId ? (await db.select().from(users).where(eq(users.id, userId)))[0] : undefined;
+    const row = userId ? await getUser(db, userId) : undefined;
     return {
       user: row ? toUserDTO(row) : null,
       authMode: ctx.oidc ? 'oidc' : 'local',
@@ -89,25 +87,12 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
         : `${Math.ceil(decision.retryAfterSeconds / 60)} minutes`;
     throw new HttpError(429, 'too_many_attempts', `Too many attempts; try again in ${wait}.`);
   };
-  // Compared against when the email has no password, so a miss costs as long as a wrong password
-  // and the response time does not tell which emails have accounts.
   let decoy: Promise<string> | undefined;
+  const decoyHash = () => (decoy ??= hashPassword(generatePassword()));
 
   app.post<{ Body: LocalLoginRequest }>(
     '/api/v1/auth/login',
-    {
-      schema: {
-        body: {
-          type: 'object',
-          required: ['email', 'password'],
-          properties: {
-            email: { type: 'string', maxLength: 320 },
-            // Longer than any password the policy accepts; bounds the scrypt input.
-            password: { type: 'string', maxLength: PASSWORD_MAX_LENGTH * 4 },
-          },
-        },
-      },
-    },
+    { schema: { body: localLoginBody } },
     async (req, reply) => {
       const email = req.body.email.trim().toLowerCase();
       const byIp = ipKey(req.ip);
@@ -116,13 +101,8 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
         { key: byIp, max: MAX_FAILURES_PER_IP },
         { key: byEmail, max: MAX_FAILURES_PER_EMAIL },
       ]);
-      const [row] = await db
-        .select()
-        .from(users)
-        .where(and(eq(users.email, email), isNotNull(users.passwordHash)));
-      decoy ??= hashPassword(generatePassword());
-      const ok = await verifyPassword(req.body.password, row?.passwordHash ?? (await decoy));
-      if (!row || !ok) {
+      const row = await passwordLogin(db, email, req.body.password, decoyHash);
+      if (!row) {
         await attempts.fail([byIp, byEmail]);
         throw new HttpError(401, 'invalid_credentials', 'Email or password is incorrect.');
       }
@@ -137,47 +117,24 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
 
   app.post<{ Body: ChangePasswordRequest }>(
     '/api/v1/auth/password',
-    {
-      preHandler: requireRole('viewer'),
-      schema: {
-        body: {
-          type: 'object',
-          required: ['currentPassword', 'newPassword'],
-          properties: {
-            currentPassword: { type: 'string' },
-            newPassword: { type: 'string' },
-          },
-        },
-      },
-    },
+    { preHandler: requireRole('viewer'), schema: { body: changePasswordBody } },
     async (req, reply) => {
       const user = req.user;
       const token = req.cookies[SESSION_COOKIE];
       if (user?.via !== 'session' || !token)
-        throw new HttpError(403, 'forbidden', 'Change a password from a signed-in session.');
+        throw forbidden('Change a password from a signed-in session.');
       const key = `password:${user.id}`;
       await throttled(reply, [{ key, max: MAX_FAILURES_PER_PASSWORD_CHANGE }]);
-      const [row] = await db.select().from(users).where(eq(users.id, user.id));
-      if (!row?.passwordHash)
-        throw conflict('This account has no password; ask an admin to set one.');
-      if (!(await verifyPassword(req.body.currentPassword, row.passwordHash))) {
-        await attempts.fail([key]);
-        // 400, not 401: the session is fine, only the confirmation failed.
-        throw new HttpError(400, 'invalid_credentials', 'The current password is incorrect.');
-      }
-      await attempts.succeed([key]);
-      const problem = passwordProblem(req.body.newPassword, row.email);
-      if (problem) throw badRequest(problem);
-      if (req.body.newPassword === req.body.currentPassword)
-        throw badRequest('Choose a password different from the current one.');
-      const now = clock.now();
-      await db.transaction((tx) =>
-        storePassword(tx, row.id, req.body.newPassword, {
-          temporary: false,
+      const row = await changeOwnPassword(
+        db,
+        user.id,
+        {
+          currentPassword: req.body.currentPassword,
+          newPassword: req.body.newPassword,
           keepToken: token,
-          field: 'password',
-          audit: { actor: actorOf(req), reason: 'changed own password', at: now },
-        }),
+        },
+        { actor: actorOf(req), reason: 'changed own password', now: clock.now() },
+        (ok) => (ok ? attempts.succeed([key]) : attempts.fail([key])),
       );
       return me(row.id, false);
     },
@@ -197,24 +154,18 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
     try {
       const identity = await ctx.oidc.callback(current, req.cookies[OIDC_FLOW_COOKIE], clock.now());
       void reply.clearCookie(OIDC_FLOW_COOKIE, { path: '/' });
-      const [row] = await db.select().from(users).where(eq(users.email, identity.email));
+      const row = await userForOidcIdentity(db, identity, clock.now());
       if (!row) {
         target = `/no-access?email=${encodeURIComponent(identity.email)}`;
       } else {
-        if (row.oidcSubject !== null && row.oidcSubject !== identity.subject) {
-          // The email was bound to another subject at the issuer; never re-bind silently.
-          throw new OidcError('This account is linked to a different identity; ask an admin.');
-        }
-        if (row.oidcSubject === null) {
-          await db.update(users).set({ oidcSubject: identity.subject }).where(eq(users.id, row.id));
-        }
         const token = await createSession(db, row.id, 'oidc', clock.now());
         void reply.setCookie(SESSION_COOKIE, token, cookieOptions);
         target = '/';
       }
     } catch (err) {
       req.log.warn({ err }, 'oidc callback failed');
-      const message = err instanceof OidcError ? err.message : 'Sign-in failed.';
+      const message =
+        err instanceof OidcError || isServiceError(err) ? err.message : 'Sign-in failed.';
       target = `/login?error=${encodeURIComponent(message)}`;
     }
     return reply.redirect(target);
@@ -227,7 +178,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
     return reply.code(204).send();
   });
 
-  app.get('/api/v1/auth/whoami', { preHandler: requireRole('viewer') }, (req) => ({
+  app.get('/api/v1/auth/whoami', { preHandler: requireRole('viewer') }, (req): WhoAmIResponse => ({
     actor: actorOf(req),
   }));
 }

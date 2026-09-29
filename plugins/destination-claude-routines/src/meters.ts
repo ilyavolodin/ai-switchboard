@@ -1,29 +1,56 @@
 import { createHash } from 'node:crypto';
 
 import {
+  tryJson,
   tryParse,
   type JSONSchema,
   type MeterReading,
   type PluginContext,
+  type SecretStoreStatus,
 } from '@ai-switchboard/sdk';
 
 import { FIVE_HOUR, SEVEN_DAY, type RoutinesUsageSettings } from './settings.js';
 
 export const OAUTH_BETA = 'oauth-2025-04-20';
 export const OAUTH_STATE_KEY = 'oauth';
+/** `ctx.secrets` keys: rotated credentials never go to the instance state. */
+export const OAUTH_REFRESH_KEY = 'oauth-refresh-token';
+export const OAUTH_ACCESS_KEY = 'oauth-access-token';
 const EXPIRY_MARGIN_MS = 60_000;
 const DEFAULT_EXPIRES_IN_SECONDS = 300;
 
-export interface OAuthState {
-  /** The token endpoint rotates it on every refresh. */
-  refreshToken: string;
+/** What the instance state holds: no token, only where the chain started and when it expires. */
+export interface OAuthMeta {
   /**
    * Fingerprint of the settings token this chain of rotations started from. When a person pastes
    * a new token into the settings, the fingerprint no longer matches and the chain restarts.
    */
   seed: string;
-  accessToken?: string;
   expiresAt?: string;
+}
+
+interface OAuthState extends OAuthMeta {
+  /** The token endpoint rotates it on every refresh. */
+  refreshToken: string;
+  accessToken?: string;
+}
+
+/** Before SDK 2.2 the tokens sat in the state next to the metadata. */
+interface LegacyOAuthState extends OAuthMeta {
+  refreshToken?: unknown;
+  accessToken?: unknown;
+}
+
+const metaSchema: JSONSchema = {
+  type: 'object',
+  required: ['seed'],
+  properties: { seed: { type: 'string' }, expiresAt: { type: 'string' } },
+};
+
+export function secretStoreProblem(status: SecretStoreStatus): string | undefined {
+  return status.writable
+    ? undefined
+    : `rotated OAuth tokens need a writable secret provider: ${status.reason}`;
 }
 
 interface TokenResponse {
@@ -80,15 +107,35 @@ export class SeatUsageError extends Error {
 export function createSeatMeters(
   usage: RoutinesUsageSettings,
   ctx: PluginContext,
-): { read(): Promise<MeterReading[]> } {
+): { read(): Promise<MeterReading[]>; problem(): Promise<string | undefined> } {
   let inflight: Promise<MeterReading[]> | undefined;
 
   async function loadState(seedToken: string): Promise<OAuthState> {
     const seed = fingerprint(seedToken);
-    const stored = await ctx.state.get<OAuthState>(OAUTH_STATE_KEY);
+    const stored = tryParse<LegacyOAuthState>(metaSchema, await ctx.state.get(OAUTH_STATE_KEY));
+    if (stored?.seed !== seed) return { refreshToken: seedToken, seed };
+    const expiry = stored.expiresAt !== undefined ? { expiresAt: stored.expiresAt } : {};
+    if (typeof stored.refreshToken === 'string') {
+      // Move what an older version kept in Postgres; the rotated token is the only live one.
+      await ctx.secrets.set(OAUTH_REFRESH_KEY, stored.refreshToken);
+      const legacyAccess = typeof stored.accessToken === 'string' ? stored.accessToken : undefined;
+      if (legacyAccess !== undefined) await ctx.secrets.set(OAUTH_ACCESS_KEY, legacyAccess);
+      else await ctx.secrets.delete(OAUTH_ACCESS_KEY);
+      await ctx.state.set(OAUTH_STATE_KEY, { seed, ...expiry } satisfies OAuthMeta);
+      return {
+        refreshToken: stored.refreshToken,
+        seed,
+        ...(legacyAccess !== undefined ? { accessToken: legacyAccess, ...expiry } : {}),
+      };
+    }
     // Prefer the stored, rotated token: the one in the settings has been used up.
-    if (stored?.seed === seed && typeof stored.refreshToken === 'string') return stored;
-    return { refreshToken: seedToken, seed };
+    const refreshToken = (await ctx.secrets.get(OAUTH_REFRESH_KEY)) ?? seedToken;
+    const access = await ctx.secrets.get(OAUTH_ACCESS_KEY);
+    return {
+      refreshToken,
+      seed,
+      ...(access !== undefined ? { accessToken: access, ...expiry } : {}),
+    };
   }
 
   async function accessToken(state: OAuthState, force: boolean): Promise<OAuthState> {
@@ -116,13 +163,7 @@ export function createSeatMeters(
           : `OAuth token endpoint answered ${res.status}`,
       );
     }
-    let body: unknown;
-    try {
-      body = res.json();
-    } catch {
-      body = undefined;
-    }
-    const token = tryParse<TokenResponse>(tokenResponseSchema, body);
+    const token = tryParse<TokenResponse>(tokenResponseSchema, tryJson(res));
     if (!token) throw new SeatUsageError('OAuth token endpoint returned no access_token');
     const next: OAuthState = {
       refreshToken: token.refresh_token ?? state.refreshToken,
@@ -133,7 +174,12 @@ export function createSeatMeters(
       ).toISOString(),
     };
     // Store before using it: once rotated, the previous refresh token is dead.
-    await ctx.state.set(OAUTH_STATE_KEY, next);
+    await ctx.secrets.set(OAUTH_REFRESH_KEY, next.refreshToken);
+    await ctx.secrets.set(OAUTH_ACCESS_KEY, token.access_token);
+    await ctx.state.set(OAUTH_STATE_KEY, {
+      seed: next.seed,
+      expiresAt: next.expiresAt,
+    } satisfies OAuthMeta);
     return next;
   }
 
@@ -145,18 +191,15 @@ export function createSeatMeters(
         'anthropic-beta': OAUTH_BETA,
       },
     });
-    let body: unknown;
-    try {
-      body = res.json();
-    } catch {
-      body = undefined;
-    }
-    return { status: res.status, body };
+    return { status: res.status, body: tryJson(res) };
   }
 
   async function read(): Promise<MeterReading[]> {
     const seedToken = usage.oauthRefreshToken;
     if (seedToken === undefined) return [];
+    // Without somewhere to keep the rotated token, a refresh would spend the only live one.
+    const problem = secretStoreProblem(await ctx.secrets.check());
+    if (problem !== undefined) throw new SeatUsageError(problem);
     let state = await accessToken(await loadState(seedToken), false);
     let res = await fetchUsage(state.accessToken ?? '');
     if (res.status === 401) {
@@ -185,6 +228,11 @@ export function createSeatMeters(
   }
 
   return {
+    /** Why seat usage cannot be read at all, or undefined. */
+    problem: async () =>
+      usage.oauthRefreshToken === undefined
+        ? undefined
+        : secretStoreProblem(await ctx.secrets.check()),
     read: () => {
       // Two overlapping reads would both spend the same rotating refresh token.
       inflight ??= read().finally(() => {

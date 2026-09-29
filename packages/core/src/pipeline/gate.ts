@@ -1,13 +1,12 @@
 import type { Health } from '@ai-switchboard/sdk';
 
 import type { QuietWindow } from '../domain/process.js';
-import type { ApprovalState, BatchKind, HoldReason } from '../domain/status.js';
+import type { ApprovalState, HoldReason } from '../domain/status.js';
 
 import { breakerAtGate, breakerClosesAt, type BreakerState } from './breaker.js';
 import { inQuietHours } from './quiet-hours.js';
 
 export interface GateInput {
-  kind: BatchKind;
   dryRun: boolean;
   process: { enabled: boolean };
   sources: readonly { id: string; enabled: boolean }[];
@@ -30,6 +29,26 @@ export interface GateInput {
     state: ApprovalState;
     error?: string;
   };
+}
+
+/** Whether the approval rule needs its expression evaluated for this batch. */
+export function approvalNeedsEvaluation(
+  rule: string,
+  batch: { dryRun: boolean; approvalState: ApprovalState },
+): boolean {
+  return (
+    rule !== 'none' && rule !== 'always' && !batch.dryRun && batch.approvalState !== 'approved'
+  );
+}
+
+/** An expression rule that fails asks a person (fail closed). */
+export function approvalRequired(
+  rule: string,
+  evaluated: { result: boolean; error?: string } | null,
+): boolean {
+  if (rule === 'always') return true;
+  if (evaluated === null) return false;
+  return evaluated.result || evaluated.error !== undefined;
 }
 
 export interface GateCheck {

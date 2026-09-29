@@ -1,8 +1,9 @@
 import { sql } from 'drizzle-orm';
 
 import { statsHourly } from '../../db/schema.js';
-
 import type { Deps } from '../../deps.js';
+import { periodBounds } from '../../pipeline/meters.js';
+
 import { countedRun } from './counters.js';
 
 /**
@@ -55,12 +56,6 @@ class Buckets {
   }
 }
 
-function hourFloor(d: Date): Date {
-  const out = new Date(d.getTime());
-  out.setUTCMinutes(0, 0, 0);
-  return out;
-}
-
 type Row = Record<string, unknown>;
 
 async function rows(ctx: Pick<Deps, 'db'>, query: ReturnType<typeof sql>): Promise<Row[]> {
@@ -78,8 +73,8 @@ export async function materialiseStats(
   from: Date,
   to: Date,
 ): Promise<number> {
-  const start = hourFloor(from);
-  const end = new Date(hourFloor(to).getTime() + 3_600_000);
+  const start = periodBounds('hour', from).start;
+  const end = periodBounds('hour', to).end;
   const b = new Buckets();
 
   for (const r of await rows(

@@ -1,24 +1,13 @@
 #!/usr/bin/env node
 import { createSwitchboard } from './app.js';
 import { loadConfig } from './config.js';
-import { createLogger } from './logger.js';
-import { exportsSignal } from './telemetry/otel-config.js';
+import { loggerFor } from './logger.js';
 
 const config = loadConfig();
-const logger = createLogger({
-  level: config.logLevel,
-  pretty: config.prettyLogs,
-  exportLogs: exportsSignal(config.telemetry, 'logs'),
-});
+const logger = loggerFor(config);
 
 try {
-  const switchboard = await createSwitchboard({
-    config,
-    logger,
-    ...(process.env.SWITCHBOARD_ADMIN_PASSWORD
-      ? { adminPassword: process.env.SWITCHBOARD_ADMIN_PASSWORD }
-      : {}),
-  });
+  const switchboard = await createSwitchboard({ config, logger });
   await switchboard.start();
   let stopping = false;
   const shutdown = (signal: string): void => {

@@ -1,59 +1,15 @@
 import {
-  signHmac,
+  signSwitchboardBody,
+  SWITCHBOARD_SIGNATURE_HEADER,
+  withSettings,
   type Health,
-  type JSONSchema,
   type NotificationMessage,
   type Notifier,
   type NotifierType,
   type PluginContext,
-  type Settings,
-  parseWith,
 } from '@ai-switchboard/sdk';
 
-export interface WebhookNotifierSettings {
-  url: string;
-  /** When set, the body is signed: `x-switchboard-signature: sha256=<hex>`. */
-  secret?: string;
-  headers: Record<string, string>;
-}
-
-export const SIGNATURE_HEADER = 'x-switchboard-signature';
-
-export const settingsSchema: JSONSchema = {
-  $schema: 'https://json-schema.org/draft/2020-12/schema',
-  type: 'object',
-  title: 'Webhook notifier',
-  description: 'POSTs each notification as JSON to a URL.',
-  required: ['url'],
-  properties: {
-    url: {
-      type: 'string',
-      format: 'uri',
-      pattern: '^https?://',
-      title: 'URL',
-      description: 'Receives a POST with the notification as JSON.',
-      'x-group': 'Delivery',
-    },
-    secret: {
-      type: 'string',
-      minLength: 16,
-      title: 'Signing secret',
-      description:
-        'Optional. Signs the raw body with HMAC-SHA256 in `x-switchboard-signature: sha256=<hex>`.',
-      'x-secret': true,
-      'x-group': 'Delivery',
-    },
-    headers: {
-      type: 'object',
-      title: 'Headers',
-      description: 'Extra request headers (not secret; use the signing secret to authenticate).',
-      propertyNames: { pattern: "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$" },
-      additionalProperties: { type: 'string' },
-      default: {},
-      'x-group': 'Delivery',
-    },
-  },
-};
+import { settingsSchema, type WebhookNotifierSettings } from './settings.js';
 
 export class WebhookNotifyError extends Error {
   override readonly name = 'WebhookNotifyError';
@@ -71,7 +27,7 @@ function createWebhookNotifier(settings: WebhookNotifierSettings, ctx: PluginCon
         'content-type': 'application/json',
         'user-agent': 'ai-switchboard',
         ...(settings.secret !== undefined
-          ? { [SIGNATURE_HEADER]: `sha256=${signHmac({ secret: settings.secret, payload: body })}` }
+          ? { [SWITCHBOARD_SIGNATURE_HEADER]: signSwitchboardBody(settings.secret, body) }
           : {}),
       };
       const res = await ctx.http.post(settings.url, { headers, body });
@@ -98,9 +54,5 @@ export const webhookNotifierType: NotifierType = {
   icon: 'webhook',
   description: 'POSTs each notification as JSON to any URL, optionally HMAC-signed.',
   settingsSchema,
-  create: (settings: Settings, ctx: PluginContext) =>
-    createWebhookNotifier(
-      parseWith<WebhookNotifierSettings>(settingsSchema, settings, 'webhook notifier settings'),
-      ctx,
-    ),
+  create: withSettings(settingsSchema, 'webhook notifier settings', createWebhookNotifier),
 };

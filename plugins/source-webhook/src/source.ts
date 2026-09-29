@@ -1,6 +1,6 @@
 import {
-  safeEqual,
-  verifyHmac,
+  verifyHmacHeader,
+  verifySharedSecretHeader,
   type EventTypeSpec,
   type PluginContext,
   type RawRequest,
@@ -50,34 +50,17 @@ function makeVerify(s: WebhookSettings): ((req: RawRequest) => VerifyResult) | u
   switch (s.verification) {
     case 'none':
       return undefined;
-    case 'hmac': {
-      const header = s.signatureHeader.toLowerCase();
-      return (req) => {
-        const signature = req.headers[header];
-        if (signature === undefined || signature === '') {
-          return { ok: false, reason: `missing ${header} header` };
-        }
-        const ok = verifyHmac({
+    case 'hmac':
+      return (req) =>
+        verifyHmacHeader(req, {
+          header: s.signatureHeader,
           secret,
-          payload: req.body,
           algorithm: s.algorithm,
           encoding: s.signatureEncoding,
-          signature,
           prefix: s.signaturePrefix,
         });
-        return ok ? { ok: true } : { ok: false, reason: 'signature mismatch' };
-      };
-    }
-    case 'shared_secret': {
-      const header = s.sharedSecretHeader.toLowerCase();
-      return (req) => {
-        const given = req.headers[header];
-        if (given === undefined || given === '') {
-          return { ok: false, reason: `missing ${header} header` };
-        }
-        return safeEqual(given, secret) ? { ok: true } : { ok: false, reason: 'secret mismatch' };
-      };
-    }
+    case 'shared_secret':
+      return (req) => verifySharedSecretHeader(req, { header: s.sharedSecretHeader, secret });
   }
 }
 

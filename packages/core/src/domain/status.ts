@@ -12,6 +12,10 @@ export const EVENT_STAGES = [
 ] as const;
 export type EventStage = (typeof EVENT_STAGES)[number];
 
+/** How a stored raw body arrived: a push delivery, a pull source's page, or an injected test event. */
+export const RAW_ORIGINS = ['push', 'poll', 'test'] as const;
+export type RawOrigin = (typeof RAW_ORIGINS)[number];
+
 export const MATCH_SKIPS = ['process_disabled', 'trigger_disabled', 'type_not_subscribed'] as const;
 export type MatchSkip = (typeof MATCH_SKIPS)[number];
 

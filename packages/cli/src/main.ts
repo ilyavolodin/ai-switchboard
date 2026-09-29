@@ -4,8 +4,10 @@ import { pathToFileURL } from 'node:url';
 
 import { Command } from 'commander';
 
+import { DEFAULT_HOME } from '@ai-switchboard/core/domain';
 import { SDK_VERSION } from '@ai-switchboard/sdk';
 
+import { DEFAULT_URL } from './api.js';
 import { applyCommand, exportCommand } from './commands/config.js';
 import { doctorCommand } from './commands/doctor.js';
 import { pluginsCommand } from './commands/plugins.js';
@@ -40,9 +42,9 @@ export function buildProgram(
       'after',
       `
 Environment:
-  SWITCHBOARD_URL     server base URL for export/apply (default http://localhost:8080)
+  SWITCHBOARD_URL     server base URL for export/apply (default ${DEFAULT_URL})
   SWITCHBOARD_TOKEN   API token for export/apply (Authorization: Bearer)
-  SWITCHBOARD_HOME    plugins directory root for plugins add/remove/list (default ./.switchboard)
+  SWITCHBOARD_HOME    plugins directory root for plugins add/remove/list (default ./${DEFAULT_HOME})
   DATABASE_URL, ...   doctor, serve and users read the same variables as the server
 
 Examples:

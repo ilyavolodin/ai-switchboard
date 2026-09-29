@@ -1,7 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { pino } from 'pino';
 
-import { processes, runs } from '../../src/db/schema.js';
+import { processes, runs, sources } from '../../src/db/schema.js';
 import { createExpressionEngine } from '../../src/expr/index.js';
 import type { Ctx } from '../../src/services/pipeline/context.js';
 import { pollSource } from '../../src/services/pipeline/ingest.js';
@@ -99,6 +100,30 @@ describe('plugin calls', () => {
     const errors = errorsOf(HOOK_PLUGIN).map((e) => e.detail);
     expect(errors).toHaveLength(2);
     expect(errors[1]).toContain('upstream 502');
+  });
+
+  it("logs a poll's notes on the results it dropped, and keeps its events", async () => {
+    const pull = await seedSource(h, { caps: { pollIntervalSeconds: 10 } });
+    const live = h.runtime.sources.get(pull.id)!;
+    live.type = { ...live.type, mode: 'pull' };
+    live.source.poll = () =>
+      Promise.resolve({
+        events: [],
+        watermark: 'w2',
+        notes: ['item 3: no id field', 7 as unknown as string],
+      });
+    const lines: string[] = [];
+    const log = pino({ level: 'info' }, { write: (line: string) => lines.push(line) });
+    await pollSource({ ...directCtx(), log }, pull.id);
+    const logged = lines.map((l) => JSON.parse(l) as { msg: string; notes?: string[] });
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        msg: 'poll dropped part of its results',
+        notes: ['item 3: no id field'],
+      }),
+    );
+    const [row] = await h.db.select().from(sources).where(eq(sources.id, pull.id));
+    expect(row?.watermark).toBe('w2');
   });
 
   it('a parse or verifyCallback that throws is counted once, by the runtime wrapper', async () => {

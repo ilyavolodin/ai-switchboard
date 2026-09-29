@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import type { MeterSpec } from '@ai-switchboard/sdk';
 
@@ -15,44 +15,45 @@ import {
   type StoredReading,
 } from '../../pipeline/meters.js';
 
-import { callPlugin, type Ctx } from './context.js';
+import type { Ctx } from './context.js';
+import { callPlugin } from './plugin-call.js';
 import { destinationRunsSince } from './counters.js';
 import { sendSystemAlert } from './notify.js';
 
+/** The newest reading per meter of each destination, keyed by destination id then meter id. */
 export async function latestReadings(
+  db: DbOrTx,
+  destinationIds: readonly string[],
+): Promise<Map<string, Map<string, StoredReading>>> {
+  const out = new Map<string, Map<string, StoredReading>>(
+    destinationIds.map((id) => [id, new Map()]),
+  );
+  if (destinationIds.length === 0) return out;
+  const rows = await db
+    .selectDistinctOn([meterReadings.destinationId, meterReadings.meterId], {
+      destinationId: meterReadings.destinationId,
+      meterId: meterReadings.meterId,
+      utilization: meterReadings.utilization,
+      used: meterReadings.used,
+      limit: meterReadings.limit,
+      observedAt: meterReadings.observedAt,
+      resetsAt: meterReadings.resetsAt,
+      estimated: meterReadings.estimated,
+    })
+    .from(meterReadings)
+    .where(inArray(meterReadings.destinationId, [...destinationIds]))
+    .orderBy(meterReadings.destinationId, meterReadings.meterId, desc(meterReadings.observedAt));
+  for (const { destinationId, ...reading } of rows) {
+    out.get(destinationId)?.set(reading.meterId, reading);
+  }
+  return out;
+}
+
+async function latestReadingsOf(
   db: DbOrTx,
   destinationId: string,
 ): Promise<Map<string, StoredReading>> {
-  const rows = await db.execute<{
-    meter_id: string;
-    utilization: number;
-    used: number | null;
-    limit: number | null;
-    observed_at: Date | string;
-    resets_at: Date | string | null;
-    estimated: boolean;
-  }>(sql`
-    SELECT DISTINCT ON (${meterReadings.meterId})
-      ${meterReadings.meterId} AS meter_id, ${meterReadings.utilization} AS utilization,
-      ${meterReadings.used} AS used, ${meterReadings.limit} AS "limit",
-      ${meterReadings.observedAt} AS observed_at, ${meterReadings.resetsAt} AS resets_at,
-      ${meterReadings.estimated} AS estimated
-    FROM ${meterReadings}
-    WHERE ${meterReadings.destinationId} = ${destinationId}
-    ORDER BY ${meterReadings.meterId}, ${meterReadings.observedAt} DESC`);
-  const out = new Map<string, StoredReading>();
-  for (const r of rows.rows) {
-    out.set(r.meter_id, {
-      meterId: r.meter_id,
-      utilization: r.utilization,
-      used: r.used,
-      limit: r.limit,
-      observedAt: new Date(r.observed_at),
-      resetsAt: r.resets_at === null ? null : new Date(r.resets_at),
-      estimated: r.estimated,
-    });
-  }
-  return out;
+  return (await latestReadings(db, [destinationId])).get(destinationId) ?? new Map();
 }
 
 async function estimateNow(
@@ -76,7 +77,7 @@ export async function meterSnapshots(
   caps: DestinationCaps,
   now: Date,
 ): Promise<Record<string, MeterSnapshot>> {
-  const latest = await latestReadings(db, destinationId);
+  const latest = await latestReadingsOf(db, destinationId);
   const out: Record<string, MeterSnapshot> = {};
   for (const [id, r] of latest) {
     out[id] = {
@@ -118,7 +119,7 @@ export async function readMeters(ctx: Ctx, destinationId: string): Promise<void>
     if (out.ok) reported = Array.isArray(out.value) ? out.value : [];
     else ctx.log.warn({ err: out.error, destination_id: destinationId }, 'readMeters failed');
   }
-  const previous = await latestReadings(ctx.db, destinationId);
+  const previous = await latestReadingsOf(ctx.db, destinationId);
   const readings: StoredReading[] = [];
   for (const item of reported) {
     const reading = readingFromReport(item, declared, now);

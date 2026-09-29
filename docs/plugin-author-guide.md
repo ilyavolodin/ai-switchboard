@@ -71,9 +71,13 @@ export default definePlugin({
   destinations: [jobsDestination],
   notifiers: [],
   secretProviders: [],
-  capabilities: { network: ['api.acme.example', '*.jobs.acme.example'], secrets: ['api-token'] },
+  capabilities: { network: ['api.acme.example', '*.jobs.acme.example'] },
 });
 ```
+
+`capabilities.secrets` (shown at install time) is derived from every settings field marked
+`x-secret: true`, so you don't list it yourself. Since 2.1 a manually listed `secrets` is
+deprecated; it is still merged into the derived list.
 
 `validatePlugin(plugin)` returns the manifest problems the host would refuse: kebab-case unique
 ids per kind, valid JSON Schemas, event types that start with the source type id, flat
@@ -191,11 +195,16 @@ shows the error and is not built. `parseWith(schema, settings, 'acme settings', 
 AcmeSettingsError })` does this on a copy (so schema defaults are applied without mutating the
 core's object) and throws `Invalid acme settings: …`. `tryParse(schema, value)` returns `null`
 instead of throwing, for paths that must never throw. Both come from the SDK (1.2+).
+`withSettings(schema, 'acme settings', createAcme, options?)` (2.1) wraps a `create` so it receives
+the parsed, typed settings: `create: withSettings(settingsSchema, 'acme settings', createAcme)`.
 
 A source whose event types are defined by the person configuring it (a generic webhook or poller)
 can reuse the SDK's custom event type helpers: `eventTypeDefinitionSchema(sourceId, example)` for
 the settings form, `compileEventTypes(sourceId, definitions)` for `eventTypesFor`, and
-`narrowMapped(item, types)` to turn a mapping's output into a declared event. Since 1.4, a type
+`narrowMapped(item, types)` to turn a mapping's output into a declared event. Since 2.1,
+`draftFromMapped(mapped, { occurredAt, deliveryId?, fallbackDiscriminator? })` builds the
+`EventDraft` and its dedupe key from that event, and `describeMappedDrop(item, types, index)` says
+in plain language why `narrowMapped` returned `null`, for `parseWithNotes` and `PollResult.notes`. Since 1.4, a type
 whose attribute names are only known per delivery declares `openAttributesSchema(properties?)`
 (any extra key is accepted when its value is flat, so the core still refuses nested values), and
 `flattenAttributes(body, { depth?, maxAttributes?, maxStringLength? })` turns an object into flat
@@ -307,12 +316,13 @@ interval to every instance; don't put them in your schema.
 
 ```typescript
 import {
+  checkHealth,
   dedupeKey,
-  verifyHmac,
+  verifyHmacHeader,
+  withSettings,
   type EventDraft,
   type PluginContext,
   type RawRequest,
-  type Settings,
   type Source,
   type SourceType,
 } from '@ai-switchboard/sdk';
@@ -336,19 +346,15 @@ interface DeployBody {
   finished_at: string;
 }
 
-function createDeploysSource(raw: Settings, ctx: PluginContext): Source {
-  const settings = raw as unknown as DeploysSettings; // validate first in real code
-
+function createDeploysSource(settings: DeploysSettings, ctx: PluginContext): Source {
   return {
-    verify(req: RawRequest) {
-      const ok = verifyHmac({
+    // HMAC of the exact bytes received; a missing header or a mismatch returns a reason.
+    verify: (req: RawRequest) =>
+      verifyHmacHeader(req, {
+        header: 'x-acme-signature',
         secret: settings.webhookSecret,
-        payload: req.body, // the exact bytes received
-        signature: req.headers['x-acme-signature'],
         prefix: 'sha256=',
-      });
-      return ok ? { ok: true } : { ok: false, reason: 'signature mismatch' };
-    },
+      }),
 
     // Pure and deterministic: no I/O, no clock, no randomness.
     parse(req: RawRequest): EventDraft[] {
@@ -389,10 +395,12 @@ function createDeploysSource(raw: Settings, ctx: PluginContext): Source {
       return { ref, ...res.json<Record<string, unknown>>() };
     },
 
-    async health() {
-      const res = await ctx.http.get(`${settings.baseUrl}/ping`);
-      return { status: res.ok ? 'healthy' : 'unhealthy', checkedAt: ctx.now().toISOString() };
-    },
+    // checkHealth stamps checkedAt and turns a throw into `unhealthy`.
+    health: () =>
+      checkHealth(ctx, async () => {
+        const res = await ctx.http.get(`${settings.baseUrl}/ping`);
+        return { status: res.ok ? 'healthy' : 'unhealthy' };
+      }),
   };
 }
 
@@ -402,7 +410,7 @@ export const deploysSource: SourceType = {
   mode: 'push',
   settingsSchema,
   eventTypes: [deployFinished],
-  create: createDeploysSource,
+  create: withSettings(settingsSchema, 'acme-deploys settings', createDeploysSource),
 };
 ```
 
@@ -410,8 +418,10 @@ export const deploysSource: SourceType = {
 
 - `verify` runs before `parse` and rejects anything it has not authenticated: a missing header, a
   wrong signature, and (where the system sends one) a timestamp outside the allowed skew. It
-  returns `{ ok: false, reason }` and never throws. Use `verifyHmac` and `safeEqual`, which
-  compare in constant time.
+  returns `{ ok: false, reason }` and never throws. `verifyHmacHeader(req, { header, secret,
+prefix?, algorithm?, encoding? })` and `verifySharedSecretHeader(req, { header, secret })` (2.1)
+  do the header lookup, the constant-time comparison and the reason (`missing <header> header`,
+  `signature mismatch`, `secret mismatch`). `verifyHmac` and `safeEqual` remain for anything else.
 - The core answers a rejected delivery with an empty 401 and logs the reason with the remote
   address. Your `reason` never reaches the sender.
 - `parse` is pure and deterministic: one delivery gives 0..n events, the same bytes give the same
@@ -506,8 +516,23 @@ established, and a 503. Tell the core which one happened:
 - Return `{ status: 'failed', retryAfterSeconds }` for a 429: the request was refused, nothing
   ran, and `retryAfterSeconds` opens the soft-hold.
 
-Guards `isTransportError` and `isInvokeError` are duck-typed, so they work across duplicate SDK
-copies.
+`refusalFor(res, now, options)` (2.1) applies all of these to a non-2xx response: a rate limit
+(429 by default) returns `failed` with `retryAfterSeconds` from `retry-after`, else
+`DEFAULT_RETRY_AFTER_SECONDS` (60); a `held` hook's reason returns `held`; anything else throws
+`invokeErrorForStatus`. Backend quirks are hooks: `isRateLimited` (GitHub's 403 with
+`x-ratelimit-remaining: 0`), `retryAfterSeconds` (a reset header), `retryableStatuses` (Anthropic's
+529 is treated as a 503), `rateLimitMessage`.
+
+```typescript
+if (!res.ok)
+  return refusalFor(res, ctx.now(), {
+    message: (r) => `jobs answered ${r.status}`,
+    held: (r) => (r.status === 423 ? 'paused' : undefined),
+  });
+```
+
+Guards `isTransportError`, `isInvokeError`, `isCapabilityError` and `isSecretNotFoundError` are
+duck-typed, so they work across duplicate SDK copies.
 
 ### Invoke timeout
 
@@ -539,15 +564,18 @@ Keep your own request timeouts **below** the invoke timeout, so a slow backend s
 
 ```typescript
 import {
-  invokeErrorForStatus,
-  parseRetryAfter,
-  verifyHmac,
+  checkHealth,
+  pickDeclaredUsage,
+  readSignedJson,
+  refusalFor,
+  SWITCHBOARD_RUN_ID_HEADER,
+  tryParse,
+  withSettings,
   type CallbackResult,
   type DestinationType,
   type PluginContext,
   type RawRequest,
   type RunHandle,
-  type Settings,
 } from '@ai-switchboard/sdk';
 
 interface JobsSettings {
@@ -558,9 +586,42 @@ interface JobsSettings {
 interface JobsTarget {
   queue: string;
 }
+interface JobsCallback {
+  runId: string;
+  status: 'ok' | 'error';
+  usage?: Record<string, unknown>;
+  finishedAt?: string;
+}
 
-function createJobsDestination(raw: Settings, ctx: PluginContext) {
-  const s = raw as unknown as JobsSettings;
+const settingsSchema = {
+  type: 'object',
+  required: ['baseUrl', 'apiToken', 'callbackSecret'],
+  properties: {
+    baseUrl: { type: 'string', format: 'uri', title: 'Base URL', description: 'Acme API root.' },
+    apiToken: { type: 'string', 'x-secret': true, title: 'API token', description: 'Bearer.' },
+    callbackSecret: {
+      type: 'string',
+      'x-secret': true,
+      title: 'Callback secret',
+      description: 'Signs the run callbacks.',
+    },
+  },
+};
+
+const callbackSchema = {
+  type: 'object',
+  required: ['runId', 'status'],
+  properties: {
+    runId: { type: 'string' },
+    status: { enum: ['ok', 'error'] },
+    usage: { type: 'object' },
+    finishedAt: { type: 'string', format: 'date-time' },
+  },
+};
+
+const DECLARED = new Set(['tokens']);
+
+function createJobsDestination(s: JobsSettings, ctx: PluginContext) {
   const auth = { authorization: `Bearer ${s.apiToken}` };
 
   return {
@@ -568,39 +629,26 @@ function createJobsDestination(raw: Settings, ctx: PluginContext) {
       const { queue } = target as JobsTarget; // validated against targetSchema by the core
       // TransportError from ctx.http propagates: the core reads `sent` to decide.
       const res = await ctx.http.post(`${s.baseUrl}/queues/${queue}/jobs`, {
-        headers: { ...auth, 'x-switchboard-run-id': run.id },
+        headers: { ...auth, [SWITCHBOARD_RUN_ID_HEADER]: run.id },
         json: { input, runId: run.id, callbackUrl: run.callbackUrl, dryRun: run.dryRun },
       });
-      if (res.status === 429) {
-        const retryAfterSeconds = parseRetryAfter(res.headers['retry-after'], ctx.now()) ?? 60;
-        // Refused, not started: the run fails and the soft-hold keeps the next batches away.
-        return { status: 'failed' as const, retryAfterSeconds, errors: ['rate limited'] };
-      }
-      // 503 may be retried, another 4xx is definitive, anything else is uncertain.
-      if (!res.ok) throw invokeErrorForStatus(res.status, `jobs answered ${res.status}`);
+      // 429 → failed with retryAfterSeconds; 503 may be retried; another 4xx is definitive.
+      if (!res.ok)
+        return refusalFor(res, ctx.now(), { message: (r) => `jobs answered ${r.status}` });
       const body = res.json<{ id: string; url: string }>();
       return { status: 'started' as const, externalId: body.id, externalUrl: body.url };
     },
 
     verifyCallback(req: RawRequest): CallbackResult | null {
-      const ok = verifyHmac({
-        secret: s.callbackSecret,
-        payload: req.body,
-        signature: req.headers['x-switchboard-signature'],
-        prefix: 'sha256=',
-      });
-      if (!ok) return null; // the core answers an empty 401
-      const body = JSON.parse(req.body.toString('utf8')) as {
-        runId: string;
-        status: 'ok' | 'error';
-        tokens?: number;
-        finishedAt?: string;
-      };
+      // `x-switchboard-signature: sha256=<hex>` over the raw body; undefined when unsigned or not JSON.
+      const body = tryParse<JobsCallback>(callbackSchema, readSignedJson(req, s.callbackSecret));
+      if (!body) return null; // the core answers an empty 401
+      const usage = pickDeclaredUsage(body.usage, DECLARED);
       return {
         runId: body.runId,
         status: {
           state: body.status,
-          ...(body.tokens !== undefined ? { usage: { tokens: body.tokens } } : {}),
+          ...(usage ? { usage } : {}),
           ...(body.finishedAt !== undefined ? { finishedAt: body.finishedAt } : {}),
         },
       };
@@ -621,28 +669,18 @@ function createJobsDestination(raw: Settings, ctx: PluginContext) {
       ];
     },
 
-    async health() {
-      const res = await ctx.http.get(`${s.baseUrl}/ping`, { headers: auth });
-      return {
-        status: res.ok ? ('healthy' as const) : ('unhealthy' as const),
-        checkedAt: ctx.now().toISOString(),
-      };
-    },
+    health: () =>
+      checkHealth(ctx, async () => {
+        const res = await ctx.http.get(`${s.baseUrl}/ping`, { headers: auth });
+        return { status: res.ok ? 'healthy' : 'unhealthy' };
+      }),
   };
 }
 
 export const jobsDestination: DestinationType = {
   id: 'acme-jobs',
   displayName: 'Acme jobs',
-  settingsSchema: {
-    type: 'object',
-    required: ['baseUrl', 'apiToken', 'callbackSecret'],
-    properties: {
-      baseUrl: { type: 'string', format: 'uri' },
-      apiToken: { type: 'string', 'x-secret': true },
-      callbackSecret: { type: 'string', 'x-secret': true },
-    },
-  },
+  settingsSchema,
   targetSchema: {
     type: 'object',
     required: ['queue'],
@@ -665,7 +703,7 @@ export const jobsDestination: DestinationType = {
   meters: [
     { id: 'daily_jobs', title: 'Daily jobs', kind: 'allowance', unit: 'count', primary: true },
   ],
-  create: createJobsDestination,
+  create: withSettings(settingsSchema, 'acme-jobs settings', createJobsDestination),
 };
 ```
 
@@ -745,14 +783,62 @@ actions: [
   `user-agent`, trace context), so a credential in any header, not just `authorization`, stays
   with the origin it was meant for.
 
-`capabilities.secrets` lists the secret names your settings expect, for documentation. Both lists
-are shown to the admin at install time. A plugin that calls raw `fetch` or opens sockets bypasses
+`capabilities.secrets` lists the settings fields marked `x-secret`; `definePlugin` derives it, and
+both lists are shown to the admin at install time. A plugin that calls raw `fetch` or opens sockets bypasses
 the network check; plugins are trusted code, and the capability list is a promise the reviewer
 checks.
 
+Responses are narrowed from `unknown` with the SDK's JSON helpers (2.1, also browser-safe at
+`@ai-switchboard/sdk/json`): `tryJson(res)` (the body, or `undefined` when it is empty or not
+JSON), `isRecord`, `asObject`, `asString`, `asNumber` (finite only), `asBoolean`, `asArray` (`[]`
+for a non-array), `getPath(value, ...keys)` and `parseJsonObject(text)`.
+
+The Switchboard wire protocol has helpers too: `SWITCHBOARD_SIGNATURE_HEADER`
+(`x-switchboard-signature: sha256=<hex>`), `signSwitchboardBody(secret, body)`,
+`verifySwitchboardSignature(req, secret)`, `readSignedJson(req, secret)` (the verified JSON body,
+or `undefined`), `pickDeclaredUsage(usage, declaredIds)` and `SWITCHBOARD_RUN_ID_HEADER`
+(`x-switchboard-run-id`).
+
+`createHttpClient`, `hostMatches`, `makeResponse` and `isPluginDefinition` are for the plugin host
+and live at `@ai-switchboard/sdk/host` since 2.1; their root exports are deprecated.
+
 Also on `ctx`: `logger` (structured, never log secrets), `now()` (use it instead of `Date.now()`),
-`publicUrl`, `instanceId`, `instanceName`, and `state`, a small durable key/value store per
-instance (an OAuth refresh token, a cursor).
+`publicUrl`, `instanceId`, `instanceName`, `state` and `secrets`.
+
+### Instance state and rotated credentials
+
+`ctx.state` is a small durable key/value store per instance (a cursor, a watermark, when a token
+expires). It is a Postgres row, so it must never hold a credential. The host refuses a value that
+carries one it knows about (any resolved setting, or anything that went through `ctx.secrets`) with
+`SecretInStateError`.
+
+A credential the instance **rotates** at run time, such as an OAuth refresh token the token endpoint
+replaces on every refresh, goes to `ctx.secrets` (SDK 2.2):
+
+```typescript
+interface InstanceSecrets {
+  get(key: string): Promise<string | undefined>;
+  set(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+  check(): Promise<{ writable: true; provider: string } | { writable: false; reason: string }>;
+}
+```
+
+- Keys match `SECRET_KEY_PATTERN` (lower-case letters, digits, `-` and `_`, at most 64).
+- The host stores the value in the first **writable** secret provider that the instance's settings
+  already reference, so the rotated value lives next to the seed it came from. It uses the name
+  `switchboard-<instance id>-<key>`. Only the host maps keys to provider names.
+- If no referenced provider is writable, `set` and `delete` throw `SecretStoreError` and `get`
+  returns `undefined`. The host never falls back to Postgres. Call `check()` before you spend a
+  single-use token, and report its `reason` from `health()` so the instance shows unhealthy and
+  `switchboard doctor` fails.
+- When the instance is deleted, the host deletes what it stored.
+
+Keep only non-secret metadata in `ctx.state` (the seed's fingerprint, an expiry). The
+`destination-claude-routines` seat meters are the reference: rotated refresh and access tokens in
+`ctx.secrets`, `{ seed, expiresAt }` in `ctx.state`. Their `health()` is unhealthy when the store
+is not writable. In tests, `createMemorySecrets(initial, { writable })` from
+`@ai-switchboard/sdk/testing` stands in, and `createTestContext({ secrets })` takes it.
 
 ## Notifiers and secret providers
 
@@ -779,6 +865,9 @@ interface SecretProviderType {
     health(): Promise<Health>;
     /** Optional (SDK 1.1+). Names only, never values. */
     list?(): Promise<{ name: string; description?: string; updatedAt?: string }[]>;
+    /** Optional (SDK 2.2+), always together: a writable provider. */
+    set?(name: string, value: string): Promise<void>;
+    delete?(name: string): Promise<void>;
   };
 }
 ```
@@ -794,12 +883,30 @@ preview) in any field. Admins see the names under Settings › Secret providers,
 which instances use each one and which references point at names the provider does not list.
 Return only names `resolve` would accept. Omit `list()` if the backend cannot enumerate.
 
+A provider that can store values implements `set` and `delete` together (SDK 2.2). The host
+uses them only for `ctx.secrets`, the credentials instances rotate. `set` creates or replaces a
+value atomically (a reader sees the old value or the new one, never a mix). `delete` of a missing
+name succeeds. Neither ever puts the value in an error message or a log line.
+`isWritableSecretProvider(provider)` tells the two kinds apart. The conformance kit checks that
+`set` and `delete` come together, that they round-trip through `resolve` (a deleted name throws
+`SecretNotFoundError`), and that a write never leaks the value into an error or `ctx.logger`.
+`writableName` in the fixtures picks the name the probe uses. A provider backed by something
+read-only (environment variables, a read-only mount) leaves both out.
+
 ## The conformance kit
 
 Every reference plugin runs the conformance kit in its `src/plugin.test.ts`, and so should yours.
 The checks encode the contracts above:
 
-- **Plugin:** the manifest validates.
+- **Plugin** (`pluginConformanceChecks(plugin, fixtures?)`): the manifest validates. With
+  `fixtures` (2.1: `{ sources?, destinations?, notifiers?, secretProviders? }`, each keyed by type
+  id, plus `settings: { notSecret? }`), it also runs every type's settings-form checks and, for
+  each type with fixtures, that type's checks with `capabilities.network` enforced, and finishes
+  with _calls only the hosts in capabilities.network_, which catches a `CapabilityError` your code
+  swallowed. This is the one call a plugin test needs.
+- **Settings** (`settingsSchemaChecks(schema, { notSecret? })`): every field, nested ones too, has
+  a `title` and a `description`; every credential-looking field (`…token`, `…secret`,
+  `…password`, `apiKey`, `privateKey`, …) is marked `x-secret`.
 - **Source:** manifest validates; every event type has a schema and an example; `health()`
   resolves; `verify` accepts signed deliveries and rejects a wrong signature, a missing header
   and a stale timestamp; `parse` is deterministic and its events validate; `dedupeKey` is equal
@@ -811,6 +918,9 @@ The checks encode the contracts above:
   target and input against your stub returns a well-formed `InvokeResult`; `verifyCallback`
   rejects an unsigned request; `readMeters` returns readings for the declared meters; every usage
   dimension has a unit and reported usage uses declared ids only.
+- **Notifier** (`notifierConformanceChecks(type, { settings, http?, message? })`, 2.1): manifest
+  validates; `health()` resolves; `send` makes at least one request for a message; `send` rejects
+  when the backend answers 500, so the core records the failure.
 - **Secret provider** (`secretProviderConformanceChecks(type, { settings, expectNames?, secrets? })`):
   manifest validates; `health()` resolves; `list()`, when implemented, returns unique non-empty
   names with only `name` / `description` / `updatedAt`; and no value `resolve` returns for a
@@ -822,11 +932,11 @@ import { readFileSync } from 'node:fs';
 
 import { signHmac } from '@ai-switchboard/sdk';
 import {
-  destinationConformanceChecks,
   pluginConformanceChecks,
   rawRequest,
   runConformance,
-  sourceConformanceChecks,
+  type DestinationFixtures,
+  type SourceFixtures,
 } from '@ai-switchboard/sdk/testing';
 import { describe, expect, it } from 'vitest';
 
@@ -846,55 +956,54 @@ function delivery(file: string, headers: Record<string, string> = {}) {
   });
 }
 
-runConformance('acme-deploys plugin', pluginConformanceChecks(plugin), { describe, it });
+const deploysFixtures: SourceFixtures = {
+  settings: {
+    baseUrl: 'https://api.acme.example',
+    apiToken: 'fixture-token',
+    webhookSecret: SECRET,
+  },
+  secrets: [SECRET, 'fixture-token'],
+  http: (req) => (req.url.pathname === '/ping' ? { status: 200, json: { ok: true } } : undefined), // anything else is a 404
+  push: {
+    deliveries: [delivery('deploy-finished.json'), delivery('deploy-failed.json')],
+    sameChange: [
+      delivery('deploy-finished.json', { 'x-acme-delivery': 'd-1' }),
+      delivery('deploy-finished.json', { 'x-acme-delivery': 'd-2' }),
+    ],
+    differentChange: [delivery('deploy-finished.json'), delivery('deploy-finished-later.json')],
+    wrongSignature: {
+      ...delivery('deploy-finished.json'),
+      headers: { 'x-acme-signature': 'sha256=00' },
+    },
+    missingHeader: rawRequest({
+      body: readFileSync(new URL('./__fixtures__/deploy-finished.json', import.meta.url)),
+    }),
+  },
+  resolveNotFound: { kind: 'acme.deploy', id: 'missing' },
+};
+
+const jobsFixtures: DestinationFixtures = {
+  settings: {
+    baseUrl: 'https://jobs.acme.example',
+    apiToken: 'fixture-token',
+    callbackSecret: SECRET,
+  },
+  http: (req) => {
+    if (req.url.pathname === '/queues/triage/jobs')
+      return { status: 201, json: { id: 'job-1', url: 'https://jobs.acme.example/job-1' } };
+    if (req.url.pathname === '/quota')
+      return { json: { used: 3, limit: 20, resetsAt: '2026-09-28T00:00:00Z' } };
+    if (req.url.pathname === '/ping') return { json: { ok: true } };
+    return undefined;
+  },
+  unsignedCallback: rawRequest({ body: { runId: 'r1', status: 'ok' } }),
+};
 
 runConformance(
-  'acme-deploys source',
-  sourceConformanceChecks(deploysSource, {
-    settings: {
-      baseUrl: 'https://api.acme.example',
-      apiToken: 'fixture-token',
-      webhookSecret: SECRET,
-    },
-    secrets: [SECRET, 'fixture-token'],
-    http: (req) => (req.url.pathname === '/ping' ? { status: 200, json: { ok: true } } : undefined), // anything else is a 404
-    push: {
-      deliveries: [delivery('deploy-finished.json'), delivery('deploy-failed.json')],
-      sameChange: [
-        delivery('deploy-finished.json', { 'x-acme-delivery': 'd-1' }),
-        delivery('deploy-finished.json', { 'x-acme-delivery': 'd-2' }),
-      ],
-      differentChange: [delivery('deploy-finished.json'), delivery('deploy-finished-later.json')],
-      wrongSignature: {
-        ...delivery('deploy-finished.json'),
-        headers: { 'x-acme-signature': 'sha256=00' },
-      },
-      missingHeader: rawRequest({
-        body: readFileSync(new URL('./__fixtures__/deploy-finished.json', import.meta.url)),
-      }),
-    },
-    resolveNotFound: { kind: 'acme.deploy', id: 'missing' },
-  }),
-  { describe, it },
-);
-
-runConformance(
-  'acme-jobs destination',
-  destinationConformanceChecks(jobsDestination, {
-    settings: {
-      baseUrl: 'https://jobs.acme.example',
-      apiToken: 'fixture-token',
-      callbackSecret: SECRET,
-    },
-    http: (req) => {
-      if (req.url.pathname === '/queues/triage/jobs')
-        return { status: 201, json: { id: 'job-1', url: 'https://jobs.acme.example/job-1' } };
-      if (req.url.pathname === '/quota')
-        return { json: { used: 3, limit: 20, resetsAt: '2026-09-28T00:00:00Z' } };
-      if (req.url.pathname === '/ping') return { json: { ok: true } };
-      return undefined;
-    },
-    unsignedCallback: rawRequest({ body: { runId: 'r1', status: 'ok' } }),
+  'acme-deploys plugin',
+  pluginConformanceChecks(plugin, {
+    sources: { [deploysSource.id]: deploysFixtures },
+    destinations: { [jobsDestination.id]: jobsFixtures },
   }),
   { describe, it },
 );
@@ -980,6 +1089,20 @@ with a real token.
   `invokeTimeoutSeconds`, `invokeTimeoutFor`, `ActionSpec.idempotent`, `Source.parseWithNotes`,
   `openAttributesSchema`, `flattenAttributes`, `attributeKey`, `x-effectiveDefault`, `x-docs`,
   `x-widget: 'path'`) is part of 2.0.0.
+- SDK 2.1.0 is additive: the JSON helpers and `tryJson`, `refusalFor`, `verifyHmacHeader`,
+  `verifySharedSecretHeader`, the Switchboard protocol helpers, `checkHealth`, `withSettings`,
+  `draftFromMapped`, `describeMappedDrop`, `PollResult.notes`, `SecretNotFoundError`,
+  `isSecretNotFoundError`, `isCapabilityError`, the `/host` and `/json` subpaths, the custom event
+  schema helpers on `/schema`, `notifierConformanceChecks`, `settingsSchemaChecks` and
+  `pluginConformanceChecks(plugin, fixtures)`. Deprecated (still exported until 3.0): a manually
+  listed `capabilities.secrets`, and the root exports of `createHttpClient`, `hostMatches`,
+  `makeResponse`, `isPluginDefinition` and `HttpClientOptions` (import them from
+  `@ai-switchboard/sdk/host`).
+- SDK 2.2.0 is additive: `ctx.secrets` (`InstanceSecrets`, `SecretStoreStatus`), the optional
+  `SecretProvider.set` and `delete`, `SecretStoreError`, `isSecretStoreError`,
+  `isWritableSecretProvider`, `SECRET_KEY_PATTERN`, `createMemorySecrets`, the writable-provider
+  conformance checks and `SecretProviderFixtures.writableName`. A plugin that uses `ctx.secrets`
+  declares `^2.2.0`.
 - Your plugin's own version is yours, but treat event type ids, attribute names and action ids as
   public API: people's filters and processes depend on them. Removing or renaming one is a major.
 - SDK majors are announced through the `switchboard-plugin` topic on the repository.

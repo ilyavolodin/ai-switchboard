@@ -6,16 +6,64 @@ export type * from './types/notifier.js';
 export type * from './types/context.js';
 export { dedupeKey } from './types/events.js';
 
-export {
-  definePlugin,
-  isPluginDefinition,
-  validatePlugin,
-  MAX_INVOKE_TIMEOUT_SECONDS,
-} from './plugin.js';
-export type { PluginDefinition, PluginKind, PluginSpec } from './plugin.js';
+import { isPluginDefinition as hostIsPluginDefinition } from './plugin.js';
+import {
+  createHttpClient as hostCreateHttpClient,
+  hostMatches as hostHostMatches,
+  makeResponse as hostMakeResponse,
+  type HttpClientOptions as HostHttpClientOptions,
+} from './http.js';
 
-export { createHttpClient, hostMatches, makeResponse, parseRetryAfter } from './http.js';
-export type { HttpClient, HttpClientOptions, HttpRequest, HttpResponse } from './http.js';
+export { definePlugin, validatePlugin, MAX_INVOKE_TIMEOUT_SECONDS } from './plugin.js';
+export type { DeclaredCapabilities, PluginDefinition, PluginKind, PluginSpec } from './plugin.js';
+
+/** @deprecated Import from `@ai-switchboard/sdk/host`. */
+export const isPluginDefinition = hostIsPluginDefinition;
+/** @deprecated Import from `@ai-switchboard/sdk/host`. */
+export const createHttpClient = hostCreateHttpClient;
+/** @deprecated Import from `@ai-switchboard/sdk/host`. */
+export const hostMatches = hostHostMatches;
+/** @deprecated Import from `@ai-switchboard/sdk/host`. */
+export const makeResponse = hostMakeResponse;
+
+export { parseRetryAfter } from './http.js';
+/** @deprecated Import from `@ai-switchboard/sdk/host`. */
+export type HttpClientOptions = HostHttpClientOptions;
+export type { HttpClient, HttpRequest, HttpResponse } from './http.js';
+
+export {
+  isRecord,
+  asObject,
+  asString,
+  asNumber,
+  asBoolean,
+  asArray,
+  getPath,
+  parseJsonObject,
+  tryJson,
+} from './json.js';
+export type { JsonObject } from './json.js';
+
+export { refusalFor, DEFAULT_RETRY_AFTER_SECONDS } from './refusal.js';
+export type { RefusalOptions } from './refusal.js';
+
+export { verifyHmacHeader, verifySharedSecretHeader } from './verify.js';
+export type { HmacHeaderOptions } from './verify.js';
+
+export {
+  SWITCHBOARD_SIGNATURE_HEADER,
+  SWITCHBOARD_SIGNATURE_PREFIX,
+  SWITCHBOARD_RUN_ID_HEADER,
+  signSwitchboardBody,
+  verifySwitchboardSignature,
+  readSignedJson,
+  pickDeclaredUsage,
+} from './protocol.js';
+
+export { checkHealth } from './health.js';
+export type { HealthProbe } from './health.js';
+
+export { withSettings } from './settings.js';
 
 export { signHmac, verifyHmac, safeEqual } from './hmac.js';
 export type { HmacOptions } from './hmac.js';
@@ -27,32 +75,34 @@ export {
   TransportError,
   CapabilityError,
   InvokeError,
+  SecretNotFoundError,
+  SecretStoreError,
+  SECRET_KEY_PATTERN,
   isTransportError,
   isInvokeError,
+  isCapabilityError,
+  isSecretNotFoundError,
+  isSecretStoreError,
+  isWritableSecretProvider,
   invokeErrorForStatus,
 } from './errors.js';
 
 export * from './schema/index.js';
 
 export {
-  ATTRIBUTE_KINDS,
-  ATTRIBUTE_NAME_PATTERN,
-  customEventTypePattern,
-  eventTypeDefinitionSchema,
   compileEventTypes,
   coerceAttribute,
   toIsoTime,
   narrowMapped,
-  openAttributesSchema,
+  describeMappedDrop,
+  draftFromMapped,
   flattenAttributes,
   attributeKey,
 } from './custom-events.js';
 export type {
-  AttributeKind,
-  AttributeDefinition,
-  EventTypeDefinition,
   CompiledEventType,
   MappedEvent,
+  DraftOptions,
   FlattenOptions,
 } from './custom-events.js';
 

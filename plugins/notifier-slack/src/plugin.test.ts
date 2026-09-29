@@ -35,7 +35,19 @@ function setup(
   };
 }
 
-runConformance('plugin', pluginConformanceChecks(plugin), { describe, it });
+runConformance(
+  'slack plugin',
+  pluginConformanceChecks(plugin, {
+    notifiers: {
+      [slackNotifierType.id]: {
+        settings: { webhookUrl: WEBHOOK },
+        http: () => ({ body: 'ok' }),
+        message,
+      },
+    },
+  }),
+  { describe, it },
+);
 
 describe('slack: Block Kit message', () => {
   it('has a header, a severity word, the text, fields and a link button', () => {

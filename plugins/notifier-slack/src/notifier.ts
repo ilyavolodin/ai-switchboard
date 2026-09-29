@@ -1,70 +1,17 @@
 import {
-  parseWith,
+  checkHealth,
+  tryJson,
+  withSettings,
   type Health,
-  type JSONSchema,
   type NotificationMessage,
   type Notifier,
   type NotifierType,
   type PluginContext,
-  type Settings,
 } from '@ai-switchboard/sdk';
 
-export interface SlackSettings {
-  mode: 'webhook' | 'bot';
-  webhookUrl?: string;
-  botToken?: string;
-  channel?: string;
-}
+import { settingsSchema, type SlackSettings } from './settings.js';
 
 export const SLACK_API = 'https://slack.com/api';
-
-export const settingsSchema: JSONSchema = {
-  $schema: 'https://json-schema.org/draft/2020-12/schema',
-  type: 'object',
-  title: 'Slack notifier',
-  description: 'Posts notifications to a Slack channel.',
-  properties: {
-    mode: {
-      enum: ['webhook', 'bot'],
-      default: 'webhook',
-      title: 'Mode',
-      description:
-        'webhook: an incoming webhook bound to one channel. bot: a bot token posting with chat.postMessage.',
-      'x-group': 'Delivery',
-    },
-    webhookUrl: {
-      type: 'string',
-      format: 'uri',
-      pattern: '^https://',
-      title: 'Incoming webhook URL',
-      description: 'https://hooks.slack.com/services/… (the URL is the credential).',
-      'x-secret': true,
-      'x-group': 'Incoming webhook',
-    },
-    botToken: {
-      type: 'string',
-      pattern: '^xox[a-z]-',
-      title: 'Bot token',
-      description: 'xoxb-… token with the chat:write scope.',
-      'x-secret': true,
-      'x-group': 'Bot',
-    },
-    channel: {
-      type: 'string',
-      minLength: 1,
-      title: 'Channel',
-      description: 'Channel id (C0123…) or name (#alerts). The bot must be a member.',
-      'x-group': 'Bot',
-    },
-  },
-  allOf: [
-    {
-      if: { properties: { mode: { const: 'bot' } }, required: ['mode'] },
-      then: { required: ['botToken', 'channel'] },
-      else: { required: ['webhookUrl'] },
-    },
-  ],
-};
 
 export class SlackError extends Error {
   override readonly name = 'SlackError';
@@ -147,12 +94,8 @@ function createSlackNotifier(settings: SlackSettings, ctx: PluginContext): Notif
         `Slack ${method} answered ${res.status}${retry !== undefined ? ` (retry after ${retry}s)` : ''}`,
       );
     }
-    let parsed: unknown;
-    try {
-      parsed = res.json();
-    } catch {
-      throw new SlackError(`Slack ${method} returned a non-JSON body`);
-    }
+    const parsed = tryJson(res);
+    if (parsed === undefined) throw new SlackError(`Slack ${method} returned a non-JSON body`);
     const record = (parsed ?? {}) as Record<string, unknown>;
     if (record.ok !== true) {
       const error = typeof record.error === 'string' ? record.error : 'unknown_error';
@@ -179,27 +122,18 @@ function createSlackNotifier(settings: SlackSettings, ctx: PluginContext): Notif
       }
     },
 
-    async health(): Promise<Health> {
-      const checkedAt = (): string => ctx.now().toISOString();
-      if (settings.mode === 'webhook') {
-        return {
-          status: 'unknown',
-          message: 'An incoming webhook cannot be checked without posting a message.',
-          checkedAt: checkedAt(),
-        };
-      }
-      try {
+    health: (): Promise<Health> =>
+      checkHealth(ctx, async () => {
+        if (settings.mode === 'webhook') {
+          return {
+            status: 'unknown',
+            message: 'An incoming webhook cannot be checked without posting a message.',
+          };
+        }
         const auth = await postApi('auth.test', {});
         const team = typeof auth.team === 'string' ? ` (${auth.team})` : '';
-        return { status: 'healthy', message: `Bot token valid${team}`, checkedAt: checkedAt() };
-      } catch (err) {
-        return {
-          status: 'unhealthy',
-          message: err instanceof Error ? err.message : String(err),
-          checkedAt: checkedAt(),
-        };
-      }
-    },
+        return { status: 'healthy', message: `Bot token valid${team}` };
+      }),
   };
 }
 
@@ -209,6 +143,5 @@ export const slackNotifierType: NotifierType = {
   icon: 'alert',
   description: 'Posts run outcomes and system alerts to Slack with Block Kit.',
   settingsSchema,
-  create: (settings: Settings, ctx: PluginContext) =>
-    createSlackNotifier(parseWith<SlackSettings>(settingsSchema, settings, 'slack settings'), ctx),
+  create: withSettings(settingsSchema, 'slack settings', createSlackNotifier),
 };

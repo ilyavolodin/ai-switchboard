@@ -1,5 +1,5 @@
 import { iconProblem } from './icons.js';
-import { isValidSchema, validateAgainst } from './schema/index.js';
+import { isValidSchema, secretPaths, validateAgainst } from './schema/index.js';
 import type { Capabilities, JSONSchema } from './types/common.js';
 import type { DestinationType } from './types/destination.js';
 import type { NotifierType, SecretProviderType } from './types/notifier.js';
@@ -15,16 +15,38 @@ export interface PluginSpec {
   destinations?: DestinationType[];
   notifiers?: NotifierType[];
   secretProviders?: SecretProviderType[];
-  capabilities?: Capabilities;
+  capabilities?: DeclaredCapabilities;
 }
 
-export interface PluginDefinition extends Required<Omit<PluginSpec, 'description'>> {
+export interface DeclaredCapabilities extends Omit<Capabilities, 'secrets'> {
+  /** @deprecated Mark credentials with `x-secret: true`; `definePlugin` derives the list. */
+  secrets?: string[];
+}
+
+export interface PluginDefinition extends Required<
+  Omit<PluginSpec, 'description' | 'capabilities'>
+> {
   description?: string;
+  capabilities: Capabilities;
   /** The SDK the plugin was built against; the plugin host checks the major. */
   readonly switchboardSdk: { major: number; version: string };
 }
 
 export type PluginKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
+
+/** The declared `secrets` plus every `x-secret` settings field, so the install review lists them all. */
+function withDerivedSecrets(spec: PluginSpec): Capabilities {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- still honoured for older plugins
+  const { secrets: listed, ...declared } = spec.capabilities ?? {};
+  const schemas = [
+    ...(spec.sources ?? []),
+    ...(spec.destinations ?? []),
+    ...(spec.notifiers ?? []),
+    ...(spec.secretProviders ?? []),
+  ].map((t) => t.settingsSchema);
+  const secrets = new Set([...(listed ?? []), ...schemas.flatMap((schema) => secretPaths(schema))]);
+  return secrets.size > 0 ? { ...declared, secrets: [...secrets].sort() } : declared;
+}
 
 export function definePlugin(spec: PluginSpec): PluginDefinition {
   return Object.freeze({
@@ -35,7 +57,7 @@ export function definePlugin(spec: PluginSpec): PluginDefinition {
     destinations: spec.destinations ?? [],
     notifiers: spec.notifiers ?? [],
     secretProviders: spec.secretProviders ?? [],
-    capabilities: spec.capabilities ?? {},
+    capabilities: withDerivedSecrets(spec),
     switchboardSdk: { major: SDK_MAJOR, version: SDK_VERSION },
   });
 }

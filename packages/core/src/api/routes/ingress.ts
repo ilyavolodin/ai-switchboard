@@ -1,9 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import type { RawRequest } from '@ai-switchboard/sdk';
-import { sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
+import { databaseReachable } from '../../services/health.js';
 import { isUuid } from '../../util/uuid.js';
 import type { ApiContext } from '../context.js';
 
@@ -109,11 +109,8 @@ export async function registerIngressRoutes(
   app.get('/healthz', () => ({ ok: true }));
 
   app.get('/readyz', async (_req, reply) => {
-    try {
-      await ctx.db.execute(sql`select 1`);
-    } catch {
+    if (!(await databaseReachable(ctx.db)))
       return reply.code(503).send({ ok: false, reason: 'database unreachable' });
-    }
     if (!options.ready()) return reply.code(503).send({ ok: false, reason: 'starting' });
     return { ok: true };
   });

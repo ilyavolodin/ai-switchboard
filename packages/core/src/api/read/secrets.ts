@@ -1,14 +1,11 @@
 import type { SecretListing } from '@ai-switchboard/sdk';
 import { eq } from 'drizzle-orm';
 
-import { destinations, notifiers, processes, secretProviders, sources } from '../../db/schema.js';
+import { INSTANCE_TABLES } from '../../db/instance-tables.js';
+import { secretProviders } from '../../db/schema.js';
 import { instanceStatus } from '../../domain/labels.js';
-import {
-  collectDocumentSecretRefs,
-  collectSecretRefs,
-  formatSecretRef,
-  parseSecretRef,
-} from '../../secrets/refs.js';
+import { collectSecretRefs, formatSecretRef, parseSecretRef } from '../../secrets/refs.js';
+import { secretUsersByName } from '../../services/secret-users.js';
 import { errorText } from '../../util/errors.js';
 import { withTimeout } from '../../util/timeout.js';
 import type { ApiContext } from '../context.js';
@@ -17,86 +14,11 @@ import type {
   ProviderSecretDTO,
   ProviderSecretsResponse,
   SecretProviderDependentDTO,
-  SecretUserDTO,
 } from '../contract.js';
 import { notFound } from '../errors.js';
 
 /** How long a provider's `list()` may take before the listing is reported unavailable. */
 const LIST_TIMEOUT_MS = 10_000;
-
-/** Every `secret://<provider>/…` reference in stored settings and process documents, by name. */
-async function usersByName(
-  ctx: ApiContext,
-  provider: string,
-): Promise<Map<string, SecretUserDTO[]>> {
-  const { db } = ctx;
-  const rows: {
-    kind: SecretUserDTO['kind'];
-    id: string;
-    name: string;
-    refs: { path: string; ref: string }[];
-  }[] = [];
-  const tables = [
-    ['source', sources],
-    ['destination', destinations],
-    ['notifier', notifiers],
-    ['secret_provider', secretProviders],
-  ] as const;
-  for (const [kind, table] of tables) {
-    const found = await db
-      .select({ id: table.id, name: table.name, settings: table.settings })
-      .from(table);
-    for (const r of found)
-      rows.push({ kind, id: r.id, name: r.name, refs: collectSecretRefs(r.settings) });
-  }
-  for (const p of await db
-    .select({ id: processes.id, name: processes.name, document: processes.document })
-    .from(processes)) {
-    // Expressions reference secrets too: `$secretRef('<provider>/<name>')`.
-    rows.push({
-      kind: 'process',
-      id: p.id,
-      name: p.name,
-      refs: collectDocumentSecretRefs(p.document),
-    });
-  }
-
-  const byName = new Map<string, SecretUserDTO[]>();
-  for (const row of rows) {
-    for (const { path, ref } of row.refs) {
-      const parsed = parseSecretRef(ref);
-      if (parsed?.provider !== provider) continue;
-      const list = byName.get(parsed.name) ?? [];
-      list.push({ kind: row.kind, id: row.id, name: row.name, field: path });
-      byName.set(parsed.name, list);
-    }
-  }
-  return byName;
-}
-
-/** For the 409 that refuses to delete a provider still in use; the provider itself is left out. */
-export async function providerUsers(
-  ctx: ApiContext,
-  provider: string,
-  selfId: string,
-): Promise<Pick<SecretUserDTO, 'kind' | 'id' | 'name'>[]> {
-  const seen = new Map<string, Pick<SecretUserDTO, 'kind' | 'id' | 'name'>>();
-  for (const list of (await usersByName(ctx, provider)).values()) {
-    for (const u of list) {
-      if (u.id !== selfId) seen.set(`${u.kind}:${u.id}`, { kind: u.kind, id: u.id, name: u.name });
-    }
-  }
-  const order: SecretUserDTO['kind'][] = [
-    'process',
-    'source',
-    'destination',
-    'notifier',
-    'secret_provider',
-  ];
-  return [...seen.values()].sort(
-    (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.name.localeCompare(b.name),
-  );
-}
 
 /**
  * The sources, destinations and notifiers whose settings reference each provider name, with the
@@ -108,12 +30,8 @@ export async function providerDependents(
 ): Promise<Map<string, SecretProviderDependentDTO[]>> {
   const out = new Map<string, SecretProviderDependentDTO[]>(providerNames.map((n) => [n, []]));
   if (providerNames.length === 0) return out;
-  const tables = [
-    ['source', sources],
-    ['destination', destinations],
-    ['notifier', notifiers],
-  ] as const;
-  for (const [kind, table] of tables) {
+  for (const kind of ['source', 'destination', 'notifier'] as const) {
+    const table = INSTANCE_TABLES[kind];
     const rows = await ctx.db
       .select({
         id: table.id,
@@ -219,7 +137,7 @@ export async function providerSecrets(
     return unavailable(`Listing failed: ${errorText(err)}`);
   }
 
-  const users = await usersByName(ctx, row.name);
+  const users = await secretUsersByName(ctx.db, row.name);
   const ref = (name: string): string => formatSecretRef({ provider: row.name, name });
   const listed = new Set(listing.map((s) => s.name));
   const secrets: ProviderSecretDTO[] = listing.map((s) => ({

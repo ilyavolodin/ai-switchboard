@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import type { PluginOrigin } from '../domain/status.js';
 
+import { readSwitchboardField } from './package-manifest.js';
+
 export interface SwitchboardField {
   entry: string;
   source?: string;
@@ -34,14 +36,12 @@ async function readPackage(dir: string): Promise<Record<string, unknown> | null>
 }
 
 function switchboardField(pkg: Record<string, unknown>): SwitchboardField | null {
-  const field = pkg.switchboard;
-  if (field === null || typeof field !== 'object') return null;
-  const f = field as Record<string, unknown>;
-  if (typeof f.entry !== 'string' || typeof f.sdk !== 'string') return null;
+  const field = readSwitchboardField(pkg);
+  if (!field?.entry || !field.sdk) return null;
   return {
-    entry: f.entry,
-    sdk: f.sdk,
-    ...(typeof f.source === 'string' ? { source: f.source } : {}),
+    entry: field.entry,
+    sdk: field.sdk,
+    ...(field.source !== undefined ? { source: field.source } : {}),
   };
 }
 

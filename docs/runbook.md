@@ -83,7 +83,8 @@ It closes by itself after `cooldownMinutes`, or by hand:
 
 ## Credential rotation
 
-Secret values are never in Postgres, so rotation happens in the secret provider:
+Secret values are never in Postgres, so rotation happens in the secret provider. (For
+credentials an instance rotates on its own, see _Credentials instances rotate themselves_ below.)
 
 1. Put the new value where the provider reads it: the environment variable for `env`
    (`secret://env/GITHUB_TOKEN`), the mounted file for `file`, the vault path for a vault provider.
@@ -107,6 +108,31 @@ rewrite references: instances still naming the old `secret://<old>/…` fail wit
 `secret_error: secret provider "<old>" is not configured or not running` until you edit them. A
 provider that anything still references cannot be deleted (409 naming the users); point those
 references elsewhere first.
+
+### Credentials instances rotate themselves
+
+Some credentials are replaced every time they are used. The Claude Routines seat meters' OAuth refresh
+token, for example, is swapped for a new one on each refresh. Switchboard keeps the current value
+in a **writable secret provider** that the instance's settings already reference, under the name
+`switchboard-<instance id>-<key>`. It never keeps it in Postgres.
+
+- The built-in `env` provider is read-only. Use the `file` provider with **Store rotated
+  credentials** (`writable: true`) on a directory that is writable and persistent, such as a volume,
+  not a read-only Kubernetes secret mount. Reference the seed token from it, for example
+  `secret://file/seat-refresh-token`. Every replica must see the same directory, or each replica
+  rotates its own chain.
+- If no referenced provider is writable, the instance reports **unhealthy** ("rotated OAuth tokens
+  need a writable secret provider: …"), its seat meters stay stale, and `switchboard doctor` fails
+  the instance. No token is spent, so fixing the provider and pressing **Reload instance** is
+  enough.
+- **Upgrading from a version that kept rotated tokens in `instance_state`:** no migration deletes
+  them. The rotated refresh token is the only live one; the seed in the settings has been used
+  up. On the first meter read with a writable provider in place, the instance moves the tokens into
+  the provider and rewrites the state row without them. Until then they stay where they were and
+  the instance is unhealthy. If you would rather drop them, delete the instance's `oauth` state row
+  and paste a fresh refresh token into the settings.
+- Pasting a new refresh token into the settings restarts the chain from it.
+- Deleting the instance deletes its rotated values from the provider.
 
 When credentials are revoked before you rotate, invokes fail with 401/403, the destination is marked
 unhealthy, its processes are held with `destination_unhealthy`, and the system notifier alerts.
@@ -190,7 +216,8 @@ to require on the pull request. Apply is all or nothing.
 ## doctor
 
 `switchboard doctor` checks the database connection, migrations, plugin manifests, secret
-resolution for every reference, and every enabled instance's `health()`, and prints one ✓ or ✗
+resolution for every reference, and every enabled instance's `health()` (an instance that needs a
+writable secret provider and has none fails here), and prints one ✓ or ✗
 line per check. It exits 1 if any check fails, so it works as a deploy smoke test. Run it with the
 server's environment:
 

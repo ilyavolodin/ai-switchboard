@@ -9,10 +9,10 @@ import {
   type Settings,
 } from '@ai-switchboard/sdk';
 import {
+  createMemorySecrets,
   createMemoryState,
   createStubHttp,
   createTestContext,
-  destinationConformanceChecks,
   pluginConformanceChecks,
   rawRequest,
   runConformance,
@@ -30,7 +30,13 @@ import {
   tokenResponse,
   usageResponse,
 } from './__fixtures__/api.js';
-import { OAUTH_STATE_KEY, fingerprint, type OAuthState } from './meters.js';
+import {
+  OAUTH_ACCESS_KEY,
+  OAUTH_REFRESH_KEY,
+  OAUTH_STATE_KEY,
+  fingerprint,
+  type OAuthMeta,
+} from './meters.js';
 import plugin, { routinesDestinationType } from './plugin.js';
 import { DEFAULT_BETA_HEADER } from './settings.js';
 
@@ -70,14 +76,26 @@ function setup(
   handler: StubHandler = anthropic(),
   overrides: Settings = {},
   state = createMemoryState(),
-): { destination: Destination; calls: StubRequest[]; state: typeof state } {
+  secrets = createMemorySecrets(),
+): {
+  destination: Destination;
+  calls: StubRequest[];
+  state: typeof state;
+  secrets: typeof secrets;
+} {
   const stub = createStubHttp(handler);
-  const ctx = createTestContext({ http: stub.client, now: () => new Date(NOW), state });
+  const ctx = createTestContext({ http: stub.client, now: () => new Date(NOW), state, secrets });
   return {
     destination: routinesDestinationType.create({ ...settings, ...overrides }, ctx),
     calls: stub.calls,
     state,
+    secrets,
   };
+}
+
+/** No token, rotated or seeded, may reach the instance state (Postgres). */
+function expectNoTokens(state: { data: Record<string, unknown> }): void {
+  expect(JSON.stringify(state.data)).not.toMatch(/fixture-(refresh|access)/);
 }
 
 async function thrown(p: Promise<unknown>): Promise<unknown> {
@@ -100,15 +118,17 @@ function signed(body: unknown, secret = CALLBACK_SECRET): RawRequest {
 const target = { routineId: 'trig_01ABCDEF' };
 const input = { text: 'repository: acme/api\nissue: 42' };
 
-runConformance('plugin', pluginConformanceChecks(plugin), { describe, it });
-
 runConformance(
   'claude-routines destination',
-  destinationConformanceChecks(routinesDestinationType, {
-    settings,
-    http: anthropic(),
-    unsignedCallback: rawRequest({ body: { runId: 'r1', status: 'ok' } }),
-    now: () => new Date(NOW),
+  pluginConformanceChecks(plugin, {
+    destinations: {
+      [routinesDestinationType.id]: {
+        settings,
+        http: anthropic(),
+        unsignedCallback: rawRequest({ body: { runId: 'r1', status: 'ok' } }),
+        now: () => new Date(NOW),
+      },
+    },
   }),
   { describe, it },
 );
@@ -390,15 +410,18 @@ describe('claude-routines: meters', () => {
     expect(usageCall?.headers['anthropic-beta']).toBe('oauth-2025-04-20');
   });
 
-  it('stores the rotated refresh token and access token in state', async () => {
-    const { destination, state } = setup();
+  it('stores the rotated tokens in ctx.secrets and only their metadata in state', async () => {
+    const { destination, state, secrets } = setup();
     await destination.readMeters?.();
+    expect(secrets.data).toEqual({
+      [OAUTH_REFRESH_KEY]: 'fixture-refresh-1',
+      [OAUTH_ACCESS_KEY]: 'fixture-access-1',
+    });
     expect(state.data[OAUTH_STATE_KEY]).toEqual({
-      refreshToken: 'fixture-refresh-1',
       seed: fingerprint(REFRESH),
-      accessToken: 'fixture-access-1',
       expiresAt: new Date(NOW + 28_800_000).toISOString(),
     });
+    expectNoTokens(state);
   });
 
   it('reuses a valid cached access token without refreshing', async () => {
@@ -412,13 +435,15 @@ describe('claude-routines: meters', () => {
   it('prefers the stored rotated refresh token over the settings on a later instance', async () => {
     const state = createMemoryState({
       [OAUTH_STATE_KEY]: {
-        refreshToken: 'fixture-refresh-rotated',
         seed: fingerprint(REFRESH),
-        accessToken: 'expired',
         expiresAt: new Date(NOW - 1000).toISOString(),
-      } satisfies OAuthState,
+      } satisfies OAuthMeta,
     });
-    const { destination, calls } = setup(anthropic(), {}, state);
+    const secrets = createMemorySecrets({
+      [OAUTH_REFRESH_KEY]: 'fixture-refresh-rotated',
+      [OAUTH_ACCESS_KEY]: 'expired',
+    });
+    const { destination, calls } = setup(anthropic(), {}, state, secrets);
     await destination.readMeters?.();
     expect(calls[0]?.json<{ refresh_token: string }>().refresh_token).toBe(
       'fixture-refresh-rotated',
@@ -427,33 +452,83 @@ describe('claude-routines: meters', () => {
 
   it('restarts the chain when a person pastes a new refresh token into the settings', async () => {
     const state = createMemoryState({
-      [OAUTH_STATE_KEY]: {
-        refreshToken: 'fixture-refresh-rotated',
-        seed: fingerprint(REFRESH),
-      } satisfies OAuthState,
+      [OAUTH_STATE_KEY]: { seed: fingerprint(REFRESH) } satisfies OAuthMeta,
     });
+    const secrets = createMemorySecrets({ [OAUTH_REFRESH_KEY]: 'fixture-refresh-rotated' });
     const { destination, calls } = setup(
       anthropic(),
       { usage: { oauthRefreshToken: 'fixture-refresh-pasted' } },
       state,
+      secrets,
     );
     await destination.readMeters?.();
     expect(calls[0]?.json<{ refresh_token: string }>().refresh_token).toBe(
       'fixture-refresh-pasted',
     );
-    expect((state.data[OAUTH_STATE_KEY] as OAuthState).seed).toBe(
+    expect((state.data[OAUTH_STATE_KEY] as OAuthMeta).seed).toBe(
       fingerprint('fixture-refresh-pasted'),
     );
+    expect(secrets.data[OAUTH_REFRESH_KEY]).toBe('fixture-refresh-1');
   });
 
   it('keeps the old refresh token when the token endpoint does not rotate it', async () => {
-    const { destination, state } = setup(
+    const { destination, state, secrets } = setup(
       anthropic({
         token: () => ({ json: { access_token: 'fixture-access-x', expires_in: 3600 } }),
       }),
     );
     await destination.readMeters?.();
-    expect((state.data[OAUTH_STATE_KEY] as OAuthState).refreshToken).toBe(REFRESH);
+    expect(secrets.data[OAUTH_REFRESH_KEY]).toBe(REFRESH);
+    expectNoTokens(state);
+  });
+
+  it('moves tokens an older version kept in state into ctx.secrets', async () => {
+    const state = createMemoryState({
+      [OAUTH_STATE_KEY]: {
+        refreshToken: 'fixture-refresh-legacy',
+        seed: fingerprint(REFRESH),
+        accessToken: 'fixture-access-legacy',
+        expiresAt: new Date(NOW + 3_600_000).toISOString(),
+      },
+    });
+    const { destination, calls, secrets } = setup(anthropic(), {}, state);
+    expect(await destination.readMeters?.()).toHaveLength(2);
+    expect(calls.filter((c) => c.url.pathname === '/v1/oauth/token')).toHaveLength(0);
+    expect(calls[0]?.headers.authorization).toBe('Bearer fixture-access-legacy');
+    expect(secrets.data).toEqual({
+      [OAUTH_REFRESH_KEY]: 'fixture-refresh-legacy',
+      [OAUTH_ACCESS_KEY]: 'fixture-access-legacy',
+    });
+    expectNoTokens(state);
+  });
+
+  it('refuses to rotate without a writable secret provider, and says so in health', async () => {
+    const state = createMemoryState();
+    const { destination, calls } = setup(
+      anthropic(),
+      {},
+      state,
+      createMemorySecrets({}, { writable: false }),
+    );
+    await expect(destination.readMeters?.()).rejects.toThrow(/writable secret provider/);
+    expect(calls).toHaveLength(0);
+    expectNoTokens(state);
+    const health = await destination.health();
+    expect(health.status).toBe('unhealthy');
+    expect(health.message).toMatch(/writable secret provider/);
+  });
+
+  it('leaves legacy tokens in place (not lost) when they cannot be moved yet', async () => {
+    const legacy = { refreshToken: 'fixture-refresh-legacy', seed: fingerprint(REFRESH) };
+    const state = createMemoryState({ [OAUTH_STATE_KEY]: legacy });
+    const { destination } = setup(
+      anthropic(),
+      {},
+      state,
+      createMemorySecrets({}, { writable: false }),
+    );
+    await expect(destination.readMeters?.()).rejects.toThrow(/writable secret provider/);
+    expect(state.data[OAUTH_STATE_KEY]).toEqual(legacy);
   });
 
   it('refreshes once and retries when the usage endpoint rejects the access token', async () => {
@@ -516,6 +591,16 @@ describe('claude-routines: settings and health', () => {
 
   it('health is unknown (no read-only check exists)', async () => {
     const { destination } = setup();
+    expect((await destination.health()).status).toBe('unknown');
+  });
+
+  it('health does not need a writable store without seat usage', async () => {
+    const { destination } = setup(
+      anthropic(),
+      { usage: {} },
+      createMemoryState(),
+      createMemorySecrets({}, { writable: false }),
+    );
     expect((await destination.health()).status).toBe('unknown');
   });
 });

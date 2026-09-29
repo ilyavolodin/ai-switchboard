@@ -1,11 +1,5 @@
-import {
-  parseWith,
-  tryParse,
-  type JSONSchema,
-  type MeterSpec,
-  type Settings,
-  type UsageDimension,
-} from '@ai-switchboard/sdk';
+import type { JSONSchema, MeterSpec, Settings, UsageDimension } from '@ai-switchboard/sdk';
+import { parseWith, tryParse } from '@ai-switchboard/sdk/schema';
 
 /** All optional: without a refresh token there are no meters. */
 export interface RoutinesUsageSettings {
@@ -91,7 +85,7 @@ export const settingsSchema: JSONSchema = {
           minLength: 1,
           title: 'OAuth refresh token',
           description:
-            "The seat's Claude OAuth refresh token. Rotated tokens are kept in the instance state.",
+            "The seat's Claude OAuth refresh token. Rotated tokens are kept in the secret provider this reference points at, which must be writable (for example the file provider with writes on).",
           'x-secret': true,
         },
         oauthClientId: {

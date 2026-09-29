@@ -2,37 +2,21 @@ import { and, eq } from 'drizzle-orm';
 
 import type { Event } from '@ai-switchboard/sdk';
 
-import { steps, type runs } from '../../db/schema.js';
+import { steps } from '../../db/schema.js';
 import type { StepPhase } from '../../domain/status.js';
-import { evaluateFilter, resolveSecretRefs, stepContext } from '../../expr/index.js';
+import { evaluateFilter, stepContext } from '../../expr/index.js';
 import { redactSecretValues } from '../../secrets/refs.js';
-
 import { errorText } from '../../util/errors.js';
-import { callPlugin, evalFunctions, type Ctx, type ProcessRow } from './context.js';
+
+import type { Ctx } from './context.js';
+import { evalFunctions } from './eval.js';
+import { callPlugin, resolveForPluginCall } from './plugin-call.js';
+import { runView, type ProcessRow, type RunRow } from './views.js';
 
 /**
  * A failing `before` step fails the run before invoke; `after` steps run on the terminal state
  * and never change it. Dry runs record every step as skipped, since actions have side effects.
  */
-
-export type RunRow = typeof runs.$inferSelect;
-
-export function runView(run: RunRow): Record<string, unknown> {
-  return {
-    id: run.id,
-    processId: run.processId,
-    destinationId: run.destinationId,
-    status: run.status,
-    reason: run.statusReason,
-    mode: run.kind,
-    dryRun: run.dryRun,
-    externalId: run.externalId,
-    externalUrl: run.externalUrl,
-    usage: run.usage,
-    invokedAt: run.invokedAt?.toISOString() ?? null,
-    finishedAt: run.finishedAt?.toISOString() ?? null,
-  };
-}
 
 /** `ok: false` only when a `before` phase must fail the run. */
 export type StepsOutcome = { ok: true } | { ok: false; reason: string };
@@ -232,16 +216,13 @@ async function runStepsInSpan(
 
     let status: 'ok' | 'error' = 'ok';
     let error: string | null = null;
-    const secretValues: string[] = [...(source?.secretValues ?? destination?.secretValues ?? [])];
+    let secretValues: readonly string[] = source?.secretValues ?? destination?.secretValues ?? [];
     try {
-      const resolved = await resolveSecretRefs(args.value, async (ref) => {
-        const value = await ctx.secrets.resolve(ref);
-        secretValues.push(value);
-        return value;
-      });
+      const resolved = await resolveForPluginCall(ctx, args.value, secretValues);
+      secretValues = resolved.secretValues;
       const plugin = source?.pluginName ?? destination?.pluginName ?? step.provider;
       const out = await callPlugin(ctx, plugin, `act ${step.action}`, () =>
-        act(step.action, resolved),
+        act(step.action, resolved.value),
       );
       if (!out.ok) {
         status = 'error';

@@ -5,7 +5,7 @@ import { validateAgainst, type PluginDefinition } from '@ai-switchboard/sdk';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
-import { referenceTolerantSchema } from './api/routes/instances.js';
+import { referenceTolerantSchema } from './services/instance-validation.js';
 import { processDocumentSchema } from './domain/process.js';
 
 const PLUGINS = [

@@ -2,7 +2,7 @@ import { isInvokeError } from '@ai-switchboard/sdk';
 import {
   createMemoryState,
   createTestContext,
-  destinationConformanceChecks,
+  pluginConformanceChecks,
   runConformance,
   runHandle,
 } from '@ai-switchboard/sdk/testing';
@@ -12,9 +12,13 @@ import plugin, { logDestinationType } from './plugin.js';
 
 runConformance(
   'log destination',
-  destinationConformanceChecks(logDestinationType, {
-    settings: { hourlyLimit: 10 },
-    http: () => undefined,
+  pluginConformanceChecks(plugin, {
+    destinations: {
+      [logDestinationType.id]: {
+        settings: { hourlyLimit: 10 },
+        http: () => undefined,
+      },
+    },
   }),
   {
     describe,

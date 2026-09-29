@@ -1,4 +1,4 @@
-import { parseWith, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
+import type { JSONSchema } from '@ai-switchboard/sdk';
 
 export const SITES = [
   'datadoghq.com',
@@ -76,11 +76,4 @@ export const settingsSchema: JSONSchema = {
 
 export class DatadogSettingsError extends Error {
   override readonly name = 'DatadogSettingsError';
-}
-
-/** Validates a copy, so defaults do not leak back. */
-export function readSettings(settings: Settings): DatadogSettings {
-  return parseWith<DatadogSettings>(settingsSchema, settings, 'datadog settings', {
-    error: DatadogSettingsError,
-  });
 }

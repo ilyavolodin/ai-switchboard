@@ -10,7 +10,6 @@ import {
 import {
   createStubHttp,
   createTestContext,
-  destinationConformanceChecks,
   pluginConformanceChecks,
   rawRequest,
   runConformance,
@@ -68,17 +67,19 @@ function signed(body: unknown, secret = SECRET): ReturnType<typeof rawRequest> {
   });
 }
 
-runConformance('plugin', pluginConformanceChecks(plugin), { describe, it });
-
 runConformance(
   'http destination',
-  destinationConformanceChecks(httpDestinationType, {
-    settings,
-    http: (req) =>
-      req.url.pathname.endsWith('/capacity')
-        ? { json: { used: 30, limit: 120, resetsAt: '2026-09-27T11:00:00Z' } }
-        : { json: { ok: true } },
-    unsignedCallback: rawRequest({ body: { runId: 'r1', status: 'ok' } }),
+  pluginConformanceChecks(plugin, {
+    destinations: {
+      [httpDestinationType.id]: {
+        settings,
+        http: (req) =>
+          req.url.pathname.endsWith('/capacity')
+            ? { json: { used: 30, limit: 120, resetsAt: '2026-09-27T11:00:00Z' } }
+            : { json: { ok: true } },
+        unsignedCallback: rawRequest({ body: { runId: 'r1', status: 'ok' } }),
+      },
+    },
   }),
   { describe, it },
 );

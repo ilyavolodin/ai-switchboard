@@ -27,6 +27,11 @@
       "@ai-switchboard/source": "./src/domain/index.ts",
       "types": "./dist/domain/index.d.ts",
       "default": "./dist/domain/index.js"
+    },
+    "./expr-contexts": {
+      "@ai-switchboard/source": "./src/expr/context-descriptors.ts",
+      "types": "./dist/expr/context-descriptors.d.ts",
+      "default": "./dist/expr/context-descriptors.js"
     }
   },
   "scripts": {

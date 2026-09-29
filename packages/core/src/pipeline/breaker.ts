@@ -26,17 +26,18 @@ export function consecutiveFailures(newestFirst: readonly RunStatusValue[]): num
 
 export type BreakerTransition = 'opened' | 'closed_cooldown' | null;
 
-export function breakerAfterRun(
-  current: BreakerState,
+/** Evaluated only while the breaker is closed; an open one stays open until reset or cooldown. */
+export function breakerOpensAfterRun(
   newestFirst: readonly RunStatusValue[],
   threshold: number,
-  now: Date,
-): { next: BreakerState; transition: BreakerTransition; failures: number } {
+): { opens: boolean; failures: number } {
   const failures = consecutiveFailures(newestFirst);
-  if (current.state === 'closed' && threshold > 0 && failures >= threshold) {
-    return { next: { state: 'open', openedAt: now }, transition: 'opened', failures };
-  }
-  return { next: current, transition: null, failures };
+  return { opens: threshold > 0 && failures >= threshold, failures };
+}
+
+/** How many recent settled runs to read so a streak of `threshold` is always visible. */
+export function breakerHistoryLimit(threshold: number): number {
+  return Math.max(threshold * 4, 50);
 }
 
 export function breakerAtGate(

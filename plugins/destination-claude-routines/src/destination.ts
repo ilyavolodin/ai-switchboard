@@ -1,6 +1,10 @@
 import {
-  invokeErrorForStatus,
-  parseRetryAfter,
+  InvokeError,
+  parseWith,
+  refusalFor,
+  SchemaMismatchError,
+  tryJson,
+  withSettings,
   type Destination,
   type DestinationType,
   type HttpResponse,
@@ -15,21 +19,35 @@ import {
   METERS,
   USAGE_DIMENSIONS,
   metersFor,
-  readSettings,
   settingsSchema,
   type RoutinesSettings,
 } from './settings.js';
-import { inputSchema, readInput, readTarget, targetSchema, withTrailer } from './target.js';
+import {
+  inputSchema,
+  targetSchema,
+  withTrailer,
+  type RoutineInput,
+  type RoutineTarget,
+} from './target.js';
 
 export const ANTHROPIC_VERSION = '2023-06-01';
-const DEFAULT_RETRY_AFTER_SECONDS = 60;
 
-function jsonBody(res: HttpResponse): unknown {
+function definitive<T>(fn: () => T): T {
   try {
-    return res.json();
-  } catch {
-    return undefined;
+    return fn();
+  } catch (err) {
+    if (err instanceof SchemaMismatchError)
+      throw new InvokeError(err.message, { definitive: true });
+    throw err;
   }
+}
+
+export function readTarget(target: unknown): RoutineTarget {
+  return definitive(() => parseWith<RoutineTarget>(targetSchema, target, 'routine target'));
+}
+
+export function readInput(input: unknown): RoutineInput {
+  return definitive(() => parseWith<RoutineInput>(inputSchema, input, 'routine input'));
 }
 
 function firstString(record: Record<string, unknown>, keys: string[]): string | undefined {
@@ -64,7 +82,7 @@ export function sessionOf(body: unknown): { externalId?: string; externalUrl?: s
 
 /** Anthropic errors look like `{ type: 'error', error: { type, message } }`. */
 export function errorMessage(res: HttpResponse): string {
-  const body = jsonBody(res);
+  const body = tryJson(res);
   if (body !== null && typeof body === 'object' && 'error' in body) {
     const err = body.error;
     if (err !== null && typeof err === 'object' && 'message' in err) {
@@ -78,32 +96,18 @@ export function errorMessage(res: HttpResponse): string {
 
 /** Returns a result for 429 and held states; throws for the rest. */
 export function refusal(res: HttpResponse, now: Date): InvokeResult {
-  const message = errorMessage(res);
-  const retryAfter = parseRetryAfter(res.headers['retry-after'], now);
-  const status = res.status;
-  if (status === 429) {
-    return {
-      status: 'failed',
-      retryAfterSeconds: retryAfter ?? DEFAULT_RETRY_AFTER_SECONDS,
-      errors: [`Routines API rate limit: ${message}`],
-    };
-  }
-  if ((status === 400 || status === 409) && /\bpaused\b/i.test(message)) {
-    return { status: 'held', reason: 'paused' };
-  }
-  if ((status === 400 || status === 409) && /\bdisabled\b/i.test(message)) {
-    return { status: 'held', reason: 'disabled' };
-  }
-  const text = `Routines API answered ${status}: ${message}`;
-  // 529 is Anthropic's "overloaded": the request was not processed, so it is as safe to retry as a 503.
-  if (status === 503 || status === 529) {
-    throw invokeErrorForStatus(
-      503,
-      text,
-      retryAfter !== undefined ? { retryAfterSeconds: retryAfter } : {},
-    );
-  }
-  throw invokeErrorForStatus(status, text);
+  return refusalFor(res, now, {
+    message: (r) => `Routines API answered ${r.status}: ${errorMessage(r)}`,
+    rateLimitMessage: (r) => `Routines API rate limit: ${errorMessage(r)}`,
+    held: (r) => {
+      if (r.status !== 400 && r.status !== 409) return undefined;
+      const message = errorMessage(r);
+      if (/\bpaused\b/i.test(message)) return 'paused';
+      return /\bdisabled\b/i.test(message) ? 'disabled' : undefined;
+    },
+    // 529 is Anthropic's "overloaded": the request was not processed, so it is as safe to retry as a 503.
+    retryableStatuses: [529],
+  });
 }
 
 function createRoutinesDestination(settings: RoutinesSettings, ctx: PluginContext): Destination {
@@ -127,20 +131,24 @@ function createRoutinesDestination(settings: RoutinesSettings, ctx: PluginContex
         },
       );
       if (!res.ok) return refusal(res, ctx.now());
-      return { status: 'started', ...sessionOf(jsonBody(res)) };
+      return { status: 'started', ...sessionOf(tryJson(res)) };
     },
 
     verifyCallback: (req) => verifyRoutineCallback(req, settings.callbackSecret),
 
     readMeters: () => seat.read(),
 
-    health: () =>
-      Promise.resolve({
-        status: 'unknown',
-        message:
-          'The Routines API has no read-only call to check a trigger token; the first run will tell.',
-        checkedAt: ctx.now().toISOString(),
-      }),
+    health: async () => {
+      const problem = await seat.problem();
+      return problem !== undefined
+        ? { status: 'unhealthy', message: problem, checkedAt: ctx.now().toISOString() }
+        : {
+            status: 'unknown',
+            message:
+              'The Routines API has no read-only call to check a trigger token; the first run will tell.',
+            checkedAt: ctx.now().toISOString(),
+          };
+    },
   };
 }
 
@@ -167,5 +175,5 @@ export const routinesDestinationType: DestinationType = {
   usage: USAGE_DIMENSIONS,
   meters: METERS,
   metersFor,
-  create: (settings, ctx) => createRoutinesDestination(readSettings(settings), ctx),
+  create: withSettings(settingsSchema, 'claude-routines settings', createRoutinesDestination),
 };

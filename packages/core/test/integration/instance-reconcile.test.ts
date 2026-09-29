@@ -57,7 +57,7 @@ async function call<T>(
 const ids = (list: { id: string }[]) => list.map((i) => i.id);
 
 async function expectNothingOnA(): Promise<void> {
-  const own: ReconcileResult = await a.ctx.host.reconcile();
+  const own: ReconcileResult = await a.host.reconcile();
   expect(own).toEqual({ built: [], rebuilt: [], dropped: [], dependents: [] });
 }
 

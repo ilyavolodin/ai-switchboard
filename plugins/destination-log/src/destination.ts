@@ -1,104 +1,14 @@
 import {
   InvokeError,
   validateAgainst,
+  withSettings,
   type DestinationType,
-  type JSONSchema,
   type MeterSpec,
   type PluginContext,
-  type Settings,
 } from '@ai-switchboard/sdk';
 
-export type Outcome = 'ok' | 'error' | 'failed' | 'held' | 'rate_limited';
-
-export interface LogSettings {
-  level: 'debug' | 'info' | 'warn';
-  logInput: boolean;
-  maxLoggedBytes: number;
-  /** When set, the `hourly_runs` meter reports invocations in the last hour against this limit. */
-  hourlyLimit?: number;
-}
-
-export interface LogTarget {
-  label?: string;
-  outcome: Outcome;
-  delayMs: number;
-  retryAfterSeconds: number;
-}
-
-export const settingsSchema: JSONSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    level: {
-      enum: ['debug', 'info', 'warn'],
-      default: 'info',
-      title: 'Log level',
-      description: 'The level of the log line written for every invocation.',
-      'x-group': 'Logging',
-    },
-    logInput: {
-      type: 'boolean',
-      default: true,
-      title: 'Log the input',
-      description: 'Include the mapped input in the log line (truncated to the size below).',
-      'x-group': 'Logging',
-    },
-    maxLoggedBytes: {
-      type: 'integer',
-      minimum: 64,
-      maximum: 65_536,
-      default: 4096,
-      title: 'Largest logged input (bytes)',
-      description:
-        'Inputs longer than this are truncated in the log line; the run keeps them whole.',
-      'x-group': 'Logging',
-    },
-    hourlyLimit: {
-      type: 'integer',
-      minimum: 1,
-      title: 'Simulated hourly limit',
-      description:
-        'Optional. Adds an "Hourly runs" meter that reports invocations in the last hour against this limit, so ceilings and throttling can be tried out.',
-      'x-group': 'Simulated meter',
-    },
-  },
-};
-
-export const targetSchema: JSONSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    label: {
-      type: 'string',
-      maxLength: 120,
-      title: 'Label',
-      description: 'A word to find this process in the log.',
-    },
-    outcome: {
-      enum: ['ok', 'error', 'failed', 'held', 'rate_limited'],
-      default: 'ok',
-      title: 'Simulated outcome',
-      description:
-        'ok: the run succeeds. error: the backend reports an error (counts toward the breaker). failed: a definitive refusal. held: the target is paused. rate_limited: out of capacity (opens a soft-hold).',
-    },
-    delayMs: {
-      type: 'integer',
-      minimum: 0,
-      maximum: 30_000,
-      default: 0,
-      title: 'Delay (ms)',
-      description: 'Wait this long before answering, to see a run in flight.',
-    },
-    retryAfterSeconds: {
-      type: 'integer',
-      minimum: 1,
-      maximum: 86_400,
-      default: 60,
-      title: 'Retry after (s)',
-      description: 'For the rate_limited outcome: how long the soft-hold lasts.',
-    },
-  },
-};
+import { settingsSchema, type LogSettings } from './settings.js';
+import { inputSchema, targetSchema, type LogTarget } from './target.js';
 
 const meter: MeterSpec = {
   id: 'hourly_runs',
@@ -110,13 +20,6 @@ const meter: MeterSpec = {
 
 const STATE_KEY = 'invocations';
 const HOUR_MS = 3_600_000;
-
-export function parseSettings(settings: Settings): LogSettings {
-  const copy = structuredClone(settings);
-  const check = validateAgainst(settingsSchema, copy);
-  if (!check.valid) throw new Error(`Invalid log destination settings: ${check.errors.join('; ')}`);
-  return copy as unknown as LogSettings;
-}
 
 function parseTarget(target: unknown): LogTarget {
   const copy = structuredClone(target ?? {}) as Record<string, unknown>;
@@ -166,7 +69,7 @@ export const logDestinationType: DestinationType = {
     'Writes every invocation to the server log and answers with the input. Simulates outcomes, delays and a meter, so a process can be tried out without a real backend.',
   settingsSchema,
   targetSchema,
-  inputSchema: {},
+  inputSchema,
   examples: [
     {
       target: { label: 'demo', outcome: 'ok' },
@@ -201,8 +104,7 @@ export const logDestinationType: DestinationType = {
       idempotent: true,
     },
   ],
-  create(rawSettings, ctx) {
-    const settings = parseSettings(rawSettings);
+  create: withSettings(settingsSchema, 'log destination settings', (settings: LogSettings, ctx) => {
     const log = (message: string, fields: Record<string, unknown>): void =>
       ctx.logger[settings.level](message, fields);
     return {
@@ -282,5 +184,5 @@ export const logDestinationType: DestinationType = {
         return Promise.resolve({ status: 'healthy', checkedAt: ctx.now().toISOString() });
       },
     };
-  },
+  }),
 };

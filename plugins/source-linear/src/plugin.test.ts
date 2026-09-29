@@ -5,8 +5,8 @@ import {
   createStubHttp,
   createTestContext,
   rawRequest,
+  pluginConformanceChecks,
   runConformance,
-  sourceConformanceChecks,
   type StubHandler,
   type StubReply,
   type StubRequest,
@@ -106,31 +106,42 @@ const parse = (req: RawRequest, s: Settings = baseSettings) => make(s).source.pa
 
 runConformance(
   'linear source',
-  sourceConformanceChecks(linearSource, {
-    settings: baseSettings,
-    secrets: [SECRET, API_KEY],
-    http: linearApi(),
-    now: () => NOW,
-    push: {
-      deliveries: [issueCreated, labelsChanged, stateChanged, priorityChanged, commentCreated].map(
-        (d) => deliver(d),
-      ),
-      sameChange: [
-        deliver(stateChanged),
-        deliver(stateChanged, undefined, { 'linear-delivery': 'redelivered-6e7f8a9b' }),
-      ],
-      differentChange: [
-        deliver(stateChanged),
-        deliver(stateChanged, (b) => {
-          b.data.updatedAt = '2026-09-27T10:22:00.000Z';
-          b.updatedFrom.stateId = b.data.stateId;
-        }),
-      ],
-      wrongSignature: deliver(issueCreated, undefined, { 'linear-signature': 'ab'.repeat(32) }),
-      missingHeader: deliver(issueCreated, undefined, { 'linear-signature': undefined }),
-      staleTimestamp: deliver(issueCreated, (b) => (b.webhookTimestamp = NOW.getTime() - 61_000)),
+  pluginConformanceChecks(plugin, {
+    sources: {
+      [linearSource.id]: {
+        settings: baseSettings,
+        secrets: [SECRET, API_KEY],
+        http: linearApi(),
+        now: () => NOW,
+        push: {
+          deliveries: [
+            issueCreated,
+            labelsChanged,
+            stateChanged,
+            priorityChanged,
+            commentCreated,
+          ].map((d) => deliver(d)),
+          sameChange: [
+            deliver(stateChanged),
+            deliver(stateChanged, undefined, { 'linear-delivery': 'redelivered-6e7f8a9b' }),
+          ],
+          differentChange: [
+            deliver(stateChanged),
+            deliver(stateChanged, (b) => {
+              b.data.updatedAt = '2026-09-27T10:22:00.000Z';
+              b.updatedFrom.stateId = b.data.stateId;
+            }),
+          ],
+          wrongSignature: deliver(issueCreated, undefined, { 'linear-signature': 'ab'.repeat(32) }),
+          missingHeader: deliver(issueCreated, undefined, { 'linear-signature': undefined }),
+          staleTimestamp: deliver(
+            issueCreated,
+            (b) => (b.webhookTimestamp = NOW.getTime() - 61_000),
+          ),
+        },
+        resolveNotFound: { kind: 'linear.issue', id: 'LOL-9999' },
+      },
     },
-    resolveNotFound: { kind: 'linear.issue', id: 'LOL-9999' },
   }),
   { describe, it },
 );

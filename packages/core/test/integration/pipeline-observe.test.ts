@@ -1,7 +1,14 @@
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { events, eventRaw, replicas, sources, statsHourly } from '../../src/db/schema.js';
+import {
+  events,
+  eventRaw,
+  processes,
+  replicas,
+  sources,
+  statsHourly,
+} from '../../src/db/schema.js';
 import { defaultProcessDocument } from '../../src/domain/process.js';
 import { createExpressionEngine } from '../../src/expr/index.js';
 import { pollSource } from '../../src/services/pipeline/ingest.js';
@@ -211,6 +218,29 @@ describe('previews', () => {
 
     const cron = cronPreview({ cron: '0 7 * * *', timezone: 'UTC' }, h.clock);
     expect(cron.next[0]).toBe('2026-01-06T07:00:00.000Z');
+  });
+
+  it('previews a manual replay of a batch with the mode its run gets', async () => {
+    const src = await seedSource(h);
+    const ex = await seedDestination(h);
+    const pid = await seedProcess(h, ex.id, src.id);
+    await deliver(h, src.id, [{ id: '1', version: 'a' }]);
+    await h.drain();
+    await h.advance(31);
+    const [eventBatch] = await batchesOf(h.db, pid);
+    const manual = await h.pipeline.runNow(pid, {
+      batchId: eventBatch!.id,
+      actor: 'op@example.com',
+      reason: 'replay',
+    });
+    const run = (await runsOf(h.db, pid)).find((r) => r.batchId === manual.batchId);
+    const [proc] = await h.db.select().from(processes).where(eq(processes.id, pid));
+    const preview = await inputPreview(h.deps, {
+      document: proc!.document,
+      batchId: manual.batchId,
+    });
+    expect(run?.input).toMatchObject({ mode: 'event' });
+    expect(preview.input).toMatchObject({ mode: 'event' });
   });
 });
 

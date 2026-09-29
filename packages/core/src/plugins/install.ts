@@ -4,16 +4,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import semver from 'semver';
-
-import {
-  SDK_VERSION,
-  isPluginDefinition,
-  type Capabilities,
-  type PluginKind,
-} from '@ai-switchboard/sdk';
+import { SDK_VERSION, type Capabilities, type PluginKind } from '@ai-switchboard/sdk';
+import { isPluginDefinition } from '@ai-switchboard/sdk/host';
 
 import { isRecord, str } from '../util/guards.js';
+
+import { withHomeLock } from './home-lock.js';
+import { isSdkCompatible, readSwitchboardField } from './package-manifest.js';
 
 export type RunNpm = (args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>;
 
@@ -76,6 +73,8 @@ export interface InstallOptions {
   allowSource?: boolean;
   importModule?: ImportModule;
   now?: () => Date;
+  /** The caller already holds the home's lock (`withHomeLock`). */
+  locked?: boolean;
 }
 
 export interface InspectOptions {
@@ -89,6 +88,8 @@ export interface RemoveOptions {
   home: string;
   name: string;
   runNpm?: RunNpm;
+  /** The caller already holds the home's lock (`withHomeLock`). */
+  locked?: boolean;
 }
 
 /** `message` is meant for the admin. */
@@ -165,27 +166,6 @@ function checkSpec(spec: string): string {
   return trimmed;
 }
 
-/**
- * npm commands in one plugins directory run one at a time: concurrent installs (an API request
- * and a replica catching up) would race on `package.json`, `node_modules` and the lockfile.
- */
-const homeQueues = new Map<string, Promise<unknown>>();
-
-function serialized<T>(home: string, task: () => Promise<T>): Promise<T> {
-  const key = resolve(home);
-  const previous = homeQueues.get(key) ?? Promise.resolve();
-  const next = previous.then(task, task);
-  const settled = next.then(
-    () => undefined,
-    () => undefined,
-  );
-  homeQueues.set(key, settled);
-  void settled.then(() => {
-    if (homeQueues.get(key) === settled) homeQueues.delete(key);
-  });
-  return next;
-}
-
 export function specPackageName(spec: string): string | undefined {
   const trimmed = spec.trim();
   if (/^(\.|\/|~|file:|git\+|git:|https?:|github:)/.test(trimmed)) return undefined;
@@ -205,14 +185,22 @@ interface SwitchboardField {
 }
 
 function switchboardField(pkg: unknown): SwitchboardField | undefined {
-  if (!isRecord(pkg) || !isRecord(pkg.switchboard)) return undefined;
-  const f = pkg.switchboard;
-  return { entry: str(f.entry), source: str(f.source), sdk: str(f.sdk) ?? '*' };
+  const field = readSwitchboardField(pkg);
+  return field ? { ...field, sdk: field.sdk ?? '*' } : undefined;
 }
 
-function isCompatible(range: string): boolean {
-  return semver.validRange(range) !== null && semver.satisfies(SDK_VERSION, range);
-}
+/**
+ * `--install-links` copies a local directory instead of symlinking it, so the plugins directory
+ * stays self-contained when it is baked into an image or backed up.
+ */
+const INSTALL_FLAGS = [
+  '--save',
+  '--install-links',
+  '--ignore-scripts=false',
+  '--no-audit',
+  '--no-fund',
+];
+const UNINSTALL_FLAGS = ['--save', '--no-audit', '--no-fund'];
 
 function summarise(plugin: unknown): {
   capabilities: Capabilities | undefined;
@@ -354,7 +342,8 @@ async function lockedIntegrity(dir: string, name: string): Promise<string | null
  */
 export async function installPlugin(options: InstallOptions): Promise<InstallResult> {
   const spec = checkSpec(options.spec);
-  return serialized(options.home, () => install(options, spec));
+  if (options.locked) return install(options, spec);
+  return withHomeLock(options.home, () => install(options, spec));
 }
 
 async function install(options: InstallOptions, spec: string): Promise<InstallResult> {
@@ -369,15 +358,7 @@ async function install(options: InstallOptions, spec: string): Promise<InstallRe
   await runNpm(
     // --install-links copies a local directory instead of symlinking it, so the plugins
     // directory stays self-contained when it is baked into an image or backed up.
-    [
-      'install',
-      spec,
-      '--save',
-      '--install-links',
-      '--ignore-scripts=false',
-      '--no-audit',
-      '--no-fund',
-    ],
+    ['install', spec, ...INSTALL_FLAGS],
     dir,
   );
   const after = dependenciesOf(await readJsonIfExists(join(dir, 'package.json')));
@@ -391,30 +372,19 @@ async function install(options: InstallOptions, spec: string): Promise<InstallRe
     const notPlugin = `${name} is not a Switchboard plugin: its package.json has no "switchboard" field.`;
     const pinned = lock.plugins[name];
     if (pinned === undefined) {
-      await runNpm(['uninstall', name, '--save', '--no-audit', '--no-fund'], dir);
+      await runNpm(['uninstall', name, ...UNINSTALL_FLAGS], dir);
       throw new PluginInstallError(`${notPlugin} It was removed again.`);
     }
     // An upgrade replaced a working plugin: put the pinned version back rather than leave the
     // lockfile naming a package that is gone.
-    await runNpm(
-      [
-        'install',
-        `${name}@${pinned.version}`,
-        '--save',
-        '--install-links',
-        '--ignore-scripts=false',
-        '--no-audit',
-        '--no-fund',
-      ],
-      dir,
-    );
+    await runNpm(['install', `${name}@${pinned.version}`, ...INSTALL_FLAGS], dir);
     throw new PluginInstallError(`${notPlugin} The installed ${pinned.version} was restored.`);
   }
 
   const version = str(pkg.version) ?? after[name] ?? '0.0.0';
   const integrity = await lockedIntegrity(dir, name);
   const warnings: string[] = [];
-  const compatible = isCompatible(field.sdk);
+  const compatible = isSdkCompatible(field.sdk);
   if (!compatible) {
     warnings.push(
       `${name} declares SDK range "${field.sdk}", which the running SDK ${SDK_VERSION} does not satisfy; the host will mark it incompatible and not load it`,
@@ -451,7 +421,8 @@ async function install(options: InstallOptions, spec: string): Promise<InstallRe
 }
 
 export async function removePlugin(options: RemoveOptions): Promise<void> {
-  return serialized(options.home, () => remove(options));
+  if (options.locked) return remove(options);
+  return withHomeLock(options.home, () => remove(options));
 }
 
 async function remove(options: RemoveOptions): Promise<void> {
@@ -463,7 +434,7 @@ async function remove(options: RemoveOptions): Promise<void> {
     throw new PluginInstallError(`${options.name} is not installed in ${dir}`);
   }
   if (options.name in deps) {
-    await runNpm(['uninstall', options.name, '--save', '--no-audit', '--no-fund'], dir);
+    await runNpm(['uninstall', options.name, ...UNINSTALL_FLAGS], dir);
   }
   const plugins = Object.fromEntries(
     Object.entries(lock.plugins).filter(([name]) => name !== options.name),
@@ -569,7 +540,7 @@ export async function inspectPlugin(options: InspectOptions): Promise<InspectRes
       name,
       version: str(pkg.version) ?? '0.0.0',
       sdkRange: field.sdk,
-      compatible: isCompatible(field.sdk),
+      compatible: isSdkCompatible(field.sdk),
       integrity: packed.integrity,
       capabilities: declared.capabilities,
       plugin: declared.plugin,

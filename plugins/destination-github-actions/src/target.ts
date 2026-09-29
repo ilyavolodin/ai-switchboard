@@ -1,4 +1,4 @@
-import { InvokeError, type JSONSchema, SchemaMismatchError, parseWith } from '@ai-switchboard/sdk';
+import type { JSONSchema } from '@ai-switchboard/sdk';
 
 export interface WorkflowTarget {
   owner: string;
@@ -56,22 +56,3 @@ export const inputSchema: JSONSchema = {
   additionalProperties: { type: 'string' },
   propertyNames: { pattern: '^[A-Za-z_][A-Za-z0-9_-]*$' },
 };
-
-function definitive<T>(fn: () => T): T {
-  try {
-    return fn();
-  } catch (err) {
-    if (err instanceof SchemaMismatchError) {
-      throw new InvokeError(err.message, { definitive: true });
-    }
-    throw err;
-  }
-}
-
-export function readTarget(target: unknown): WorkflowTarget {
-  return definitive(() => parseWith<WorkflowTarget>(targetSchema, target, 'workflow target'));
-}
-
-export function readInputs(input: unknown): WorkflowInputs {
-  return definitive(() => parseWith<WorkflowInputs>(inputSchema, input ?? {}, 'workflow inputs'));
-}

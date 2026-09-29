@@ -1,14 +1,20 @@
 import { PgBoss } from 'pg-boss';
 
-import type { Clock } from '../clock.js';
 import type { CoreLogger } from '../logger.js';
 
-const DEFAULT_EXPIRE_SECONDS = 300;
+/** Every queue is created with these; `MemoryQueue` in the test helpers mirrors them. */
+export const QUEUE_DEFAULTS = {
+  retryLimit: 5,
+  retryDelaySeconds: 5,
+  retryBackoff: true,
+  expireInSeconds: 300,
+} as const;
 
 export interface SendOptions {
   startAfter?: Date;
-  /** At most one queued (not yet active) job per key. */
+  /** With `singletonSeconds`, at most one job per key in each slot of that many seconds. */
   singletonKey?: string;
+  singletonSeconds?: number;
   retryLimit?: number;
 }
 
@@ -63,10 +69,10 @@ export class PgBossQueue implements JobQueue {
     const existing = await this.boss.getQueue(name);
     if (!existing) {
       await this.boss.createQueue(name, {
-        retryLimit: 5,
-        retryDelay: 5,
-        retryBackoff: true,
-        expireInSeconds: expireInSeconds ?? DEFAULT_EXPIRE_SECONDS,
+        retryLimit: QUEUE_DEFAULTS.retryLimit,
+        retryDelay: QUEUE_DEFAULTS.retryDelaySeconds,
+        retryBackoff: QUEUE_DEFAULTS.retryBackoff,
+        expireInSeconds: expireInSeconds ?? QUEUE_DEFAULTS.expireInSeconds,
       });
     } else if (expireInSeconds !== undefined && existing.expireInSeconds !== expireInSeconds) {
       // Queues outlive releases; bring an existing queue up to the worker's requirement.
@@ -92,6 +98,9 @@ export class PgBossQueue implements JobQueue {
     return this.boss.send(name, data, {
       ...(options.startAfter ? { startAfter: options.startAfter } : {}),
       ...(options.singletonKey ? { singletonKey: options.singletonKey } : {}),
+      ...(options.singletonSeconds !== undefined
+        ? { singletonSeconds: options.singletonSeconds }
+        : {}),
       ...(options.retryLimit !== undefined ? { retryLimit: options.retryLimit } : {}),
     });
   }
@@ -121,105 +130,5 @@ export class PgBossQueue implements JobQueue {
   ): Promise<void> {
     await this.ensure(name);
     await this.boss.schedule(name, cron, data, options.tz ? { tz: options.tz } : {});
-  }
-}
-
-interface MemoryJob {
-  id: string;
-  name: string;
-  data: Record<string, unknown>;
-  startAfter: number;
-  singletonKey: string | undefined;
-  retryCount: number;
-  retryLimit: number;
-}
-
-/** A deterministic queue for tests: nothing runs until `drain()`. */
-export class MemoryQueue implements JobQueue {
-  readonly jobs: MemoryJob[] = [];
-  readonly completed: { name: string; data: Record<string, unknown> }[] = [];
-  readonly failed: { name: string; data: Record<string, unknown>; error: unknown }[] = [];
-  private readonly handlers = new Map<string, JobHandler>();
-  private readonly schedules: { name: string; cron: string; data: Record<string, unknown> }[] = [];
-  private seq = 0;
-
-  constructor(private readonly clock: Clock) {}
-
-  start(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  stop(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  send(
-    name: string,
-    data: Record<string, unknown>,
-    options: SendOptions = {},
-  ): Promise<string | null> {
-    if (
-      options.singletonKey &&
-      this.jobs.some((j) => j.name === name && j.singletonKey === options.singletonKey)
-    ) {
-      return Promise.resolve(null);
-    }
-    const id = `job-${++this.seq}`;
-    this.jobs.push({
-      id,
-      name,
-      data,
-      startAfter: (options.startAfter ?? this.clock.now()).getTime(),
-      singletonKey: options.singletonKey,
-      retryCount: 0,
-      retryLimit: options.retryLimit ?? 3,
-    });
-    return Promise.resolve(id);
-  }
-
-  work(name: string, handler: JobHandler): Promise<void> {
-    this.handlers.set(name, handler);
-    return Promise.resolve();
-  }
-
-  schedule(name: string, cron: string, data: Record<string, unknown> = {}): Promise<void> {
-    this.schedules.push({ name, cron, data });
-    return Promise.resolve();
-  }
-
-  async tick(name?: string): Promise<void> {
-    for (const s of this.schedules) {
-      if (name === undefined || s.name === name) await this.send(s.name, s.data);
-    }
-  }
-
-  pending(name?: string): MemoryJob[] {
-    return this.jobs.filter((j) => name === undefined || j.name === name);
-  }
-
-  /** Runs due jobs (including ones they send) until none are due; returns how many ran. */
-  async drain(maxJobs = 10_000): Promise<number> {
-    let ran = 0;
-    for (;;) {
-      const now = this.clock.now().getTime();
-      const index = this.jobs.findIndex((j) => j.startAfter <= now && this.handlers.has(j.name));
-      if (index === -1) return ran;
-      if (ran >= maxJobs)
-        throw new Error(`MemoryQueue.drain exceeded ${maxJobs} jobs; is something looping?`);
-      const [job] = this.jobs.splice(index, 1);
-      if (!job) return ran;
-      const handler = this.handlers.get(job.name);
-      ran++;
-      try {
-        await handler?.(job.data, { id: job.id, retryCount: job.retryCount });
-        this.completed.push({ name: job.name, data: job.data });
-      } catch (error) {
-        if (job.retryCount < job.retryLimit) {
-          this.jobs.push({ ...job, retryCount: job.retryCount + 1, startAfter: now + 1 });
-        } else {
-          this.failed.push({ name: job.name, data: job.data, error });
-        }
-      }
-    }
   }
 }

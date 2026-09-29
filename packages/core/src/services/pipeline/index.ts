@@ -1,11 +1,11 @@
 import type { RawRequest } from '@ai-switchboard/sdk';
 
 import type { SettledRunStatus } from '../../domain/status.js';
-import { createExpressionEngine } from '../../expr/index.js';
-
 import { traceQueue } from '../../queue/traced.js';
 
-import { TRACED_JOBS, type Ctx, type PipelineDeps } from './context.js';
+import type { Ctx, PipelineDeps } from './context.js';
+import { expressionEngine } from './eval.js';
+import { TRACED_JOBS } from './jobs.js';
 import { ingestPush, injectTestEvent, replayEvent } from './ingest.js';
 import { maintenance } from './maintenance.js';
 import {
@@ -73,7 +73,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
   const ctx: Ctx = {
     ...deps,
     queue: traceQueue(deps.queue, deps.telemetry, (name) => TRACED_JOBS.has(name)),
-    engine: createExpressionEngine({ env: deps.env ?? process.env }),
+    engine: expressionEngine(deps),
     log: deps.logger.child({ component: 'pipeline' }),
   };
   let workers: WorkerHandle | null = null;

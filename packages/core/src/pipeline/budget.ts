@@ -48,12 +48,15 @@ export interface BudgetInput {
   meters: Record<string, MeterSnapshot | undefined>;
 }
 
+export type BudgetWindow = 'hour' | 'day' | 'meter';
+
 export interface BudgetCheck {
   check: string;
   pass: boolean;
   used?: number;
   limit?: number;
   detail?: string;
+  window?: BudgetWindow;
 }
 
 export interface BudgetResult {
@@ -64,18 +67,18 @@ export interface BudgetResult {
   meterStale: string[];
 }
 
-function capCheck(
-  checks: BudgetCheck[],
-  check: string,
-  used: number,
-  limit: number | undefined,
-): boolean {
-  if (limit === undefined) return true;
-  // The reservation adds one run, so a cap of N admits the Nth run and throttles the next.
-  const pass = used < limit;
-  checks.push({ check, pass, used, limit });
-  return pass;
+interface RunCap {
+  check: BindingLimit;
+  used: number;
+  limit: number | undefined;
+  noun: string;
+  window: 'hour' | 'day';
 }
+
+const WINDOW_TEXT: Record<RunCap['window'], string> = {
+  hour: 'the last hour',
+  day: 'the last 24 h',
+};
 
 export function budget(input: BudgetInput, now: Date): BudgetResult {
   const checks: BudgetCheck[] = [];
@@ -86,40 +89,43 @@ export function budget(input: BudgetInput, now: Date): BudgetResult {
   };
   const c = input.counters;
 
-  if (!capCheck(checks, 'runs_per_hour', c.processRunsHour, input.process.runsPerHour)) {
-    fail(
-      'runs_per_hour',
-      `${c.processRunsHour}/${input.process.runsPerHour} runs in the last hour`,
-    );
-  }
-  if (!capCheck(checks, 'runs_per_day', c.processRunsDay, input.process.runsPerDay)) {
-    fail('runs_per_day', `${c.processRunsDay}/${input.process.runsPerDay} runs in the last 24 h`);
-  }
-  if (
-    !capCheck(
-      checks,
-      'destination_runs_per_hour',
-      c.destinationRunsHour,
-      input.destination.runsPerHour,
-    )
-  ) {
-    fail(
-      'destination_runs_per_hour',
-      `${c.destinationRunsHour}/${input.destination.runsPerHour} destination runs in the last hour`,
-    );
-  }
-  if (
-    !capCheck(
-      checks,
-      'destination_runs_per_day',
-      c.destinationRunsDay,
-      input.destination.runsPerDay,
-    )
-  ) {
-    fail(
-      'destination_runs_per_day',
-      `${c.destinationRunsDay}/${input.destination.runsPerDay} destination runs in the last 24 h`,
-    );
+  const runCaps: RunCap[] = [
+    {
+      check: 'runs_per_hour',
+      used: c.processRunsHour,
+      limit: input.process.runsPerHour,
+      noun: 'runs',
+      window: 'hour',
+    },
+    {
+      check: 'runs_per_day',
+      used: c.processRunsDay,
+      limit: input.process.runsPerDay,
+      noun: 'runs',
+      window: 'day',
+    },
+    {
+      check: 'destination_runs_per_hour',
+      used: c.destinationRunsHour,
+      limit: input.destination.runsPerHour,
+      noun: 'destination runs',
+      window: 'hour',
+    },
+    {
+      check: 'destination_runs_per_day',
+      used: c.destinationRunsDay,
+      limit: input.destination.runsPerDay,
+      noun: 'destination runs',
+      window: 'day',
+    },
+  ];
+  for (const cap of runCaps) {
+    if (cap.limit === undefined) continue;
+    // The reservation adds one run, so a cap of N admits the Nth run and throttles the next.
+    const pass = cap.used < cap.limit;
+    checks.push({ check: cap.check, pass, used: cap.used, limit: cap.limit, window: cap.window });
+    if (!pass)
+      fail(cap.check, `${cap.used}/${cap.limit} ${cap.noun} in ${WINDOW_TEXT[cap.window]}`);
   }
 
   const ceilingKind = input.kind === 'event' ? 'events' : 'sweeps';
@@ -133,6 +139,7 @@ export function budget(input: BudgetInput, now: Date): BudgetResult {
         check,
         pass: true,
         limit,
+        window: 'meter',
         ...(reading ? { used: reading.utilization } : {}),
         detail: reading
           ? `meter_stale: last read ${reading.observedAt.toISOString()}`
@@ -147,6 +154,7 @@ export function budget(input: BudgetInput, now: Date): BudgetResult {
       used: reading.utilization,
       limit,
       detail: `${ceilingKind} ceiling${reading.estimated ? ' (estimated)' : ''}`,
+      window: 'meter',
     });
     if (!pass) {
       fail(
@@ -177,7 +185,7 @@ export function budget(input: BudgetInput, now: Date): BudgetResult {
       }
       const value = used[dim] ?? 0;
       const pass = value < cap;
-      checks.push({ check, pass, used: value, limit: cap, detail: spec.unit });
+      checks.push({ check, pass, used: value, limit: cap, detail: spec.unit, window: 'day' });
       if (!pass) fail(`${scope}:${dim}`, `${value}/${cap} ${spec.unit} in the last 24 h`);
     }
   };

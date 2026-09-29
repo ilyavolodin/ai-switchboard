@@ -4,6 +4,7 @@ import { validatePlugin, type EventDraft, type Settings } from '@ai-switchboard/
 import {
   createStubHttp,
   createTestContext,
+  pluginConformanceChecks,
   runConformance,
   sourceConformanceChecks,
   type StubHandler,
@@ -60,12 +61,16 @@ async function pollAll(s: Settings, handler: StubHandler, rounds: number) {
 
 runConformance(
   'poll-http source',
-  sourceConformanceChecks(pollHttpSource, {
-    settings: settings(),
-    secrets: [TOKEN],
-    http: inclusiveApi(),
-    now: () => NOW,
-    poll: { initialWatermark: null },
+  pluginConformanceChecks(plugin, {
+    sources: {
+      [pollHttpSource.id]: {
+        settings: settings(),
+        secrets: [TOKEN],
+        http: inclusiveApi(),
+        now: () => NOW,
+        poll: { initialWatermark: null },
+      },
+    },
   }),
   { describe, it },
 );
@@ -268,6 +273,20 @@ describe('poll-http poll', () => {
     });
     const html = make(settings(), () => ({ body: '<html>login</html>' }));
     await expect(html.source.poll!(null)).rejects.toThrow(/did not answer with JSON/);
+  });
+
+  it('records a note for every mapping result it drops, and none when all map', async () => {
+    const s = settings({
+      mapping:
+        '{ "type": "poll-http.unknown.thing", "artifact": { "kind": "incident", "id": item.id } }',
+    });
+    const dropped = await make(s).source.poll!(null);
+    expect(dropped.events).toEqual([]);
+    expect(dropped.notes).toHaveLength(incidentsFixture.data.incidents.length);
+    expect(dropped.notes?.[0]).toMatch(
+      /type poll-http\.unknown\.thing, which is not one of the event types/,
+    );
+    expect((await make().source.poll!(null)).notes).toBeUndefined();
   });
 
   it('treats a non-array items result as one item', async () => {
