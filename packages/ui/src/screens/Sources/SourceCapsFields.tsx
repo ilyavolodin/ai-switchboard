@@ -3,8 +3,8 @@ import { useId } from 'react';
 
 import { Checkbox } from '../../components/Checkbox.js';
 import { sameValue } from '../../lib/instances.js';
-import { CapField } from './CapField.js';
-import styles from './forms.module.css';
+import { CapField } from '../shared/CapField.js';
+import styles from '../shared/forms.module.css';
 
 export interface SourceCapsFieldsProps {
   value: SourceCapsDTO;

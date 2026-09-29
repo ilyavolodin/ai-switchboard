@@ -8,9 +8,10 @@ import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
 import { Field } from '../../components/Field.js';
 import { TextField } from '../../components/TextField.js';
-import styles from '../Sources/forms.module.css';
-import { ManifestReview } from './ManifestReview.js';
-import { isPackageName, parsePackageSpec } from './pluginModel.js';
+import styles from '../shared/forms.module.css';
+import { ManifestReview } from '../shared/ManifestReview.js';
+import { isPackageName, parsePackageSpec } from '../shared/pluginModel.js';
+import { useHiddenWhile } from '../shared/useHiddenWhile.js';
 
 export interface AddPluginDialogProps {
   open: boolean;
@@ -30,6 +31,7 @@ export function AddPluginDialog({
 }: AddPluginDialogProps) {
   const [spec, setSpec] = useState(initialSpec);
   const [busy, setBusy] = useState(false);
+  const behind = useHiddenWhile();
   const request = parsePackageSpec(spec);
   const validName = isPackageName(request.package);
   const manifest =
@@ -45,7 +47,7 @@ export function AddPluginDialog({
 
   return (
     <Dialog
-      open={open}
+      open={open && !behind.hidden}
       onClose={onClose}
       size="wide"
       title="Add plugin"
@@ -68,9 +70,11 @@ export function AddPluginDialog({
             onClick={() => {
               if (!manifest) return;
               setBusy(true);
-              void onConfirm(request, manifest).finally(() => {
-                setBusy(false);
-              });
+              void behind
+                .run(() => onConfirm(request, manifest))
+                .finally(() => {
+                  setBusy(false);
+                });
             }}
           >
             Add plugin
@@ -80,8 +84,7 @@ export function AddPluginDialog({
     >
       <div className={styles.stack}>
         <form
-          className={styles.footer}
-          style={{ alignItems: 'flex-end' }}
+          className={`${styles.footer} ${styles.alignEnd}`}
           onSubmit={(e) => {
             e.preventDefault();
             runInspect();

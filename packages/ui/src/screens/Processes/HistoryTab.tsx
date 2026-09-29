@@ -1,17 +1,16 @@
 import { useState } from 'react';
 
-import { errorMessage } from '../../api/client.js';
 import {
   useProcessVersion,
   useProcessVersions,
   useRestoreProcessVersion,
 } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { cx } from '../../lib/cx.js';
 import { changeLabel, documentChanges, formatChangeValue } from './diff.js';
@@ -32,11 +31,7 @@ function VersionDiff({
     return <Skeleton lines={4} label="Loading the diff" />;
   }
   if (current.isError) {
-    return (
-      <Banner tone="error" title="Could not load the version">
-        {errorMessage(current.error)}
-      </Banner>
-    );
+    return <QueryError query={current} title="The version could not load" />;
   }
   if (previous == null) {
     return <p className="t-caption">The first version: nothing to compare it with.</p>;
@@ -93,11 +88,7 @@ export function HistoryTab({
 
   if (versions.isPending) return <Skeleton lines={5} height={40} label="Loading versions" />;
   if (versions.isError) {
-    return (
-      <Banner tone="error" title="Could not load the history">
-        {errorMessage(versions.error)}
-      </Banner>
-    );
+    return <QueryError query={versions} title="The history could not load" />;
   }
   const list = [...versions.data].sort((a, b) => b.version - a.version);
   const shown = selected ?? list[0]?.version;

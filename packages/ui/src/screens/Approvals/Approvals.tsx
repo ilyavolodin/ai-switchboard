@@ -1,7 +1,6 @@
 import type { ApprovalHistoryItem, ApprovalItem } from '@ai-switchboard/core/contract';
 import { Link } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import {
   useApprovalHistory,
   useApprovalRules,
@@ -10,7 +9,6 @@ import {
   useReject,
 } from '../../api/index.js';
 import { ArtifactChip } from '../../components/ArtifactChip.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { CodeBlock } from '../../components/CodeBlock.js';
@@ -20,36 +18,26 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Table, type TableColumn } from '../../components/Table.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { useFlatPages } from '../../hooks/useFlatPages.js';
 import { traceHref } from '../../lib/artifact.js';
+import { approvePrompt, rejectPrompt } from '../shared/actionPrompts.js';
 import styles from './Approvals.module.css';
-import { batchSummary, ruleText } from './approvalCopy.js';
+import { batchSummary, decisionChip, ruleText } from './approvalCopy.js';
 
 export function Approvals() {
   const pending = useApprovals();
   const rules = useApprovalRules();
 
   const nameOf = (batchId: string) =>
-    pending.data?.find((i) => i.batchId === batchId)?.process.name ?? 'this';
-  const approve = useReasonedMutation(
-    useApprove(),
-    (v) => ({
-      title: `Approve the ${nameOf(v.batchId)} batch?`,
-      consequence: 'The batch re-enters the gate and runs if its budget allows.',
-      confirmLabel: 'Approve',
-    }),
-    { successMessage: 'Approved — the batch re-entered the gate' },
-  );
-  const reject = useReasonedMutation(
-    useReject(),
-    (v) => ({
-      title: `Reject the ${nameOf(v.batchId)} batch?`,
-      consequence: 'The batch is dropped and never runs. Its events stay in Activity.',
-      confirmLabel: 'Reject',
-      danger: true,
-    }),
-    { successMessage: 'Rejected' },
-  );
+    pending.data?.find((i) => i.batchId === batchId)?.process.name;
+  const approve = useReasonedMutation(useApprove(), (v) => approvePrompt(nameOf(v.batchId)), {
+    successMessage: 'Approved — the batch re-entered the gate',
+  });
+  const reject = useReasonedMutation(useReject(), (v) => rejectPrompt(nameOf(v.batchId)), {
+    successMessage: 'Rejected',
+  });
 
   const items = pending.data ?? [];
   const ruleList = rules.data?.processes ?? [];
@@ -85,17 +73,7 @@ export function Approvals() {
           <Skeleton shape="card" height={180} />
         </div>
       ) : pending.isError ? (
-        <Banner
-          tone="error"
-          title="Approvals could not load"
-          actions={
-            <Button size="sm" variant="outline" onClick={() => void pending.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {errorMessage(pending.error)}
-        </Banner>
+        <QueryError query={pending} title="Approvals could not load" />
       ) : items.length === 0 ? (
         <Card>
           <EmptyState title="Nothing is waiting for approval">
@@ -223,13 +201,7 @@ const HISTORY_COLUMNS: TableColumn<ApprovalHistoryItem>[] = [
   {
     key: 'decision',
     header: 'decision',
-    cell: (r) => (
-      <StatusChip
-        size="sm"
-        tone={r.decision === 'approved' ? 'ok' : r.decision === 'withdrawn' ? 'off' : 'error'}
-        label={r.decision === 'withdrawn' ? 'withdrawn · process deleted' : r.decision}
-      />
-    ),
+    cell: (r) => <StatusChip size="sm" {...decisionChip(r.decision)} />,
   },
   { key: 'by', header: 'by', cell: (r) => r.decidedBy },
   { key: 'when', header: 'when', cell: (r) => <Time value={r.decidedAt} format="when" /> },
@@ -238,15 +210,13 @@ const HISTORY_COLUMNS: TableColumn<ApprovalHistoryItem>[] = [
 
 function History() {
   const history = useApprovalHistory();
-  const rows = history.data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = useFlatPages(history);
   return (
     <Card title="Recent decisions" subtitle="who approved or rejected what, and why">
       {history.isPending ? (
         <Skeleton lines={3} height={20} label="Loading decisions" />
       ) : history.isError ? (
-        <Banner tone="error" title="Decisions could not load">
-          {errorMessage(history.error)}
-        </Banner>
+        <QueryError query={history} title="Decisions could not load" />
       ) : (
         <>
           <Table

@@ -1,5 +1,6 @@
 import type {
   EventStage,
+  PluginTypeDTO,
   SourceStatsResponse,
   SourceSummary,
   StatsWindow,
@@ -115,14 +116,13 @@ export function modeLabel(mode: SourceSummary['mode']): string {
   return mode === 'push' ? 'push · webhook' : mode === 'pull' ? 'pull · polls' : 'push and pull';
 }
 
-export const WINDOW_LABEL: Record<StatsWindow, string> = {
-  '24h': '24 h',
-  '7d': '7 d',
-  '30d': '30 d',
-};
-
-export const WINDOW_OPTIONS: { value: StatsWindow; label: string }[] = [
-  { value: '24h', label: '24 h' },
-  { value: '7d', label: '7 d' },
-  { value: '30d', label: '30 d' },
-];
+export function describeSourceType(t: PluginTypeDTO): string {
+  const n = t.eventTypes?.length ?? 0;
+  return [
+    t.mode === 'both' ? 'push and pull' : (t.mode ?? 'push'),
+    t.dynamicEventTypes ? 'dynamic event types' : `${n} event type${n === 1 ? '' : 's'}`,
+    t.provisionSupported ? 'registers its webhook' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}

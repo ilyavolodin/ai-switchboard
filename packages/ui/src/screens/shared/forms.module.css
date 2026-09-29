@@ -135,3 +135,11 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.block {
+  width: 100%;
+}
+
+.alignEnd {
+  align-items: flex-end;
+}

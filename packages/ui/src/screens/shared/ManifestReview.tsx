@@ -2,7 +2,7 @@ import type { InspectPluginResponse } from '@ai-switchboard/core/contract';
 
 import { KeyValueList } from '../../components/KeyValueList.js';
 import { StatusChip } from '../../components/StatusChip.js';
-import styles from '../Sources/forms.module.css';
+import styles from './forms.module.css';
 import { kindLabel, networkText, secretsText } from './pluginModel.js';
 
 export function ManifestReview({ manifest }: { manifest: InspectPluginResponse }) {

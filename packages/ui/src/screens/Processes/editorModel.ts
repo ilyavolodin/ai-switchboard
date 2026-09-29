@@ -7,6 +7,7 @@ import type {
   Trigger,
 } from '@ai-switchboard/core/contract';
 
+import { errorMessage, isApiRequestError } from '../../api/client.js';
 import { describeCron } from '../../lib/cron.js';
 import { formatCount, formatDays } from '../../lib/format.js';
 import { asSchema } from '../../lib/schema.js';
@@ -421,4 +422,77 @@ export function saveConsequence(opts: {
   const n = opts.changes.length;
   const listed = opts.changes.slice(0, 3).join('; ') + (n > 3 ? '; …' : '');
   return `${n} change${n === 1 ? '' : 's'}: ${listed}. Saving writes version ${opts.baseVersion + 1}.`;
+}
+
+export type SaveFailure =
+  | { kind: 'conflict' }
+  | { kind: 'invalid'; placed: PlacedError[]; message: string }
+  | { kind: 'other'; message: string };
+
+export function classifySaveError(e: unknown): SaveFailure {
+  if (isApiRequestError(e) && e.status === 409) return { kind: 'conflict' };
+  if (isApiRequestError(e) && (e.status === 422 || e.status === 400) && e.body.details?.length) {
+    return { kind: 'invalid', placed: placeErrors(e.body.details), message: e.body.message };
+  }
+  return { kind: 'other', message: errorMessage(e) };
+}
+
+export interface StepProviderRef {
+  id: string;
+  name: string;
+  kind: 'source' | 'destination';
+}
+
+export function stepProviders(
+  doc: ProcessDocument,
+  sourceName: (id: string) => string,
+  destinationName: string | undefined,
+): StepProviderRef[] {
+  const sources = [...new Set(doc.triggers.map((t) => t.sourceId).filter(Boolean))].map(
+    (id): StepProviderRef => ({ id, name: sourceName(id) || id, kind: 'source' }),
+  );
+  const destinationId = doc.destination.instanceId;
+  return destinationId
+    ? [
+        ...sources,
+        { id: destinationId, name: destinationName ?? destinationId, kind: 'destination' },
+      ]
+    : sources;
+}
+
+export function problemSections(problems: Record<string, string>): (SectionId | null)[] {
+  return Object.keys(problems).map((p) => sectionForKey(p.split('/')[1]));
+}
+
+export function updateAt<T>(list: T[], index: number, patch: Partial<T>): T[] {
+  return list.map((x, j) => (j === index ? { ...x, ...patch } : x));
+}
+
+export function replaceAt<T>(list: T[], index: number, next: T): T[] {
+  return list.map((x, j) => (j === index ? next : x));
+}
+
+export function removeAt<T>(list: T[], index: number): T[] {
+  return list.filter((_, j) => j !== index);
+}
+
+/** Sets `key`, or drops it when `value` is undefined, so a cleared field leaves no key behind. */
+export function setOptionalKey<T extends object, K extends keyof T>(
+  obj: T,
+  key: K,
+  value: T[K] | undefined,
+): T {
+  const { [key]: _drop, ...rest } = obj;
+  return (value === undefined ? rest : { ...rest, [key]: value }) as T;
+}
+
+export type ApprovalMode = 'none' | 'always' | 'expression';
+
+export function approvalMode(approval: string): ApprovalMode {
+  return approval === 'none' || approval === 'always' ? approval : 'expression';
+}
+
+export function approvalLabel(approval: string): string {
+  const mode = approvalMode(approval);
+  return mode === 'expression' ? 'by expression' : mode;
 }

@@ -81,3 +81,11 @@ export function filterCounts(list: ProcessSummary[]): Record<ProcessFilter, numb
     off: list.filter((p) => matchesFilter(p, 'off')).length,
   };
 }
+
+export function asProcessSort(v: string): ProcessSort {
+  return PROCESS_SORTS.find((s) => s === v) ?? 'activity';
+}
+
+export function asProcessFilter(v: string): ProcessFilter {
+  return PROCESS_FILTERS.find((f) => f === v) ?? 'all';
+}

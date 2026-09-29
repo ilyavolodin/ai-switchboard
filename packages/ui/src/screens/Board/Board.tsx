@@ -3,35 +3,33 @@ import {
   Controls,
   type EdgeTypes,
   type Node,
-  type NodeChange,
   type NodeProps,
   type NodeTypes,
   ReactFlow,
   ReactFlowProvider,
 } from '@xyflow/react';
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import { useBoard } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
-import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { FilterChips } from '../../components/FilterChips.js';
-import { FlowNode, type FlowNodeType } from '../../components/FlowNode.js';
+import { FlowNode } from '../../components/FlowNode.js';
 import { PipelineDots } from '../../components/PipelineDots.js';
 import { SegmentedControl } from '../../components/SegmentedControl.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
 import { useNow } from '../../hooks/useNow.js';
+import { useSearchParamState } from '../../hooks/useSearchParamState.js';
 import { AttentionPanel } from './AttentionPanel.js';
 import styles from './Board.module.css';
-import { BoardEdge, type BoardFlowEdge } from './BoardEdge.js';
+import { BoardEdge } from './BoardEdge.js';
 import { BoardEmpty } from './BoardEmpty.js';
-import { keyFacts, nodeHref } from './facts.js';
+import { disabledCount, toFlowEdges, toFlowNodes } from './boardFlow.js';
 import { FitView } from './FitView.js';
 import { COLUMNS, layoutBoard } from './layout.js';
+import { useMeasuredNodes } from './useMeasuredNodes.js';
 
 type ColumnLabelNode = Node<{ label: string }, 'column'>;
 
@@ -87,17 +85,7 @@ export function Board() {
           <Skeleton shape="card" height={280} />
         </div>
       ) : board.isError ? (
-        <Banner
-          tone="error"
-          title="The board could not load"
-          actions={
-            <Button size="sm" variant="outline" onClick={() => void board.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {errorMessage(board.error)}
-        </Banner>
+        <QueryError query={board} title="The board could not load" />
       ) : board.data.processes.length === 0 ? (
         <div className={styles.grid}>
           <BoardEmpty
@@ -114,120 +102,22 @@ export function Board() {
 }
 
 function BoardCanvas({ data }: { data: BoardResponse }) {
-  const [params, setParams] = useSearchParams();
+  const [hide, setHide] = useSearchParamState('hide');
+  const [focus, setFocus] = useSearchParamState('focus');
   const nowMs = useNow(60_000);
   const [hovered, setHovered] = useState<string | null>(null);
-  // The canvas is controlled: nodes are rebuilt on every hover and poll. React Flow hides a node
-  // it has no dimensions for, so keep the sizes it measured and hand them back on each node.
-  const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
-  const onNodesChange = (changes: NodeChange[]) => {
-    const sized = changes.filter(
-      (c): c is Extract<NodeChange, { type: 'dimensions' }> =>
-        c.type === 'dimensions' && c.dimensions !== undefined,
-    );
-    if (sized.length === 0) return;
-    setMeasured((prev) => {
-      let next = prev;
-      for (const c of sized) {
-        const d = c.dimensions;
-        if (!d) continue;
-        const old = prev[c.id];
-        if (old?.width === d.width && old.height === d.height) continue;
-        if (next === prev) next = { ...prev };
-        next[c.id] = { width: d.width, height: d.height };
-      }
-      return next;
-    });
-  };
-  const hideDisabled = params.get('hide') === 'disabled';
-  const focus = params.get('focus');
+  const { measured, onNodesChange } = useMeasuredNodes();
+  const hideDisabled = hide === 'disabled';
   const focusProcess = data.processes.find((p) => p.id === focus) ?? null;
 
   const layout = useMemo(
     () => layoutBoard(data, { hideDisabled, focusProcessId: focusProcess?.id ?? null }),
     [data, hideDisabled, focusProcess?.id],
   );
-
-  const neighbours = useMemo(() => {
-    if (!hovered) return null;
-    const set = new Set<string>([hovered]);
-    for (const e of layout.edges) {
-      if (e.source === hovered) set.add(e.target);
-      if (e.target === hovered) set.add(e.source);
-    }
-    return set;
-  }, [hovered, layout.edges]);
-
-  const nodes: FlowNodeType[] = layout.nodes.map((n) => {
-    const common = {
-      href: nodeHref(n),
-      width: n.width,
-      facts: keyFacts(n, nowMs),
-      highlighted: hovered === n.id,
-      dimmed: neighbours != null && !neighbours.has(n.id),
-      onHover: setHovered,
-    };
-    const data =
-      n.kind === 'source'
-        ? { kind: 'source' as const, source: n.node as BoardResponse['sources'][number], ...common }
-        : n.kind === 'process'
-          ? {
-              kind: 'process' as const,
-              process: n.node as BoardResponse['processes'][number],
-              ...common,
-            }
-          : {
-              kind: 'destination' as const,
-              destination: n.node as BoardResponse['destinations'][number],
-              ...common,
-            };
-    return {
-      id: n.id,
-      type: 'switchboard',
-      position: { x: n.x, y: n.y },
-      data,
-      draggable: false,
-      connectable: false,
-      selectable: false,
-      zIndex: hovered === n.id ? 10 : 1,
-      width: n.width,
-      ...(measured[n.id] ? { measured: measured[n.id] } : {}),
-    };
-  });
-
-  const edges: BoardFlowEdge[] = layout.edges.map((e) => {
-    const touches = hovered != null && (e.source === hovered || e.target === hovered);
-    return {
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      type: 'switchboard',
-      focusable: false,
-      selectable: false,
-      ariaLabel:
-        e.kind === 'trigger'
-          ? `Trigger ${e.source} to ${e.target}: ${e.eventTypes.join(', ')}, ${e.volume24h} events in 24 h`
-          : `Binding ${e.source} to ${e.target}, ${e.volume24h} runs in 24 h`,
-      data: {
-        width: e.width,
-        dashed: e.dashed,
-        live: e.live,
-        enabled: e.enabled,
-        label: e.label,
-        showLabel: touches || (focusProcess != null && e.kind === 'trigger'),
-        dimmed: hovered != null && !touches,
-      },
-    };
-  });
+  const nodes = toFlowNodes(layout, { hovered, measured, nowMs, onHover: setHovered });
+  const edges = toFlowEdges(layout, hovered, focusProcess != null);
 
   const view = hideDisabled ? 'hide-disabled' : 'all';
-  const setParam = (key: string, value: string | null) => {
-    const next = new URLSearchParams(params);
-    if (value == null) next.delete(key);
-    else next.set(key, value);
-    setParams(next, { replace: true });
-  };
-
   const canvasHeight = Math.max(360, layout.height + 80);
 
   return (
@@ -241,14 +131,11 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
             {
               value: 'hide-disabled',
               label: 'Hide disabled',
-              count:
-                data.sources.filter((s) => !s.enabled).length +
-                data.processes.filter((p) => !p.enabled).length +
-                data.destinations.filter((x) => !x.enabled).length,
+              count: disabledCount(data),
             },
           ]}
           onChange={(v) => {
-            setParam('hide', v === 'hide-disabled' ? 'disabled' : null);
+            setHide(v === 'hide-disabled' ? 'disabled' : null);
           }}
         />
         <Select
@@ -259,7 +146,7 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
           options={data.processes.map((p) => ({ value: p.id, label: p.name }))}
           value={focusProcess?.id ?? ''}
           onChange={(e) => {
-            setParam('focus', e.target.value || null);
+            setFocus(e.target.value || null);
           }}
         />
         {focusProcess && (
@@ -269,7 +156,7 @@ function BoardCanvas({ data }: { data: BoardResponse }) {
             chips={[{ value: focusProcess.id, label: `${focusProcess.name} only` }]}
             selected={[focusProcess.id]}
             onToggle={() => {
-              setParam('focus', null);
+              setFocus(null);
             }}
           />
         )}

@@ -15,6 +15,7 @@ import { Toggle } from '../../components/Toggle.js';
 import { useDebounced } from '../../hooks/useDebounced.js';
 import { declaredAttributes, defaultDescribe } from './editorModel.js';
 import styles from './ProcessEditor.module.css';
+import { RepeatableItem } from './RepeatableItem.js';
 
 export interface TriggerEditorProps {
   trigger: Trigger;
@@ -80,9 +81,12 @@ export function TriggerEditor({
     .map((s) => ({ type: s.type, examples: s.examples }));
 
   return (
-    <div className={styles.item} aria-label={`Trigger ${n}`} role="group">
-      <div className={styles.itemHead}>
-        <span className="t-overline">trigger {n}</span>
+    <RepeatableItem
+      label={`Trigger ${n}`}
+      overline={`trigger ${n}`}
+      onRemove={onRemove}
+      disabled={disabled}
+      lead={
         <Toggle
           size="sm"
           ariaLabel={`Trigger ${n} enabled`}
@@ -92,19 +96,18 @@ export function TriggerEditor({
             onChange({ ...trigger, enabled });
           }}
         />
-        <span className={styles.itemSummary}>
-          {expanded
-            ? sourceName && `${sourceName} · ${summary?.typeName ?? ''}`
-            : trigger.describe || `${sourceName || 'no source'} · ${trigger.eventTypes.join(', ')}`}
-        </span>
+      }
+      summary={
+        expanded
+          ? sourceName && `${sourceName} · ${summary?.typeName ?? ''}`
+          : trigger.describe || `${sourceName || 'no source'} · ${trigger.eventTypes.join(', ')}`
+      }
+      actions={
         <Button size="sm" variant="ghost" onClick={onToggleExpanded} aria-expanded={expanded}>
           {expanded ? 'Collapse' : 'Edit'}
         </Button>
-        <Button size="sm" variant="outline" onClick={onRemove} disabled={disabled}>
-          Remove
-        </Button>
-      </div>
-
+      }
+    >
       {expanded && (
         <>
           <Field label="Source" error={errors['/sourceId']} layout="row">
@@ -293,6 +296,6 @@ export function TriggerEditor({
           )}
         </>
       )}
-    </div>
+    </RepeatableItem>
   );
 }

@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 
-import { errorMessage } from '../../api/client.js';
 import { Banner } from '../../components/Banner.js';
-import { Button } from '../../components/Button.js';
 import { Skeleton } from '../../components/Skeleton.js';
-import styles from '../Sources/instanceCard.module.css';
+import { QueryError } from '../../components/QueryError.js';
+import styles from './instanceCard.module.css';
 
 interface ListQuery<T> {
   data: T[] | undefined;
@@ -40,19 +39,7 @@ export function InstanceGrid<T extends { id: string; name: string; pluginAvailab
     );
   }
   if (query.isError) {
-    return (
-      <Banner
-        tone="error"
-        title={`${title} could not load`}
-        actions={
-          <Button size="sm" variant="outline" onClick={() => void query.refetch()}>
-            Retry
-          </Button>
-        }
-      >
-        {errorMessage(query.error)}
-      </Banner>
-    );
+    return <QueryError query={query} title={`${title} could not load`} />;
   }
   const list = query.data ?? [];
   if (list.length === 0) return <>{empty}</>;

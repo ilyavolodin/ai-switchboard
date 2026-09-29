@@ -15,7 +15,7 @@ import { Time } from '../../components/Time.js';
 import { useDebounced } from '../../hooks/useDebounced.js';
 import { cx } from '../../lib/cx.js';
 import { formatCount } from '../../lib/format.js';
-import styles from './Plugins.module.css';
+import styles from './NpmSearch.module.css';
 import { kindLabel } from './pluginModel.js';
 
 type KindFilter = PluginSearchKind | 'all';

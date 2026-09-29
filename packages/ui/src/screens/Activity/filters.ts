@@ -1,6 +1,8 @@
 /** The filters live in the URL so a filtered view can be shared. */
 import type { ActivityQuery, ActivityRow, StatusTone } from '@ai-switchboard/core/contract';
 
+import { withParam } from '../../hooks/useSearchParamState.js';
+
 export const FILTER_KEYS = [
   'source',
   'process',
@@ -46,10 +48,7 @@ export function withFilter(
   key: FilterKey,
   value: string,
 ): URLSearchParams {
-  const next = new URLSearchParams(params);
-  if (value) next.set(key, value);
-  else next.delete(key);
-  return next;
+  return withParam(params, key, value);
 }
 
 /** `anchorMs` is when the range was chosen. */

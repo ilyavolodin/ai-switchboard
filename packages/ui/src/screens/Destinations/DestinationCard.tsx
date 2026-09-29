@@ -9,7 +9,7 @@ import { StatusChip } from '../../components/StatusChip.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { cardTone } from '../../lib/instances.js';
-import styles from '../Sources/instanceCard.module.css';
+import styles from '../shared/instanceCard.module.css';
 import { enableDestinationPrompt } from './destinationModel.js';
 
 export function DestinationCard({ destination }: { destination: DestinationSummary }) {

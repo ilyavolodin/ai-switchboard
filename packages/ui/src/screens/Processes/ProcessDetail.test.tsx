@@ -87,6 +87,23 @@ describe('ProcessDetail', () => {
     });
   });
 
+  it('asks only for an optional note before disabling when reasons are optional', async () => {
+    const { api, user } = renderWithProviders(<ProcessDetail />, {
+      ...at(),
+      requireReasons: false,
+    });
+    await user.click(await screen.findByRole('switch', { name: 'Enabled' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Disable Autofix?' });
+    expect(within(dialog).getByRole('textbox', { name: /Note \(optional\)/ })).not.toBeRequired();
+    await user.click(within(dialog).getByRole('button', { name: 'Disable Autofix' }));
+    await vi.waitFor(() => {
+      expect(api.callsTo('POST /processes/p-autofix/enable')[0]?.body).toEqual({
+        enabled: false,
+        reason: '',
+      });
+    });
+  });
+
   it('resets the breaker with a reason', async () => {
     const { api, user } = renderWithProviders(<ProcessDetail />, at());
     await screen.findByText('Breaker open');

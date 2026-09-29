@@ -5,7 +5,6 @@ import { Link } from 'react-router';
 import { errorMessage } from '../../api/client.js';
 import { useEvent, useReplayEvent, useSourceEvents } from '../../api/index.js';
 import { ArtifactChip } from '../../components/ArtifactChip.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
@@ -18,12 +17,14 @@ import { StageIndicator } from '../../components/StageIndicator.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
 import { WhyNothingRan } from '../../components/WhyNothingRan.js';
+import { QueryError } from '../../components/QueryError.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { useFlatPages } from '../../hooks/useFlatPages.js';
 import { traceHref } from '../../lib/artifact.js';
 import { cx } from '../../lib/cx.js';
 import { runStatusTone } from '../../lib/tone.js';
 import { whyFromExplanations } from '../../lib/why.js';
-import styles from './detail.module.css';
+import styles from '../shared/detail.module.css';
 
 export function SourceEventsTab({ source }: { source: SourceDetail }) {
   const [type, setType] = useState('');
@@ -35,7 +36,7 @@ export function SourceEventsTab({ source }: { source: SourceDetail }) {
       ...source.eventsByType24h.map((t) => t.type),
     ]),
   ];
-  const rows = events.data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = useFlatPages(events);
 
   return (
     <Card padding="normal">
@@ -61,9 +62,7 @@ export function SourceEventsTab({ source }: { source: SourceDetail }) {
       {events.isPending ? (
         <Skeleton lines={6} height={28} label="Loading events" />
       ) : events.isError ? (
-        <Banner tone="error" title="Events could not load">
-          {errorMessage(events.error)}
-        </Banner>
+        <QueryError query={events} title="Events could not load" />
       ) : rows.length === 0 ? (
         <EmptyState title="No events yet" compact>
           {type

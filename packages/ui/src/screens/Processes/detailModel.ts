@@ -2,16 +2,6 @@ import type { ProcessDetail, StatsWindow } from '@ai-switchboard/core/contract';
 
 import { toMs } from '../../lib/format.js';
 
-export const WINDOWS: { value: StatsWindow; label: string }[] = [
-  { value: '24h', label: '24 h' },
-  { value: '7d', label: '7 d' },
-  { value: '30d', label: '30 d' },
-];
-
-export function windowLabel(w: StatsWindow): string {
-  return WINDOWS.find((x) => x.value === w)?.label ?? w;
-}
-
 /** The first is the default (no segment). */
 export const DETAIL_TABS = ['activity', 'runs', 'definition', 'history'] as const;
 export type DetailTab = (typeof DETAIL_TABS)[number];

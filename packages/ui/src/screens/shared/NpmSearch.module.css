@@ -1,0 +1,92 @@
+.pkgName {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--foreground-strong);
+  word-break: break-all;
+}
+
+.sub {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.catalogue {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+}
+
+.entryHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.kind {
+  padding: 1px 8px;
+  border-radius: 9999px;
+  background: var(--surface-sunken);
+  color: var(--foreground);
+}
+
+.description {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.entryFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.spacer {
+  flex-grow: 1;
+}
+
+.search {
+  width: 280px;
+}
+
+.browse {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.browseBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.catalogue.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .catalogue,
+  .catalogue.compact {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

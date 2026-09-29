@@ -1,5 +1,7 @@
-import type { GlobalSettings, Role } from '@ai-switchboard/core/contract';
+import type { GlobalSettings, RetentionSettings, Role } from '@ai-switchboard/core/contract';
 import { roleAtLeast } from '@ai-switchboard/core/domain';
+
+import { passwordError } from '../shared/passwordRules.js';
 
 export function timezones(): string[] {
   const intl = Intl as { supportedValuesOf?: (key: string) => string[] };
@@ -33,6 +35,38 @@ export function generalDraft(s: GlobalSettings): GeneralDraft {
   };
 }
 
+export interface GeneralForm {
+  timezone: string;
+  quiet: GeneralDraft['defaultQuietHours'];
+  staleness: string;
+  silence: string;
+  notifier: string;
+  requireReasons: boolean;
+}
+
+export function generalForm(d: GeneralDraft): GeneralForm {
+  return {
+    timezone: d.timezone,
+    quiet: d.defaultQuietHours,
+    staleness: String(d.meterStalenessMinutes),
+    silence: String(d.sourceSilenceMinutes),
+    notifier: d.systemNotifierId ?? '',
+    requireReasons: d.requireReasons,
+  };
+}
+
+export type RetentionForm = Record<keyof RetentionSettings, string>;
+
+export function retentionForm(r: RetentionSettings): RetentionForm {
+  return {
+    eventsDays: String(r.eventsDays),
+    rawBodiesDays: String(r.rawBodiesDays),
+    dispatchesDays: String(r.dispatchesDays),
+    meterReadingsDays: String(r.meterReadingsDays),
+    statsHourlyDays: String(r.statsHourlyDays),
+  };
+}
+
 export function changedFields<T extends object>(saved: T, draft: T): Partial<T> {
   const out: Partial<T> = {};
   for (const key of Object.keys(draft) as (keyof T)[]) {
@@ -60,4 +94,20 @@ export function parseDomains(text: string): string[] {
     .split(/[\s,]+/)
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean);
+}
+
+export interface NewUserCheck {
+  email: string;
+  emailError: string | null;
+  passwordError: string | null;
+}
+
+/** Normalises the email and checks it; an empty password means "no password" and is allowed. */
+export function checkNewUser(email: string, password: string): NewUserCheck {
+  const value = email.trim().toLowerCase();
+  return {
+    email: value,
+    emailError: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? null : 'Enter an email address',
+    passwordError: password === '' ? null : passwordError(password, value),
+  };
 }

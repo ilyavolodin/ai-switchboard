@@ -6,7 +6,7 @@ import { Button } from '../../components/Button.js';
 
 export interface InUseBannerProps {
   name: string;
-  kind: 'source' | 'destination' | 'notifier';
+  kind: 'source' | 'destination' | 'notifier' | 'secret provider';
   processes: { id: string; name: string }[];
   onDismiss: () => void;
 }
@@ -15,6 +15,7 @@ const WHAT_TO_DO: Record<InUseBannerProps['kind'], string> = {
   source: 'remove its triggers from each',
   destination: 'bind each to another destination and remove the steps that use it',
   notifier: 'remove its notifications and steps from each',
+  'secret provider': 'replace the secret references to it in each',
 };
 
 /**

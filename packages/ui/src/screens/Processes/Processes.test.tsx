@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { mockStatus } from '../../api/mockApi.js';
 import { renderWithProviders } from '../../test/render.js';
 import { Processes } from './Processes.js';
 
@@ -60,6 +61,29 @@ describe('Processes', () => {
       'nothing-like-this',
     );
     expect(screen.getByText('No processes match')).toBeInTheDocument();
+  });
+
+  it('shows only the load failure, with Retry, when the list cannot load', async () => {
+    renderWithProviders(<Processes />, {
+      overrides: {
+        'GET /processes': () => mockStatus(500, { error: 'internal', message: 'database down' }),
+      },
+    });
+    expect(await screen.findByText('Processes could not load')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByText('No processes match')).toBeNull();
+    expect(screen.queryByText('No processes yet')).toBeNull();
+  });
+
+  it('keeps the search, filter and sort in the URL', async () => {
+    const { user, router } = renderWithProviders(<Processes />, {
+      path: '/processes?q=datadog&sort=name',
+    });
+    await screen.findByRole('list', { name: 'Processes' });
+    expect(screen.getByRole('searchbox', { name: 'Search processes' })).toHaveValue('datadog');
+    expect(cardNames()).toEqual(['Datadog Miner · healthy', 'Triage · healthy']);
+    await user.click(screen.getByRole('radio', { name: /Attention/ }));
+    expect(router.state.location.search).toContain('filter=attention');
   });
 
   it('teaches the next step when there are no processes', async () => {

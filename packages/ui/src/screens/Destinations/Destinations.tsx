@@ -9,7 +9,7 @@ import { PageHeader } from '../../components/PageHeader.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { withoutUndefined } from '../../lib/instances.js';
 import { InstanceGrid } from '../shared/InstanceGrid.js';
-import { AddInstanceDialog } from '../Sources/AddInstanceDialog.js';
+import { AddInstanceDialog } from '../shared/AddInstanceDialog.js';
 import { DestinationCapsFields } from './DestinationCapsFields.js';
 import { DestinationCard } from './DestinationCard.js';
 import { describeDestinationType, estimatedMeters } from './destinationModel.js';
@@ -99,7 +99,6 @@ export function Destinations() {
           />
         )}
         onSubmit={async ({ type, name, settings, caps }) => {
-          setAdding(false);
           const created = await create.run({
             typeId: type.typeId,
             name,
@@ -107,10 +106,8 @@ export function Destinations() {
             caps: withoutUndefined(caps),
             enabled: true,
           });
-          if (!created) {
-            setAdding(true);
-            return false;
-          }
+          if (!created) return false;
+          setAdding(false);
           void navigate(`/destinations/${created.id}`);
           return true;
         }}

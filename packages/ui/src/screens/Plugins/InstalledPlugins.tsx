@@ -9,7 +9,7 @@ import { StatusChip } from '../../components/StatusChip.js';
 import { Table, type TableColumn } from '../../components/Table.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import styles from './Plugins.module.css';
-import { kindLabel, networkText, secretsText } from './pluginModel.js';
+import { kindLabel, networkText, secretsText } from '../shared/pluginModel.js';
 
 function instanceCount(p: PluginSummary): number {
   return p.types.reduce((s, t) => s + t.instanceCount, 0);

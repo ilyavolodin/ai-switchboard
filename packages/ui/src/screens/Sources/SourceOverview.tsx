@@ -2,24 +2,17 @@ import type { SourceDetail, StatsWindow } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 import { Link } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import { useSourceStats } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
 import { BarChart } from '../../components/BarChart.js';
 import { Card } from '../../components/Card.js';
 import { SegmentedControl } from '../../components/SegmentedControl.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
 import { formatCount } from '../../lib/format.js';
-import styles from './detail.module.css';
-import {
-  stageSeries,
-  statBuckets,
-  typeSeries,
-  typeSplit,
-  WINDOW_LABEL,
-  WINDOW_OPTIONS,
-} from './sourceModel.js';
+import styles from '../shared/detail.module.css';
+import { WINDOW_LABEL, WINDOW_OPTIONS } from '../shared/statsWindow.js';
+import { stageSeries, statBuckets, typeSeries, typeSplit } from './sourceModel.js';
 
 export function SourceOverview({ source }: { source: SourceDetail }) {
   const [range, setRange] = useState<StatsWindow>('24h');
@@ -50,9 +43,7 @@ export function SourceOverview({ source }: { source: SourceDetail }) {
         {stats.isPending ? (
           <Skeleton shape="card" height={360} label="Loading source stats" />
         ) : stats.isError ? (
-          <Banner tone="error" title="Stats could not load">
-            {errorMessage(stats.error)}
-          </Banner>
+          <QueryError query={stats} title="Stats could not load" />
         ) : (
           <>
             <Card title={`Events per ${unit} by type · ${label}`}>

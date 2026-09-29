@@ -1,25 +1,26 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import { useProcesses } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
+import { QueryBoundary } from '../../components/QueryBoundary.js';
 import { SearchInput } from '../../components/SearchInput.js';
 import { SegmentedControl } from '../../components/SegmentedControl.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
+import { useSearchParamState } from '../../hooks/useSearchParamState.js';
 import { ProcessCard } from './ProcessCard.js';
 import styles from './Processes.module.css';
 import {
+  asProcessFilter,
+  asProcessSort,
   filterCounts,
   matchesFilter,
   matchesQuery,
+  PROCESS_FILTERS,
   PROCESS_SORTS,
   type ProcessFilter,
-  type ProcessSort,
   sortProcesses,
 } from './processList.js';
 
@@ -33,16 +34,14 @@ const FILTER_LABELS: Record<ProcessFilter, string> = {
 export function Processes() {
   const processes = useProcesses();
   const navigate = useNavigate();
-  const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<ProcessSort>('activity');
-  const [filter, setFilter] = useState<ProcessFilter>('all');
+  const [query, setQuery] = useSearchParamState('q');
+  const [sortParam, setSort] = useSearchParamState('sort', 'activity');
+  const [filterParam, setFilter] = useSearchParamState('filter', 'all');
+  const sort = asProcessSort(sortParam);
+  const filter = asProcessFilter(filterParam);
 
   const all = processes.data ?? [];
   const counts = filterCounts(all);
-  const shown = sortProcesses(
-    all.filter((p) => matchesFilter(p, filter) && matchesQuery(p, query)),
-    sort,
-  );
 
   const newButton = (
     <Button
@@ -65,7 +64,7 @@ export function Processes() {
           label="Status"
           value={filter}
           onChange={setFilter}
-          options={(Object.keys(FILTER_LABELS) as ProcessFilter[]).map((f) => ({
+          options={PROCESS_FILTERS.map((f) => ({
             value: f,
             label: FILTER_LABELS[f],
             count: counts[f],
@@ -90,62 +89,70 @@ export function Processes() {
             value={sort}
             options={PROCESS_SORTS.map((s) => ({ value: s, label: s }))}
             onChange={(e) => {
-              setSort(e.target.value as ProcessSort);
+              setSort(e.target.value);
             }}
           />
         </label>
         {newButton}
       </div>
 
-      {processes.isError && (
-        <Banner tone="error" title="Could not load processes">
-          {errorMessage(processes.error)}
-        </Banner>
-      )}
-
-      {processes.isPending ? (
-        <div className={styles.grid} aria-busy="true">
-          {Array.from({ length: 8 }, (_, i) => (
-            <Skeleton
-              key={i}
-              shape="card"
-              height={132}
-              label={i === 0 ? 'Loading processes' : undefined}
-            />
-          ))}
-        </div>
-      ) : all.length === 0 && !processes.isError ? (
-        <Card>
-          <EmptyState title="No processes yet" illustration="ghost" actions={newButton}>
-            A process connects the events of a source to a destination, under budgets, schedules and
-            approvals. Start with one trigger and one destination; you can add sweeps and gates
-            later.
-          </EmptyState>
-        </Card>
-      ) : shown.length === 0 ? (
-        <Card>
-          <EmptyState title="No processes match" compact>
-            Nothing matches “{query}”
-            {filter !== 'all' ? ` in ${FILTER_LABELS[filter].toLowerCase()}` : ''}. Try a source
-            name or clear the filter.
-          </EmptyState>
-        </Card>
-      ) : (
-        <ul className={styles.grid} aria-label="Processes">
-          {shown.map((p) => (
-            <li key={p.id} className={styles.cell}>
-              <ProcessCard process={p} />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {all.length > 0 && (
-        <p className="t-caption">
-          Dots are the last hour: matched › batched › gated › invoked › ok. The bar is today’s runs
-          against the process’s own daily cap; the sparkline is runs over 7 days.
-        </p>
-      )}
+      <QueryBoundary
+        query={processes}
+        errorTitle="Processes could not load"
+        pending={
+          <div className={styles.grid} aria-busy="true">
+            {Array.from({ length: 8 }, (_, i) => (
+              <Skeleton
+                key={i}
+                shape="card"
+                height={132}
+                label={i === 0 ? 'Loading processes' : undefined}
+              />
+            ))}
+          </div>
+        }
+        empty={
+          <Card>
+            <EmptyState title="No processes yet" illustration="ghost" actions={newButton}>
+              A process connects the events of a source to a destination, under budgets, schedules
+              and approvals. Start with one trigger and one destination; you can add sweeps and
+              gates later.
+            </EmptyState>
+          </Card>
+        }
+      >
+        {(list) => {
+          const shown = sortProcesses(
+            list.filter((p) => matchesFilter(p, filter) && matchesQuery(p, query)),
+            sort,
+          );
+          return (
+            <>
+              {shown.length === 0 ? (
+                <Card>
+                  <EmptyState title="No processes match" compact>
+                    Nothing matches “{query}”
+                    {filter !== 'all' ? ` in ${FILTER_LABELS[filter].toLowerCase()}` : ''}. Try a
+                    source name or clear the filter.
+                  </EmptyState>
+                </Card>
+              ) : (
+                <ul className={styles.grid} aria-label="Processes">
+                  {shown.map((p) => (
+                    <li key={p.id} className={styles.cell}>
+                      <ProcessCard process={p} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="t-caption">
+                Dots are the last hour: matched › batched › gated › invoked › ok. The bar is today’s
+                runs against the process’s own daily cap; the sparkline is runs over 7 days.
+              </p>
+            </>
+          );
+        }}
+      </QueryBoundary>
     </>
   );
 }

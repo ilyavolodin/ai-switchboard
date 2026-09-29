@@ -16,6 +16,15 @@ import { EmptyState } from '../../components/EmptyState.js';
 import { Time } from '../../components/Time.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { toneVars } from '../../lib/tone.js';
+import {
+  approvePrompt,
+  enableProcessPrompt,
+  readMetersPrompt,
+  reloadedMessage,
+  reloadPrompt,
+  resetBreakerPrompt,
+  testEventPrompt,
+} from '../shared/actionPrompts.js';
 import styles from './Board.module.css';
 import { attentionHref } from './facts.js';
 
@@ -23,75 +32,32 @@ type Run = (item: AttentionItem) => Promise<unknown>;
 
 export function AttentionPanel({ items }: { items: AttentionItem[] }) {
   const navigate = useNavigate();
-  const reset = useReasonedMutation(
-    useResetBreaker(),
-    {
-      title: 'Reset the breaker?',
-      confirmLabel: 'Reset breaker',
-      consequence: 'Event runs resume immediately. The breaker opens again if runs keep failing.',
-    },
-    { successMessage: 'Breaker reset' },
-  );
-  const approve = useReasonedMutation(
-    useApprove(),
-    {
-      title: 'Approve this batch?',
-      confirmLabel: 'Approve',
-      consequence:
-        'The batch re-enters the gate and, if budgets allow, runs through its destination now.',
-    },
-    { successMessage: 'Batch approved' },
-  );
-  const reloadSource = useReasonedMutation(
-    useReloadSource(),
-    {
-      title: 'Reload the source?',
-      confirmLabel: 'Reload',
-      consequence:
-        'The plugin instance is recreated from its saved settings and secrets are resolved again.',
-    },
-    { successMessage: 'Source reloaded' },
-  );
+  const reset = useReasonedMutation(useResetBreaker(), resetBreakerPrompt(), {
+    successMessage: 'Breaker reset',
+  });
+  const approve = useReasonedMutation(useApprove(), approvePrompt(), {
+    successMessage: 'Approved — the batch re-entered the gate',
+  });
+  const reloadSource = useReasonedMutation(useReloadSource(), reloadPrompt('source'), {
+    successMessage: reloadedMessage('source'),
+  });
   const reloadDestination = useReasonedMutation(
     useReloadDestination(),
-    {
-      title: 'Reload the destination?',
-      confirmLabel: 'Reload',
-      consequence:
-        'The plugin instance is recreated from its saved settings; open runs keep being tracked.',
-    },
-    { successMessage: 'Destination reloaded' },
+    reloadPrompt('destination'),
+    { successMessage: reloadedMessage('destination') },
   );
-  const readMeters = useReasonedMutation(
-    useReadMeters(),
-    {
-      title: 'Read meters now?',
-      confirmLabel: 'Read meters',
-      consequence:
-        'Asks the destination for every meter now instead of waiting for the next scheduled read.',
-    },
-    { successMessage: 'Meters read' },
-  );
-  const testEvent = useReasonedMutation(
-    useSendTestEvent(),
-    {
-      title: 'Send a test event?',
-      confirmLabel: 'Send test event',
-      consequence:
-        'A synthetic event goes through the pipeline; processes whose triggers match it will run.',
-    },
-    { successMessage: 'Test event sent' },
-  );
-
+  const readMeters = useReasonedMutation(useReadMeters(), readMetersPrompt(), {
+    successMessage: (d) => `Read ${d.length} meter${d.length === 1 ? '' : 's'}`,
+  });
+  const testEvent = useReasonedMutation(useSendTestEvent(), testEventPrompt(), {
+    successMessage: 'Test event sent',
+  });
   const enableProcess = useReasonedMutation(
     useEnableProcess(),
+    enableProcessPrompt(undefined, true),
     {
-      title: 'Enable the process?',
-      confirmLabel: 'Enable',
-      consequence:
-        'Its triggers and sweeps start runs from now on; events it turned away stay unmatched.',
+      successMessage: 'Process enabled',
     },
-    { successMessage: 'Process enabled' },
   );
 
   const handlers: Record<string, Run | undefined> = {

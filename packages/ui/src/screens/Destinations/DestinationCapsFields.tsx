@@ -1,8 +1,8 @@
 import type { DestinationCapsDTO, MeterSpec, UsageDimension } from '@ai-switchboard/core/contract';
 
 import { sameValue } from '../../lib/instances.js';
-import { CapField } from '../Sources/CapField.js';
-import styles from '../Sources/forms.module.css';
+import { CapField } from '../shared/CapField.js';
+import styles from '../shared/forms.module.css';
 import {
   DEFAULT_INVOKE_TIMEOUT_SECONDS,
   DEFAULT_METER_POLL_SECONDS,

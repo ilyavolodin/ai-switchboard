@@ -2,7 +2,6 @@ import type { ProcessDetail as ProcessDetailDTO, StatsWindow } from '@ai-switchb
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import {
   useDeleteProcess,
   useEnableProcess,
@@ -13,12 +12,9 @@ import {
   useResetBreaker,
   useRunProcess,
 } from '../../api/index.js';
-import { NotFound } from '../../app/NotFound.js';
-import { Banner } from '../../components/Banner.js';
 import { BreakerBanner } from '../../components/BreakerBanner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
-import { ConfirmDialog } from '../../components/ConfirmDialog.js';
 import { LinkButton } from '../../components/LinkButton.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { PipelineFunnel } from '../../components/PipelineFunnel.js';
@@ -28,9 +24,14 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
 import { Toggle } from '../../components/Toggle.js';
+import { QueryError } from '../../components/QueryError.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
-import { useToast } from '../../hooks/toast.js';
+import { enableProcessPrompt, resetBreakerPrompt } from '../shared/actionPrompts.js';
+import { LoadFailure } from '../shared/LoadFailure.js';
+import { UnknownTab } from '../shared/UnknownTab.js';
+import { WINDOW_LABEL, WINDOW_OPTIONS } from '../shared/statsWindow.js';
 import { ActivityTab } from './ActivityTab.js';
+import { approvalLabel } from './editorModel.js';
 import { DefinitionTab } from './DefinitionTab.js';
 import { DetailCharts } from './DetailCharts.js';
 import {
@@ -38,10 +39,7 @@ import {
   cooldownEndsAt,
   deleteConsequence,
   enableConsequence,
-  WINDOWS,
-  windowLabel,
 } from './detailModel.js';
-import { LoadFailure } from '../shared/LoadFailure.js';
 import { HistoryTab } from './HistoryTab.js';
 import styles from './ProcessDetail.module.css';
 import { RunsTab } from './RunsTab.js';
@@ -51,7 +49,7 @@ export function ProcessDetail() {
   const process = useProcess(id);
   const current = asDetailTab(tab);
 
-  if (current == null) return <NotFound />;
+  if (current == null) return <UnknownTab to={`/processes/${encodeURIComponent(id)}`} />;
   if (process.isPending) {
     return (
       <>
@@ -80,17 +78,19 @@ function Detail({
   process: ProcessDetailDTO;
   tab: NonNullable<ReturnType<typeof asDetailTab>>;
 }) {
-  const toast = useToast();
   const [window, setWindow] = useState<StatsWindow>('7d');
-  const [confirm, setConfirm] = useState<boolean | null>(null);
   const funnel = useProcessFunnel(p.id, window);
   const stats = useProcessStats(p.id, window);
   const destinations = useDestinations();
-  const enable = useEnableProcess();
+  const enable = useReasonedMutation(
+    useEnableProcess(),
+    (v: { id: string; enabled: boolean }) =>
+      enableProcessPrompt(p.name, v.enabled, enableConsequence(p, v.enabled)),
+    { successMessage: (r) => `${p.name} ${r.enabled ? 'enabled' : 'disabled'}` },
+  );
   const navigate = useNavigate();
   const destination = destinations.data?.find((x) => x.id === p.document.destination.instanceId);
   const base = `/processes/${encodeURIComponent(p.id)}`;
-  const approval = p.document.gates.approval;
   const sweeps = p.document.schedules.filter((s) => s.enabled).length;
 
   const runNow = useReasonedMutation(
@@ -113,15 +113,9 @@ function Detail({
     },
     { successMessage: `${p.name} deleted` },
   );
-  const reset = useReasonedMutation(
-    useResetBreaker(),
-    {
-      title: `Reset the ${p.name} breaker?`,
-      consequence: 'Event runs resume immediately; the failure count starts again from zero.',
-      confirmLabel: 'Reset breaker',
-    },
-    { successMessage: 'Breaker reset' },
-  );
+  const reset = useReasonedMutation(useResetBreaker(), resetBreakerPrompt(p.name), {
+    successMessage: 'Breaker reset',
+  });
 
   return (
     <>
@@ -141,7 +135,7 @@ function Detail({
               />
             )}
             <span className={styles.metaText} title="approval gate">
-              approval {approval === 'none' || approval === 'always' ? approval : 'by expression'}
+              approval {approvalLabel(p.document.gates.approval)}
             </span>
             <span className={styles.metaText}>
               breaker {p.breakerState}
@@ -198,9 +192,7 @@ function Detail({
               label="Enabled"
               checked={p.enabled}
               requires="operator"
-              onChange={(next) => {
-                setConfirm(next);
-              }}
+              onChange={(next) => void enable.run({ id: p.id, enabled: next })}
             />
           </>
         }
@@ -229,22 +221,20 @@ function Detail({
       )}
 
       <Card
-        title={`Pipeline · ${windowLabel(window)}`}
+        title={`Pipeline · ${WINDOW_LABEL[window]}`}
         subtitle="events flow left to right; sweeps enter at the gate as their own stream"
         actions={
           <SegmentedControl
             label="Window"
             variant="window"
-            options={WINDOWS}
+            options={WINDOW_OPTIONS}
             value={window}
             onChange={setWindow}
           />
         }
       >
         {funnel.isError ? (
-          <Banner tone="error" title="Could not load the funnel">
-            {errorMessage(funnel.error)}
-          </Banner>
+          <QueryError query={funnel} title="The funnel could not load" />
         ) : funnel.data ? (
           <PipelineFunnel funnel={funnel.data} />
         ) : (
@@ -270,32 +260,6 @@ function Detail({
       {tab === 'history' && (
         <HistoryTab processId={p.id} processName={p.name} currentVersion={p.version} />
       )}
-
-      <ConfirmDialog
-        open={confirm != null}
-        title={confirm ? `Enable ${p.name}?` : `Disable ${p.name}?`}
-        consequence={enableConsequence(p, confirm ?? false)}
-        confirmLabel={confirm ? `Enable ${p.name}` : `Disable ${p.name}`}
-        danger={confirm === false}
-        busy={enable.isPending}
-        onCancel={() => {
-          setConfirm(null);
-        }}
-        onConfirm={(reason) => {
-          const enabled = confirm ?? false;
-          enable
-            .mutateAsync({ id: p.id, enabled, reason })
-            .then(() => {
-              toast({ tone: 'ok', title: `${p.name} ${enabled ? 'enabled' : 'disabled'}` });
-            })
-            .catch((e: unknown) => {
-              toast({ tone: 'error', title: 'That did not work', detail: errorMessage(e) });
-            })
-            .finally(() => {
-              setConfirm(null);
-            });
-        }}
-      />
     </>
   );
 }

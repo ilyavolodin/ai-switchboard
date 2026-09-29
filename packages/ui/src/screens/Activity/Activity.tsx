@@ -2,10 +2,8 @@ import type { ActivityRow, StatusTone } from '@ai-switchboard/core/contract';
 import { type SubmitEvent, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import { useEvents, useDestinations, useProcesses, useSources } from '../../api/index.js';
 import { ArtifactChip } from '../../components/ArtifactChip.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
@@ -16,6 +14,8 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StageIndicator } from '../../components/StageIndicator.js';
 import { TextField } from '../../components/TextField.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
+import { useFlatPages } from '../../hooks/useFlatPages.js';
 import { traceHref } from '../../lib/artifact.js';
 import { now } from '../../lib/clock.js';
 import { toneVars } from '../../lib/tone.js';
@@ -69,7 +69,7 @@ export function Activity() {
     setFilter('artifact', typeof q === 'string' ? q.trim() : '');
   };
 
-  const rows = events.data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = useFlatPages(events);
   const counts = toneCounts(rows);
 
   return (
@@ -191,17 +191,7 @@ export function Activity() {
           <Skeleton lines={8} height={28} label="Loading activity" />
         </Card>
       ) : events.isError ? (
-        <Banner
-          tone="error"
-          title="Activity could not load"
-          actions={
-            <Button size="sm" variant="outline" onClick={() => void events.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {errorMessage(events.error)}
-        </Banner>
+        <QueryError query={events} title="Activity could not load" />
       ) : rows.length === 0 ? (
         <Card>
           <EmptyState

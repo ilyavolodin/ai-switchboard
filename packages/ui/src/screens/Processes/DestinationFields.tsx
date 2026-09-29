@@ -17,7 +17,7 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { useDebounced } from '../../hooks/useDebounced.js';
 import { batchOptions } from './batches.js';
-import type { SectionProps } from './EditorSections.js';
+import type { SectionProps } from './sectionProps.js';
 import { NumberField } from './NumberField.js';
 import styles from './ProcessEditor.module.css';
 

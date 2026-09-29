@@ -5,7 +5,6 @@ import type {
 } from '@ai-switchboard/core/contract';
 import { Link } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import { useProviderSecrets } from '../../api/index.js';
 import { Banner } from '../../components/Banner.js';
 import { EmptyState } from '../../components/EmptyState.js';
@@ -13,7 +12,8 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Table, type TableColumn } from '../../components/Table.js';
 import { Time } from '../../components/Time.js';
-import { CopyButton } from '../Sources/CopyButton.js';
+import { CopyButton } from '../../components/CopyButton.js';
+import { QueryError } from '../../components/QueryError.js';
 import styles from './ProviderSecrets.module.css';
 
 const KIND_LABEL: Record<SecretUserDTO['kind'], string> = {
@@ -80,9 +80,7 @@ export function ProviderSecrets({ instance }: { instance: InstanceSummary }) {
       {secrets.isPending ? (
         <Skeleton lines={3} height={20} label={`Loading ${title.toLowerCase()}`} />
       ) : secrets.isError ? (
-        <Banner tone="error" title="Secrets could not load">
-          {errorMessage(secrets.error)}
-        </Banner>
+        <QueryError query={secrets} title="Secrets could not load" />
       ) : !secrets.data.available ? (
         <EmptyState title="This provider cannot list its secrets" compact>
           {secrets.data.error ?? 'Its plugin does not support listing.'} References to it still

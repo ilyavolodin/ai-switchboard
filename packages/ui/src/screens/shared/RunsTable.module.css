@@ -1,0 +1,42 @@
+.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.external {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--link);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.drawerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.plainList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.errorText {
+  color: var(--st-err-fg);
+}

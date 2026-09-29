@@ -1,18 +1,18 @@
 import type { RetentionSettings } from '@ai-switchboard/core/contract';
-import { useState } from 'react';
 
-import { errorMessage } from '../../api/client.js';
 import { useSettings, useUpdateSettings } from '../../api/index.js';
 import { useCan } from '../../app/session.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { Field } from '../../components/Field.js';
+import { QueryError } from '../../components/QueryError.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { TextField } from '../../components/TextField.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { LeaveGuardDialog } from '../shared/LeaveGuardDialog.js';
+import { useSettingsDraft } from '../shared/useSettingsDraft.js';
 import styles from './Settings.module.css';
-import { changedFields, parsePositiveInt } from './settingsForm.js';
+import { changedFields, parsePositiveInt, retentionForm } from './settingsForm.js';
 
 const ROWS: { key: keyof RetentionSettings; label: string; help: string }[] = [
   { key: 'eventsDays', label: 'Events', help: 'Event envelopes and their attributes (Activity).' },
@@ -30,26 +30,15 @@ export function RetentionTab() {
   const settings = useSettings();
   if (settings.isPending) return <Skeleton shape="card" height={300} label="Loading retention" />;
   if (settings.isError) {
-    return (
-      <Banner tone="error" title="Retention could not load">
-        {errorMessage(settings.error)}
-      </Banner>
-    );
+    return <QueryError query={settings} title="Retention could not load" />;
   }
-  return (
-    <RetentionForm key={JSON.stringify(settings.data.retention)} saved={settings.data.retention} />
-  );
+  return <RetentionForm saved={settings.data.retention} />;
 }
 
 function RetentionForm({ saved }: { saved: RetentionSettings }) {
   const isAdmin = useCan('admin');
-  const [draft, setDraft] = useState<Record<keyof RetentionSettings, string>>({
-    eventsDays: String(saved.eventsDays),
-    rawBodiesDays: String(saved.rawBodiesDays),
-    dispatchesDays: String(saved.dispatchesDays),
-    meterReadingsDays: String(saved.meterReadingsDays),
-    statsHourlyDays: String(saved.statsHourlyDays),
-  });
+  const form = useSettingsDraft(retentionForm(saved));
+  const draft = form.draft;
   const parsed = {} as Record<keyof RetentionSettings, number | null>;
   for (const r of ROWS) parsed[r.key] = parsePositiveInt(draft[r.key]);
   const invalid = ROWS.some((r) => parsed[r.key] == null);
@@ -96,7 +85,7 @@ function RetentionForm({ saved }: { saved: RetentionSettings }) {
                 value={draft[r.key]}
                 disabled={!isAdmin}
                 onChange={(e) => {
-                  setDraft({ ...draft, [r.key]: e.target.value });
+                  form.set({ [r.key]: e.target.value });
                 }}
               />
             )}
@@ -116,6 +105,7 @@ function RetentionForm({ saved }: { saved: RetentionSettings }) {
           Save
         </Button>
       </div>
+      <LeaveGuardDialog blocker={form.leaveGuard.blocker} summary="Unsaved retention" />
     </Card>
   );
 }

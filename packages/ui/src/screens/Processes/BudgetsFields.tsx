@@ -10,10 +10,12 @@ import { MeterGauge } from '../../components/MeterGauge.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { Toggle } from '../../components/Toggle.js';
 import { formatCount } from '../../lib/format.js';
-import { budgetsOn, withBudgets } from './editorModel.js';
-import type { SectionProps } from './EditorSections.js';
+import { budgetsOn, setOptionalKey, withBudgets } from './editorModel.js';
 import { NumberField } from './NumberField.js';
+import { NumberRow } from './NumberRow.js';
 import styles from './ProcessEditor.module.css';
+import type { SectionProps } from './sectionProps.js';
+import { useRestorableSwitch } from './useRestorableSwitch.js';
 
 /** A ceiling of 100% throttles nothing; the inputs show it as empty. */
 const NONE = 100;
@@ -71,7 +73,7 @@ export function BudgetsFields({
   // The switch is derived from the document (`budgetsOn`); `keepOpen` holds it on while every
   // field is being cleared in this visit, so emptying the last cap does not hide the fields.
   const [keepOpen, setKeepOpen] = useState(false);
-  const [previous, setPrevious] = useState<ProcessDocument['budgets'] | undefined>(undefined);
+  const restore = useRestorableSwitch(b, baseline.budgets, budgetsOn);
   const on = budgetsOn(b) || keepOpen;
   const destinationCaps = destination ? `${destination.name}'s` : "the destination's";
   return (
@@ -95,14 +97,8 @@ export function BudgetsFields({
             disabled={disabled}
             onChange={(next) => {
               setKeepOpen(next);
-              if (!next) setPrevious(b);
-              set((d) =>
-                withBudgets(
-                  d,
-                  next,
-                  previous ?? (budgetsOn(baseline.budgets) ? baseline.budgets : undefined),
-                ),
-              );
+              const back = restore(next);
+              set((d) => withBudgets(d, next, back));
             }}
           />
         )}
@@ -146,58 +142,36 @@ function BudgetLimits({
   return (
     <div className={styles.twoCol}>
       <div className={styles.stack}>
-        <Field
+        <NumberRow
           label="Runs per hour"
           help="empty = no cap"
-          layout="row"
           changed={b.runsPerHour !== baseline.budgets.runsPerHour}
           error={errors['/budgets/runsPerHour']}
-        >
-          {({ id, describedBy }) => (
-            <NumberField
-              id={id}
-              describedBy={describedBy}
-              optional
-              integer
-              placeholder="no cap"
-              suffix="runs"
-              value={b.runsPerHour}
-              disabled={disabled}
-              onChange={(runsPerHour) => {
-                set((d) => {
-                  const { runsPerHour: _drop, ...rest } = d.budgets;
-                  return { ...d, budgets: runsPerHour == null ? rest : { ...rest, runsPerHour } };
-                });
-              }}
-            />
-          )}
-        </Field>
-        <Field
+          optional
+          integer
+          placeholder="no cap"
+          suffix="runs"
+          value={b.runsPerHour}
+          disabled={disabled}
+          onChange={(runsPerHour) => {
+            set((d) => ({ ...d, budgets: setOptionalKey(d.budgets, 'runsPerHour', runsPerHour) }));
+          }}
+        />
+        <NumberRow
           label="Runs per day"
           help="empty = no cap"
-          layout="row"
           changed={b.runsPerDay !== baseline.budgets.runsPerDay}
           error={errors['/budgets/runsPerDay']}
-        >
-          {({ id, describedBy }) => (
-            <NumberField
-              id={id}
-              describedBy={describedBy}
-              optional
-              integer
-              placeholder="no cap"
-              suffix="runs"
-              value={b.runsPerDay}
-              disabled={disabled}
-              onChange={(runsPerDay) => {
-                set((d) => {
-                  const { runsPerDay: _drop, ...rest } = d.budgets;
-                  return { ...d, budgets: runsPerDay == null ? rest : { ...rest, runsPerDay } };
-                });
-              }}
-            />
-          )}
-        </Field>
+          optional
+          integer
+          placeholder="no cap"
+          suffix="runs"
+          value={b.runsPerDay}
+          disabled={disabled}
+          onChange={(runsPerDay) => {
+            set((d) => ({ ...d, budgets: setOptionalKey(d.budgets, 'runsPerDay', runsPerDay) }));
+          }}
+        />
         <span className="t-overline">
           usage caps · budgetable dimensions the destination declares
         </span>
@@ -207,29 +181,21 @@ function BudgetLimits({
           <span className="t-caption">The bound destination declares no budgetable usage.</span>
         ) : (
           dims.map((u) => (
-            <Field
+            <NumberRow
               key={u.id}
               label={<span className="mono">{u.id} / day</span>}
               help={u.title}
-              layout="row"
               changed={b.usagePerDay?.[u.id] !== baseline.budgets.usagePerDay?.[u.id]}
               error={errors[`/budgets/usagePerDay/${u.id}`]}
-            >
-              {({ id, describedBy }) => (
-                <NumberField
-                  id={id}
-                  describedBy={describedBy}
-                  optional
-                  placeholder="no cap"
-                  suffix={u.unit}
-                  value={b.usagePerDay?.[u.id]}
-                  disabled={disabled}
-                  onChange={(v) => {
-                    set((d) => withUsageCap(d, u.id, v));
-                  }}
-                />
-              )}
-            </Field>
+              optional
+              placeholder="no cap"
+              suffix={u.unit}
+              value={b.usagePerDay?.[u.id]}
+              disabled={disabled}
+              onChange={(v) => {
+                set((d) => withUsageCap(d, u.id, v));
+              }}
+            />
           ))
         )}
       </div>

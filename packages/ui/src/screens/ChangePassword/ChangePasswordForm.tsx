@@ -9,7 +9,7 @@ import { Field } from '../../components/Field.js';
 import { Icon } from '../../components/Icon.js';
 import { TextField } from '../../components/TextField.js';
 import styles from './ChangePassword.module.css';
-import { passwordError, passwordRules } from './passwordRules.js';
+import { passwordError, passwordRules } from '../shared/passwordRules.js';
 
 export interface ChangePasswordFormProps {
   email: string;

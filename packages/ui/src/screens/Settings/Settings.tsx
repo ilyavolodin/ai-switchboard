@@ -1,9 +1,8 @@
 import { useParams } from 'react-router';
 
 import { Card } from '../../components/Card.js';
-import { EmptyState } from '../../components/EmptyState.js';
-import { LinkButton } from '../../components/LinkButton.js';
 import { RoutedTabs } from '../../components/RoutedTabs.js';
+import { UnknownTab } from '../shared/UnknownTab.js';
 import { AboutTab } from './AboutTab.js';
 import { AccountTab } from './AccountTab.js';
 import { AuditTab } from './AuditTab.js';
@@ -35,16 +34,11 @@ export function Settings() {
       </div>
       {tab == null ? (
         <Card>
-          <EmptyState
+          <UnknownTab
+            to="/settings"
+            label="Open General"
             title={`There is no “${segment ?? ''}” section`}
-            actions={
-              <LinkButton to="/settings" variant="outline" size="sm">
-                Open General
-              </LinkButton>
-            }
-          >
-            Pick one of the sections above.
-          </EmptyState>
+          />
         </Card>
       ) : (
         <TabBody tab={tab} />

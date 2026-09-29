@@ -1,9 +1,7 @@
 import { Link } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import { useProcessActivity } from '../../api/index.js';
 import { ArtifactChip } from '../../components/ArtifactChip.js';
-import { Banner } from '../../components/Banner.js';
 import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { LoadMore } from '../../components/LoadMore.js';
@@ -11,21 +9,19 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StageIndicator } from '../../components/StageIndicator.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
+import { useFlatPages } from '../../hooks/useFlatPages.js';
 import { artifactLabel, traceHref } from '../../lib/artifact.js';
 import { runStatusTone } from '../../lib/tone.js';
 import styles from './ProcessDetail.module.css';
 
 export function ActivityTab({ processId }: { processId: string }) {
   const activity = useProcessActivity(processId);
-  const rows = activity.data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = useFlatPages(activity);
 
   if (activity.isPending) return <Skeleton lines={6} height={36} label="Loading activity" />;
   if (activity.isError) {
-    return (
-      <Banner tone="error" title="Could not load activity">
-        {errorMessage(activity.error)}
-      </Banner>
-    );
+    return <QueryError query={activity} title="Activity could not load" />;
   }
   if (rows.length === 0) {
     return (

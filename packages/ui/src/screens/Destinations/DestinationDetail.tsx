@@ -18,12 +18,13 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { readMetersPrompt, reloadedMessage, reloadPrompt } from '../shared/actionPrompts.js';
 import { InstanceStateBanners } from '../shared/InstanceStateBanners.js';
 import { LoadFailure } from '../shared/LoadFailure.js';
 import { UnknownTab } from '../shared/UnknownTab.js';
-import { CopyButton } from '../Sources/CopyButton.js';
-import styles from '../Sources/detail.module.css';
-import { SecretRefsFact } from '../Sources/SecretRefsFact.js';
+import { CopyButton } from '../../components/CopyButton.js';
+import styles from '../shared/detail.module.css';
+import { SecretRefsFact } from '../shared/SecretRefsFact.js';
 import { enableDestinationPrompt } from './destinationModel.js';
 import { DestinationOverview } from './DestinationOverview.js';
 import { DestinationRuns } from './DestinationRuns.js';
@@ -58,16 +59,9 @@ function DestinationView({
 }) {
   const base = `/destinations/${destination.id}`;
   const vars = { id: destination.id };
-  const readMeters = useReasonedMutation(
-    useReadMeters(),
-    {
-      title: `Read the meters of ${destination.name} now?`,
-      consequence:
-        'Switchboard asks the backend for fresh readings now instead of waiting for the next poll.',
-      confirmLabel: 'Read meters',
-    },
-    { successMessage: (d) => `Read ${d.length} meter${d.length === 1 ? '' : 's'}` },
-  );
+  const readMeters = useReasonedMutation(useReadMeters(), readMetersPrompt(destination.name), {
+    successMessage: (d) => `Read ${d.length} meter${d.length === 1 ? '' : 's'}`,
+  });
   const clearHold = useReasonedMutation(
     useClearSoftHold(),
     {
@@ -81,13 +75,8 @@ function DestinationView({
   );
   const reload = useReasonedMutation(
     useReloadDestination(),
-    {
-      title: `Reload ${destination.name}?`,
-      consequence:
-        'The live plugin object is re-created from the saved settings and secrets are resolved again.',
-      confirmLabel: 'Reload',
-    },
-    { successMessage: 'Destination reloaded' },
+    reloadPrompt('destination', destination.name),
+    { successMessage: reloadedMessage('destination') },
   );
   const enable = useReasonedMutation(
     useEnableDestination(),
@@ -201,7 +190,7 @@ function DestinationView({
       ) : tab === 'runs' ? (
         <DestinationRuns destination={destination} />
       ) : (
-        <UnknownTab overview={base} />
+        <UnknownTab to={base} />
       )}
     </>
   );

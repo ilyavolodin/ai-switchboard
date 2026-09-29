@@ -2,9 +2,7 @@ import type { AuditEntry } from '@ai-switchboard/core/contract';
 import type { SubmitEvent } from 'react';
 import { useSearchParams } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
 import { useAudit } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { LoadMore } from '../../components/LoadMore.js';
@@ -13,7 +11,10 @@ import { Skeleton } from '../../components/Skeleton.js';
 import { Table, type TableColumn } from '../../components/Table.js';
 import { TextField } from '../../components/TextField.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
 import { AUDIT_SCOPES, changeLines } from './audit.js';
+import { useFlatPages } from '../../hooks/useFlatPages.js';
+import { useSearchParamState } from '../../hooks/useSearchParamState.js';
 import styles from './Settings.module.css';
 import { initials } from './settingsForm.js';
 
@@ -66,22 +67,16 @@ const COLUMNS: TableColumn<AuditEntry>[] = [
 ];
 
 export function AuditTab() {
-  const [params, setParams] = useSearchParams();
-  const scope = params.get('scope') ?? '';
-  const actor = params.get('actor') ?? '';
+  const [, setParams] = useSearchParams();
+  const [scope, setScope] = useSearchParamState('scope');
+  const [actor, setActor] = useSearchParamState('actor');
   const audit = useAudit({ scope: scope || undefined, actor: actor || undefined });
-  const rows = audit.data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = useFlatPages(audit);
 
-  const set = (key: 'scope' | 'actor', value: string) => {
-    const next = new URLSearchParams(params);
-    if (value) next.set(key, value);
-    else next.delete(key);
-    setParams(next, { replace: true });
-  };
   const onActor = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const v = new FormData(e.currentTarget).get('actor');
-    set('actor', typeof v === 'string' ? v.trim() : '');
+    setActor(typeof v === 'string' ? v.trim() : '');
   };
 
   return (
@@ -94,7 +89,7 @@ export function AuditTab() {
           placeholder="All scopes"
           options={AUDIT_SCOPES.map((s) => ({ value: s, label: s.replace('_', ' ') }))}
           onChange={(e) => {
-            set('scope', e.target.value);
+            setScope(e.target.value);
           }}
         />
         <form className={styles.filterForm} onSubmit={onActor}>
@@ -106,7 +101,7 @@ export function AuditTab() {
             placeholder="actor email"
             defaultValue={actor}
             onBlur={(e) => {
-              if (e.target.value.trim() !== actor) set('actor', e.target.value.trim());
+              if (e.target.value.trim() !== actor) setActor(e.target.value.trim());
             }}
           />
         </form>
@@ -126,9 +121,7 @@ export function AuditTab() {
       {audit.isPending ? (
         <Skeleton lines={6} height={24} label="Loading the audit log" />
       ) : audit.isError ? (
-        <Banner tone="error" title="The audit log could not load">
-          {errorMessage(audit.error)}
-        </Banner>
+        <QueryError query={audit} title="The audit log could not load" />
       ) : (
         <>
           <Table

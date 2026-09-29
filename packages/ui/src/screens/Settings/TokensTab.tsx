@@ -1,12 +1,11 @@
 import type { ApiTokenDTO, CreateApiTokenResponse, Role } from '@ai-switchboard/core/contract';
 import { type SubmitEvent, useState } from 'react';
 
-import { errorMessage } from '../../api/client.js';
 import { useCreateToken, useDeleteToken, useTokens } from '../../api/index.js';
 import { roleLabel, useSession } from '../../app/session.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
+import { CopyButton } from '../../components/CopyButton.js';
 import { Dialog } from '../../components/Dialog.js';
 import { Field } from '../../components/Field.js';
 import { Select } from '../../components/Select.js';
@@ -15,8 +14,8 @@ import { StatusChip } from '../../components/StatusChip.js';
 import { Table, type TableColumn } from '../../components/Table.js';
 import { TextField } from '../../components/TextField.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
-import { useToast } from '../../hooks/toast.js';
 import styles from './Settings.module.css';
 import { grantableRoles } from './settingsForm.js';
 
@@ -78,9 +77,7 @@ export function TokensTab() {
         {tokens.isPending ? (
           <Skeleton lines={3} height={24} label="Loading tokens" />
         ) : tokens.isError ? (
-          <Banner tone="error" title="Tokens could not load">
-            {errorMessage(tokens.error)}
-          </Banner>
+          <QueryError query={tokens} title="Tokens could not load" />
         ) : (
           <Table
             caption="API tokens"
@@ -171,7 +168,6 @@ function SecretDialog({
   created: CreateApiTokenResponse | null;
   onClose: () => void;
 }) {
-  const toast = useToast();
   return (
     <Dialog
       open={created != null}
@@ -194,17 +190,7 @@ function SecretDialog({
             <code className={styles.secretValue} aria-label="Token secret">
               {created.secret}
             </code>
-            <Button
-              variant="outline"
-              icon="copy"
-              onClick={() => {
-                void navigator.clipboard.writeText(created.secret).then(() => {
-                  toast({ tone: 'ok', title: 'Token copied' });
-                });
-              }}
-            >
-              Copy
-            </Button>
+            <CopyButton text value={created.secret} label="Copy" copiedMessage="Token copied" />
           </div>
         </div>
       )}

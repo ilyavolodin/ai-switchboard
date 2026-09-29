@@ -1,21 +1,19 @@
 import type { ActionSpec, ProcessDocument, Step } from '@ai-switchboard/core/contract';
 
 import { useDestination, useSource } from '../../api/index.js';
-import { Button } from '../../components/Button.js';
 import { ExpressionEditor } from '../../components/ExpressionEditor.js';
 import { Field } from '../../components/Field.js';
 import { Select } from '../../components/Select.js';
 import { TextField } from '../../components/TextField.js';
 import { asSchema } from '../../lib/schema.js';
-import type { SectionProps } from './EditorSections.js';
-import { newStep } from './editorModel.js';
+import type { SectionProps } from './sectionProps.js';
+import { AddItemButton } from './AddItemButton.js';
+import { newStep, removeAt, replaceAt, type StepProviderRef } from './editorModel.js';
 import styles from './ProcessEditor.module.css';
+import { RepeatableItem } from './RepeatableItem.js';
+import { useListKeys } from './useListKeys.js';
 
-export interface StepProvider {
-  id: string;
-  name: string;
-  kind: 'source' | 'destination';
-}
+type StepProvider = StepProviderRef;
 
 type Phase = 'before' | 'after';
 
@@ -46,14 +44,13 @@ function StepEditor({
   const label = `${phase === 'before' ? 'Before' : 'After'} step ${index + 1}`;
 
   return (
-    <div className={styles.item} role="group" aria-label={label}>
-      <div className={styles.itemHead}>
-        <span className="t-overline">{label}</span>
-        <span className={styles.itemSummary}>{action?.description ?? action?.describe ?? ''}</span>
-        <Button size="sm" variant="outline" onClick={onRemove} disabled={disabled}>
-          Remove
-        </Button>
-      </div>
+    <RepeatableItem
+      label={label}
+      overline={label}
+      summary={action?.description ?? action?.describe ?? ''}
+      onRemove={onRemove}
+      disabled={disabled}
+    >
       <Field label="Provider" layout="row">
         {({ id, describedBy }) => (
           <Select
@@ -129,7 +126,7 @@ function StepEditor({
           />
         )}
       </Field>
-    </div>
+    </RepeatableItem>
   );
 }
 
@@ -140,6 +137,8 @@ export function StepsFields({
   providers,
 }: SectionProps & { providers: StepProvider[] }) {
   const phases: Phase[] = ['before', 'after'];
+  const beforeKeys = useListKeys(doc.before.length);
+  const afterKeys = useListKeys(doc.after.length);
   const putList = (phase: Phase, list: Step[]) => {
     set((d: ProcessDocument) => ({ ...d, [phase]: list }));
   };
@@ -147,6 +146,7 @@ export function StepsFields({
     <div className={styles.stack}>
       {phases.map((phase) => {
         const list = doc[phase];
+        const keys = phase === 'before' ? beforeKeys : afterKeys;
         return (
           <div key={phase} className={styles.stack}>
             <span className="t-overline">
@@ -155,40 +155,31 @@ export function StepsFields({
             {list.length === 0 && <span className="t-caption">No {phase} steps.</span>}
             {list.map((s, i) => (
               <StepEditor
-                key={i}
+                key={keys.keys[i] ?? i}
                 step={s}
                 index={i}
                 phase={phase}
                 providers={providers}
                 disabled={disabled}
                 onChange={(next) => {
-                  putList(
-                    phase,
-                    list.map((x, j) => (j === i ? next : x)),
-                  );
+                  putList(phase, replaceAt(list, i, next));
                 }}
                 onRemove={() => {
-                  putList(
-                    phase,
-                    list.filter((_, j) => j !== i),
-                  );
+                  keys.removed(i);
+                  putList(phase, removeAt(list, i));
                 }}
               />
             ))}
-            <div>
-              <Button
-                size="sm"
-                variant="outline"
-                icon="plus"
-                disabled={disabled === true || providers.length === 0}
-                disabledReason="Bind a source or a destination first"
-                onClick={() => {
-                  putList(phase, [...list, newStep(providers[0]?.id ?? '')]);
-                }}
-              >
-                Add {phase} step
-              </Button>
-            </div>
+            <AddItemButton
+              disabled={disabled === true || providers.length === 0}
+              disabledReason="Bind a source or a destination first"
+              onClick={() => {
+                keys.added();
+                putList(phase, [...list, newStep(providers[0]?.id ?? '')]);
+              }}
+            >
+              Add {phase} step
+            </AddItemButton>
           </div>
         );
       })}

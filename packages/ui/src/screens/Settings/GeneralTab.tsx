@@ -1,34 +1,35 @@
 import type { GlobalSettings } from '@ai-switchboard/core/contract';
-import { useState } from 'react';
 
-import { errorMessage } from '../../api/client.js';
 import { useNotifiers, useSettings, useUpdateSettings } from '../../api/index.js';
 import { useCan } from '../../app/session.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { Field } from '../../components/Field.js';
+import { QueryError } from '../../components/QueryError.js';
 import { QuietHoursBar } from '../../components/QuietHoursBar.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { TextField } from '../../components/TextField.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { LeaveGuardDialog } from '../shared/LeaveGuardDialog.js';
+import { useSettingsDraft } from '../shared/useSettingsDraft.js';
 import styles from './Settings.module.css';
-import { changedFields, generalDraft, parsePositiveInt, timezones } from './settingsForm.js';
+import {
+  changedFields,
+  generalDraft,
+  generalForm,
+  parsePositiveInt,
+  timezones,
+} from './settingsForm.js';
 
 export function GeneralTab() {
   const settings = useSettings();
   if (settings.isPending) return <Skeleton shape="card" height={320} label="Loading settings" />;
   if (settings.isError) {
-    return (
-      <Banner tone="error" title="Settings could not load">
-        {errorMessage(settings.error)}
-      </Banner>
-    );
+    return <QueryError query={settings} title="Settings could not load" />;
   }
-  // Re-mount the form when the saved settings change so it starts from what is stored.
-  return <GeneralForm key={JSON.stringify(generalDraft(settings.data))} saved={settings.data} />;
+  return <GeneralForm saved={settings.data} />;
 }
 
 const TZ_LIST_ID = 'settings-timezones';
@@ -37,12 +38,8 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
   const isAdmin = useCan('admin');
   const notifiers = useNotifiers();
   const base = generalDraft(saved);
-  const [timezone, setTimezone] = useState(base.timezone);
-  const [quiet, setQuiet] = useState(base.defaultQuietHours);
-  const [staleness, setStaleness] = useState(String(base.meterStalenessMinutes));
-  const [silence, setSilence] = useState(String(base.sourceSilenceMinutes));
-  const [notifier, setNotifier] = useState(base.systemNotifierId ?? '');
-  const [requireReasons, setRequireReasons] = useState(base.requireReasons);
+  const form = useSettingsDraft(generalForm(base));
+  const { timezone, quiet, staleness, silence, notifier, requireReasons } = form.draft;
 
   const stalenessN = parsePositiveInt(staleness);
   const silenceN = parsePositiveInt(silence);
@@ -88,7 +85,7 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
                 value={timezone}
                 disabled={!isAdmin}
                 onChange={(e) => {
-                  setTimezone(e.target.value);
+                  form.set({ timezone: e.target.value });
                 }}
               />
               <datalist id={TZ_LIST_ID}>
@@ -110,7 +107,9 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
               value={quiet ?? undefined}
               disabled={!isAdmin}
               onChange={(next) => {
-                setQuiet(next ? { start: next.start, end: next.end, days: next.days } : null);
+                form.set({
+                  quiet: next ? { start: next.start, end: next.end, days: next.days } : null,
+                });
               }}
             />
           )}
@@ -133,7 +132,7 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
               value={staleness}
               disabled={!isAdmin}
               onChange={(e) => {
-                setStaleness(e.target.value);
+                form.set({ staleness: e.target.value });
               }}
             />
           )}
@@ -156,7 +155,7 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
               value={silence}
               disabled={!isAdmin}
               onChange={(e) => {
-                setSilence(e.target.value);
+                form.set({ silence: e.target.value });
               }}
             />
           )}
@@ -176,7 +175,7 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
               placeholder="None"
               options={(notifiers.data ?? []).map((n) => ({ value: n.id, label: n.name }))}
               onChange={(e) => {
-                setNotifier(e.target.value);
+                form.set({ notifier: e.target.value });
               }}
             />
           )}
@@ -197,7 +196,9 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
               describedBy={describedBy}
               checked={requireReasons}
               requires="admin"
-              onChange={setRequireReasons}
+              onChange={(next) => {
+                form.set({ requireReasons: next });
+              }}
             />
           )}
         </Field>
@@ -215,6 +216,7 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
           Save
         </Button>
       </div>
+      <LeaveGuardDialog blocker={form.leaveGuard.blocker} summary="Unsaved general settings" />
     </Card>
   );
 }

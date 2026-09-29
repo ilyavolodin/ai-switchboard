@@ -1,11 +1,9 @@
 import { type SubmitEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
-import { errorMessage, isApiRequestError } from '../../api/client.js';
+import { isApiRequestError } from '../../api/client.js';
 import { useTrace } from '../../api/index.js';
 import { ArtifactChip } from '../../components/ArtifactChip.js';
-import { Banner } from '../../components/Banner.js';
-import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { PageHeader } from '../../components/PageHeader.js';
@@ -15,6 +13,7 @@ import { StageIndicator } from '../../components/StageIndicator.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { TraceTimeline } from '../../components/TraceTimeline.js';
 import { WhyNothingRan } from '../../components/WhyNothingRan.js';
+import { QueryError } from '../../components/QueryError.js';
 import { traceHref } from '../../lib/artifact.js';
 import { whyFromTrace } from '../../lib/why.js';
 import {
@@ -90,17 +89,7 @@ export function Trace() {
           </EmptyState>
         </Card>
       ) : trace.isError ? (
-        <Banner
-          tone="error"
-          title="The trace could not load"
-          actions={
-            <Button size="sm" variant="outline" onClick={() => void trace.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {errorMessage(trace.error)}
-        </Banner>
+        <QueryError query={trace} title="The trace could not load" />
       ) : (
         <TraceBody data={trace.data} />
       )}

@@ -114,7 +114,7 @@ describe('DestinationDetail', () => {
     });
     const rows = within(table).getAllByRole('row');
     expect(rows.length).toBeGreaterThan(1);
-    const link = within(table).getAllByRole('link', { name: /session_/ })[0];
+    const link = within(table).getAllByRole('link', { name: /^Open run .* \(new tab\)$/ })[0];
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noreferrer');
   });

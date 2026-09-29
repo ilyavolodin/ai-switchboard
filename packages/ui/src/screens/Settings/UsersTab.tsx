@@ -1,41 +1,19 @@
-import type { Role, UserDirectoryEntry, UserDTO } from '@ai-switchboard/core/contract';
-import { type SubmitEvent, useState } from 'react';
+import type { UserDTO } from '@ai-switchboard/core/contract';
+import { useState } from 'react';
 
-import { errorMessage } from '../../api/client.js';
-import {
-  useCreateUser,
-  useDeleteUser,
-  useRemoveUserPassword,
-  useRevokeUserSessions,
-  useSetUserPassword,
-  useUpdateUser,
-  useUserDirectory,
-  useUsers,
-} from '../../api/index.js';
+import { useUserDirectory, useUsers } from '../../api/index.js';
 import { roleLabel, roleRequiredMessage, useCan, useSession } from '../../app/session.js';
-import { Banner } from '../../components/Banner.js';
-import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
-import { Field } from '../../components/Field.js';
-import { Select } from '../../components/Select.js';
+import { QueryBoundary } from '../../components/QueryBoundary.js';
 import { Skeleton } from '../../components/Skeleton.js';
-import { StatusChip } from '../../components/StatusChip.js';
-import { Table, type TableColumn } from '../../components/Table.js';
-import { TextField } from '../../components/TextField.js';
-import { Time } from '../../components/Time.js';
-import { Tooltip } from '../../components/Tooltip.js';
-import { useReasonedMutation } from '../../hooks/reason.js';
-import { passwordError } from '../ChangePassword/passwordRules.js';
+import { Table } from '../../components/Table.js';
+import { AddUserCard } from './AddUserCard.js';
 import { SetPasswordDialog } from './SetPasswordDialog.js';
 import styles from './Settings.module.css';
-import { initials } from './settingsForm.js';
+import { useUserActions } from './useUserActions.js';
+import { adminColumns, directoryColumns } from './userColumns.js';
 
-const ROLE_OPTIONS = (['admin', 'operator', 'viewer'] as const).map((r) => ({
-  value: r,
-  label: roleLabel(r),
-}));
-
-const isRole = (v: string): v is Role => v === 'admin' || v === 'operator' || v === 'viewer';
+const loading = <Skeleton lines={4} height={24} label="Loading users" />;
 
 export function UsersTab() {
   const isAdmin = useCan('admin');
@@ -45,88 +23,17 @@ export function UsersTab() {
 function UsersReadOnly() {
   const directory = useUserDirectory();
   const { user: me } = useSession();
-  const needsAdmin = roleRequiredMessage('admin', me?.role);
-  const columns: TableColumn<UserDirectoryEntry>[] = [
-    {
-      key: 'email',
-      header: 'email',
-      cell: (u) => (
-        <span className={styles.who}>
-          <span className={styles.avatar} aria-hidden="true">
-            {initials(u.email)}
-          </span>
-          {u.email}
-          {u.id === me?.id && <span className={styles.muted}>· you</span>}
-        </span>
-      ),
-    },
-    {
-      key: 'role',
-      header: 'role',
-      width: 140,
-      cell: (u) => (
-        <Tooltip content={needsAdmin}>
-          <Select
-            size="sm"
-            aria-label={`Role for ${u.email}`}
-            value={u.role}
-            options={ROLE_OPTIONS}
-            disabled
-            onChange={() => undefined}
-          />
-        </Tooltip>
-      ),
-    },
-    {
-      key: 'actions',
-      header: <span className="visually-hidden">actions</span>,
-      align: 'right',
-      cell: (u) => (
-        <span className={styles.rowActions}>
-          <Button
-            size="sm"
-            variant="ghost"
-            requires="admin"
-            aria-label={`Set password for ${u.email}`}
-          >
-            Set password
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            requires="admin"
-            aria-label={`Revoke sessions for ${u.email}`}
-          >
-            Revoke sessions
-          </Button>
-          <Button
-            size="sm"
-            variant="danger-outline"
-            requires="admin"
-            aria-label={`Remove ${u.email}`}
-          >
-            Remove
-          </Button>
-        </span>
-      ),
-    },
-  ];
+  const columns = directoryColumns(me?.id, roleRequiredMessage('admin', me?.role));
   return (
     <div className={styles.stack}>
-      <AddUser />
+      <AddUserCard />
       <Card
         title="Users"
         subtitle={`You are ${me ? roleLabel(me.role) : 'signed in'}: adding people and changing roles needs the Admin role`}
       >
-        {directory.isPending ? (
-          <Skeleton lines={4} height={24} label="Loading users" />
-        ) : directory.isError ? (
-          <Banner tone="error" title="Users could not load">
-            {errorMessage(directory.error)}
-          </Banner>
-        ) : (
-          <Table caption="Users" columns={columns} rows={directory.data} rowKey={(u) => u.id} />
-        )}
+        <QueryBoundary query={directory} errorTitle="Users could not load" pending={loading}>
+          {(rows) => <Table caption="Users" columns={columns} rows={rows} rowKey={(u) => u.id} />}
+        </QueryBoundary>
       </Card>
     </div>
   );
@@ -138,189 +45,22 @@ function UsersAdmin() {
   const [passwordFor, setPasswordFor] = useState<UserDTO | null>(null);
   const emailOf = (id: string): string =>
     users.data?.find((u) => u.id === id)?.email ?? 'this user';
-  const update = useReasonedMutation(
-    useUpdateUser(),
-    (v) => ({
-      title: `Make ${emailOf(v.id)} ${roleLabel(v.role)}?`,
-      consequence: `${roleLabel(v.role)} role takes effect on their next request.`,
-      confirmLabel: 'Change role',
-    }),
-    { successMessage: 'Role changed' },
-  );
-  const remove = useReasonedMutation(
-    useDeleteUser(),
-    (v) => ({
-      title: `Remove ${emailOf(v.id)}?`,
-      consequence: 'They are signed out everywhere and can no longer sign in.',
-      confirmLabel: 'Remove user',
-      danger: true,
-    }),
-    { successMessage: 'User removed' },
-  );
-  const revoke = useReasonedMutation(
-    useRevokeUserSessions(),
-    (v) => ({
-      title: `Sign ${emailOf(v.id)} out everywhere?`,
-      consequence: 'Every session they have ends now; they can sign in again.',
-      confirmLabel: 'Revoke sessions',
-      danger: true,
-    }),
-    { successMessage: 'Sessions revoked' },
-  );
-
-  const setPassword = useReasonedMutation(
-    useSetUserPassword(),
-    (v) => ({
-      title: `Set a temporary password for ${emailOf(v.id)}?`,
-      consequence:
-        'Every session they have ends now, and they must choose their own password at the next sign-in.',
-      confirmLabel: 'Set password',
-      danger: true,
-    }),
-    { successMessage: 'Temporary password set — pass it on securely' },
-  );
-  const removePassword = useReasonedMutation(
-    useRemoveUserPassword(),
-    (v) => ({
-      title: `Remove the password for ${emailOf(v.id)}?`,
-      consequence: 'They are signed out everywhere and can sign in only through OIDC from now on.',
-      confirmLabel: 'Remove password',
-      danger: true,
-    }),
-    { successMessage: 'Password removed' },
-  );
-
-  const columns: TableColumn<UserDTO>[] = [
-    {
-      key: 'email',
-      header: 'email',
-      cell: (u) => (
-        <span className={styles.who}>
-          <span className={styles.avatar} aria-hidden="true">
-            {initials(u.email)}
-          </span>
-          {u.email}
-          {u.id === me?.id && <span className={styles.muted}>· you</span>}
-        </span>
-      ),
-    },
-    {
-      key: 'role',
-      header: 'role',
-      width: 140,
-      cell: (u) => {
-        const self = u.id === me?.id;
-        const select = (
-          <Select
-            size="sm"
-            aria-label={`Role for ${u.email}`}
-            value={u.role}
-            options={ROLE_OPTIONS}
-            disabled={self}
-            onChange={(e) => {
-              const role = e.target.value;
-              if (isRole(role) && role !== u.role) void update.run({ id: u.id, role });
-            }}
-          />
-        );
-        return self ? <Tooltip content="You can’t change your own role">{select}</Tooltip> : select;
-      },
-    },
-    {
-      key: 'signIn',
-      header: 'sign-in',
-      cell: (u) => (
-        <span className={styles.rowActions}>
-          {u.hasPassword && (
-            <StatusChip
-              size="sm"
-              tone={u.mustChangePassword ? 'warn' : 'ok'}
-              label={u.mustChangePassword ? 'temporary password' : 'password'}
-            />
-          )}
-          {u.hasOidc && <StatusChip size="sm" tone="ok" label="OIDC" />}
-          {!u.hasPassword && !u.hasOidc && (
-            <StatusChip size="sm" tone="off" label="not yet signed in" />
-          )}
-        </span>
-      ),
-    },
-    {
-      key: 'last',
-      header: 'last sign-in',
-      cell: (u) => <Time value={u.lastLoginAt} fallback="never" />,
-    },
-    {
-      key: 'actions',
-      header: <span className="visually-hidden">actions</span>,
-      align: 'right',
-      cell: (u) => {
-        const self = u.id === me?.id;
-        return (
-          <span className={styles.rowActions}>
-            <Button
-              size="sm"
-              variant="ghost"
-              requires="admin"
-              disabled={self}
-              disabledReason="Change your own password from your account"
-              aria-label={`${u.hasPassword ? 'Reset' : 'Set'} password for ${u.email}`}
-              onClick={() => {
-                setPasswordFor(u);
-              }}
-            >
-              {u.hasPassword ? 'Reset password' : 'Set password'}
-            </Button>
-            {u.hasPassword && oidcConfigured && (
-              <Button
-                size="sm"
-                variant="ghost"
-                requires="admin"
-                aria-label={`Remove password for ${u.email}`}
-                onClick={() => void removePassword.run({ id: u.id })}
-              >
-                Remove password
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              requires="admin"
-              aria-label={`Revoke sessions for ${u.email}`}
-              onClick={() => void revoke.run({ id: u.id })}
-            >
-              Revoke sessions
-            </Button>
-            <Button
-              size="sm"
-              variant="danger-outline"
-              requires="admin"
-              disabled={self}
-              disabledReason="You can’t remove yourself"
-              aria-label={`Remove ${u.email}`}
-              onClick={() => void remove.run({ id: u.id })}
-            >
-              Remove
-            </Button>
-          </span>
-        );
-      },
-    },
-  ];
+  const act = useUserActions(emailOf);
+  const columns = adminColumns(me?.id, oidcConfigured, {
+    changeRole: (u, role) => void act.updateRole.run({ id: u.id, role }),
+    setPassword: setPasswordFor,
+    removePassword: (u) => void act.removePassword.run({ id: u.id }),
+    revoke: (u) => void act.revoke.run({ id: u.id }),
+    remove: (u) => void act.remove.run({ id: u.id }),
+  });
 
   return (
     <div className={styles.stack}>
-      <AddUser />
+      <AddUserCard />
       <Card title="Users" subtitle="admin · operator · viewer — every change is audited">
-        {users.isPending ? (
-          <Skeleton lines={4} height={24} label="Loading users" />
-        ) : users.isError ? (
-          <Banner tone="error" title="Users could not load">
-            {errorMessage(users.error)}
-          </Banner>
-        ) : (
-          <Table caption="Users" columns={columns} rows={users.data} rowKey={(u) => u.id} />
-        )}
+        <QueryBoundary query={users} errorTitle="Users could not load" pending={loading}>
+          {(rows) => <Table caption="Users" columns={columns} rows={rows} rowKey={(u) => u.id} />}
+        </QueryBoundary>
       </Card>
       <SetPasswordDialog
         email={passwordFor?.email ?? null}
@@ -331,116 +71,9 @@ function UsersAdmin() {
         onSubmit={(password) => {
           const target = passwordFor;
           setPasswordFor(null);
-          if (target) void setPassword.run({ id: target.id, password });
+          if (target) void act.setPassword.run({ id: target.id, password });
         }}
       />
     </div>
-  );
-}
-
-function AddUser() {
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('viewer');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [passwordErr, setPasswordErr] = useState<string | null>(null);
-  const { oidcConfigured } = useSession();
-  const isAdmin = useCan('admin');
-  const create = useReasonedMutation(
-    useCreateUser(),
-    (v) => ({
-      title: `Add ${v.email} as ${roleLabel(v.role)}?`,
-      consequence:
-        v.password !== undefined
-          ? 'They sign in with the temporary password and must choose their own at the first sign-in.'
-          : oidcConfigured
-            ? 'They can sign in with the configured issuer from now on.'
-            : 'They cannot sign in until you set a password (or configure OIDC).',
-      confirmLabel: 'Add user',
-    }),
-    { successMessage: 'User added' },
-  );
-  const onSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const value = email.trim().toLowerCase();
-    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-    const pwProblem = password === '' ? null : passwordError(password, value);
-    setError(emailOk ? null : 'Enter an email address');
-    setPasswordErr(pwProblem);
-    if (!emailOk || pwProblem) return;
-    const res = await create.run({
-      email: value,
-      role,
-      ...(password !== '' ? { password } : {}),
-    });
-    if (res) {
-      setEmail('');
-      setPassword('');
-    }
-  };
-  return (
-    <Card title="Add a user">
-      <form className={styles.inline} onSubmit={(e) => void onSubmit(e)} noValidate>
-        <Field label="Email" error={error} className={styles.grow}>
-          {({ id, describedBy, invalid }) => (
-            <TextField
-              id={id}
-              aria-describedby={describedBy}
-              invalid={invalid}
-              type="email"
-              disabled={!isAdmin}
-              placeholder="name@company.com"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-              }}
-            />
-          )}
-        </Field>
-        <Field
-          label="Temporary password"
-          error={passwordErr}
-          help={oidcConfigured ? 'Optional — leave empty for OIDC only' : 'Optional'}
-        >
-          {({ id, describedBy, invalid }) => (
-            <TextField
-              id={id}
-              aria-describedby={describedBy}
-              invalid={invalid}
-              mono
-              disabled={!isAdmin}
-              autoComplete="off"
-              spellCheck={false}
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-              }}
-            />
-          )}
-        </Field>
-        <Field label="Role">
-          {({ id }) => (
-            <Select
-              id={id}
-              value={role}
-              disabled={!isAdmin}
-              options={ROLE_OPTIONS}
-              onChange={(e) => {
-                if (isRole(e.target.value)) setRole(e.target.value);
-              }}
-            />
-          )}
-        </Field>
-        <Button
-          type="submit"
-          variant="primary"
-          icon="plus"
-          requires="admin"
-          loading={create.pending}
-        >
-          Add user
-        </Button>
-      </form>
-    </Card>
   );
 }

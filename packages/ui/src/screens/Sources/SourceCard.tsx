@@ -10,7 +10,7 @@ import { useReasonedMutation } from '../../hooks/reason.js';
 import { cx } from '../../lib/cx.js';
 import { formatCount } from '../../lib/format.js';
 import { cardTone } from '../../lib/instances.js';
-import styles from './instanceCard.module.css';
+import styles from '../shared/instanceCard.module.css';
 import { enableSourcePrompt, hourlyTotals, modeLabel, typeSplit } from './sourceModel.js';
 
 export function SourceCard({ source }: { source: SourceSummary }) {

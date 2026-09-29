@@ -1,7 +1,5 @@
 import type { GlobalSettings } from '@ai-switchboard/core/contract';
-import { useState } from 'react';
 
-import { errorMessage } from '../../api/client.js';
 import { useSettings, useUpdateSettings } from '../../api/index.js';
 import { useCan, useSession } from '../../app/session.js';
 import { Banner } from '../../components/Banner.js';
@@ -9,10 +7,13 @@ import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { Field } from '../../components/Field.js';
 import { Icon } from '../../components/Icon.js';
+import { QueryError } from '../../components/QueryError.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { TextField } from '../../components/TextField.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { LeaveGuardDialog } from '../shared/LeaveGuardDialog.js';
+import { useSettingsDraft } from '../shared/useSettingsDraft.js';
 import styles from './Settings.module.css';
 import { parseDomains } from './settingsForm.js';
 
@@ -20,21 +21,20 @@ export function SignInTab() {
   const settings = useSettings();
   if (settings.isPending) return <Skeleton shape="card" height={260} label="Loading sign-in" />;
   if (settings.isError) {
-    return (
-      <Banner tone="error" title="Sign-in settings could not load">
-        {errorMessage(settings.error)}
-      </Banner>
-    );
+    return <QueryError query={settings} title="Sign-in settings could not load" />;
   }
-  return <SignInForm key={JSON.stringify(settings.data.oidc)} oidc={settings.data.oidc} />;
+  return <SignInForm oidc={settings.data.oidc} />;
 }
 
 function SignInForm({ oidc }: { oidc: GlobalSettings['oidc'] }) {
   const session = useSession();
   const isAdmin = useCan('admin');
-  const [issuer, setIssuer] = useState(oidc?.issuer ?? '');
-  const [clientId, setClientId] = useState(oidc?.clientId ?? '');
-  const [domains, setDomains] = useState((oidc?.allowedDomains ?? []).join(', '));
+  const form = useSettingsDraft({
+    issuer: oidc?.issuer ?? '',
+    clientId: oidc?.clientId ?? '',
+    domains: (oidc?.allowedDomains ?? []).join(', '),
+  });
+  const { issuer, clientId, domains } = form.draft;
 
   const next = {
     issuer: issuer.trim(),
@@ -96,7 +96,7 @@ function SignInForm({ oidc }: { oidc: GlobalSettings['oidc'] }) {
                 value={issuer}
                 disabled={!isAdmin}
                 onChange={(e) => {
-                  setIssuer(e.target.value);
+                  form.set({ issuer: e.target.value });
                 }}
               />
             )}
@@ -118,7 +118,7 @@ function SignInForm({ oidc }: { oidc: GlobalSettings['oidc'] }) {
                 value={clientId}
                 disabled={!isAdmin}
                 onChange={(e) => {
-                  setClientId(e.target.value);
+                  form.set({ clientId: e.target.value });
                 }}
               />
             )}
@@ -152,7 +152,7 @@ function SignInForm({ oidc }: { oidc: GlobalSettings['oidc'] }) {
                 value={domains}
                 disabled={!isAdmin}
                 onChange={(e) => {
-                  setDomains(e.target.value);
+                  form.set({ domains: e.target.value });
                 }}
               />
             )}
@@ -175,6 +175,7 @@ function SignInForm({ oidc }: { oidc: GlobalSettings['oidc'] }) {
           </Button>
         </div>
       </Card>
+      <LeaveGuardDialog blocker={form.leaveGuard.blocker} summary="Unsaved sign-in settings" />
     </div>
   );
 }

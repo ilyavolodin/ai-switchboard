@@ -4,7 +4,7 @@ import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
 import { Field } from '../../components/Field.js';
 import { TextField } from '../../components/TextField.js';
-import { passwordError } from '../ChangePassword/passwordRules.js';
+import { passwordError } from '../shared/passwordRules.js';
 import styles from './Settings.module.css';
 
 export interface SetPasswordDialogProps {

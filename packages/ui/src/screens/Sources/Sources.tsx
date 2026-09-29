@@ -1,4 +1,4 @@
-import type { PluginTypeDTO, SourceCapsDTO } from '@ai-switchboard/core/contract';
+import type { SourceCapsDTO } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
@@ -9,21 +9,12 @@ import { PageHeader } from '../../components/PageHeader.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { withoutUndefined } from '../../lib/instances.js';
 import { InstanceGrid } from '../shared/InstanceGrid.js';
-import { AddInstanceDialog } from './AddInstanceDialog.js';
-import styles from './instanceCard.module.css';
+import { AddInstanceDialog } from '../shared/AddInstanceDialog.js';
+import styles from '../shared/instanceCard.module.css';
+import { SamplePreview } from './SamplePreview.js';
 import { SourceCapsFields } from './SourceCapsFields.js';
 import { SourceCard } from './SourceCard.js';
-
-function describeSourceType(t: PluginTypeDTO): string {
-  const n = t.eventTypes?.length ?? 0;
-  return [
-    t.mode === 'both' ? 'push and pull' : (t.mode ?? 'push'),
-    t.dynamicEventTypes ? 'dynamic event types' : `${n} event type${n === 1 ? '' : 's'}`,
-    t.provisionSupported ? 'registers its webhook' : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-}
+import { describeSourceType } from './sourceModel.js';
 
 export function Sources() {
   const sources = useSources();
@@ -117,8 +108,18 @@ export function Sources() {
             mode={t.mode}
           />
         )}
+        sample={{
+          applies: (t) => t.mode !== 'pull',
+          render: ({ type, settings, sample, onSampleChange }) => (
+            <SamplePreview
+              typeId={type.typeId}
+              settings={settings}
+              sample={sample}
+              onSampleChange={onSampleChange}
+            />
+          ),
+        }}
         onSubmit={async ({ type, name, settings, caps }) => {
-          setAdding(false);
           const created = await create.run({
             typeId: type.typeId,
             name,
@@ -126,10 +127,8 @@ export function Sources() {
             caps: withoutUndefined(caps),
             enabled: true,
           });
-          if (!created) {
-            setAdding(true);
-            return false;
-          }
+          if (!created) return false;
+          setAdding(false);
           void navigate(`/sources/${created.id}`);
           return true;
         }}

@@ -4,7 +4,8 @@ import { BarChart } from '../../components/BarChart.js';
 import { Card } from '../../components/Card.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { formatSeconds, formatUsage } from '../../lib/format.js';
-import { dayLabel, windowLabel } from './detailModel.js';
+import { WINDOW_LABEL } from '../shared/statsWindow.js';
+import { dayLabel } from './detailModel.js';
 import styles from './ProcessDetail.module.css';
 
 export function DetailCharts({
@@ -36,7 +37,7 @@ export function DetailCharts({
     (r.error ?? 0) + (r.failed ?? 0) + (r.unknown ?? 0);
   return (
     <div className={styles.charts}>
-      <Card title="Runs and throttles per day" meta={windowLabel(window)}>
+      <Card title="Runs and throttles per day" meta={WINDOW_LABEL[window]}>
         <BarChart
           ariaLabel="Runs and throttles per day"
           labels={labels}
@@ -64,7 +65,7 @@ export function DetailCharts({
           ]}
         />
       </Card>
-      <Card title="Latency and duration, p50" meta={windowLabel(window)}>
+      <Card title="Latency and duration, p50" meta={WINDOW_LABEL[window]}>
         <BarChart
           ariaLabel="Median latency and run duration per day"
           labels={labels}
@@ -86,7 +87,7 @@ export function DetailCharts({
           ]}
         />
       </Card>
-      <Card title="Usage per run" meta={windowLabel(window)}>
+      <Card title="Usage per run" meta={WINDOW_LABEL[window]}>
         {stats.usagePerRun.length === 0 ? (
           <p className="t-caption">The destination reports no usage for these runs.</p>
         ) : (

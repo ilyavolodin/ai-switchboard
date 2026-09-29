@@ -1,8 +1,8 @@
 import type { SourceSummary } from '@ai-switchboard/core/contract';
 
-import { Button } from '../../components/Button.js';
-import { errorsUnder, newTrigger } from './editorModel.js';
-import type { SectionProps } from './EditorSections.js';
+import { AddItemButton } from './AddItemButton.js';
+import { errorsUnder, newTrigger, removeAt, replaceAt } from './editorModel.js';
+import type { SectionProps } from './sectionProps.js';
 import { TriggerEditor } from './TriggerEditor.js';
 
 /** Which triggers are open is kept by the editor, so it survives collapsing the section. */
@@ -48,28 +48,23 @@ export function TriggersFields({
             toggle(t.id);
           }}
           onChange={(next) => {
-            set((d) => ({ ...d, triggers: d.triggers.map((x, j) => (j === i ? next : x)) }));
+            set((d) => ({ ...d, triggers: replaceAt(d.triggers, i, next) }));
           }}
           onRemove={() => {
-            set((d) => ({ ...d, triggers: d.triggers.filter((_, j) => j !== i) }));
+            set((d) => ({ ...d, triggers: removeAt(d.triggers, i) }));
           }}
         />
       ))}
-      <div>
-        <Button
-          size="sm"
-          variant="outline"
-          icon="plus"
-          disabled={disabled}
-          onClick={() => {
-            const t = newTrigger(doc.triggers);
-            set((d) => ({ ...d, triggers: [...d.triggers, t] }));
-            setExpanded((prev) => new Set([...prev, t.id]));
-          }}
-        >
-          Add trigger
-        </Button>
-      </div>
+      <AddItemButton
+        disabled={disabled}
+        onClick={() => {
+          const t = newTrigger(doc.triggers);
+          set((d) => ({ ...d, triggers: [...d.triggers, t] }));
+          setExpanded((prev) => new Set([...prev, t.id]));
+        }}
+      >
+        Add trigger
+      </AddItemButton>
     </>
   );
 }

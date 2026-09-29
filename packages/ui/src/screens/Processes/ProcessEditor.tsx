@@ -1,10 +1,8 @@
 import type { ProcessDetail, ProcessDocument } from '@ai-switchboard/core/contract';
-import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useReducer, useState } from 'react';
+import { useParams } from 'react-router';
 
-import { errorMessage, isApiRequestError } from '../../api/client.js';
 import {
-  useCreateProcess,
   useDestination,
   useDestinations,
   useNotifiers,
@@ -13,7 +11,6 @@ import {
   useRunProcess,
   useSettings,
   useSources,
-  useUpdateProcess,
 } from '../../api/index.js';
 import { useCan } from '../../app/session.js';
 import { Banner } from '../../components/Banner.js';
@@ -21,47 +18,44 @@ import { Card } from '../../components/Card.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { Time } from '../../components/Time.js';
-import { useReasonedMutation, useReasonPrompt } from '../../hooks/reason.js';
-import { useToast } from '../../hooks/toast.js';
+import { useReasonedMutation } from '../../hooks/reason.js';
 import { LoadFailure } from '../shared/LoadFailure.js';
 import { LeaveGuardDialog } from '../shared/LeaveGuardDialog.js';
 import { useLeaveGuard } from '../shared/useLeaveGuard.js';
 import { EXAMPLE_SWEEP } from './batches.js';
 import { BudgetsFields } from './BudgetsFields.js';
-import { describeChange, documentChanges } from './diff.js';
+import { documentChanges } from './diff.js';
 import { EditorDiagram } from './EditorDiagram.js';
 import { EditorSection } from './EditorSection.js';
-import {
-  BatchingFields,
-  GatesFields,
-  NotificationsFields,
-  SchedulesFields,
-} from './EditorSections.js';
 import { BasicsFields } from './BasicsFields.js';
+import { BatchingFields } from './BatchingFields.js';
 import { ConflictBanner } from './ConflictBanner.js';
 import { EditorFooter } from './EditorFooter.js';
+import { GatesFields } from './GatesFields.js';
+import { NotificationsFields } from './NotificationsFields.js';
 import {
   batchingSummary,
   budgetsSummary,
-  checkDocument,
   collectErrors,
   gatesSummary,
   newProcessDocument,
   notificationsSummary,
-  type PlacedError,
-  placeErrors,
   schedulesSummary,
   type SectionId,
-  saveConsequence,
   sectionForKey,
+  stepProviders,
   stepsSummary,
   triggersSummary,
 } from './editorModel.js';
 import { DestinationFields } from './DestinationFields.js';
 import { unsavedLabel } from '../shared/unsavedLabel.js';
 import styles from './ProcessEditor.module.css';
-import { type StepProvider, StepsFields } from './StepsFields.js';
+import { SchedulesFields } from './SchedulesFields.js';
+import { draftReducer, initialDraft } from './processDraft.js';
+import { StepsFields } from './StepsFields.js';
 import { TriggersFields } from './TriggersFields.js';
+import { useOpenSections } from './useOpenSections.js';
+import { useSaveProcess } from './useSaveProcess.js';
 
 export function ProcessEditor() {
   const { id } = useParams();
@@ -99,35 +93,24 @@ function EditorForm({
   saved?: ProcessDetail;
   initial: ProcessDocument;
 }) {
-  const navigate = useNavigate();
-  const toast = useToast();
-  const ask = useReasonPrompt();
   const canEdit = useCan('operator');
   const disabled = !canEdit;
 
-  const latest = useProcess(processId);
   const sources = useSources();
   const destinations = useDestinations();
   const notifiers = useNotifiers();
   const settings = useSettings();
   const batches = useProcessBatches(processId);
-  const create = useCreateProcess();
-  const update = useUpdateProcess();
 
-  const [baseline, setBaseline] = useState(initial);
-  const [draft, setDraft] = useState(initial);
-  const [baseVersion, setBaseVersion] = useState(saved?.version ?? 0);
-  const [open, setOpen] = useState<Set<SectionId>>(
-    () => new Set<SectionId>(processId ? ['triggers'] : ['triggers', 'destination']),
+  const [state, dispatch] = useReducer(draftReducer, undefined, () =>
+    initialDraft(initial, saved?.version ?? 0),
   );
+  const { baseline, draft, baseVersion, clientErrors, serverErrors, conflict, saveError, saving } =
+    state;
+  const sections = useOpenSections(processId ? ['triggers'] : ['triggers', 'destination']);
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(initial.triggers.slice(0, 1).map((t) => t.id)),
   );
-  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
-  const [serverErrors, setServerErrors] = useState<PlacedError[]>([]);
-  const [conflict, setConflict] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [batchChoice, setBatchChoice] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState(true);
 
@@ -144,51 +127,26 @@ function EditorForm({
   const leaveGuard = useLeaveGuard(changes.length > 0);
   const changedSections = new Set(changes.map((c) => sectionForKey(c.path[0])));
   const collected = collectErrors(clientErrors, serverErrors);
-  const errors = collected.byPointer;
-  const sectionErrors = (section: SectionId) => collected.bySection[section] ?? [];
-  const generalErrors = collected.general;
-
-  const set = (u: (d: ProcessDocument) => ProcessDocument) => {
-    setDraft((d) => u(d));
-    setSaveError(null);
-  };
-  const toggle = (s: SectionId) => {
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(s)) next.delete(s);
-      else next.add(s);
-      return next;
-    });
-  };
-  const openSections = (list: (SectionId | null)[]) => {
-    setOpen((prev) => new Set([...prev, ...list.filter((s): s is SectionId => s != null)]));
-  };
-  const common = { doc: draft, baseline, set, errors, disabled };
-  const sectionProps = (section: SectionId) => ({
-    open: open.has(section),
-    onToggle: () => {
-      toggle(section);
-    },
-    errors: sectionErrors(section),
-    changed: changedSections.has(section),
+  const { save, latest } = useSaveProcess({
+    processId,
+    state,
+    dispatch,
+    openSections: sections.openAll,
+    allowNextNavigation: leaveGuard.allowNextNavigation,
   });
 
-  const providers: StepProvider[] = [
-    ...[...new Set(draft.triggers.map((t) => t.sourceId).filter(Boolean))].map((sid) => ({
-      id: sid,
-      name: sourceName(sid) || sid,
-      kind: 'source' as const,
-    })),
-    ...(draft.destination.instanceId
-      ? [
-          {
-            id: draft.destination.instanceId,
-            name: destinationSummary?.name ?? draft.destination.instanceId,
-            kind: 'destination' as const,
-          },
-        ]
-      : []),
-  ];
+  const set = (update: (d: ProcessDocument) => ProcessDocument) => {
+    dispatch({ type: 'edit', update });
+  };
+  const common = { doc: draft, baseline, set, errors: collected.byPointer, disabled };
+  const sectionProps = (section: SectionId) => ({
+    open: sections.isOpen(section),
+    onToggle: () => {
+      sections.toggle(section);
+    },
+    errors: collected.bySection[section] ?? [],
+    changed: changedSections.has(section),
+  });
 
   const testRun = useReasonedMutation(
     useRunProcess(),
@@ -202,75 +160,6 @@ function EditorForm({
     }),
     { successMessage: (r) => `Test run ${r.outcome}${r.runId ? ` · ${r.runId}` : ''}` },
   );
-
-  const save = async () => {
-    const problems = checkDocument(draft);
-    setClientErrors(problems);
-    if (Object.keys(problems).length > 0) {
-      openSections(Object.keys(problems).map((p) => sectionForKey(p.split('/')[1])));
-      return;
-    }
-    const isNew = !processId;
-    const reason = await ask({
-      title: isNew ? `Create ${draft.name}?` : `Save ${draft.name}?`,
-      consequence: saveConsequence({
-        isNew,
-        enabled: draft.enabled,
-        changes: changes.map(describeChange),
-        baseVersion,
-      }),
-      confirmLabel: isNew ? 'Create process' : 'Save changes',
-      placeholder: 'one line — becomes the audit entry',
-    });
-    if (reason == null) return;
-    setSaving(true);
-    setServerErrors([]);
-    setSaveError(null);
-    try {
-      const result = processId
-        ? await update.mutateAsync({
-            id: processId,
-            document: draft,
-            expectedVersion: baseVersion,
-            reason,
-          })
-        : await create.mutateAsync({ document: draft, reason });
-      setBaseline(draft);
-      leaveGuard.allowNextNavigation();
-      toast({
-        tone: 'ok',
-        title: isNew
-          ? `${result.name} created`
-          : `${result.name} saved · version ${result.version}`,
-      });
-      void navigate(`/processes/${encodeURIComponent(result.id)}`);
-    } catch (e) {
-      if (isApiRequestError(e) && e.status === 409) {
-        setConflict(true);
-        void latest.refetch();
-      } else if (
-        isApiRequestError(e) &&
-        (e.status === 422 || e.status === 400) &&
-        e.body.details?.length
-      ) {
-        const placed = placeErrors(e.body.details);
-        setServerErrors(placed);
-        openSections(placed.map((p) => p.section));
-        setSaveError(e.body.message);
-      } else {
-        setSaveError(errorMessage(e));
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const discard = () => {
-    setDraft(baseline);
-    setClientErrors({});
-    setServerErrors([]);
-    setSaveError(null);
-  };
 
   return (
     <div className={styles.page}>
@@ -380,7 +269,10 @@ function EditorForm({
       </EditorSection>
 
       <EditorSection title="Steps" summary={stepsSummary(draft)} {...sectionProps('steps')}>
-        <StepsFields {...common} providers={providers} />
+        <StepsFields
+          {...common}
+          providers={stepProviders(draft, sourceName, destinationSummary?.name)}
+        />
       </EditorSection>
 
       <EditorSection
@@ -394,27 +286,21 @@ function EditorForm({
       {conflict && (
         <ConflictBanner
           baseVersion={baseVersion}
-          stored={latest.data}
+          stored={latest}
           onLoadStored={(stored) => {
-            setBaseline(stored.document);
-            setDraft(stored.document);
-            setBaseVersion(stored.version);
-            setClientErrors({});
-            setServerErrors([]);
-            setConflict(false);
+            dispatch({ type: 'loadStored', document: stored.document, version: stored.version });
           }}
           onKeepMine={(stored) => {
-            setBaseVersion(stored.version);
-            setConflict(false);
+            dispatch({ type: 'keepMine', version: stored.version });
           }}
         />
       )}
       {saveError && !conflict && (
         <Banner tone="error" title="Not saved">
           {saveError}
-          {generalErrors.length > 0 && (
+          {collected.general.length > 0 && (
             <ul className={styles.errorList}>
-              {generalErrors.map((e) => (
+              {collected.general.map((e) => (
                 <li key={e.message}>{e.message}</li>
               ))}
             </ul>
@@ -426,7 +312,9 @@ function EditorForm({
         changes={changes}
         isNew={!processId}
         saving={saving}
-        onDiscard={discard}
+        onDiscard={() => {
+          dispatch({ type: 'discard' });
+        }}
         onSave={() => {
           void save();
         }}

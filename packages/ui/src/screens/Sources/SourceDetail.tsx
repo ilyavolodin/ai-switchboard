@@ -19,12 +19,13 @@ import { Time } from '../../components/Time.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { formatInterval } from '../../lib/instances.js';
+import { reloadedMessage, reloadPrompt, testEventPrompt } from '../shared/actionPrompts.js';
 import { InstanceStateBanners } from '../shared/InstanceStateBanners.js';
 import { LoadFailure } from '../shared/LoadFailure.js';
 import { UnknownTab } from '../shared/UnknownTab.js';
-import { CopyButton } from './CopyButton.js';
-import styles from './detail.module.css';
-import { SecretRefsFact } from './SecretRefsFact.js';
+import { CopyButton } from '../../components/CopyButton.js';
+import styles from '../shared/detail.module.css';
+import { SecretRefsFact } from '../shared/SecretRefsFact.js';
 import { SourceEventsTab } from './SourceEventsTab.js';
 import { SourceOverview } from './SourceOverview.js';
 import { enableSourcePrompt, modeLabel } from './sourceModel.js';
@@ -60,29 +61,13 @@ function SourceView({ source, tab }: { source: SourceDetailDTO; tab: string | un
     },
     { successMessage: (d) => d.message || 'Webhook registered' },
   );
-  const testEvent = useReasonedMutation(
-    useSendTestEvent(),
-    {
-      title: `Send a test event from ${source.name}?`,
-      consequence:
-        'A synthetic event walks the pipeline like a real one: processes whose triggers match it will batch and may run.',
-      confirmLabel: 'Send test event',
-    },
-    {
-      successMessage: (d) =>
-        `Test event sent${d.eventIds.length ? ` · ${d.eventIds.join(', ')}` : ''}`,
-    },
-  );
-  const reload = useReasonedMutation(
-    useReloadSource(),
-    {
-      title: `Reload ${source.name}?`,
-      consequence:
-        'The live plugin object is re-created from the saved settings and secrets are resolved again.',
-      confirmLabel: 'Reload',
-    },
-    { successMessage: 'Source reloaded' },
-  );
+  const testEvent = useReasonedMutation(useSendTestEvent(), testEventPrompt(source.name), {
+    successMessage: (d) =>
+      `Test event sent${d.eventIds.length ? ` · ${d.eventIds.join(', ')}` : ''}`,
+  });
+  const reload = useReasonedMutation(useReloadSource(), reloadPrompt('source', source.name), {
+    successMessage: reloadedMessage('source'),
+  });
   const enable = useReasonedMutation(useEnableSource(), (v: { id: string; enabled: boolean }) =>
     enableSourcePrompt(source, v.enabled),
   );
@@ -212,7 +197,7 @@ function SourceView({ source, tab }: { source: SourceDetailDTO; tab: string | un
       ) : tab === 'events' ? (
         <SourceEventsTab source={source} />
       ) : (
-        <UnknownTab overview={base} />
+        <UnknownTab to={base} />
       )}
     </>
   );

@@ -1,7 +1,6 @@
 import type { AboutResponse } from '@ai-switchboard/core/contract';
 import type { ReactNode } from 'react';
 
-import { errorMessage } from '../../api/client.js';
 import { useAbout } from '../../api/index.js';
 import { Banner } from '../../components/Banner.js';
 import { Card } from '../../components/Card.js';
@@ -9,6 +8,7 @@ import { KeyValueList } from '../../components/KeyValueList.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
 import styles from './Settings.module.css';
 
 type Telemetry = AboutResponse['telemetry'];
@@ -74,11 +74,7 @@ export function AboutTab() {
   const about = useAbout();
   if (about.isPending) return <Skeleton shape="card" height={240} label="Loading about" />;
   if (about.isError) {
-    return (
-      <Banner tone="error" title="About could not load">
-        {errorMessage(about.error)}
-      </Banner>
-    );
+    return <QueryError query={about} title="About could not load" />;
   }
   const a = about.data;
   return (

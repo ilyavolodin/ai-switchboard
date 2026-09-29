@@ -1,4 +1,4 @@
-import type { ApprovalItem } from '@ai-switchboard/core/contract';
+import type { ApprovalHistoryItem, ApprovalItem, StatusTone } from '@ai-switchboard/core/contract';
 
 export function ruleText(rule: string): string {
   return rule === 'always' || rule === 'none' ? rule : 'expression';
@@ -8,4 +8,13 @@ export function batchSummary(item: Pick<ApprovalItem, 'eventCount' | 'kind'>): s
   if (item.kind === 'sweep') return 'sweep';
   if (item.kind === 'manual') return 'manual start';
   return `${item.eventCount} ${item.eventCount === 1 ? 'event' : 'events'}`;
+}
+
+export function decisionChip(decision: ApprovalHistoryItem['decision']): {
+  tone: StatusTone;
+  label: string;
+} {
+  if (decision === 'approved') return { tone: 'ok', label: decision };
+  if (decision === 'withdrawn') return { tone: 'off', label: 'withdrawn · process deleted' };
+  return { tone: 'error', label: decision };
 }

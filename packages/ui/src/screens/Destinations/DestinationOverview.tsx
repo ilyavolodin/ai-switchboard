@@ -1,9 +1,7 @@
 import type { DestinationDetail, StatsWindow } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 
-import { errorMessage } from '../../api/client.js';
 import { useDestinationMeters, useDestinationUsage } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
 import { BarChart } from '../../components/BarChart.js';
 import { Card } from '../../components/Card.js';
 import { MeterBand } from '../../components/MeterBand.js';
@@ -12,10 +10,11 @@ import { SegmentedControl } from '../../components/SegmentedControl.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { Time } from '../../components/Time.js';
+import { QueryError } from '../../components/QueryError.js';
 import { formatCount, formatUsage, toMs } from '../../lib/format.js';
 import { seriesColor } from '../../lib/instances.js';
-import styles from '../Sources/detail.module.css';
-import { WINDOW_LABEL, WINDOW_OPTIONS } from '../Sources/sourceModel.js';
+import styles from '../shared/detail.module.css';
+import { WINDOW_LABEL, WINDOW_OPTIONS } from '../shared/statsWindow.js';
 import {
   DEFAULT_METER_POLL_SECONDS,
   dayLabel,
@@ -97,9 +96,7 @@ export function DestinationOverview({ destination }: { destination: DestinationD
           {meters.isPending ? (
             <Skeleton height={160} label="Loading meter history" />
           ) : meters.isError ? (
-            <Banner tone="error" title="Meter history could not load">
-              {errorMessage(meters.error)}
-            </Banner>
+            <QueryError query={meters} title="Meter history could not load" />
           ) : meters.data.meters.length === 0 ? (
             <span className={styles.caption}>No readings in this window.</span>
           ) : (
@@ -116,9 +113,7 @@ export function DestinationOverview({ destination }: { destination: DestinationD
       {usage.isPending ? (
         <Skeleton shape="card" height={200} label="Loading usage" />
       ) : usage.isError ? (
-        <Banner tone="error" title="Usage could not load">
-          {errorMessage(usage.error)}
-        </Banner>
+        <QueryError query={usage} title="Usage could not load" />
       ) : (
         <div className={styles.threeUp}>
           {usage.data.dimensions.map((d, i) => {

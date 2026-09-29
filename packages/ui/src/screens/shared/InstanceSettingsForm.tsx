@@ -13,7 +13,7 @@ import { TextField } from '../../components/TextField.js';
 import { secretProviderIds } from '../../lib/instances.js';
 import { validateAgainstSchema } from '../../lib/schema.js';
 import type { DeliverySample } from '../../lib/suggest.js';
-import styles from '../Sources/forms.module.css';
+import styles from './forms.module.css';
 import {
   editableCaps,
   type InstanceSettingsDraft,

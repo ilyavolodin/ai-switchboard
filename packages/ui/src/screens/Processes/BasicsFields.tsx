@@ -3,7 +3,7 @@ import { Field } from '../../components/Field.js';
 import { Textarea } from '../../components/Textarea.js';
 import { TextField } from '../../components/TextField.js';
 import { Toggle } from '../../components/Toggle.js';
-import type { SectionProps } from './EditorSections.js';
+import type { SectionProps } from './sectionProps.js';
 import styles from './ProcessEditor.module.css';
 
 export function BasicsFields({

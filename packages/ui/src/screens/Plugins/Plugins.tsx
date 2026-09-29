@@ -2,19 +2,17 @@ import type { PluginSearchResult } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
-import { errorMessage } from '../../api/client.js';
-import { useAbout, useInspectPlugin, useInstallPlugin, usePlugins } from '../../api/index.js';
-import { Banner } from '../../components/Banner.js';
+import { useAbout, usePlugins } from '../../api/index.js';
 import { Button } from '../../components/Button.js';
-import { EmptyState } from '../../components/EmptyState.js';
-import { LinkButton } from '../../components/LinkButton.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { RoutedTabs } from '../../components/RoutedTabs.js';
 import { Skeleton } from '../../components/Skeleton.js';
-import { useReasonedMutation } from '../../hooks/reason.js';
+import { QueryError } from '../../components/QueryError.js';
 import { AddPluginDialog } from './AddPluginDialog.js';
 import { InstalledPlugins } from './InstalledPlugins.js';
-import { NpmSearch } from './NpmSearch.js';
+import { NpmSearch } from '../shared/NpmSearch.js';
+import { UnknownTab } from '../shared/UnknownTab.js';
+import { usePluginInstall } from '../shared/usePluginInstall.js';
 
 /**
  * An installed plugin is loaded at once and a removed one unloaded at once; only upgrading a loaded
@@ -24,22 +22,12 @@ export function Plugins() {
   const { tab } = useParams();
   const plugins = usePlugins();
   const about = useAbout();
-  const inspect = useInspectPlugin();
+  const { inspect, install } = usePluginInstall(
+    'Add',
+    'Its types can be used for new instances straight away.',
+  );
   const [dialog, setDialog] = useState<{ spec: string; key: number } | null>(null);
   const [open, setOpen] = useState(false);
-  const install = useReasonedMutation(
-    useInstallPlugin(),
-    (v: { package: string; range?: string }) => ({
-      title: `Add ${v.package}${v.range ? `@${v.range}` : ''}?`,
-      consequence:
-        'The package is installed, pinned in plugins.lock.json and loaded now; every replica installs it within a minute. Its types can be used for new instances straight away.',
-      confirmLabel: 'Add plugin',
-    }),
-    {
-      successMessage: (added) =>
-        added.pendingRestart ? 'Added · restart to apply' : 'Added · ready to use',
-    },
-  );
 
   const startAdd = (spec: string, result?: PluginSearchResult) => {
     inspect.reset();
@@ -87,9 +75,7 @@ export function Plugins() {
     body = plugins.isPending ? (
       <Skeleton shape="card" height={320} label="Loading plugins" />
     ) : plugins.isError ? (
-      <Banner tone="error" title="Plugins could not load">
-        {errorMessage(plugins.error)}
-      </Banner>
+      <QueryError query={plugins} title="Plugins could not load" />
     ) : (
       <InstalledPlugins plugins={plugins.data} />
     );
@@ -102,17 +88,7 @@ export function Plugins() {
       />
     );
   } else {
-    body = (
-      <EmptyState
-        title="No such tab"
-        compact
-        actions={
-          <LinkButton to="/plugins" variant="outline">
-            Installed
-          </LinkButton>
-        }
-      />
-    );
+    body = <UnknownTab to="/plugins" label="Installed" />;
   }
 
   return (
@@ -130,12 +106,8 @@ export function Plugins() {
             setOpen(false);
           }}
           onConfirm={async (request) => {
-            setOpen(false);
             const added = await install.run(request);
-            if (!added) {
-              setOpen(true);
-              return false;
-            }
+            if (!added) return false;
             setDialog(null);
             return true;
           }}
