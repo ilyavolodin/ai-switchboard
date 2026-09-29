@@ -2,13 +2,6 @@ import type { Event } from '@ai-switchboard/sdk';
 
 import type { EvalFunctions, ExpressionEngine } from './engine.js';
 
-/**
- * The evaluation contexts from the TDD, and the typed wrappers each use site calls. Every wrapper
- * turns an engine failure into a value the pipeline can use (a filter error is `false`), plus the
- * error text to record.
- */
-
-/** A filter and a batch key see `{ event, process, now }`; the event's fields are also top-level. */
 export function filterContext(
   event: Event,
   process: Record<string, unknown> | null,
@@ -28,7 +21,6 @@ export interface RunContext {
   deadline?: string;
 }
 
-/** The input mapping sees `{ events, process, run, mode }`. */
 export function mappingContext(input: {
   events: Event[];
   process: Record<string, unknown>;
@@ -38,7 +30,7 @@ export function mappingContext(input: {
   return { events: input.events, process: input.process, run: input.run, mode: input.mode };
 }
 
-/** Step arguments and conditions see `{ events, run, result }` (`result` only in `after`). */
+/** `result` is set only in `after` steps. */
 export function stepContext(input: {
   events: Event[];
   run: Record<string, unknown>;
@@ -67,7 +59,7 @@ export interface FilterOutcome {
   error?: string;
 }
 
-/** A filter: no expression is `true`; any failure is `false` with the error recorded. */
+/** No expression is `true`; any failure is `false` with the error recorded. */
 export async function evaluateFilter(
   engine: ExpressionEngine,
   expr: string | undefined,
@@ -92,7 +84,7 @@ function stringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** A batch key: no expression (or a failure) is the default batch `''`. */
+/** No expression (or a failure) is the default batch `''`. */
 export async function evaluateBatchKey(
   engine: ExpressionEngine,
   expr: string | undefined,
@@ -105,7 +97,6 @@ export async function evaluateBatchKey(
   return { key: stringify(out.value) };
 }
 
-/** A notification template renders to text; objects are pretty-printed JSON. */
 export async function renderTemplate(
   engine: ExpressionEngine,
   expr: string,

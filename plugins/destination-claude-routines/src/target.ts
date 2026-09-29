@@ -6,12 +6,10 @@ import {
   parseWith,
 } from '@ai-switchboard/sdk';
 
-/** Which routine a process fires. */
 export interface RoutineTarget {
   routineId: string;
 }
 
-/** What the input mapping produces: the text handed to the routine. */
 export interface RoutineInput {
   text: string;
 }

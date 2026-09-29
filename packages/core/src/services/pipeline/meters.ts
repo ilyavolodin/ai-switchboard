@@ -19,7 +19,6 @@ import { callPlugin, type Ctx } from './context.js';
 import { destinationRunsSince } from './counters.js';
 import { sendSystemAlert } from './notify.js';
 
-/** The latest stored reading per meter id for a destination. */
 export async function latestReadings(
   db: DbOrTx,
   destinationId: string,
@@ -56,7 +55,6 @@ export async function latestReadings(
   return out;
 }
 
-/** Compute the estimated reading for a meter the core estimates, from run counts right now. */
 async function estimateNow(
   db: DbOrTx,
   destinationId: string,
@@ -71,10 +69,6 @@ async function estimateNow(
   return estimateReading(spec.id, limit, count, period, now);
 }
 
-/**
- * The meter snapshots the budget stage checks: estimated meters are recomputed from the run
- * counts at this moment; reported meters use their latest stored reading.
- */
 export async function meterSnapshots(
   db: DbOrTx,
   destinationId: string,
@@ -108,10 +102,7 @@ export async function meterSnapshots(
   return out;
 }
 
-/**
- * Read a destination's meters now: store every declared reading, plus estimated readings for
- * meters the backend does not report. Alerts when a reading crosses a process's events ceiling.
- */
+/** Also stores estimated readings for meters the backend does not report. */
 export async function readMeters(ctx: Ctx, destinationId: string): Promise<void> {
   const now = ctx.clock.now();
   const [row] = await ctx.db.select().from(destinations).where(eq(destinations.id, destinationId));
@@ -173,7 +164,6 @@ export async function readMeters(ctx: Ctx, destinationId: string): Promise<void>
     }
   }
 
-  // Ceiling crossings for the processes bound to this destination.
   const bound = await ctx.db
     .select({ id: processes.id, name: processes.name, document: processes.document })
     .from(processes)

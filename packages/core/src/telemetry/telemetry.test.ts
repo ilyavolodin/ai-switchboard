@@ -222,7 +222,6 @@ describe('log bridge', () => {
       expect(records[0]?.spanContext?.traceId).toBe(traceId);
       expect(records[0]?.attributes).toMatchObject({ run_id: 'r1', component: 'pipeline' });
       expect(records[0]?.severityText).toBe('INFO');
-      // Unparseable input is ignored rather than thrown.
       expect(() => createOtelLogStream().write('not json')).not.toThrow();
     } finally {
       logs.disable();

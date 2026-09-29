@@ -23,7 +23,6 @@ import { unsavedLabel } from './unsavedLabel.js';
 import { LeaveGuardDialog } from './LeaveGuardDialog.js';
 import { useLeaveGuard } from './useLeaveGuard.js';
 
-/** The saved instance the form edits (a source or a destination detail). */
 export interface InstanceSettingsEntity<C> {
   id: string;
   name: string;
@@ -36,36 +35,20 @@ export interface InstanceSettingsEntity<C> {
 
 export interface InstanceSettingsFormProps<C extends object> {
   entity: InstanceSettingsEntity<C>;
-  /** "source" / "destination", for the delete card's copy. */
   kind: 'source' | 'destination';
-  /** The core caps block; `baseline` is the saved caps, for the changed markers. */
   renderCaps: (caps: C, onChange: (next: C) => void, disabled: boolean, baseline: C) => ReactNode;
-  /**
-   * Asks for a reason and saves; resolves to the saved instance as the server returned it, or
-   * `null` when cancelled or failed.
-   */
   onSave: (draft: InstanceSettingsDraft<C>) => Promise<InstanceSettingsEntity<C> | null>;
   saving: boolean;
-  /** Asks for a reason and deletes; resolves `null` when cancelled or failed. */
   onDelete: () => Promise<unknown>;
   deleting: boolean;
-  /** What deleting does, under the delete card's title. */
   deleteNote: string;
-  /** Where to go once it is deleted (the list). */
   afterDelete: string;
-  /** Shown in the delete card when a delete was refused (`<InUseBanner>`). */
   deleteBlocked?: ReactNode;
-  /** A sample delivery the schema form's path fields suggest from (push sources). */
   sample?: DeliverySample | null;
-  /** Shown under the schema form with the draft settings (the sample-delivery preview). */
   renderAfterSettings?: (settings: Record<string, unknown>) => ReactNode;
 }
 
-/**
- * A source's or destination's Settings tab: name and the plugin's schema form, the core's caps, a
- * save bar that asks for a reason, and Delete at the bottom. Viewers see every field disabled.
- * Leaving the tab with unsaved changes asks first. Re-mount it (`key`) per instance.
- */
+/** Re-mount it (`key`) per instance. */
 export function InstanceSettingsForm<C extends object>({
   entity,
   kind,

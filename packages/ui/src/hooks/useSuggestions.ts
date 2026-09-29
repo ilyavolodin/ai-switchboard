@@ -2,20 +2,18 @@ import { type KeyboardEvent, useId, useState } from 'react';
 
 import type { Suggestion } from '../lib/suggest.js';
 
-/** What a control with a suggestion list needs: the list's state and its keyboard handling. */
 export interface SuggestionsState {
   items: Suggestion[];
   active: number;
   listId: string;
-  /** The active option's element id, for `aria-activedescendant`. */
+  /** For `aria-activedescendant`. */
   activeId: string | undefined;
   open: boolean;
   show: (items: Suggestion[]) => void;
   close: () => void;
   pick: (index: number) => void;
-  /** Arrow keys move, Enter accepts, Escape (or Tab) closes. Returns true when it handled the key. */
+  /** Returns true when it handled the key. */
   onKeyDown: (e: KeyboardEvent) => boolean;
-  /** Props for the input or textarea the list belongs to. */
   inputProps: {
     'aria-autocomplete': 'list';
     'aria-controls': string | undefined;
@@ -24,10 +22,6 @@ export interface SuggestionsState {
   };
 }
 
-/**
- * Keyboard-accessible suggestions for one control (no library): `show(items)` opens the list,
- * `onAccept` gets the chosen suggestion. The list closes on accept, Escape and `close()`.
- */
 export function useSuggestions(onAccept: (s: Suggestion) => void): SuggestionsState {
   const [items, setItems] = useState<Suggestion[]>([]);
   const [active, setActive] = useState(0);

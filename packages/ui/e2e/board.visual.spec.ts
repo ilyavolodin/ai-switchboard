@@ -1,8 +1,5 @@
-/**
- * Visual regression of the Board at 1440 and 1024 px in light mode, on the freshly seeded stack
- * (one breaker open, one approval waiting, one healthy process). Times and countdowns are masked.
- * Update the baselines with `pnpm --filter @ai-switchboard/ui test:e2e --update-snapshots`.
- */
+// Baselines are of the freshly seeded stack: one breaker open, one approval waiting, one healthy
+// process.
 import { expect, open, test } from './fixtures.js';
 import { BREAKER_PROCESS } from './seed.js';
 

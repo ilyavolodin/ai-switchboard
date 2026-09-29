@@ -5,10 +5,6 @@ import { StatusChip } from '../../components/StatusChip.js';
 import styles from '../Sources/forms.module.css';
 import { kindLabel, networkText, secretsText } from './pluginModel.js';
 
-/**
- * What a package asks for, read from npm before anything is installed: the resolved version, SDK
- * compatibility, the types it contributes and its declared network and secret capabilities.
- */
 export function ManifestReview({ manifest }: { manifest: InspectPluginResponse }) {
   return (
     <section className={styles.caps} aria-label="Manifest">

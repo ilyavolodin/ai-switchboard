@@ -11,11 +11,10 @@ export interface SourceNodeProps {
   dimmed?: boolean;
   highlighted?: boolean;
   describedBy?: string;
-  /** Replaces the body line (the editor shows the subscribed event types). */
+  /** Replaces the body line. */
   detail?: string;
 }
 
-/** A source instance on the canvas: name, type, status word and events in the last 24 h. */
 export function SourceNode({
   source,
   href,

@@ -13,7 +13,6 @@ import { USAGE_DIMENSIONS } from './settings.js';
 export const SIGNATURE_HEADER = 'x-switchboard-signature';
 export const SIGNATURE_PREFIX = 'sha256=';
 
-/** What the routine's completion step POSTs to the callback URL from the trailer. */
 export interface RoutineCallbackBody {
   runId: string;
   status: 'ok' | 'error';
@@ -69,10 +68,7 @@ function declaredUsage(usage: Record<string, unknown> | undefined): UsageReport 
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/**
- * Authenticate the completion step's callback and map it to a run status. `null` for anything
- * unsigned, wrongly signed or malformed; never throws. Unknown fields and usage keys are ignored.
- */
+/** `null` for anything unsigned, wrongly signed or malformed; never throws. */
 export function verifyRoutineCallback(req: RawRequest, secret: string): CallbackResult | null {
   const ok = verifyHmac({
     secret,

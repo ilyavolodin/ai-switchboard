@@ -31,7 +31,6 @@ import { cursorPaging, useIdQuery } from '../query.js';
 
 const fleet = [qk.processes.all, qk.board, qk.status, qk.approvals.all];
 
-/** GET /processes */
 export function useProcesses() {
   return useQuery({
     queryKey: qk.processes.list(),
@@ -40,14 +39,12 @@ export function useProcesses() {
   });
 }
 
-/** GET /processes/:id */
 export function useProcess(id: string | undefined) {
   return useIdQuery<ProcessDetail>(id, qk.processes.detail, (i) => `/processes/${seg(i)}`, {
     refetchInterval: POLL.lists,
   });
 }
 
-/** GET /processes/:id/funnel?window= */
 export function useProcessFunnel(id: string | undefined, window: StatsWindow = '7d') {
   return useIdQuery<FunnelResponse>(
     id,
@@ -57,7 +54,6 @@ export function useProcessFunnel(id: string | undefined, window: StatsWindow = '
   );
 }
 
-/** GET /processes/:id/stats?window= */
 export function useProcessStats(id: string | undefined, window: StatsWindow = '7d') {
   return useIdQuery<ProcessStatsResponse>(
     id,
@@ -67,7 +63,6 @@ export function useProcessStats(id: string | undefined, window: StatsWindow = '7
   );
 }
 
-/** GET /processes/:id/versions */
 export function useProcessVersions(id: string | undefined) {
   return useIdQuery<ProcessVersionSummary[]>(
     id,
@@ -76,7 +71,6 @@ export function useProcessVersions(id: string | undefined) {
   );
 }
 
-/** GET /processes/:id/versions/:version */
 export function useProcessVersion(id: string | undefined, version: number | undefined) {
   return useQuery({
     queryKey: qk.processes.version(id ?? '', version ?? 0),
@@ -88,7 +82,6 @@ export function useProcessVersion(id: string | undefined, version: number | unde
   });
 }
 
-/** GET /processes/:id/batches?limit= — recent batches, e.g. to pick one for a test run. */
 export function useProcessBatches(id: string | undefined, limit = 20) {
   return useIdQuery<RecentBatchDTO[]>(
     id,
@@ -98,7 +91,6 @@ export function useProcessBatches(id: string | undefined, limit = 20) {
   );
 }
 
-/** GET /processes/:id/activity?cursor= (paged) */
 export function useProcessActivity(id: string | undefined) {
   return useInfiniteQuery({
     queryKey: qk.processes.activity(id ?? ''),
@@ -113,10 +105,7 @@ export function useProcessActivity(id: string | undefined) {
   });
 }
 
-/**
- * POST /processes/preview/filter — evaluates a filter against the last real events. Read-only, so
- * it is a query keyed by the request; pass `null` to pause (e.g. while the source is unset).
- */
+/** Read-only, so a query keyed by the request; `null` pauses it (while the source is unset). */
 export function usePreviewFilter(req: FilterPreviewRequest | null) {
   return useQuery({
     queryKey: qk.preview.filter(req ?? { sourceId: '', eventTypes: [] }),
@@ -132,7 +121,6 @@ export function usePreviewFilter(req: FilterPreviewRequest | null) {
   });
 }
 
-/** POST /processes/preview/input — runs the input mapping against a batch and validates it. */
 export function usePreviewInput(req: InputPreviewRequest | null) {
   return useQuery({
     queryKey: qk.preview.input(req ?? ({} as InputPreviewRequest)),
@@ -148,7 +136,6 @@ export function usePreviewInput(req: InputPreviewRequest | null) {
   });
 }
 
-/** POST /processes/preview/cron — description and the next fire times in a timezone. */
 export function usePreviewCron(req: CronPreviewRequest | null) {
   return useQuery({
     queryKey: qk.preview.cron(req ?? { cron: '', timezone: '' }),
@@ -164,7 +151,6 @@ export function usePreviewCron(req: CronPreviewRequest | null) {
   });
 }
 
-/** POST /processes */
 export function useCreateProcess() {
   return useApiMutation<CreateProcessRequest, ProcessDetail>({
     method: 'POST',
@@ -173,7 +159,7 @@ export function useCreateProcess() {
   });
 }
 
-/** PUT /processes/:id — 409 when `expectedVersion` is stale. */
+/** 409 when `expectedVersion` is stale. */
 export function useUpdateProcess() {
   return useApiMutation<UpdateProcessRequest & { id: string }, ProcessDetail>({
     method: 'PUT',
@@ -182,10 +168,7 @@ export function useUpdateProcess() {
   });
 }
 
-/**
- * DELETE /processes/:id. The list, board, status and approvals refresh; the deleted process's
- * own queries are left alone (a refetch would 404 while the screen navigates away).
- */
+/** Leaves the deleted process's own queries alone: a refetch would 404 while navigating away. */
 export function useDeleteProcess() {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'DELETE',
@@ -194,7 +177,6 @@ export function useDeleteProcess() {
   });
 }
 
-/** POST /processes/:id/enable */
 export function useEnableProcess() {
   return useApiMutation<EnableRequest & { id: string }, ProcessDetail>({
     method: 'POST',
@@ -203,7 +185,6 @@ export function useEnableProcess() {
   });
 }
 
-/** POST /processes/:id/run — run now, optionally dry and/or with a recent batch's events. */
 export function useRunProcess() {
   return useApiMutation<
     RunNowRequest & { id: string },
@@ -217,7 +198,6 @@ export function useRunProcess() {
   });
 }
 
-/** POST /processes/:id/breaker/reset */
 export function useResetBreaker() {
   return useApiMutation<Reasoned & { id: string }, ProcessDetail>({
     method: 'POST',
@@ -226,7 +206,6 @@ export function useResetBreaker() {
   });
 }
 
-/** POST /processes/:id/versions/:version/restore */
 export function useRestoreProcessVersion() {
   return useApiMutation<Reasoned & { id: string; version: number }, ProcessDetail>({
     method: 'POST',

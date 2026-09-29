@@ -27,7 +27,6 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
   const now = ctx.clock.now();
   const day = new Date(now.getTime() - 86_400_000);
   const recent = new Date(now.getTime() - 5 * 60_000);
-  // One read of the processes table feeds every summary below.
   const procRows = await ctx.db.select().from(processes).orderBy(processes.name);
   const [srcs, procs, exs, settings] = await Promise.all([
     sourceSummaries(ctx, undefined, procRows),
@@ -37,7 +36,6 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
   ]);
   const procIds = procRows.map((p) => p.id);
 
-  // Trigger volume: dispatches per (process, source) from events of that source.
   const [trig24, trigRecent, bind24, bindRecent] =
     procIds.length === 0
       ? [[], [], [], []]

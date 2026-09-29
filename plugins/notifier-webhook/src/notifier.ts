@@ -10,7 +10,6 @@ import {
   parseWith,
 } from '@ai-switchboard/sdk';
 
-/** Instance settings of the `webhook` notifier, after secrets are resolved. */
 export interface WebhookNotifierSettings {
   url: string;
   /** When set, the body is signed: `x-switchboard-signature: sha256=<hex>`. */
@@ -56,7 +55,6 @@ export const settingsSchema: JSONSchema = {
   },
 };
 
-/** The receiver did not accept a notification. */
 export class WebhookNotifyError extends Error {
   override readonly name = 'WebhookNotifyError';
 }

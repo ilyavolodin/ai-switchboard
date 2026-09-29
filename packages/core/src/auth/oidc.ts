@@ -6,7 +6,7 @@ import type { OidcConfig } from '../config.js';
 
 export interface OidcStart {
   url: string;
-  /** Signed, short-lived cookie value carrying state, nonce and the PKCE verifier. */
+  /** Signed and short-lived; carries state, nonce and the PKCE verifier. */
   cookie: string;
 }
 
@@ -28,19 +28,16 @@ interface FlowState {
 
 export const OIDC_FLOW_COOKIE = 'sb_oidc';
 
-/** Authorization-code flow with PKCE against any OpenID Connect issuer. */
 export class OidcClient {
   private configuration: Promise<client.Configuration> | undefined;
 
   constructor(
     private readonly config: OidcConfig,
     private readonly redirectUri: string,
-    /** Key used to sign the flow cookie. */
     private readonly cookieKey: string,
     private readonly options: { allowInsecure?: boolean } = {},
   ) {}
 
-  /** The issuer URL, for the "Sign in with …" button. */
   get issuer(): string {
     return this.config.issuer;
   }
@@ -106,7 +103,6 @@ export class OidcClient {
     return { url: url.href, cookie: this.encode(flow) };
   }
 
-  /** Exchange the code, validate the ID token, and apply the allowed-domain list. */
   async callback(currentUrl: URL, cookie: string | undefined, now: Date): Promise<OidcIdentity> {
     const flow = this.decode(cookie, now);
     const configuration = await this.discover();

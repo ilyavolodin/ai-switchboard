@@ -4,7 +4,6 @@ import type { DbOrTx } from '../db/client.js';
 import { destinations, notifiers, secretProviders, sources } from '../db/schema.js';
 import type { InstanceKind } from '../plugins/host.js';
 
-/** The columns every instance kind has. */
 export interface InstanceHead {
   id: string;
   typeId: string;
@@ -19,7 +18,6 @@ const TABLES = {
   secret_provider: secretProviders,
 } as const;
 
-/** The shared columns of one instance, or undefined when there is no such row. */
 export async function findInstance(
   db: DbOrTx,
   kind: InstanceKind,
@@ -34,9 +32,8 @@ export async function findInstance(
 }
 
 /**
- * `config_version + 1` for an instance table: set it in every write that changes what the plugin
- * host builds the live object from (name, settings, enabled), so every replica rebuilds it on its
- * next reconcile pass.
+ * Set in every write that changes what the live object is built from (name, settings, enabled),
+ * so every replica rebuilds it on its next reconcile pass.
  */
 export function nextConfigVersion(t: (typeof TABLES)[InstanceKind]): SQL {
   return sql`${t.configVersion} + 1`;
@@ -56,11 +53,7 @@ export async function setInstanceEnabled(
     .where(eq(t.id, id));
 }
 
-/**
- * Ask every replica to rebuild an instance (an explicit reload, e.g. after a secret rotated in
- * the backend): the version bump makes each replica's reconcile pass rebuild it, while the replica
- * that handles the request rebuilds it at once.
- */
+/** For an explicit reload, e.g. after a secret rotated in the backend. */
 export async function requestInstanceReload(
   db: DbOrTx,
   kind: InstanceKind,
@@ -78,7 +71,6 @@ export async function deleteInstance(db: DbOrTx, kind: InstanceKind, id: string)
   await db.delete(t).where(eq(t.id, id));
 }
 
-/** Forget a destination's stored health, e.g. the "unhealthy" mark a 401/403 invoke left. */
 export async function clearDestinationHealth(db: DbOrTx, id: string): Promise<void> {
   await db.update(destinations).set({ health: null }).where(eq(destinations.id, id));
 }

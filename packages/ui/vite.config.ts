@@ -3,11 +3,7 @@ import { defaultClientConditions, defineConfig } from 'vite';
 
 const backend = 'http://localhost:8080';
 
-/**
- * The UI builds into the core's static assets (`packages/core/public`), which Fastify serves.
- * In dev, API, ingress and health routes proxy to a core running on :8080; set
- * `VITE_MOCK_API=1` to run against the in-browser fixtures instead.
- */
+// Set `VITE_MOCK_API=1` to run against the in-browser fixtures instead of a core on :8080.
 export default defineConfig({
   plugins: [react()],
   resolve: { conditions: ['@ai-switchboard/source', ...defaultClientConditions] },

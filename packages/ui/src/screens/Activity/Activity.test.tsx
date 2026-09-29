@@ -7,7 +7,6 @@ import { TEST_NOW } from '../../test/constants.js';
 import { renderApp, renderWithProviders } from '../../test/render.js';
 import { Activity } from './Activity.js';
 
-/** Records the query of every GET /events. */
 function capture() {
   const seen: URLSearchParams[] = [];
   const { activity } = buildFixtures(TEST_NOW);
@@ -59,7 +58,6 @@ describe('Activity', () => {
       expect(seen.at(-1)?.get('stage')).toBe('unmatched');
     });
     expect(seen.at(-1)?.get('source')).toBe('src-linear');
-    // The default range sends a lower bound 24 h back.
     expect(seen.at(-1)?.get('from')).toBe('2026-09-26T12:00:00.000Z');
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Time range' }), 'all');

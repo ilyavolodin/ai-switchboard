@@ -1,6 +1,5 @@
 import { parseWith, type JSONSchema, type Settings } from '@ai-switchboard/sdk';
 
-/** Settings after validation, with defaults applied. */
 export interface GitHubSettings {
   authMode: 'app' | 'token';
   appId?: string;
@@ -96,7 +95,7 @@ export class GitHubSettingsError extends Error {
   override readonly name = 'GitHubSettingsError';
 }
 
-/** Validate settings against the schema (on a copy, so defaults do not leak back) and narrow. */
+/** Validates a copy, so defaults do not leak back. */
 export function readSettings(settings: Settings): GitHubSettings {
   return parseWith<GitHubSettings>(settingsSchema, settings, 'github settings', {
     error: GitHubSettingsError,

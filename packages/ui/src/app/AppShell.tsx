@@ -13,11 +13,6 @@ import { type Session, SessionContext } from './session.js';
 import { useGlobalShortcuts } from './shortcuts.js';
 import { TopBar } from './TopBar.js';
 
-/**
- * The layout route for every signed-in screen: resolves the session from `GET /auth/me`
- * (signed out → `/login`; a temporary password → `/change-password`), then renders the rail, top
- * bar, the evaluation-mode banner and the screen. Installs the global keyboard shortcuts.
- */
 export function AppShell() {
   const me = useMe();
   const logout = useLogout();

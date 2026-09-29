@@ -12,14 +12,13 @@ export interface IconButtonProps extends Omit<
   'type' | 'aria-label'
 > {
   icon: IconName;
-  /** Required accessible name; also shown as the tooltip. */
+  /** Also shown as the tooltip. */
   label: string;
   size?: 'sm' | 'md';
   variant?: 'outline' | 'ghost';
   requires?: Role;
 }
 
-/** An icon-only button (back, copy, close, theme). Always labelled; the label is the tooltip. */
 export function IconButton({
   icon,
   label,

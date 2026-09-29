@@ -36,7 +36,7 @@ export interface HttpClientOptions {
   logger?: Logger;
   /** Extra headers per request, e.g. W3C `traceparent` from the core's tracer. */
   injectHeaders?: () => Record<string, string>;
-  /** Replace the transport (tests). */
+  /** For tests. */
   fetch?: typeof fetch;
 }
 
@@ -187,9 +187,8 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         );
       }
       if (next.origin !== url.origin) {
-        // Never forward credentials to another origin. A plugin may carry one in any header
-        // (`x-api-key`, `dd-api-key`, a poll source's configured token header), so only headers
-        // known to be harmless, and the core's trace headers, follow the redirect.
+        // Never forward credentials to another origin. A credential can sit in any header, so
+        // only known-harmless headers and the core's trace headers follow the redirect.
         headers = Object.fromEntries(
           Object.entries(headers).filter(
             ([k]) => CROSS_ORIGIN_SAFE_HEADERS.has(k.toLowerCase()) || injectedKeys.has(k),

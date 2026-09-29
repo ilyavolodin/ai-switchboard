@@ -28,7 +28,6 @@ describe('Plugins', () => {
 
     const routines = within(table).getByRole('row', { name: /destination-claude-routines/ });
     expect(within(routines).getByText('0 errors · 2 invalid events · 24 h')).toBeInTheDocument();
-    // Baked-in plugins cannot be removed from the UI; installed ones can.
     expect(within(routines).queryByRole('button', { name: /Remove/ })).toBeNull();
     expect(
       screen.getByText(/@lola\/switchboard-source-braintrust unavailable · failed to load/),
@@ -93,7 +92,6 @@ describe('Plugins', () => {
         reason: 'we moved to Sentry',
       });
     });
-    // Loaded at once: no restart message.
     expect(await screen.findByText('Added · ready to use')).toBeInTheDocument();
     expect(screen.queryByText(/restart to apply/)).toBeNull();
   });

@@ -71,7 +71,6 @@ const tokenSettings: Settings = {
   webhookSecret: SECRET,
 };
 
-/** A small GitHub REST stub: the PR and issue from the fixtures, a rate limit, and 404s. */
 function githubApi(extra?: StubHandler): StubHandler {
   return async (req) => {
     const fromExtra = await extra?.(req);
@@ -123,7 +122,6 @@ runConformance(
         deliver(prLabeled),
         deliver(prLabeled, undefined, { 'x-github-delivery': 'redelivery-of-5d1f0a20' }),
       ],
-      // Same PR, same second, a different label: must not collapse.
       differentChange: [
         deliver(prLabeled),
         deliver(prLabeled, (b) => {

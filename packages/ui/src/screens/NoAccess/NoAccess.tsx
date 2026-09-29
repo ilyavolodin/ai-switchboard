@@ -4,7 +4,6 @@ import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { Logo } from '../../components/Logo.js';
 
-/** Where OIDC sends a signed-in person whose email is not allowed: "ask an admin". */
 export function NoAccess() {
   return (
     <div

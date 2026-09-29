@@ -9,17 +9,15 @@ export const SITES = [
 ] as const;
 export type Site = (typeof SITES)[number];
 
-/** The REST API host for a site. */
 export function apiHost(site: Site): string {
   return `api.${site}`;
 }
 
-/** The web app host for a site (monitor links). US1 and EU use `app.`; the others do not. */
+/** US1 and EU use `app.`; the others do not. */
 export function appHost(site: Site): string {
   return site === 'datadoghq.com' || site === 'datadoghq.eu' ? `app.${site}` : site;
 }
 
-/** Settings after validation, with defaults applied. */
 export interface DatadogSettings {
   headerName: string;
   sharedSecret: string;
@@ -80,7 +78,7 @@ export class DatadogSettingsError extends Error {
   override readonly name = 'DatadogSettingsError';
 }
 
-/** Validate settings against the schema (on a copy, so defaults do not leak back) and narrow. */
+/** Validates a copy, so defaults do not leak back. */
 export function readSettings(settings: Settings): DatadogSettings {
   return parseWith<DatadogSettings>(settingsSchema, settings, 'datadog settings', {
     error: DatadogSettingsError,

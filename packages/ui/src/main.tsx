@@ -23,7 +23,6 @@ import { applyTheme, getStoredTheme } from './app/theme.js';
 applyTheme(getStoredTheme());
 
 async function start(): Promise<void> {
-  // `VITE_MOCK_API=1 pnpm dev:ui` runs every screen against the fixtures, no backend needed.
   if (import.meta.env.VITE_MOCK_API === '1') {
     const { createMockApi } = await import('./api/mockApi.js');
     const mock = createMockApi({ delayMs: 150 });

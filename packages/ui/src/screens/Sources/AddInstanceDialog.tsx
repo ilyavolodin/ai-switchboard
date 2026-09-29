@@ -21,7 +21,6 @@ import { NpmSearch } from '../Plugins/NpmSearch.js';
 import styles from './forms.module.css';
 import { SamplePreview } from './SamplePreview.js';
 
-/** What the dialog hands back when the person presses Create. */
 export interface InstanceDraft<C> {
   type: PluginTypeDTO;
   name: string;
@@ -33,25 +32,17 @@ export interface AddInstanceDialogProps<C> {
   open: boolean;
   onClose: () => void;
   kind: 'source' | 'destination';
-  /** Installed types of this kind (`usePluginTypes(kind)`). */
   types: PluginTypeDTO[] | undefined;
   loading?: boolean;
-  /** Initial core caps for a type. */
   initialCaps: (type: PluginTypeDTO) => C;
-  /** The core caps block for the chosen type. */
   renderCaps: (type: PluginTypeDTO, caps: C, onChange: (next: C) => void) => ReactNode;
-  /** One line under a type's name in the picker ("push · 4 event types"). */
   describeType: (type: PluginTypeDTO) => string;
-  /** Sends the create request (asks for a reason); resolves true when it was created. */
   onSubmit: (draft: InstanceDraft<C>) => Promise<boolean>;
 }
 
 /**
- * "Add source" / "Add destination": pick an installed type — or find one on npm, review what it
- * asks for and install it (admins), which continues straight into its form — then name the
- * instance and fill the plugin's settings form (rendered from its `settingsSchema`, secrets as
- * `secret://` references) plus the core's caps. The form is kept while the reason prompt is
- * open, so cancelling it returns here with nothing lost.
+ * The form is kept while the reason prompt is open, so cancelling it returns here with nothing
+ * lost.
  */
 export function AddInstanceDialog<C>({
   open,
@@ -71,12 +62,10 @@ export function AddInstanceDialog<C>({
   const [caps, setCaps] = useState<C | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Installing from npm: the package under review, the types it brought, and a note.
   const [review, setReview] = useState<PluginSearchResult | null>(null);
   const [awaiting, setAwaiting] = useState<string[] | null>(null);
   const [installNote, setInstallNote] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
-  // The pasted sample delivery (push sources): feeds the preview panel and path suggestions.
   const [sample, setSample] = useState<SampleDraft>(EMPTY_SAMPLE);
   const inspect = useInspectPlugin();
   const install = useReasonedMutation(

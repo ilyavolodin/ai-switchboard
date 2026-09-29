@@ -81,7 +81,6 @@ describe('parseOtelConfig', () => {
       ),
     ).toEqual({ Authorization: 'Basic abc==', 'dd-api-key': 'k1' });
     expect(warnings).toHaveLength(2);
-    // Warnings name keys, never values.
     expect(warnings.join(' ')).not.toContain('abc');
   });
 

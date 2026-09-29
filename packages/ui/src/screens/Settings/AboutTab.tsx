@@ -13,7 +13,6 @@ import styles from './Settings.module.css';
 
 type Telemetry = AboutResponse['telemetry'];
 
-/** One signal's destination: "OTLP http/protobuf → http://collector:4318 · 1 header". */
 function signalTarget(s: Telemetry['signals'][number]): string {
   const parts: string[] = [];
   if (s.exporters.includes('otlp') && s.endpoint) {
@@ -71,7 +70,6 @@ function TelemetryCard({ telemetry }: { telemetry: Telemetry }) {
   );
 }
 
-/** About: versions, the database, the public URL, telemetry and every replica with a live dot. */
 export function AboutTab() {
   const about = useAbout();
   if (about.isPending) return <Skeleton shape="card" height={240} label="Loading about" />;

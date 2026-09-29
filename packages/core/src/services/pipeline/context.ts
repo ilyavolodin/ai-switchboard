@@ -8,28 +8,25 @@ import type { Deps } from '../../deps.js';
 import type { EvalFunctions, ExpressionEngine } from '../../expr/index.js';
 import type { CoreLogger } from '../../logger.js';
 
-/** Resolves a full `secret://<provider>/<name>` reference to its value. Supplied by the server. */
 export interface SecretResolver {
   resolve(ref: string): Promise<string>;
 }
 
 export interface PipelineDeps extends Deps {
   secrets: SecretResolver;
-  /** Heartbeat period; 0 disables the timer (tests). Default 30 000. */
+  /** 0 disables the timer (tests). Default 30 000. */
   heartbeatIntervalMs?: number;
-  /** Non-secret deployment values for `$env`; defaults to `process.env` (filtered by prefix). */
+  /** Non-secret values for `$env`; defaults to `process.env` filtered by prefix. */
   env?: Record<string, string | undefined>;
-  /** Time limit for a plugin call the pipeline waits on; default `PLUGIN_CALL_TIMEOUT_MS`. */
   pluginCallTimeoutMs?: number;
 }
 
-/** What every pipeline service function receives. */
 export interface Ctx extends PipelineDeps {
   engine: ExpressionEngine;
   log: CoreLogger;
 }
 
-/** Queue job names. Jobs carry ids only. */
+/** Jobs carry ids only. */
 export const JOBS = {
   match: 'pipeline.match',
   fire: 'pipeline.fire',
@@ -47,10 +44,7 @@ export const JOBS = {
   prune: 'retention.prune',
 } as const;
 
-/**
- * Jobs whose handlers run in a span even with no trace to continue (a sweep's dispatch, a poll).
- * The periodic housekeeping jobs (tick, maintenance, stats, prune) do not start traces.
- */
+/** Handlers that start a span even with no trace to continue; housekeeping jobs don't. */
 export const TRACED_JOBS: ReadonlySet<string> = new Set([
   JOBS.match,
   JOBS.fire,
@@ -76,8 +70,8 @@ function pgCode(err: unknown): string | undefined {
 }
 
 /**
- * Run `fn` in a transaction, retrying on unique violations, serialization failures and
- * deadlocks (a racing replica won; the retry re-reads and usually no-ops).
+ * Retries on unique violations, serialization failures and deadlocks: a racing replica won, and
+ * the retry re-reads and usually no-ops.
  */
 export async function withTx<T>(db: Db, fn: (tx: Tx) => Promise<T>, attempts = 4): Promise<T> {
   for (let i = 1; ; i++) {
@@ -90,12 +84,10 @@ export async function withTx<T>(db: Db, fn: (tx: Tx) => Promise<T>, attempts = 4
   }
 }
 
-/** A transaction-scoped advisory lock on an arbitrary key. */
 export async function lockKey(tx: DbOrTx, key: string): Promise<void> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 }
 
-/** `batches.decisions || records`: append decision records to a batch in an update. */
 export function appendDecisions(records: readonly GateDecisionRecord[]): SQL {
   return sql`${batches.decisions} || ${JSON.stringify(records)}::jsonb`;
 }
@@ -120,7 +112,6 @@ export function toEvent(row: EventRow): Event {
   };
 }
 
-/** The `process` value expressions see. */
 export function processView(row: ProcessRow): Record<string, unknown> {
   return {
     id: row.id,
@@ -136,9 +127,8 @@ function sameArtifact(a: ArtifactRef, b: ArtifactRef): boolean {
 }
 
 /**
- * `$resolve` / `$linked` for an evaluation over `events`: a reference is resolved through the
- * source of the event it belongs to, else through the first event's source, else through the
- * first of `fallbackSources` that can resolve.
+ * A reference resolves through the source of the event it belongs to, else the first event's
+ * source, else the first of `fallbackSources` that can resolve.
  */
 export function evalFunctions(
   ctx: Pick<Deps, 'runtime'>,
@@ -173,17 +163,12 @@ export function evalFunctions(
   };
 }
 
-/**
- * Default time limit for a plugin call (poll, readMeters, a notifier send, an action). An invoke
- * has its own, per-destination limit (`effectiveInvokeTimeoutSeconds`); an attempt's recovery
- * deadline budgets this limit for each `before` step.
- */
+/** Not for invoke, which has its own per-destination limit (`effectiveInvokeTimeoutSeconds`). */
 export const PLUGIN_CALL_TIMEOUT_MS = 45_000;
 
-/** Evaluation slack budgeted per `before` step on top of its action's time limit (`when`, args). */
+/** Per `before` step, on top of its action's time limit, for evaluating `when` and args. */
 export const STEP_EVAL_BUDGET_SECONDS = 10;
 
-/** The time the `before` steps of one attempt may take, in seconds, for the recovery deadline. */
 export function beforeStepBudgetSeconds(
   ctx: Pick<Ctx, 'pluginCallTimeoutMs'>,
   stepCount: number,
@@ -192,10 +177,7 @@ export function beforeStepBudgetSeconds(
   return stepCount * (perStep + STEP_EVAL_BUDGET_SECONDS);
 }
 
-/**
- * Await `call` for at most `ms`. A sync throw or a rejection propagates; a call that has not
- * settled in time yields `{ timedOut: true }` (the call itself keeps running and is ignored).
- */
+/** On timeout the call itself keeps running and its result is ignored. */
 export async function withTimeout<T>(
   ms: number,
   call: () => Promise<T> | T,
@@ -220,7 +202,6 @@ export async function withTimeout<T>(
 }
 
 /**
- * Await a plugin call with a time limit, so a plugin that never settles cannot hold a worker.
  * A timeout is counted against the plugin here; a throw was already counted by the runtime's
  * attribution wrapper. Either way the failure comes back as a value, never a rejection.
  */

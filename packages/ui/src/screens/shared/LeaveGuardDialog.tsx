@@ -3,7 +3,6 @@ import type { Blocker } from 'react-router';
 import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
 
-/** The "Leave without saving?" prompt for a blocked navigation (see `useLeaveGuard`). */
 export function LeaveGuardDialog({ blocker, summary }: { blocker: Blocker; summary: string }) {
   const stay = () => {
     blocker.reset?.();

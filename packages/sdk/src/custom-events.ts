@@ -1,26 +1,19 @@
-/**
- * Event types a person defines in a source's settings (the generic webhook and poll-http sources
- * do this): the settings-form schema for a definition, compiling definitions into `EventTypeSpec`s,
- * and narrowing a mapping's output to a declared event.
- */
+/** Event types a person defines in a source's settings (the generic webhook and poll-http sources). */
 import type { JSONSchema } from './types/common.js';
 import type { ArtifactRef, Attributes, EventTypeSpec } from './types/events.js';
 
-/** The attribute value kinds a person can declare for a custom event type. */
 export const ATTRIBUTE_KINDS = ['string', 'number', 'boolean', 'string[]'] as const;
 export type AttributeKind = (typeof ATTRIBUTE_KINDS)[number];
 
 /** Attribute names are identifiers, so filters can write `attributes.<name>`. */
 export const ATTRIBUTE_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
 
-/** One attribute of a person-defined event type. */
 export interface AttributeDefinition {
   name: string;
   type: AttributeKind;
   description?: string;
 }
 
-/** One person-defined event type, as stored in the instance settings. */
 export interface EventTypeDefinition {
   type: string;
   title: string;
@@ -29,16 +22,13 @@ export interface EventTypeDefinition {
   example?: Record<string, unknown>;
 }
 
-/** The regex (as a string) a custom event type id must match: `<sourceId>.<object>.<verb>`. */
+/** Regex source for `<sourceId>.<object>.<verb>`. */
 export function customEventTypePattern(sourceId: string): string {
   const escaped = sourceId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return `^${escaped}\\.[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_-]*$`;
 }
 
-/**
- * JSON Schema for one `EventTypeDefinition` inside a source's settings form. `exampleType` is
- * shown in the field description, e.g. `webhook.deploy.finished`.
- */
+/** Settings-form schema for one `EventTypeDefinition`; `exampleType` appears in the field help. */
 export function eventTypeDefinitionSchema(sourceId: string, exampleType: string): JSONSchema {
   return {
     type: 'object',
@@ -106,7 +96,6 @@ function attributeSchema(kind: AttributeKind, description?: string): JSONSchema 
   return description !== undefined ? { ...base, description } : base;
 }
 
-/** A definition compiled for mapping: the spec plus a name → kind lookup. */
 export interface CompiledEventType {
   spec: EventTypeSpec;
   attributes: Map<string, AttributeKind>;
@@ -123,9 +112,8 @@ function exampleFor(def: EventTypeDefinition, kinds: Map<string, AttributeKind>)
 }
 
 /**
- * Build the instance's event types from its definitions. Definitions whose type is outside
- * `sourceId`'s namespace are skipped; duplicate type ids keep the first definition; duplicate
- * attribute names keep the first declaration.
+ * Definitions outside `sourceId`'s namespace are skipped; for duplicate type ids and duplicate
+ * attribute names the first one wins.
  */
 export function compileEventTypes(
   sourceId: string,
@@ -157,9 +145,8 @@ export function compileEventTypes(
 }
 
 /**
- * Coerce a mapped value to the declared kind, forgivingly: numbers become strings for a string
- * attribute, numeric strings become numbers, a lone string becomes a one-element string[].
- * Returns `undefined` when the value cannot be represented, and the key is dropped.
+ * Forgiving coercion (numeric strings become numbers, a lone string becomes a string[]).
+ * `undefined` means the value cannot be represented and the key should be dropped.
  */
 export function coerceAttribute(
   value: unknown,
@@ -208,10 +195,7 @@ function scalarString(value: unknown): string | undefined {
   return undefined;
 }
 
-/**
- * Normalise a timestamp from a mapping: ISO strings and epoch numbers (seconds below 1e11,
- * milliseconds above) become ISO-8601. Anything unparseable yields `undefined`.
- */
+/** Epoch numbers below 1e11 are seconds, above are milliseconds. Unparseable gives `undefined`. */
 export function toIsoTime(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const ms = Math.abs(value) < 1e11 ? value * 1000 : value;
@@ -225,7 +209,6 @@ export function toIsoTime(value: unknown): string | undefined {
   return undefined;
 }
 
-/** One mapping result, validated and narrowed. */
 export interface MappedEvent {
   type: string;
   artifact: ArtifactRef;
@@ -234,10 +217,7 @@ export interface MappedEvent {
   deliveryId: string | undefined;
 }
 
-/**
- * Narrow one mapping result to a `MappedEvent`, or `null` when its type is not declared or its
- * artifact is unusable. Undeclared attribute keys are dropped.
- */
+/** `null` when the type is not declared or the artifact is unusable. Undeclared attributes are dropped. */
 export function narrowMapped(
   item: unknown,
   types: Map<string, CompiledEventType>,
@@ -269,7 +249,6 @@ export function narrowMapped(
   };
 }
 
-/** The value schema of one flat attribute: a scalar or an array of strings. */
 const FLAT_VALUE_SCHEMA: JSONSchema = {
   anyOf: [
     { type: 'string' },
@@ -280,16 +259,13 @@ const FLAT_VALUE_SCHEMA: JSONSchema = {
 };
 
 /**
- * An attributes schema for an event type whose attribute names are only known per delivery
- * (since SDK 1.4), e.g. a webhook that copies the body's top-level fields. Declared `properties`
- * stay typed; any other key is accepted when its value is flat (a scalar or a string array), so
- * the core's validation still refuses nested objects.
+ * For event types whose attribute names are only known per delivery. Undeclared keys are
+ * accepted only when flat, so the core's validation still refuses nested objects.
  */
 export function openAttributesSchema(properties: Record<string, JSONSchema> = {}): JSONSchema {
   return { type: 'object', properties, additionalProperties: FLAT_VALUE_SCHEMA };
 }
 
-/** Options for `flattenAttributes`. */
 export interface FlattenOptions {
   /** Nested objects are flattened this many levels (default 1: `deployment.id` → `deployment_id`). */
   depth?: number;
@@ -306,11 +282,8 @@ export function attributeKey(key: string): string {
 }
 
 /**
- * Turn an object's fields into flat attributes (since SDK 1.4): strings, finite numbers and
- * booleans are kept, arrays of scalars become string arrays, nested objects are flattened
- * `depth` levels with `_` (`deployment.id` → `deployment_id`), and keys are made
- * filter-friendly (`attributeKey`). Nulls, arrays of objects, deeper objects and over-long
- * strings are dropped, so `attributes.<name>` always works in a filter. A non-object gives `{}`.
+ * Arrays of scalars become string arrays; nulls, arrays of objects, deeper objects and
+ * over-long strings are dropped, so `attributes.<name>` always works in a filter.
  */
 export function flattenAttributes(value: unknown, options: FlattenOptions = {}): Attributes {
   const depth = options.depth ?? 1;

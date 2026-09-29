@@ -16,14 +16,13 @@ export type Input = unknown;
 
 export type RunMode = 'event' | 'sweep' | 'manual';
 
-/** The core's view of one run, handed to destination methods. */
 export interface RunHandle {
-  /** Core run id (uuid). Echo it back in callbacks and correlation inputs. */
+  /** Echo it back in callbacks and correlation inputs. */
   id: string;
   processId: string;
   processName: string;
   mode: RunMode;
-  /** When true, the destination should validate and simulate without doing work, if it can. */
+  /** Validate and simulate without doing work, if the destination can. */
   dryRun: boolean;
   /** Set once `invoke` returned one. */
   externalId?: string;
@@ -35,7 +34,6 @@ export interface RunHandle {
   deadline: IsoDateTime;
 }
 
-// Usage: per-run consumption, in dimensions the destination type declares
 export interface UsageDimension {
   id: string;
   title: string;
@@ -46,7 +44,7 @@ export interface UsageDimension {
 /** Keyed by dimension id. */
 export type UsageReport = Record<string, number>;
 
-// Meters: account-level remaining capacity, read on a schedule
+/** Account-level remaining capacity, read on a schedule. */
 export interface MeterSpec {
   id: string;
   title: string;
@@ -72,9 +70,7 @@ export interface MeterReading {
 }
 
 export interface InvokeResult {
-  /** Session id, workflow run id, request id. */
   externalId?: string;
-  /** Where a person can watch it. */
   externalUrl?: string;
   /**
    * `completed`/`failed` only for sync destinations. `held` means the backend refused because the
@@ -105,7 +101,6 @@ export interface CallbackResult {
   status: RunStatus;
 }
 
-/** A live destination object, one per enabled destination. */
 export interface Destination {
   /**
    * Start work. Throw `TransportError` (or let `HttpClient` throw it) so the core can tell
@@ -124,23 +119,18 @@ export interface Destination {
 export type TrackingMode = 'sync' | 'poll' | 'callback' | 'none';
 
 export interface DestinationType {
-  /** e.g. `'claude-routines'` */
   id: string;
   displayName: string;
   description?: string;
-  /**
-   * Optional (since SDK 1.3): the icon the UI shows for this type. Either a built-in icon name
-   * (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB, rendered through
-   * `<img>`. Without one the UI shows the kind's generic icon.
-   */
+  /** A built-in icon name (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB. */
   icon?: string;
-  /** Per instance: account credentials, base URL. */
+  /** Per instance (account credentials, base URL). */
   settingsSchema: JSONSchema;
-  /** Per process: what to run (routine id, workflow file, URL). */
+  /** Per process: what to run. */
   targetSchema: JSONSchema;
   /** What the process's input mapping must produce. */
   inputSchema: JSONSchema;
-  /** Example target and input, used by the conformance kit and the editor's placeholder. */
+  /** Used by the conformance kit and the editor's placeholder. */
   examples?: { target: Target; input: Input }[];
   /**
    * The tracking mode. A destination whose mode depends on the process's target (the generic
@@ -152,26 +142,18 @@ export interface DestinationType {
   idempotentInvoke: boolean;
   idempotentFor?(target: Target): boolean;
   /**
-   * Optional (since SDK 1.3): how long, in seconds, the core waits for `invoke` to answer
-   * before it gives up on the answer. The type's default; `invokeTimeoutFor` refines it per
-   * target and a destination's `invokeTimeoutSeconds` cap overrides both. Without any,
-   * the core waits 300 s; the effective value is clamped to 1–3600 s.
-   *
-   * A timeout is a lost response, not a plugin error: the request may have reached the
-   * backend, so the idempotency rule applies. An idempotent invoke is retried with the same
-   * run id; a non-idempotent one leaves the run `uncertain` for tracking to settle, never a
-   * second `invoke`. Recovery never treats an attempt as stale before this time has passed.
-   * Keep the plugin's own HTTP timeout below it, so a slow backend surfaces as the plugin's
-   * `TransportError` first.
+   * Seconds the core waits for `invoke` to answer (default 300, clamped to 1–3600).
+   * `invokeTimeoutFor` refines it per target; a destination's `invokeTimeoutSeconds` cap
+   * overrides both. A timeout is a lost response, so the idempotency rule applies: a
+   * non-idempotent run is left `uncertain`, never invoked twice. Keep the plugin's own HTTP
+   * timeout below it so a slow backend surfaces as a `TransportError` first.
    */
   invokeTimeoutSeconds?: number;
-  /** Optional (since SDK 1.3): the invoke timeout for one target (e.g. a target's own timeout). */
+  /** Invoke timeout for one target, in seconds. */
   invokeTimeoutFor?(target: Target): number | undefined;
-  /** What this backend reports per run (may be empty). */
   usage: UsageDimension[];
-  /** Instance-specific dimensions (the `http` destination declares them per instance). */
+  /** Instance-specific usage dimensions. */
   usageFor?(settings: Settings): UsageDimension[];
-  /** What this backend reports about its remaining capacity. */
   meters?: MeterSpec[];
   metersFor?(settings: Settings): MeterSpec[];
   actions?: ActionSpec[];

@@ -6,7 +6,6 @@ import type { PluginRuntime } from './plugins/runtime.js';
 import type { JobQueue } from './queue/queue.js';
 import type { Telemetry } from './telemetry/telemetry.js';
 
-/** Everything a service needs, passed explicitly. */
 export interface Deps {
   db: Db;
   clock: Clock;

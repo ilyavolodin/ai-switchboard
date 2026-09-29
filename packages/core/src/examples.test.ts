@@ -113,7 +113,7 @@ describe('examples/*.yaml', async () => {
         const c = validateAgainst(t.targetSchema, structuredClone(p.destination?.target));
         if (!c.valid) problems.push(`process ${p.name} target: ${c.errors.join('; ')}`);
       }
-      // Structural check with ids standing in for names.
+      // Ids stand in for names.
       const structural = validateAgainst(processDocumentSchema, {
         ...p,
         triggers: (p.triggers ?? []).map(({ source, ...rest }) => ({ ...rest, sourceId: source })),

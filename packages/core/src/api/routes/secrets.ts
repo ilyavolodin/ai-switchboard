@@ -5,9 +5,8 @@ import type { ApiContext } from '../context.js';
 import { providerSecrets } from '../read/secrets.js';
 
 /**
- * `GET /api/v1/secret-providers/:id/secrets`: the names a secret provider makes available and
- * which instances and processes reference each. Never a value. Admin only: secret names map out
- * the credentials a deployment holds, and admins are the role that manages secret providers.
+ * Names only, never a value. Admin only: secret names map out the credentials a deployment
+ * holds.
  */
 export function registerSecretRoutes(app: FastifyInstance, ctx: ApiContext): void {
   app.get<{ Params: { id: string } }>(

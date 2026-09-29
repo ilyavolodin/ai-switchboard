@@ -29,13 +29,6 @@ import { explanationsFor } from './explain.js';
 import { isUuid } from './pipeline/errors.js';
 import { relatedBatchIds } from './pipeline/load.js';
 
-/**
- * The trace: every event, filter decision, dedupe, batch open/join/close, gate check, budget
- * check (binding limit, counters and meter readings at that moment), approval, step, invoke,
- * tracking update, terminal state and notification for an artifact (or one event), as one
- * vertical timeline sorted by time, plus the same timeline as copyable text.
- */
-
 type EventRow = typeof events.$inferSelect;
 
 const MAX_EVENTS = 200;

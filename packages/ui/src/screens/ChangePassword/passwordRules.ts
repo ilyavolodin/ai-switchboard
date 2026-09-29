@@ -1,6 +1,6 @@
 /**
- * The local password rules, as the form shows them. The server (`auth/password-policy.ts`) is the
- * authority and also rejects the most common passwords; these checks give feedback while typing.
+ * The server (`auth/password-policy.ts`) is the authority and also rejects the most common
+ * passwords; these checks only give feedback while typing.
  */
 export const PASSWORD_MIN_LENGTH = 8;
 
@@ -9,7 +9,6 @@ export interface PasswordRule {
   met: boolean;
 }
 
-/** Each rule and whether `password` meets it for the account `email`. */
 export function passwordRules(password: string, email: string): PasswordRule[] {
   const address = email.trim().toLowerCase();
   const local = address.split('@')[0] ?? '';
@@ -27,7 +26,6 @@ export function passwordRules(password: string, email: string): PasswordRule[] {
   ];
 }
 
-/** The first unmet rule as an error message, or null when the password can be sent. */
 export function passwordError(password: string, email: string): string | null {
   if (password.length < PASSWORD_MIN_LENGTH)
     return `Use at least ${PASSWORD_MIN_LENGTH} characters.`;

@@ -4,9 +4,8 @@ import { useEffect } from 'react';
 const OPTIONS = { padding: 0.06, maxZoom: 1 } as const;
 
 /**
- * Refits the canvas when its container changes size (the window, the banner, the canvas growing
- * to fill the page) or the laid-out graph changes (a filter, a new node); React Flow's `fitView`
- * prop only fits the first render. Render inside `<ReactFlow>`.
+ * React Flow's `fitView` prop only fits the first render, so refit when the container resizes or
+ * the laid-out graph changes. Render inside `<ReactFlow>`.
  */
 export function FitView({ layoutKey }: { layoutKey: string }) {
   const { fitView } = useReactFlow();

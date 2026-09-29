@@ -317,7 +317,6 @@ export const eventTypes: EventTypeSpec[] = [
   },
 ];
 
-/** The webhook events `provision` subscribes to. */
 export const WEBHOOK_EVENTS = [
   'pull_request',
   'pull_request_review',

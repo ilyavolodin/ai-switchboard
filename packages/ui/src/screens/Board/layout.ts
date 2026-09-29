@@ -1,7 +1,6 @@
 /**
- * Deterministic left-to-right layout for the Board: three columns (sources, processes,
- * destinations), rows ordered by the barycentre of their neighbours to reduce crossings, columns
- * centred on the tallest. Pure, so it is unit-tested and stable between polls.
+ * Rows are ordered by the barycentre of their neighbours to reduce crossings. Pure, so it is stable
+ * between polls.
  */
 import type {
   BoardEdge,
@@ -11,7 +10,6 @@ import type {
   BoardSourceNode,
 } from '@ai-switchboard/core/contract';
 
-/** Column geometry (px), matching the canvas mockup. */
 export const COLUMNS = {
   source: { x: 0, width: 200, row: 100 },
   process: { x: 300, width: 240, row: 72 },
@@ -20,7 +18,6 @@ export const COLUMNS = {
 
 export type BoardNodeKind = keyof typeof COLUMNS;
 
-/** A positioned node. */
 export interface LaidOutNode {
   id: string;
   kind: BoardNodeKind;
@@ -30,7 +27,6 @@ export interface LaidOutNode {
   node: BoardSourceNode | BoardProcessNode | BoardDestinationNode;
 }
 
-/** A styled edge. */
 export interface LaidOutEdge {
   id: string;
   kind: BoardEdge['kind'];
@@ -38,9 +34,8 @@ export interface LaidOutEdge {
   target: string;
   /** Stroke width ∝ √(24 h volume / max volume of its kind), 1–4.5 px. */
   width: number;
-  /** No flow in the last minutes (or disabled): drawn dashed. */
   dashed: boolean;
-  /** Animated dots: something flowed in the last 5 minutes. */
+  /** Something flowed in the last 5 minutes. */
   live: boolean;
   enabled: boolean;
   label: string;
@@ -56,13 +51,10 @@ export interface BoardLayout {
 }
 
 export interface LayoutOptions {
-  /** Drop disabled sources, processes, destinations and edges. */
   hideDisabled?: boolean;
-  /** Keep only this process, the sources that trigger it and the destination it binds to. */
   focusProcessId?: string | null;
 }
 
-/** Edge stroke width from volume: a picture of how much flows. */
 export function edgeWidth(volume: number, maxVolume: number): number {
   if (maxVolume <= 0 || volume <= 0) return 1.1;
   return Math.round((1.1 + 3.4 * Math.sqrt(volume / maxVolume)) * 10) / 10;
@@ -85,7 +77,6 @@ function sortByBarycentre<T extends { id: string }>(
     .map((x) => x.item);
 }
 
-/** Lays the board out. */
 export function layoutBoard(board: BoardResponse, options: LayoutOptions = {}): BoardLayout {
   let { sources, processes, destinations, edges } = board;
 

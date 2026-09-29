@@ -1,23 +1,12 @@
-/**
- * The OpenTelemetry configuration, parsed from the standard `OTEL_*` environment variables
- * (https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/) plus
- * `SWITCHBOARD_PROMETHEUS`. Pure: env in, typed config out. An invalid value is never fatal; it
- * adds a warning (logged at startup) and the default applies.
- *
- * One deliberate difference from the spec: with no OTLP endpoint configured (generic or
- * per-signal) and no explicit `OTEL_<SIGNAL>_EXPORTER=otlp`, a signal does not export over OTLP,
- * so an installation without a collector does not retry `localhost:4318` forever.
- */
-
 export type OtlpProtocol = 'http/protobuf' | 'http/json' | 'grpc';
 export type OtelSignal = 'traces' | 'metrics' | 'logs';
 export type PushExporter = 'otlp' | 'console';
 
 export interface OtlpExporterConfig {
-  /** The URL the exporter sends to: `<base>/v1/<signal>` for HTTP, the base for gRPC. */
+  /** `<base>/v1/<signal>` for HTTP, the base for gRPC. */
   url: string;
   protocol: OtlpProtocol;
-  /** Merged generic and per-signal headers. Carry API keys: never log or return them. */
+  /** Carry API keys: never log or return them. */
   headers: Record<string, string>;
   timeoutMillis: number;
   compression: 'gzip' | 'none';
@@ -38,20 +27,18 @@ export interface SignalConfig {
 }
 
 export interface OtelConfig {
-  /** `OTEL_SDK_DISABLED=true`: no providers at all (no export, no `/metrics`). */
+  /** No providers at all (no export, no `/metrics`). */
   disabled: boolean;
   serviceName: string;
-  /** `OTEL_RESOURCE_ATTRIBUTES`, parsed (service.name removed; it is `serviceName`). */
+  /** Without `service.name`, which is `serviceName`. */
   resourceAttributes: Record<string, string>;
   traces: SignalConfig & { sampler: SamplerName; samplerRatio: number };
   metrics: SignalConfig & {
-    /** Serve Prometheus exposition at `GET /metrics`. */
     prometheus: boolean;
     exportIntervalMillis: number;
     exportTimeoutMillis: number;
   };
   logs: SignalConfig;
-  /** Problems with the given values; each names the variable and the default used instead. */
   warnings: string[];
 }
 
@@ -67,7 +54,7 @@ const SAMPLERS: readonly SamplerName[] = [
 ];
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-/** Longer than the spec's 60 s would make one-minute Grafana rates sparse; the heartbeat is 30 s. */
+/** Not the spec's 60 s, which makes one-minute Grafana rates sparse; the heartbeat is 30 s. */
 const DEFAULT_METRIC_INTERVAL_MS = 30_000;
 const DEFAULT_METRIC_TIMEOUT_MS = 30_000;
 
@@ -100,9 +87,8 @@ function positiveInt(env: Env, name: string, fallback: number, warnings: string[
 }
 
 /**
- * `key1=value1,key2=value2` (W3C Baggage octets, values percent-decoded), the format of
- * `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_RESOURCE_ATTRIBUTES`. Malformed members are skipped
- * with a warning that names the key only (header values carry API keys).
+ * `key1=value1,key2=value2`, values percent-decoded. Warnings name the key only: header values
+ * carry API keys.
  */
 export function parseKeyValueList(
   value: string | undefined,
@@ -158,7 +144,6 @@ function compressionOf(env: Env, name: string, fallback: 'gzip' | 'none', warnin
   return fallback;
 }
 
-/** The OTLP exporter for one signal, or undefined when none is configured. */
 function otlpFor(
   env: Env,
   signal: OtelSignal,
@@ -180,7 +165,6 @@ function otlpFor(
     genericRaw !== undefined ? url(genericRaw, 'OTEL_EXPORTER_OTLP_ENDPOINT', warnings) : undefined;
   let target: string | undefined;
   if (signalUrl !== undefined) {
-    // Per spec, a per-signal endpoint is used as-is.
     target = signalUrl;
   } else if (genericUrl !== undefined) {
     target = protocol === 'grpc' ? genericUrl : `${genericUrl.replace(/\/+$/, '')}/v1/${signal}`;
@@ -227,7 +211,6 @@ function hasEndpoint(env: Env, signal: OtelSignal): boolean {
   );
 }
 
-/** `OTEL_<SIGNAL>_EXPORTER`: a comma-separated list of otlp, console, none (+ prometheus for metrics). */
 function exportersFor(
   env: Env,
   signal: OtelSignal,
@@ -285,6 +268,11 @@ function samplerOf(env: Env, warnings: string[]): { sampler: SamplerName; ratio:
   return { sampler, ratio };
 }
 
+/**
+ * An invalid value is never fatal: it adds a warning and the default applies. Unlike the spec,
+ * with no OTLP endpoint and no explicit `OTEL_<SIGNAL>_EXPORTER=otlp` a signal does not export
+ * over OTLP, so an installation without a collector does not retry `localhost:4318` forever.
+ */
 export function parseOtelConfig(env: Env): OtelConfig {
   const warnings: string[] = [];
   const disabled = bool(env, 'OTEL_SDK_DISABLED', false, warnings);
@@ -340,12 +328,11 @@ export function parseOtelConfig(env: Env): OtelConfig {
   };
 }
 
-/** Whether `signal` exports anywhere (OTLP or console). */
 export function exportsSignal(config: OtelConfig, signal: OtelSignal): boolean {
   return !config.disabled && config[signal].exporters.length > 0;
 }
 
-/** What Settings › About shows: where each signal goes. Never headers or URL credentials. */
+/** Never headers or URL credentials. */
 export interface TelemetryStatus {
   enabled: boolean;
   serviceName: string;
@@ -354,9 +341,9 @@ export interface TelemetryStatus {
     signal: OtelSignal;
     exporters: PushExporter[];
     protocol: OtlpProtocol | null;
-    /** `scheme://host[:port]` of the OTLP endpoint, never its path, query or credentials. */
+    /** `scheme://host[:port]` only. */
     endpoint: string | null;
-    /** How many headers are configured (their names and values are not shown). */
+    /** A count: names and values are not shown. */
     headers: number;
   }[];
   sampler: string;

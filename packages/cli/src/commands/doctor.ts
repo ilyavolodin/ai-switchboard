@@ -4,7 +4,7 @@ import type { CliDeps } from '../deps.js';
 import { checkLine } from '../output.js';
 import { run } from './run.js';
 
-/** `switchboard doctor`: the server's own checks, run locally with the same environment. */
+/** The server's own checks, run locally with the same environment. */
 export function doctorCommand(deps: CliDeps): Command {
   return new Command('doctor')
     .description(

@@ -9,10 +9,8 @@ import { dueSweep, type DueSweep } from '../../scheduler/due.js';
 import { JOBS, appendDecisions, withTx, type Ctx, type ProcessRow } from './context.js';
 
 /**
- * `scheduler.tick` (every minute): for every enabled schedule of every enabled process, fire the
- * sweep it owes. The `schedule_ticks` primary key makes each tick fire once across replicas. A
- * sweep skips matching and enters the pipeline at the gate; open event batches of the process
- * merge into it (one run).
+ * The `schedule_ticks` primary key makes each tick fire once across replicas. Open event batches
+ * of the process merge into the sweep, so they make one run.
  */
 export async function schedulerTick(ctx: Ctx): Promise<string[]> {
   const now = ctx.clock.now();
@@ -36,7 +34,6 @@ export async function schedulerTick(ctx: Ctx): Promise<string[]> {
   return fired;
 }
 
-/** Record the tick and create the sweep batch, merging open event batches. */
 export async function createSweep(
   ctx: Ctx,
   proc: ProcessRow,

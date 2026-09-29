@@ -1,10 +1,7 @@
 import type { IconName as SdkIconName } from '@ai-switchboard/sdk/icons';
 import type { ReactNode, SVGProps } from 'react';
 
-/**
- * The icon set: 16×16 stroke icons (1.5 px, `currentColor`) copied from the canvas mockups.
- * No emoji anywhere; every icon is decorative (`aria-hidden`) unless given a `title`.
- */
+/** Every icon is decorative (`aria-hidden`) unless given a `title`. */
 const PATHS = {
   board: (
     <>
@@ -98,16 +95,13 @@ const PATHS = {
       <path d="M12.5 1v3h-3M3.5 15v-3h3" />
     </>
   ),
-  /** A sweep (scheduled run) and batching timers. */
   clock: (
     <>
       <circle cx="8" cy="8" r="6" />
       <path d="M8 4.5V8l2.5 1.5" />
     </>
   ),
-  /** An event-driven run. */
   event: <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />,
-  /** A manual run. */
   manual: (
     <path d="M4 8.5V3.5a1 1 0 0 1 2 0V8M6 7V2.5a1 1 0 0 1 2 0V7M8 7V3a1 1 0 0 1 2 0v4.5M10 8V4.5a1 1 0 0 1 2 0v5c0 2.5-1.5 4.5-4 4.5S4 12 4 9.5" />
   ),
@@ -222,18 +216,15 @@ const PATHS = {
   // Exactly the SDK's `ICON_NAMES`, so a plugin-declared icon name always has a drawing here.
 } satisfies Record<SdkIconName, ReactNode>;
 
-/** Every icon name. */
 export type IconName = keyof typeof PATHS;
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   name: IconName;
-  /** Pixel size (default 16; the canvas uses 14 inside chips and 13 in dense rows). */
   size?: number;
   /** When given, the icon is announced with this label instead of being hidden. */
   title?: string;
 }
 
-/** A stroke icon from the canvas set. */
 export function Icon({ name, size = 16, title, ...rest }: IconProps) {
   return (
     <svg

@@ -63,7 +63,6 @@ const baseSettings: Settings = { apiKey: API_KEY, webhookSecret: SECRET };
 
 type Gql = (variables: Record<string, unknown>, req: StubRequest) => StubReply | undefined;
 
-/** A GraphQL stub dispatching on the operation name. */
 function linearApi(ops: Record<string, Gql> = {}): StubHandler {
   return (req) => {
     if (req.url.href !== 'https://api.linear.app/graphql' || req.method !== 'POST')

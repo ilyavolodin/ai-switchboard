@@ -1,8 +1,3 @@
-/**
- * Small runtime-checked accessors for webhook and API payloads. Payloads are `unknown` at the
- * boundary; these read one field at a time and yield `undefined` for anything of the wrong type.
- */
-
 export type Json = Record<string, unknown>;
 
 export function obj(value: unknown): Json | undefined {
@@ -27,7 +22,6 @@ export function arr(value: unknown): unknown[] {
   return Array.isArray(value) ? (value as unknown[]) : [];
 }
 
-/** Read a nested field: `path(body, 'pull_request', 'head', 'ref')`. */
 export function path(value: unknown, ...keys: string[]): unknown {
   let current: unknown = value;
   for (const key of keys) {
@@ -38,7 +32,6 @@ export function path(value: unknown, ...keys: string[]): unknown {
   return current;
 }
 
-/** Parse a JSON body; `undefined` when it is not a JSON object. */
 export function parseJsonObject(text: string): Json | undefined {
   try {
     return obj(JSON.parse(text));

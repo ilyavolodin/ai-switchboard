@@ -10,17 +10,13 @@ import type {
   StatsWindow,
 } from '@ai-switchboard/core/contract';
 
-/**
- * Query keys, one factory per area. The first element is the area, so invalidating `['sources']`
- * refreshes every sources query. Mutations invalidate by area prefix (the `invalidate` list of
- * each `useApiMutation` in `hooks/`).
- */
+/** The first element is the area, so invalidating `['sources']` refreshes every sources query. */
 export const qk = {
   me: ['me'] as const,
   whoami: ['me', 'whoami'] as const,
   status: ['status'] as const,
   board: ['board'] as const,
-  /** Prefix of every `pluginTypes(kind)` key (installing a plugin refreshes them all). */
+  /** Installing a plugin invalidates this prefix to refresh every `pluginTypes(kind)`. */
   pluginTypesAll: ['plugin-types'] as const,
   pluginTypes: (kind?: PluginKind) => ['plugin-types', kind ?? 'all'] as const,
 
@@ -89,10 +85,7 @@ export const qk = {
   },
 
   instances: (kind: 'notifiers' | 'secret-providers') => [kind] as const,
-  /**
-   * Under the secret-providers key, so saving, reloading or deleting a provider (which
-   * invalidates `instances('secret-providers')`) refreshes its listing too.
-   */
+  /** Under the secret-providers key, so `instances('secret-providers')` invalidates it. */
   providerSecrets: (id: string) => ['secret-providers', 'secrets', id] as const,
 
   settings: ['settings'] as const,
@@ -102,12 +95,9 @@ export const qk = {
   about: ['about'] as const,
 };
 
-/** Polling intervals for live data, in ms. */
+/** Polling intervals, in ms. */
 export const POLL = {
-  /** Board and top-bar status strip. */
   live: 10_000,
-  /** Lists that change with the fleet (sources, destinations, processes, approvals). */
   lists: 30_000,
-  /** The activity stream. */
   activity: 15_000,
 } as const;

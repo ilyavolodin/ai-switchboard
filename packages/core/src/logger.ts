@@ -16,13 +16,11 @@ export type CoreLogger = PinoLogger;
 export interface LoggerOptions {
   level?: string;
   pretty?: boolean;
-  /** Also emit every line as an OpenTelemetry log record (OTLP logs export is configured). */
+  /** Also emit every line as an OpenTelemetry log record. */
   exportLogs?: boolean;
-  /** Write here instead of stdout (tests). */
   destination?: DestinationStream;
 }
 
-/** `trace_id` / `span_id` of the active span on every line logged inside one. */
 function traceMixin(): Record<string, string> {
   const span = trace.getSpan(context.active());
   if (!span) return {};
@@ -73,7 +71,6 @@ export function createLogger(options: LoggerOptions = {}): CoreLogger {
   );
 }
 
-/** Adapt the core's pino logger to the SDK's `Logger` handed to plugins. */
 export function toPluginLogger(logger: CoreLogger): Logger {
   const wrap = (l: PinoLogger): Logger => ({
     debug: (message: string, fields?: LogFields) => l.debug(fields ?? {}, message),
@@ -85,7 +82,6 @@ export function toPluginLogger(logger: CoreLogger): Logger {
   return wrap(logger);
 }
 
-/** A silent logger for tests. */
 export function silentLogger(): CoreLogger {
   return pino({ level: 'silent' });
 }

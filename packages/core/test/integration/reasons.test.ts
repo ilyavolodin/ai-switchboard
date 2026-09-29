@@ -79,7 +79,6 @@ describe('requireReasons off', () => {
       .from(auditLog)
       .where(and(eq(auditLog.scope, 'settings'), eq(auditLog.field, 'requireReasons')));
     expect(toggle).toMatchObject({ before: true, after: false, reason: 'team prefers no prompts' });
-    // Applied at once on the replica that wrote it.
     expect((await me()).requireReasons).toBe(false);
 
     const created = await h.request('POST', '/api/v1/users', {
@@ -93,7 +92,6 @@ describe('requireReasons off', () => {
       body: { role: 'operator', reason: '   ' },
     });
     expect(blank.statusCode, blank.body).toBe(200);
-    // A bodiless DELETE works too.
     const removed = await h.request('DELETE', `/api/v1/users/${user.id}`, {
       cookie: h.adminCookie,
     });

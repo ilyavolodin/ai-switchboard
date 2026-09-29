@@ -10,12 +10,11 @@ import { recordAudit } from './audit.js';
 import { storePassword } from './users.js';
 
 /**
- * Account recovery for whoever runs the server (`switchboard users ...`). It talks to Postgres
- * directly, so it works when nobody can sign in; server access is the credential. Every change
- * carries a reason and writes `audit_log`, like the API.
+ * Account recovery for `switchboard users ...`. It talks to Postgres directly, so it works when
+ * nobody can sign in; server access is the credential.
  */
 
-/** One account as `switchboard users list` shows it. Never includes a password hash. */
+/** Never includes a password hash. */
 export interface AccountSummary {
   email: string;
   role: Role;
@@ -26,7 +25,6 @@ export interface AccountSummary {
   createdAt: string;
 }
 
-/** Who did it and why, for the audit row (`cli@<hostname>` from the CLI). */
 export interface RecoveryAudit {
   actor: string;
   reason: string;
@@ -35,7 +33,7 @@ export interface RecoveryAudit {
 
 export interface SetTemporaryPasswordInput {
   email: string;
-  /** Checked against the password rules; omitted, a password is generated. */
+  /** Omitted, a password is generated. */
   password?: string;
   audit: RecoveryAudit;
 }
@@ -43,16 +41,16 @@ export interface SetTemporaryPasswordInput {
 export interface TemporaryPasswordResult {
   email: string;
   role: Role;
-  /** The temporary password, to show once. Never stored or logged. */
+  /** Show once; never stored or logged. */
   password: string;
   generated: boolean;
-  /** For `createAdmin`: whether the account was created, promoted, or already an admin. */
+  /** Set by `createAdmin`. */
   change?: 'created' | 'promoted' | 'unchanged';
 }
 
 export type RecoveryErrorCode = 'unknown_user' | 'invalid_password' | 'invalid_email' | 'no_reason';
 
-/** A refusal the CLI prints as is. `suggestions` are close existing emails for `unknown_user`. */
+/** The CLI prints the message as is. `suggestions` are close existing emails for `unknown_user`. */
 export class RecoveryError extends Error {
   override readonly name = 'RecoveryError';
   constructor(
@@ -64,7 +62,6 @@ export class RecoveryError extends Error {
   }
 }
 
-/** Duck-typed guard: the CLI sees this error across the package boundary. */
 export function isRecoveryError(err: unknown): err is RecoveryError {
   return (
     typeof err === 'object' &&
@@ -92,7 +89,7 @@ export async function listAccounts(db: Db): Promise<AccountSummary[]> {
   return (await db.select().from(users).orderBy(users.email)).map(toSummary);
 }
 
-/** Edit distance, for "did you mean". Emails are short, so the quadratic table is fine. */
+/** Emails are short, so the quadratic table is fine. */
 export function levenshtein(a: string, b: string): number {
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
@@ -107,9 +104,8 @@ export function levenshtein(a: string, b: string): number {
 }
 
 /**
- * Existing emails close to `email`, best first: a small edit distance on the whole address or
- * on its local part, the same local part at another domain, or (when nothing is closer) the same
- * domain. At most `limit`.
+ * Best first: a small edit distance on the whole address or its local part, the same local part
+ * at another domain, or (when nothing is closer) the same domain.
  */
 export function closeEmails(email: string, candidates: readonly string[], limit = 5): string[] {
   const wanted = normalise(email);
@@ -153,17 +149,11 @@ async function unknownUser(db: Db, email: string): Promise<RecoveryError> {
   return new RecoveryError('unknown_user', `No account has the email ${email}.`, suggestions);
 }
 
-/** Forget the sign-in failures that may have locked this account out. */
 async function clearFailures(db: Db, email: string, userId: string): Promise<void> {
   await db.delete(loginAttempts).where(eq(loginAttempts.key, emailKey(email)));
   await db.delete(loginAttempts).where(eq(loginAttempts.key, `password:${userId}`));
 }
 
-/**
- * Give an existing account a temporary password: it must be changed at the next sign-in, every
- * session of the account is revoked, the account's sign-in failures are cleared, and the audit
- * log records that the password was reset (never the value).
- */
 export async function resetPassword(
   db: Db,
   input: SetTemporaryPasswordInput,
@@ -184,10 +174,7 @@ export async function resetPassword(
   return { email, role: row.role, password, generated };
 }
 
-/**
- * Break glass: make `email` a local admin with a temporary password, creating the account when
- * it does not exist and promoting it when it does. Revokes its sessions and audits each change.
- */
+/** Break glass: creates the account when missing, promotes it when it exists. */
 export async function createAdmin(
   db: Db,
   input: SetTemporaryPasswordInput,

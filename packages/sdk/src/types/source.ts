@@ -12,12 +12,11 @@ import type { PluginContext } from './context.js';
 
 export interface ProvisionResult {
   ok: boolean;
-  /** The external system's id for the created webhook, if any. */
+  /** The external system's id for the created webhook. */
   externalId?: string;
   message?: string;
 }
 
-/** What `Source.parseWithNotes` returns (since SDK 1.4). */
 export interface ParseReport {
   events: EventDraft[];
   /** Why parts of the delivery produced no event, for the person previewing a sample. */
@@ -29,30 +28,21 @@ export interface PollResult {
   watermark: string;
 }
 
-/** A live source object, one per enabled source instance. */
 export interface Source {
-  // push
   /** Signature / shared-secret check. Runs before `parse`; never trust an unverified body. */
   verify?(req: RawRequest): VerifyResult;
-  /**
-   * One delivery → 0..n events. Must be pure and deterministic (no I/O, no clock). May be async
-   * because JSONata evaluation is.
-   */
+  /** Must be pure and deterministic (no I/O, no clock). May be async because JSONata is. */
   parse?(req: RawRequest): EventDraft[] | Promise<EventDraft[]>;
   /**
-   * Optional (since SDK 1.4): `parse` plus plain-language notes on what the delivery did not
-   * produce and why ("no rule matched: headers.x-event-type is `issue.updated`"). The core's
-   * sample-delivery preview calls it instead of `parse` when present, so a person setting up a
-   * source sees why an event is missing. Must return the same events `parse` returns, stay pure,
+   * `parse` plus notes on why parts of the delivery produced no event; the sample-delivery
+   * preview calls it instead of `parse`. Must return the same events as `parse`, stay pure,
    * and never put a secret or the raw body in a note.
    */
   parseWithNotes?(req: RawRequest): ParseReport | Promise<ParseReport>;
   /** Register the webhook in the external system via its API. */
   provision?(webhookUrl: string): Promise<ProvisionResult>;
-  // pull
   /** Fetch events after `watermark`; must advance the watermark and never re-emit. */
   poll?(watermark: string | null): Promise<PollResult>;
-  // shared
   /** Live state for filters and mappings. Never cached. Returns `null` when the artifact is gone. */
   resolve?(ref: ArtifactRef): Promise<ArtifactSnapshot | null>;
   /** e.g. PR → its tracker issue. */
@@ -62,25 +52,19 @@ export interface Source {
 }
 
 export interface SourceType {
-  /** e.g. `'github'`; kebab-case, unique across all plugins. */
+  /** Kebab-case, unique across all plugins. */
   id: string;
   displayName: string;
   description?: string;
-  /**
-   * Optional (since SDK 1.3): the icon the UI shows for this type. Either a built-in icon name
-   * (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB, rendered through
-   * `<img>`. Without one the UI shows the kind's generic icon.
-   */
+  /** A built-in icon name (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB. */
   icon?: string;
   mode: 'push' | 'pull' | 'both';
-  /** Per instance: credential refs, org, filters. */
   settingsSchema: JSONSchema;
   eventTypes: EventTypeSpec[];
   actions?: ActionSpec[];
   /**
-   * When true, the person defines event types and attribute mapping per instance (the generic
-   * `webhook` source). `eventTypes` then lists only a template, and the instance's own
-   * definitions come from `instanceEventTypes(settings)`.
+   * The person defines event types per instance; `eventTypes` is then only a template and the
+   * real ones come from `instanceEventTypes(settings)`.
    */
   dynamicEventTypes?: boolean;
   instanceEventTypes?(settings: Settings): EventTypeSpec[];

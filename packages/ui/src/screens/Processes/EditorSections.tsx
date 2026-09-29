@@ -1,7 +1,3 @@
-/**
- * The simpler editor sections (batching, schedules, gates, notifications). Triggers, budgets,
- * destination and steps live in their own files.
- */
 import type { InstanceSummary, ProcessDocument } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 
@@ -19,7 +15,6 @@ import { batchingOn, newNotification, newSchedule, withBatching } from './editor
 import { NumberField } from './NumberField.js';
 import styles from './ProcessEditor.module.css';
 
-/** What every section receives. */
 export interface SectionProps {
   doc: ProcessDocument;
   baseline: ProcessDocument;
@@ -29,14 +24,12 @@ export interface SectionProps {
 }
 
 /**
- * Batching: a "Batch events" switch (derived from the document: off is max size 1, see
- * `batchingOn`), then debounce, max size, max age and group-by while it is on. Switching off
- * and on again in one visit restores the values it had.
+ * Off is max size 1 (see `batchingOn`). Switching off and on again in one visit restores the values
+ * it had.
  */
 export function BatchingFields({ doc, baseline, set, errors, disabled }: SectionProps) {
   const b = doc.batching;
   const on = batchingOn(b);
-  // The values batching had before it was switched off here, to restore on the way back.
   const [previous, setPrevious] = useState<ProcessDocument['batching'] | undefined>(undefined);
   const put = (patch: Partial<ProcessDocument['batching']>) => {
     set((d) => ({ ...d, batching: { ...d.batching, ...patch } }));

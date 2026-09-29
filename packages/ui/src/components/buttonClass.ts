@@ -1,7 +1,6 @@
 import { cx } from '../lib/cx.js';
 import styles from './Button.module.css';
 
-/** Visual variants from the component sheet. */
 export type ButtonVariant =
   'primary' | 'secondary' | 'outline' | 'soft' | 'ghost' | 'danger' | 'danger-outline';
 
@@ -15,7 +14,6 @@ const VARIANT_CLASS: Record<ButtonVariant, string | undefined> = {
   'danger-outline': styles.dangerOutline,
 };
 
-/** Button class names, shared by `Button` and `LinkButton`. */
 export function buttonClassName(
   variant: ButtonVariant,
   size: 'sm' | 'md' | 'lg',

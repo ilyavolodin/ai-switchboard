@@ -1,13 +1,6 @@
 /**
- * Deprecated aliases from before "executor" was renamed "destination" (SDK 2.0.0). Fastify's
- * `rewriteUrl` hook runs before routing, so an old URL is served by the current route:
- *
- * - `/api/v1/executors…` → `/api/v1/destinations…`
- * - `kind=executor` (on `GET /plugin-types` and `GET /plugins/search`) → `kind=destination`
- * - the `executor=` filter (on `GET /runs`, `GET /events`, ...) → `destination=`
- *
- * Responses use the current DTOs (`destinationId`, `destinations`, ...). Remove these aliases in
- * a future major.
+ * Deprecated "executor" URL aliases (renamed "destination" in SDK 2.0.0), rewritten before routing
+ * so the current route serves them. Responses use the current DTOs. Remove in a future major.
  */
 export function rewriteLegacyUrl(url: string): string {
   if (!url.startsWith('/api/v1/')) return url;

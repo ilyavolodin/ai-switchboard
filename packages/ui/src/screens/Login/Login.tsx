@@ -19,12 +19,6 @@ function fromState(state: unknown): string {
   return typeof from === 'string' && from.startsWith('/') && from !== '/login' ? from : '/';
 }
 
-/**
- * Sign in: email + password (`POST /auth/login`) always, plus a button to the issuer
- * (`/api/v1/auth/oidc/start`) when OIDC is configured. A temporary password continues to
- * `/change-password`. An evaluation install without OIDC shows the evaluation banner.
- * "Forgot password or email?" explains recovery (an admin, or the server CLI).
- */
 export function Login() {
   const me = useMe();
   const login = useLogin();

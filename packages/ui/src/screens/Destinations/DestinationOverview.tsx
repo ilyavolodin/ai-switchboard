@@ -23,11 +23,6 @@ import {
   runStatusSeries,
 } from './destinationModel.js';
 
-/**
- * The destination's Overview tab: its meters now (large arcs), meter history as bands with run
- * markers (highlight one process to see which one pushed a window), usage per day as one chart
- * per declared dimension with its unit, and runs by status.
- */
 export function DestinationOverview({ destination }: { destination: DestinationDetail }) {
   const [range, setRange] = useState<StatsWindow>('7d');
   const [processId, setProcessId] = useState('');

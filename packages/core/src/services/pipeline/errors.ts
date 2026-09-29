@@ -1,4 +1,3 @@
-/** Why a pipeline action could not be carried out; the API maps `code` to an HTTP status. */
 export type PipelineErrorCode = 'not_found' | 'conflict' | 'invalid' | 'unavailable';
 
 export class PipelineError extends Error {
@@ -16,7 +15,6 @@ export class PipelineError extends Error {
     return this.status;
   }
 
-  /** The HTTP status the API should answer with. */
   get status(): number {
     switch (this.code) {
       case 'not_found':

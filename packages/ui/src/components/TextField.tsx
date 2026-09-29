@@ -7,14 +7,11 @@ export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElemen
   size?: 'sm' | 'md';
   mono?: boolean;
   invalid?: boolean;
-  /** Tangerine border until saved. */
   changed?: boolean;
-  /** Unit after the input ("seconds", "minutes"). */
   suffix?: ReactNode;
   ref?: Ref<HTMLInputElement>;
 }
 
-/** A single-line input on the sunken input ground. Use inside `<Field>` for a label. */
 export function TextField({
   size = 'md',
   mono,

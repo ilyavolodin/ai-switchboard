@@ -48,7 +48,6 @@ describe('receive → match → dedupe → batch → run', () => {
     const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id, { batching: { debounceSeconds: 30 } });
 
-    // The same delivery three times, and the same change under a new delivery id.
     expect(await deliver(h, src.id, [{ id: '482', version: 'v1' }], { deliveryId: 'd-1' })).toBe(
       200,
     );

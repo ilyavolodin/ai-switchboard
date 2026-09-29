@@ -15,19 +15,12 @@ import { isPackageName, parsePackageSpec } from './pluginModel.js';
 export interface AddPluginDialogProps {
   open: boolean;
   onClose: () => void;
-  /** Prefilled "package@range" (from the catalogue). */
   initialSpec: string;
-  /** `POST /plugins/inspect`, owned by the page so the catalogue can start it on open. */
+  /** Owned by the page so the catalogue can start it on open. */
   inspect: UseMutationResult<InspectPluginResponse, Error, InspectPluginRequest>;
-  /** Installs (asks for a reason); resolves true when it was added. */
   onConfirm: (request: InspectPluginRequest, manifest: InspectPluginResponse) => Promise<boolean>;
 }
 
-/**
- * "Add plugin": a package name and version range, then the manifest the core read from npm —
- * resolved version, SDK compatibility, contributed types and the declared network and secret
- * capabilities — shown before anything is installed. Adding installs and loads it at once.
- */
 export function AddPluginDialog({
   open,
   onClose,

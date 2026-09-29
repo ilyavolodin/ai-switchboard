@@ -45,7 +45,6 @@ const settings: Settings = {
   usage: { oauthRefreshToken: REFRESH },
 };
 
-/** A fake Anthropic: fire, token (rotating) and usage endpoints. */
 function anthropic(
   overrides: Partial<Record<'fire' | 'token' | 'usage', StubHandler>> = {},
 ): StubHandler {

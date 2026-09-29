@@ -257,7 +257,6 @@ const RAW_LIMIT = 64 * 1024;
 /** Header names that can carry a credential: API keys, passwords, tokens, signatures, cookies. */
 const CREDENTIAL_HEADER = /auth|cookie|secret|token|signature|api-?key|password|credential/i;
 
-/** A stored delivery's headers without any that could carry a credential the sender put there. */
 export function safeHeaders(
   headers: Record<string, string | undefined>,
 ): Record<string, string | undefined> {

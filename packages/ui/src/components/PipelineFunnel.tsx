@@ -18,11 +18,7 @@ function Arrow() {
   );
 }
 
-/**
- * The process pipeline for a window as a horizontal funnel: matched → after dedupe → batches →
- * (held / throttled at the gate) → invoked → outcomes. Bar size is proportional to the count;
- * sweeps enter the invoked stage as their own (sky) stream; outcomes split ok / error / unknown.
- */
+/** Sweeps enter the invoked stage as their own stream. */
 export function PipelineFunnel({ funnel }: PipelineFunnelProps) {
   const model = funnelModel(funnel);
   const stopped = model.gate.held + model.gate.throttled;

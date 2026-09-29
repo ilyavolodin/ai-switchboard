@@ -18,10 +18,6 @@ import { downloadText } from './download.js';
 import { applySummary, CHANGE_TONE } from './exportApply.js';
 import styles from './Settings.module.css';
 
-/**
- * Export and apply: download the whole configuration as YAML (secret references intact, values
- * absent), and apply a YAML configuration — a dry run first shows every change, then Apply.
- */
 export function ExportTab() {
   return (
     <div className={styles.grid}>

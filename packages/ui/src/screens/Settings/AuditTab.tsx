@@ -65,7 +65,6 @@ const COLUMNS: TableColumn<AuditEntry>[] = [
   },
 ];
 
-/** The audit log: every change, by whom, and why. Filters (scope, actor) live in the URL. */
 export function AuditTab() {
   const [params, setParams] = useSearchParams();
   const scope = params.get('scope') ?? '';

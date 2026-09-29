@@ -1,6 +1,5 @@
 export type LogFields = Record<string, unknown>;
 
-/** Structured logger handed to plugins. The core backs it with its own JSON logger. */
 export interface Logger {
   debug(message: string, fields?: LogFields): void;
   info(message: string, fields?: LogFields): void;
@@ -23,7 +22,6 @@ export interface MemoryLogEntry {
   fields: LogFields;
 }
 
-/** A logger that records entries in memory; useful in tests. */
 export function createMemoryLogger(
   entries: MemoryLogEntry[] = [],
   base: LogFields = {},

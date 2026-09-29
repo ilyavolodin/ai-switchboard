@@ -4,16 +4,10 @@ import type { SignalAttributes, Telemetry } from '../telemetry/telemetry.js';
 
 import type { JobQueue } from './queue.js';
 
-/**
- * Trace context across the job queue. `send` adds the active span's W3C traceparent to the job
- * data (`traceparent`, beside the ids; a sender may set it itself, e.g. recovery continuing a
- * run's trace), and each handler of a traced job runs in a CONSUMER span whose parent is that
- * traceparent, so one event reads as one trace across replicas and async jobs.
- */
-
+// A sender may set `traceparent` itself (recovery continues a run's trace); otherwise `send` adds
+// the active span's.
 export const TRACEPARENT_KEY = 'traceparent';
 
-/** Job data keys that become span attributes (ids only; jobs carry nothing else). */
 const ID_ATTRIBUTES: Record<string, string> = {
   eventId: 'event_id',
   batchId: 'batch_id',

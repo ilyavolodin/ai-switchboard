@@ -1,5 +1,3 @@
-/** Trimmed GitHub REST responses (fake ids), in the shapes the destination reads. */
-
 export const RUN_ID = 9_876_543_210;
 export const SWITCHBOARD_RUN = '00000000-0000-4000-8000-000000000001';
 

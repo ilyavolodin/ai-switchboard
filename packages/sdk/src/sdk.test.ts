@@ -238,7 +238,6 @@ describe('HttpClient', () => {
     expect(seen[1]).toMatchObject({ method: 'GET', url: 'https://b.test/done', body: undefined });
     expect(seen[1]?.headers.get('authorization')).toBeNull();
     expect(seen[1]?.headers.get('content-type')).toBeNull();
-    // A custom credential header (poll-http's `tokenHeader`) must not follow either.
     expect(seen[1]?.headers.get('x-api-key')).toBeNull();
     expect(seen[1]?.headers.get('accept')).toBe('application/json');
   });

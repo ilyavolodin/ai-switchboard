@@ -40,10 +40,6 @@ const LEGEND: { tone: StatusTone; label: string }[] = [
   { tone: 'off', label: 'stopped early' },
 ];
 
-/**
- * Activity: the fleet-wide event stream. Every event with where it stopped (five stops) and the
- * processes it reached, filtered from the URL; the search box traces one artifact. Polls 15 s.
- */
 export function Activity() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();

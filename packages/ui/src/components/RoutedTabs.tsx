@@ -4,26 +4,20 @@ import { NavLink } from 'react-router';
 import { cx } from '../lib/cx.js';
 import styles from './RoutedTabs.module.css';
 
-/** One routed tab: a link to its URL. */
 export interface RoutedTabItem {
   to: string;
   label: ReactNode;
   count?: number;
-  /** Match the path exactly (use for the default/overview tab). */
+  /** Match the path exactly (for the default tab). */
   end?: boolean;
 }
 
 export interface RoutedTabsProps {
   items: RoutedTabItem[];
-  /** Accessible name of the navigation. */
   label: string;
   extra?: ReactNode;
 }
 
-/**
- * Tabs that are URLs (`/processes/:id/:tab`): a nav of links with the underline style; the
- * active one has `aria-current="page"`.
- */
 export function RoutedTabs({ items, label, extra }: RoutedTabsProps) {
   return (
     <nav className={styles.tabs} aria-label={label}>

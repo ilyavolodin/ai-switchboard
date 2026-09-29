@@ -6,7 +6,6 @@ import { Toggle } from '../../components/Toggle.js';
 import type { SectionProps } from './EditorSections.js';
 import styles from './ProcessEditor.module.css';
 
-/** Name, description and whether the process is enabled (saved with the document). */
 export function BasicsFields({
   doc,
   baseline,

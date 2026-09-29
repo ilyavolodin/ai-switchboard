@@ -141,7 +141,6 @@ describe('Settings', () => {
       expect(
         screen.getByText(/adding people and changing roles needs the Admin role/),
       ).toBeVisible();
-      // Only the directory (email and role): the admin list is never requested.
       expect(api.callsTo('GET /users/directory')).toHaveLength(1);
       expect(api.callsTo('GET /users')).toHaveLength(0);
     });

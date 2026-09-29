@@ -24,7 +24,6 @@ export interface ProcessNodeProps {
   describedBy?: string;
 }
 
-/** A process on the canvas: name, the five pipeline dots for the last hour, and its next sweep. */
 export function ProcessNode({
   process,
   href,

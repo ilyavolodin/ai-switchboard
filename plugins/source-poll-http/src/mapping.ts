@@ -4,7 +4,6 @@ import jsonata from 'jsonata';
 const TIMEOUT_MS = 2_000;
 const MAX_DEPTH = 500;
 
-/** Thrown when the mapping expression cannot be compiled or evaluated. */
 export class MappingError extends Error {
   override readonly name = 'MappingError';
 }
@@ -17,7 +16,6 @@ function describe(err: unknown): string {
   return String(err);
 }
 
-/** A compiled JSONata expression with deterministic evaluation. */
 export interface CompiledExpression {
   /**
    * Evaluate over `input`. `$now()` and `$millis()` return `fixedNow` (the poll's start time)
@@ -57,7 +55,6 @@ export function compileExpression(source: string, what: string): CompiledExpress
   };
 }
 
-/** A mapping result as a list: one object → [object], nothing → []. */
 export function asList(result: unknown): unknown[] {
   if (result === undefined || result === null) return [];
   return Array.isArray(result) ? (result as unknown[]) : [result];

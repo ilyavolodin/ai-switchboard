@@ -19,7 +19,6 @@ import { useIdQuery } from '../query.js';
 
 const fleet = [qk.destinations.all, qk.board, qk.status, qk.processes.all];
 
-/** GET /destinations */
 export function useDestinations() {
   return useQuery({
     queryKey: qk.destinations.list(),
@@ -28,7 +27,6 @@ export function useDestinations() {
   });
 }
 
-/** GET /destinations/:id */
 export function useDestination(id: string | undefined) {
   return useIdQuery<DestinationDetail>(
     id,
@@ -40,7 +38,6 @@ export function useDestination(id: string | undefined) {
   );
 }
 
-/** GET /destinations/:id/meters?window= — meter history with run markers. */
 export function useDestinationMeters(id: string | undefined, window: StatsWindow = '7d') {
   return useIdQuery<MeterHistoryResponse>(
     id,
@@ -50,7 +47,6 @@ export function useDestinationMeters(id: string | undefined, window: StatsWindow
   );
 }
 
-/** GET /destinations/:id/usage?window= — usage per day per dimension, runs by status. */
 export function useDestinationUsage(id: string | undefined, window: StatsWindow = '7d') {
   return useIdQuery<UsageHistoryResponse>(
     id,
@@ -60,7 +56,6 @@ export function useDestinationUsage(id: string | undefined, window: StatsWindow 
   );
 }
 
-/** POST /destinations */
 export function useCreateDestination() {
   return useApiMutation<CreateDestinationRequest, DestinationDetail>({
     method: 'POST',
@@ -69,7 +64,6 @@ export function useCreateDestination() {
   });
 }
 
-/** PUT /destinations/:id */
 export function useUpdateDestination() {
   return useApiMutation<UpdateDestinationRequest & { id: string }, DestinationDetail>({
     method: 'PUT',
@@ -78,7 +72,6 @@ export function useUpdateDestination() {
   });
 }
 
-/** DELETE /destinations/:id */
 export function useDeleteDestination() {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'DELETE',
@@ -87,7 +80,6 @@ export function useDeleteDestination() {
   });
 }
 
-/** POST /destinations/:id/enable */
 export function useEnableDestination() {
   return useApiMutation<EnableRequest & { id: string }, DestinationDetail>({
     method: 'POST',
@@ -96,7 +88,6 @@ export function useEnableDestination() {
   });
 }
 
-/** POST /destinations/:id/reload */
 export function useReloadDestination() {
   return useApiMutation<Reasoned & { id: string }, DestinationDetail>({
     method: 'POST',
@@ -105,7 +96,6 @@ export function useReloadDestination() {
   });
 }
 
-/** POST /destinations/:id/meters/read — read meters now. */
 export function useReadMeters() {
   return useApiMutation<Reasoned & { id: string }, MeterGaugeDTO[]>({
     method: 'POST',
@@ -114,7 +104,6 @@ export function useReadMeters() {
   });
 }
 
-/** POST /destinations/:id/soft-hold/clear */
 export function useClearSoftHold() {
   return useApiMutation<Reasoned & { id: string }, DestinationDetail>({
     method: 'POST',

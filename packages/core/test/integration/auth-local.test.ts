@@ -73,7 +73,6 @@ describe('local accounts', () => {
 
     const open = await h.request('GET', '/api/v1/processes', { cookie });
     expect(open.statusCode).toBe(200);
-    // The old password no longer works; the new one does and is not restricted.
     const old = await h.request('POST', '/api/v1/auth/login', {
       body: { email: 'carol@acme.test', password: TEMP },
     });
@@ -148,7 +147,6 @@ describe('local accounts', () => {
     });
     expect(reset.statusCode).toBe(200);
     expect(reset.json<UserDTO>().mustChangePassword).toBe(true);
-    // Every existing session is signed out.
     expect((await me(first)).user).toBeNull();
     expect((await me(second)).user).toBeNull();
     const again = await h.login('frank@acme.test', RESET);

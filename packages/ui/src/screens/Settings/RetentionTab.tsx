@@ -26,7 +26,6 @@ const ROWS: { key: keyof RetentionSettings; label: string; help: string }[] = [
   { key: 'statsHourlyDays', label: 'Hourly stats', help: 'Funnels, charts and sparklines.' },
 ];
 
-/** Retention: how many days each table keeps rows before the nightly prune. */
 export function RetentionTab() {
   const settings = useSettings();
   if (settings.isPending) return <Skeleton shape="card" height={300} label="Loading retention" />;

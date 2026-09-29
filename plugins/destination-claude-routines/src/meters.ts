@@ -9,18 +9,13 @@ import {
 
 import { FIVE_HOUR, SEVEN_DAY, type RoutinesUsageSettings } from './settings.js';
 
-/** The OAuth beta the usage endpoint requires. */
 export const OAUTH_BETA = 'oauth-2025-04-20';
-/** Instance state key holding the rotated refresh token and the cached access token. */
 export const OAUTH_STATE_KEY = 'oauth';
-/** Refresh this long before the access token expires. */
 const EXPIRY_MARGIN_MS = 60_000;
-/** When the token endpoint gives no `expires_in`. */
 const DEFAULT_EXPIRES_IN_SECONDS = 300;
 
-/** What the instance keeps across restarts. */
 export interface OAuthState {
-  /** The newest refresh token (the token endpoint rotates it on every refresh). */
+  /** The token endpoint rotates it on every refresh. */
   refreshToken: string;
   /**
    * Fingerprint of the settings token this chain of rotations started from. When a person pastes
@@ -82,10 +77,6 @@ export class SeatUsageError extends Error {
   override readonly name = 'SeatUsageError';
 }
 
-/**
- * Reads the seat's usage windows: exchanges the (rotating) refresh token for an access token and
- * GETs the usage endpoint Claude Code's `/usage` command reads.
- */
 export function createSeatMeters(
   usage: RoutinesUsageSettings,
   ctx: PluginContext,

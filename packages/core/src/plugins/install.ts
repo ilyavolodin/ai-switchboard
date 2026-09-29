@@ -13,29 +13,16 @@ import {
   type PluginKind,
 } from '@ai-switchboard/sdk';
 
-/**
- * Installing, inspecting and removing plugin packages in `$SWITCHBOARD_HOME/plugins`.
- *
- * Shared by the `switchboard plugins` CLI and the core's Plugins API. Everything that touches
- * npm goes through an injected `RunNpm` so tests never reach a registry. Installing never
- * loads the plugin into the host: the host picks it up on its next start.
- */
-
-/** Runs `npm <args>` in `cwd` and resolves with its output, or rejects when npm exits non-zero. */
 export type RunNpm = (args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>;
 
-/** Loads an ES module by file URL. Injected so tests can control plugin imports. */
 export type ImportModule = (url: string) => Promise<unknown>;
 
-/** One entry of `$SWITCHBOARD_HOME/plugins.lock.json`. */
 export interface PluginLockEntry {
   version: string;
-  /** npm's SRI hash (`sha512-...`); null for local directory installs that have none. */
+  /** Null for local directory installs, which have none. */
   integrity: string | null;
-  /** The SDK range the package declares in its `switchboard.sdk` field. */
   sdk: string;
   installedAt: string;
-  /** What the admin asked for, e.g. `@acme/switchboard-source-jira@^1`. */
   spec: string;
 }
 
@@ -44,7 +31,6 @@ export interface PluginLockfile {
   plugins: Record<string, PluginLockEntry>;
 }
 
-/** What a plugin's default export declares, read by importing its entry. */
 export interface PluginManifestSummary {
   pluginId: string;
   displayName: string;
@@ -56,12 +42,11 @@ export interface InstallResult {
   version: string;
   integrity: string | null;
   sdkRange: string;
-  /** Whether the running SDK satisfies the declared range; the host refuses to load it otherwise. */
+  /** The host refuses to load an incompatible plugin. */
   compatible: boolean;
   /** Undefined when the entry could not be imported (see `warnings`). */
   capabilities: Capabilities | undefined;
   plugin: PluginManifestSummary | undefined;
-  /** The installed package's `package.json`. */
   manifestPath: string;
   warnings: string[];
 }
@@ -82,9 +67,7 @@ export interface InstalledPlugin extends PluginLockEntry {
 }
 
 export interface InstallOptions {
-  /** `$SWITCHBOARD_HOME`. */
   home: string;
-  /** Any npm install spec: `name`, `name@range`, a tarball URL, a git URL, a local path. */
   spec: string;
   runNpm?: RunNpm;
   /** Fall back to `switchboard.source` when `switchboard.entry` is missing (dev with tsx). */
@@ -97,7 +80,6 @@ export interface InspectOptions {
   spec: string;
   runNpm?: RunNpm;
   importModule?: ImportModule;
-  /** Where the temporary pack directory is created (defaults to the OS temp dir). */
   tmpRoot?: string;
 }
 
@@ -107,7 +89,7 @@ export interface RemoveOptions {
   runNpm?: RunNpm;
 }
 
-/** Install, inspect or remove failed; `message` is meant for the admin. */
+/** `message` is meant for the admin. */
 export class PluginInstallError extends Error {
   override readonly name = 'PluginInstallError';
 }
@@ -116,7 +98,7 @@ export function isPluginInstallError(err: unknown): err is PluginInstallError {
   return err instanceof Error && err.name === 'PluginInstallError';
 }
 
-/** The real npm, through `execFile` (no shell, so specs are never interpreted). */
+/** `execFile`, not a shell, so specs are never interpreted. */
 export const defaultRunNpm: RunNpm = (args, cwd) =>
   new Promise((resolvePromise, reject) => {
     execFile(
@@ -143,10 +125,6 @@ export function pluginsDir(home: string): string {
 export function lockfilePath(home: string): string {
   return join(resolve(home), 'plugins.lock.json');
 }
-
-// ---------------------------------------------------------------------------------------------
-// Small JSON helpers
-// ---------------------------------------------------------------------------------------------
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -214,7 +192,6 @@ function serialized<T>(home: string, task: () => Promise<T>): Promise<T> {
   return next;
 }
 
-/** The package name in a registry spec (`@scope/name@^1` → `@scope/name`), if it has one. */
 export function specPackageName(spec: string): string | undefined {
   const trimmed = spec.trim();
   if (/^(\.|\/|~|file:|git\+|git:|https?:|github:)/.test(trimmed)) return undefined;
@@ -226,10 +203,6 @@ export function specPackageName(spec: string): string | undefined {
   const name = at === -1 ? trimmed : trimmed.slice(0, at);
   return name.includes('/') ? undefined : name;
 }
-
-// ---------------------------------------------------------------------------------------------
-// Manifest reading
-// ---------------------------------------------------------------------------------------------
 
 interface SwitchboardField {
   entry: string | undefined;
@@ -281,7 +254,7 @@ function summarise(plugin: unknown): {
   };
 }
 
-/** Import the plugin entry and read what its default export declares. Never throws. */
+/** Never throws. */
 async function readDeclared(
   packageDir: string,
   field: SwitchboardField,
@@ -308,10 +281,6 @@ async function readDeclared(
     return { capabilities: undefined, plugin: undefined };
   }
 }
-
-// ---------------------------------------------------------------------------------------------
-// Lockfile
-// ---------------------------------------------------------------------------------------------
 
 async function readLockfile(home: string): Promise<PluginLockfile> {
   const raw = await readJsonIfExists(lockfilePath(home));
@@ -341,17 +310,12 @@ async function writeLockfile(home: string, lock: PluginLockfile): Promise<void> 
   await writeJson(lockfilePath(home), { lockfileVersion: 1, plugins: sorted });
 }
 
-/** Installed plugins, from `plugins.lock.json`, sorted by name. */
 export async function listInstalled(home: string): Promise<InstalledPlugin[]> {
   const lock = await readLockfile(home);
   return Object.entries(lock.plugins)
     .map(([name, e]) => ({ name, ...e }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
-
-// ---------------------------------------------------------------------------------------------
-// Install
-// ---------------------------------------------------------------------------------------------
 
 async function ensurePluginsPackage(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
@@ -365,7 +329,6 @@ async function ensurePluginsPackage(dir: string): Promise<void> {
   });
 }
 
-/** Which dependency the install added or changed; falls back to the spec's own name. */
 function installedName(
   spec: string,
   before: Record<string, string>,
@@ -392,8 +355,8 @@ async function lockedIntegrity(dir: string, name: string): Promise<string | null
 }
 
 /**
- * `npm install <spec>` into `$home/plugins`, check it is a Switchboard plugin (removing it again
- * if not), and pin its exact version and integrity in `$home/plugins.lock.json`.
+ * A package that turns out not to be a Switchboard plugin is removed again. Never loads the
+ * plugin into the host: the host picks it up on its next start.
  */
 export async function installPlugin(options: InstallOptions): Promise<InstallResult> {
   const spec = checkSpec(options.spec);
@@ -493,11 +456,6 @@ async function install(options: InstallOptions, spec: string): Promise<InstallRe
   };
 }
 
-// ---------------------------------------------------------------------------------------------
-// Remove
-// ---------------------------------------------------------------------------------------------
-
-/** `npm uninstall <name>` from `$home/plugins` and drop it from the lockfile. */
 export async function removePlugin(options: RemoveOptions): Promise<void> {
   return serialized(options.home, () => remove(options));
 }
@@ -518,10 +476,6 @@ async function remove(options: RemoveOptions): Promise<void> {
   );
   await writeLockfile(options.home, { lockfileVersion: 1, plugins });
 }
-
-// ---------------------------------------------------------------------------------------------
-// Inspect
-// ---------------------------------------------------------------------------------------------
 
 interface PackEntry {
   filename: string;
@@ -553,7 +507,7 @@ const untar = (file: string, cwd: string): Promise<void> =>
     });
   });
 
-/** Directory holding the running SDK's package.json, so a packed plugin can import it. */
+/** Linked beside a packed plugin so it can import the running SDK. */
 async function sdkPackageRoot(): Promise<string | undefined> {
   try {
     let dir = dirname(fileURLToPath(import.meta.resolve('@ai-switchboard/sdk')));
@@ -581,9 +535,9 @@ async function linkSdk(tmp: string): Promise<void> {
 }
 
 /**
- * `npm pack <spec>` into a temporary directory and read the manifest without installing. The
- * capabilities are read by importing a plain-JS entry with the running SDK linked beside it; a
- * plugin with other runtime dependencies reports them as unknown.
+ * Reads the manifest from `npm pack` without installing. Capabilities come from importing a
+ * plain-JS entry with only the SDK linked, so a plugin with other runtime dependencies reports
+ * them as unknown.
  */
 export async function inspectPlugin(options: InspectOptions): Promise<InspectResult> {
   const runNpm = options.runNpm ?? defaultRunNpm;

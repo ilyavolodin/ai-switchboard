@@ -76,7 +76,7 @@ export function errorMessage(res: HttpResponse): string {
   return res.text().slice(0, 200);
 }
 
-/** Map a refused fire call; returns a result for 429 and held states, throws for the rest. */
+/** Returns a result for 429 and held states; throws for the rest. */
 export function refusal(res: HttpResponse, now: Date): InvokeResult {
   const message = errorMessage(res);
   const retryAfter = parseRetryAfter(res.headers['retry-after'], now);
@@ -144,7 +144,6 @@ function createRoutinesDestination(settings: RoutinesSettings, ctx: PluginContex
   };
 }
 
-/** Fires a Claude Code routine; its completion step posts a signed callback with token usage. */
 export const routinesDestinationType: DestinationType = {
   id: 'claude-routines',
   displayName: 'Claude Routines',

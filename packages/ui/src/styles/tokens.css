@@ -1,22 +1,13 @@
-/*
- * Zest design tokens for AI Switchboard (source: the "AI Switchboard UI" canvas, ds/zest/tokens.json).
- *
- * Light is the default (`:root`). Dark is `[data-theme="dark"]` on <html>. Components use these
- * custom properties only; never a hex value. The second half of each block holds the semantic
- * aliases the canvas mockups use (`--card`, `--foreground-strong`, `--st-ok-bg`, ...) so mockup
- * styles port 1:1.
- */
+/* Components use these custom properties only, never a hex value. Source: ds/zest/tokens.json. */
 
 :root {
   color-scheme: light;
 
-  /* ---- Type families ------------------------------------------------------------------ */
   --font-sans: 'Poppins', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
   --font-heading: var(--font-sans);
   --font-body: var(--font-sans);
   --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
 
-  /* ---- Type scale (Zest) -------------------------------------------------------------- */
   --type-page-title-size: 28px;
   --type-page-title-line: 36px;
   --type-page-title-weight: 600;
@@ -39,11 +30,10 @@
   --type-overline-size: 11px;
   --type-overline-line: 16px;
   --type-overline-tracking: 0.1em;
-  /* The console's dense body text (mockups use 13 / 1.45). */
+  /* The console's dense body text. */
   --type-ui-size: 13px;
   --type-ui-line: 1.45;
 
-  /* ---- Spacing (4 px base) ------------------------------------------------------------ */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -52,7 +42,6 @@
   --space-6: 24px;
   --space-8: 32px;
 
-  /* ---- Radii -------------------------------------------------------------------------- */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-control: 8px;
@@ -62,7 +51,6 @@
   --radius-xl: 20px;
   --radius-full: 9999px;
 
-  /* ---- Colour (Zest, light) ----------------------------------------------------------- */
   --canvas: #f4f5fa;
   --surface: #ffffff;
   --surface-sunken: #f4f5fa;
@@ -92,14 +80,13 @@
   /* Fixed white used only for toggle knobs (the canvas draws them #fff in both themes). */
   --knob: #ffffff;
 
-  /* ---- Shadows ------------------------------------------------------------------------ */
   --shadow-card: 0 1px 2px #171a3a0a, 0 6px 20px -6px #171a3a14;
   --shadow-float: 0 10px 30px -8px #171a3a33;
   --glow-tangerine: 0 8px 20px -6px #ff7a1a8c;
   --glow-berry: 0 8px 20px -6px #d946ef73;
   --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #b24700;
 
-  /* ---- Gradients (fills only, never text) --------------------------------------------- */
+  /* Gradients: fills only, never text. */
   --gradient-tangerine: linear-gradient(135deg, #ffc23d 0%, #ff8a1f 55%, #ff7a1a 100%);
   --gradient-sunset: linear-gradient(135deg, #ff9a3c 0%, #ff5f7e 100%);
   --gradient-berry: linear-gradient(135deg, #ff7aa8 0%, #d946ef 100%);
@@ -115,7 +102,7 @@
   );
   --gradient-area: linear-gradient(180deg, rgba(255, 138, 31, 0.32) 0%, rgba(255, 138, 31, 0) 100%);
 
-  /* ---- Semantic aliases used by the canvas mockups ------------------------------------ */
+  /* Aliases the canvas mockups use, so mockup styles port 1:1. */
   --background: var(--canvas);
   --page-body: var(--canvas);
   --card: var(--surface);
@@ -169,7 +156,7 @@
   --shadow-sm: var(--shadow-card);
   --shadow-lg: var(--shadow-float);
 
-  /* ---- Status vocabulary: four tones, always with a word ------------------------------ */
+  /* Status tones: always shown with a word. */
   --st-ok: var(--mint);
   --st-ok-bg: var(--mint-soft);
   --st-ok-fg: var(--mint-ink);
@@ -183,7 +170,6 @@
   --st-off-bg: var(--surface-sunken);
   --st-off-fg: var(--ink-muted);
 
-  /* ---- Layout ------------------------------------------------------------------------- */
   --rail-width: 220px;
   --rail-width-compact: 68px;
   --topbar-height: 48px;

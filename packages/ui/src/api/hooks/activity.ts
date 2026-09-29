@@ -17,7 +17,6 @@ import { POLL, qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
 import { cursorPaging, useIdQuery } from '../query.js';
 
-/** GET /events?source=&process=&destination=&stage=&artifact=&from=&to=&cursor= (paged) */
 export function useEvents(query: Omit<ActivityQuery, 'cursor'> = {}) {
   return useInfiniteQuery({
     queryKey: qk.events.list(query),
@@ -31,7 +30,6 @@ export function useEvents(query: Omit<ActivityQuery, 'cursor'> = {}) {
   });
 }
 
-/** GET /events/:id */
 export function useEvent(id: string | undefined, opts: { untilMatched?: boolean } = {}) {
   return useQuery({
     queryKey: qk.events.detail(id ?? ''),
@@ -47,12 +45,11 @@ export function useEvent(id: string | undefined, opts: { untilMatched?: boolean 
   });
 }
 
-/** GET /events/:id/trace */
 export function useEventTrace(id: string | undefined) {
   return useIdQuery<TraceResponse>(id, qk.events.trace, (i) => `/events/${seg(i)}/trace`);
 }
 
-/** GET /trace?artifact= — one timeline for an artifact id, `kind:id`, or `#482`. */
+/** `artifact` is an artifact id, `kind:id`, or `#482`. */
 export function useTrace(artifact: string | undefined) {
   return useQuery({
     queryKey: qk.trace(artifact ?? ''),
@@ -61,7 +58,6 @@ export function useTrace(artifact: string | undefined) {
   });
 }
 
-/** POST /events/:id/replay — re-inject a stored raw body. */
 export function useReplayEvent() {
   return useApiMutation<Reasoned & { id: string }, { eventIds: string[] }>({
     method: 'POST',
@@ -70,7 +66,6 @@ export function useReplayEvent() {
   });
 }
 
-/** GET /runs?process=&destination=&status=&cursor= (paged) */
 export function useRuns(query: Omit<RunsQuery, 'cursor'> = {}) {
   return useInfiniteQuery({
     queryKey: qk.runs.list(query),
@@ -81,12 +76,10 @@ export function useRuns(query: Omit<RunsQuery, 'cursor'> = {}) {
   });
 }
 
-/** GET /runs/:id */
 export function useRun(id: string | undefined) {
   return useIdQuery<RunDetail>(id, qk.runs.detail, (i) => `/runs/${seg(i)}`);
 }
 
-/** POST /runs/:id/close — settle an open run by hand. */
 export function useCloseRun() {
   return useApiMutation<CloseRunRequest & { id: string }, RunDetail>({
     method: 'POST',

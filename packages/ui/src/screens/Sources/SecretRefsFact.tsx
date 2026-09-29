@@ -5,7 +5,6 @@ import { Time } from '../../components/Time.js';
 import { parseSecretRef } from '../../lib/schema.js';
 import styles from './detail.module.css';
 
-/** The instance's secret references (never values) with when each last resolved. */
 export function SecretRefsFact({ refs }: { refs: SecretRefDTO[] }) {
   if (refs.length === 0) return null;
   return (

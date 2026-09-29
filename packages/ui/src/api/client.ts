@@ -1,12 +1,8 @@
 import type { ApiError } from '@ai-switchboard/core/contract';
 
-/** Every API route lives under this prefix. */
 export const API_BASE = '/api/v1';
 
-/**
- * A non-2xx response from the API. Carries the parsed `ApiError` body (or a synthesised one when
- * the body was not JSON) and the HTTP status.
- */
+/** `body` is synthesised when the response was not JSON. */
 export class ApiRequestError extends Error {
   override readonly name = 'ApiRequestError';
   readonly status: number;
@@ -29,7 +25,6 @@ export function isApiRequestError(e: unknown): e is ApiRequestError {
   );
 }
 
-/** A query string value; `undefined`/`null`/`''` are dropped. */
 export type QueryValue = string | number | boolean | null | undefined;
 
 export interface ApiFetchOptions {
@@ -37,11 +32,9 @@ export interface ApiFetchOptions {
   body?: unknown;
   query?: Record<string, QueryValue>;
   signal?: AbortSignal;
-  /** Parse the response as text instead of JSON (the YAML export). */
   as?: 'json' | 'text';
 }
 
-/** Builds `?a=1&b=2` from a record, skipping empty values. */
 export function buildQuery(query: Record<string, QueryValue> | undefined): string {
   if (!query) return '';
   const params = new URLSearchParams();
@@ -53,10 +46,7 @@ export function buildQuery(query: Record<string, QueryValue> | undefined): strin
   return s ? `?${s}` : '';
 }
 
-/**
- * The one way the UI talks to the core. Sends cookies, JSON in and out, and throws
- * `ApiRequestError` for any non-2xx response. A 204 resolves to `undefined`.
- */
+/** Throws `ApiRequestError` for any non-2xx response; a 204 resolves to `undefined`. */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { method = 'GET', body, query, signal, as = 'json' } = options;
   const url = `${API_BASE}${path}${buildQuery(query)}`;
@@ -110,17 +100,13 @@ function isProcessRef(v: unknown): v is { id: string; name: string } {
   );
 }
 
-/**
- * The processes named by a 409 "still used by" refusal (deleting a source, destination or
- * notifier), or null for any other error.
- */
+/** The processes named by a 409 "still used by" refusal, or null for any other error. */
 export function usedByOf(e: unknown): { id: string; name: string }[] | null {
   if (!isApiRequestError(e) || e.status !== 409) return null;
   const used = e.body.usedBy;
   return used && used.length > 0 ? used : null;
 }
 
-/** A readable one-line message for any thrown value (for toasts and inline errors). */
 export function errorMessage(e: unknown): string {
   if (isApiRequestError(e)) {
     const details = e.body.details?.length ? ` — ${e.body.details.join('; ')}` : '';

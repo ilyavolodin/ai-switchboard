@@ -6,9 +6,8 @@ import { getSettings } from '../settings.js';
 import type { Deps } from '../../deps.js';
 
 /**
- * The nightly prune, per `GlobalSettings.retention`. Runs, steps, approvals, audit and process
- * versions are kept indefinitely; unmatched events go after 30 days (or sooner, with events).
- * Batches waiting for approval are never pruned.
+ * Runs, steps, approvals, audit and process versions are kept indefinitely; unmatched events go
+ * after 30 days (or sooner, with events). Batches waiting for approval are never pruned.
  */
 export async function prune(
   ctx: Pick<Deps, 'db' | 'clock' | 'logger'>,

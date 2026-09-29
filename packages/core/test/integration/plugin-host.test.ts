@@ -21,7 +21,6 @@ const sdkDir = join(dirname(fileURLToPath(import.meta.url)), '../../../sdk');
 let tdb: TestDatabase;
 let root: string;
 
-/** Write a plugin package whose entry is plain JS importing the workspace SDK. */
 async function writePlugin(name: string, options: { sdk?: string; body: string }): Promise<void> {
   const dir = join(root, 'node_modules', ...name.split('/'));
   await mkdir(dir, { recursive: true });
@@ -69,7 +68,6 @@ export default definePlugin({ id: 'acme-good', displayName: 'Good', capabilities
 export default definePlugin({ id: 'Not_Kebab', displayName: 'Invalid' });`,
   });
   await writePlugin('@acme/bad-export', { body: 'export default 1;' });
-  // An ordinary dependency without a switchboard field is ignored entirely.
   await mkdir(join(root, 'node_modules', 'left-pad'), { recursive: true });
   await writeFile(
     join(root, 'node_modules', 'left-pad', 'package.json'),

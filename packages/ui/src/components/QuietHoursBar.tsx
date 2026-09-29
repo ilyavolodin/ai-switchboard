@@ -9,9 +9,7 @@ import styles from './QuietHoursBar.module.css';
 import { TextField } from './TextField.js';
 
 export interface QuietHoursBarProps {
-  /** `undefined` = no quiet hours. */
   value: QuietWindow | undefined;
-  /** Omit for a read-only bar. */
   onChange?: (next: QuietWindow | undefined) => void;
   disabled?: boolean;
 }
@@ -21,10 +19,6 @@ const DAY_CHIPS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, 
   label,
 }));
 
-/**
- * Quiet hours as a 24-hour bar (sky = quiet), editable with start/end times and weekdays.
- * During quiet hours event batches are held; the next sweep does the work.
- */
 export function QuietHoursBar({ value, onChange, disabled }: QuietHoursBarProps) {
   const editable = onChange != null && !disabled;
   const summary = value

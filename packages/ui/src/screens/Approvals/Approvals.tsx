@@ -25,11 +25,6 @@ import { traceHref } from '../../lib/artifact.js';
 import styles from './Approvals.module.css';
 import { batchSummary, ruleText } from './approvalCopy.js';
 
-/**
- * Approvals: the queue of batches a gate is holding for a person. Each card shows the process,
- * the events as artifact chips, the rule, how long it has waited and the input that would be
- * sent; Approve / Reject ask for a reason. Readable on a phone (one column, 44 px targets).
- */
 export function Approvals() {
   const pending = useApprovals();
   const rules = useApprovalRules();

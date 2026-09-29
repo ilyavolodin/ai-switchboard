@@ -7,10 +7,6 @@ import { formatSeconds, formatUsage } from '../../lib/format.js';
 import { dayLabel, windowLabel } from './detailModel.js';
 import styles from './ProcessDetail.module.css';
 
-/**
- * The three small charts under the funnel: runs and throttles per day, latency and duration
- * medians, and usage per run for each dimension the destination reports.
- */
 export function DetailCharts({
   stats,
   window,

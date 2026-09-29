@@ -12,11 +12,6 @@ import { cardTone } from '../../lib/instances.js';
 import styles from '../Sources/instanceCard.module.css';
 import { enableDestinationPrompt } from './destinationModel.js';
 
-/**
- * One destination: type icon, name (links to the detail), health, its meters as arcs with
- * reset countdowns, the soft-hold chip when a backend asked Switchboard to back off, and the
- * enabled toggle.
- */
 export function DestinationCard({ destination }: { destination: DestinationSummary }) {
   const enable = useReasonedMutation(
     useEnableDestination(),

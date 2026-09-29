@@ -23,8 +23,6 @@
   align-items: start;
 }
 
-/* ---- diagram ---------------------------------------------------------------------------- */
-
 .diagramCard {
   overflow-x: auto;
 }
@@ -76,8 +74,6 @@
   flex-direction: column;
   gap: 10px;
 }
-
-/* ---- sections --------------------------------------------------------------------------- */
 
 .section {
   display: flex;
@@ -168,8 +164,6 @@
   font-size: 12px;
 }
 
-/* ---- list items (triggers, schedules, steps, notifications) ------------------------------ */
-
 .item {
   display: flex;
   flex-direction: column;
@@ -222,8 +216,6 @@
   background: var(--surface-sunken);
 }
 
-/* ---- batching animation ----------------------------------------------------------------- */
-
 .coalesce {
   display: flex;
   flex-direction: column;
@@ -269,8 +261,6 @@
   animation: appear 300ms ease-out both;
 }
 
-/* ---- budgets ---------------------------------------------------------------------------- */
-
 .meters {
   display: flex;
   flex-direction: column;
@@ -305,8 +295,6 @@
   width: 72px;
 }
 
-/* ---- destination preview ------------------------------------------------------------------- */
-
 .preview {
   display: flex;
   flex-direction: column;
@@ -327,8 +315,6 @@
   font-size: 12px;
   color: var(--st-ok-fg);
 }
-
-/* ---- sticky footer ---------------------------------------------------------------------- */
 
 .footer {
   position: sticky;

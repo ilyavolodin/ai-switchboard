@@ -31,10 +31,6 @@ function tooltip(m: MeterGaugeDTO, nowMs: number): string {
   return parts.join(' · ');
 }
 
-/**
- * The top bar's capacity strip: one 24 px arc per destination's primary meter, with value
- * and reset countdown, grouped by destination, each linking to the destination.
- */
 export function CapacityStrip({ meters }: { meters: MeterGaugeDTO[] }) {
   const nowMs = useNow(30_000);
   const shown = primaryMeters(meters);

@@ -1,10 +1,4 @@
-/**
- * The REST API contract between the core and the web UI (and the CLI). Types only.
- *
- * Every route lives under `/api/v1`. Every state-changing request body carries `reason` (a
- * one-line human reason, audited). Errors are `ApiError`. Lists that can grow are paginated with
- * an opaque `cursor` and return `Page<T>`.
- */
+/** The REST API contract (`/api/v1`) between the core, the UI and the CLI. Types only. */
 import type {
   ActionSpec,
   ArtifactRef,
@@ -67,12 +61,8 @@ export type Iso = string;
 export interface ApiError {
   error: string;
   message: string;
-  /** Field-level problems, e.g. schema validation messages. */
   details?: string[];
-  /**
-   * 409 on deleting a source, destination or notifier that processes still use: those processes,
-   * so a client can link to them.
-   */
+  /** On a 409 for deleting an instance still in use: the processes using it. */
   usedBy?: { id: string; name: string }[];
 }
 
@@ -81,7 +71,7 @@ export interface Page<T> {
   nextCursor: string | null;
 }
 
-/** Every mutation carries a reason; the API rejects an empty one with 400. */
+/** An empty reason is a 400 unless `requireReasons` is off. */
 export interface Reasoned {
   reason: string;
 }
@@ -92,28 +82,19 @@ export interface StatusLabel {
   label: string;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Auth
-// ---------------------------------------------------------------------------------------------
-
 export interface UserDTO {
   id: string;
   email: string;
   role: Role;
-  /** The account can sign in with a local password. */
   hasPassword: boolean;
-  /** The account is linked to an OIDC identity (it has signed in through the issuer). */
   hasOidc: boolean;
-  /** The password was set by an admin (or bootstrap); the next password sign-in must change it. */
+  /** Set by an admin (or bootstrap): the next password sign-in must change it. */
   mustChangePassword: boolean;
   lastLoginAt: Iso | null;
   createdAt: Iso;
 }
 
-/**
- * GET /users/directory: who can sign in and with which role, for every signed-in role. Email and
- * role only; sign-in methods and times stay admin-only (`UserDTO`).
- */
+/** GET /users/directory, visible to every role: sign-in methods and times stay admin-only. */
 export interface UserDirectoryEntry {
   id: string;
   email: string;
@@ -122,10 +103,7 @@ export interface UserDirectoryEntry {
 
 export interface MeResponse {
   user: UserDTO | null;
-  /**
-   * `oidc` when an OIDC issuer is configured. Local password sign-in is available in both modes;
-   * `oidc` only adds the "Sign in with <issuer>" button.
-   */
+  /** Local password sign-in works in both modes; `oidc` only adds the issuer's button. */
   authMode: 'oidc' | 'local';
   oidcConfigured: boolean;
   /** The issuer's host, for the sign-in button label; null without OIDC. */
@@ -137,15 +115,11 @@ export interface MeResponse {
    */
   mustChangePassword: boolean;
   /**
-   * Evaluation mode only: the bootstrap local admin's email (`admin@switchboard.local` unless
-   * `SWITCHBOARD_BOOTSTRAP_ADMIN` names another), for the sign-in page's recovery hint. Null
-   * outside evaluation mode or when that account has no password; no other email is ever shown.
+   * Evaluation mode only: the bootstrap admin's email, for the sign-in page's recovery hint. Null
+   * otherwise or when that account has no password; no other email is ever shown.
    */
   evaluationAdminEmail: string | null;
-  /**
-   * `GlobalSettings.requireReasons`: whether the UI must ask for a reason before a change. When
-   * false the server accepts a change without one (audited as "(no reason given)").
-   */
+  /** When false the server accepts a change without a reason. */
   requireReasons: boolean;
 }
 
@@ -164,10 +138,6 @@ export interface ChangePasswordRequest {
 export interface SetPasswordRequest extends Reasoned {
   password: string;
 }
-
-// ---------------------------------------------------------------------------------------------
-// Status strip (top bar) and board
-// ---------------------------------------------------------------------------------------------
 
 export interface MeterGaugeDTO {
   destinationId: string;
@@ -212,7 +182,6 @@ export interface BoardSourceNode {
   name: string;
   typeId: string;
   typeName: string;
-  /** The type's declared icon (see `SourceSummary.typeIcon`). */
   typeIcon: string | null;
   status: StatusLabel;
   enabled: boolean;
@@ -240,7 +209,6 @@ export interface BoardDestinationNode {
   name: string;
   typeId: string;
   typeName: string;
-  /** The type's declared icon (see `SourceSummary.typeIcon`). */
   typeIcon: string | null;
   status: StatusLabel;
   enabled: boolean;
@@ -293,10 +261,6 @@ export interface BoardResponse {
   generatedAt: Iso;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Plugin types (for creating instances)
-// ---------------------------------------------------------------------------------------------
-
 export type PluginKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
 
 export interface PluginTypeDTO {
@@ -329,10 +293,6 @@ export interface PluginTypeDTO {
   actions?: ActionSpec[];
 }
 
-// ---------------------------------------------------------------------------------------------
-// Sources
-// ---------------------------------------------------------------------------------------------
-
 export interface SourceCapsDTO {
   eventCapPerHour?: number;
   eventCapPerDay?: number;
@@ -354,10 +314,7 @@ export interface SourceSummary {
   name: string;
   typeId: string;
   typeName: string;
-  /**
-   * The type's declared icon: a built-in icon name or an SVG data URI (see
-   * `PluginTypeDTO.icon`); `null` when the type declares none or its plugin is not loaded.
-   */
+  /** `null` when the type declares no icon or its plugin is not loaded. */
   typeIcon: string | null;
   mode: 'push' | 'pull' | 'both';
   enabled: boolean;
@@ -417,10 +374,6 @@ export interface SourceStatsResponse {
   verifyFailures: { hour: Iso; count: number }[];
 }
 
-// ---------------------------------------------------------------------------------------------
-// Destinations
-// ---------------------------------------------------------------------------------------------
-
 export interface DestinationCapsDTO {
   runsPerHour?: number;
   runsPerDay?: number;
@@ -429,8 +382,8 @@ export interface DestinationCapsDTO {
   meterStalenessMinutes?: number;
   estimatedLimits?: Record<string, number>;
   /**
-   * How long to wait for `invoke` to answer, 1–3600 s. Overrides the type's per-target and
-   * default timeouts (core default 300 s). No answer in time is a lost response.
+   * 1–3600 s. Overrides the type's per-target and default timeouts (core default 300 s). No answer
+   * in time is a lost response.
    */
   invokeTimeoutSeconds?: number;
 }
@@ -440,7 +393,6 @@ export interface DestinationSummary {
   name: string;
   typeId: string;
   typeName: string;
-  /** The type's declared icon (see `SourceSummary.typeIcon`). */
   typeIcon: string | null;
   enabled: boolean;
   status: StatusLabel;
@@ -506,10 +458,6 @@ export interface UsageHistoryResponse {
   dimensions: { id: string; title: string; unit: string; days: { day: Iso; value: number }[] }[];
   runsByStatus: { day: Iso; counts: Partial<Record<RunStatusValue, number>> }[];
 }
-
-// ---------------------------------------------------------------------------------------------
-// Processes
-// ---------------------------------------------------------------------------------------------
 
 export type StatsWindow = '24h' | '7d' | '30d';
 
@@ -693,7 +641,6 @@ export interface SourcePreviewResponse {
   errors: string[];
   /** The plugin's notes on what produced no event and why (SDK 1.4 `parseWithNotes`). */
   notes: string[];
-  /** The event types the draft instance declares. */
   declaredTypes: EventTypeSpec[];
 }
 
@@ -727,10 +674,6 @@ export interface RecentBatchDTO {
   outcome: BatchOutcome;
   artifacts: ArtifactRef[];
 }
-
-// ---------------------------------------------------------------------------------------------
-// Events, activity and trace
-// ---------------------------------------------------------------------------------------------
 
 /** Five stops: received → matched → batched → gated → invoked; `reached` is how far it got. */
 export interface StageIndicator {
@@ -780,12 +723,8 @@ export interface ActivityQuery {
 }
 
 /**
- * Why a process with a trigger on the event's source did or did not take the event: `process is
- * disabled`, `trigger "…" is disabled`, `event type … is not in trigger "…" (subscribes to …)`,
- * `filter false: <expr>`, `filter error: <msg>`, `type … is muted on the source`, `source is
- * disabled`, `event invalid: …`. `basis: 'recorded'` is what match (or the door) recorded when the
- * event arrived; `'now'` is computed from the current configuration because nothing was recorded
- * for that process (an event matched before skips were recorded, or a trigger added since).
+ * `basis: 'recorded'` is what was recorded when the event arrived; `'now'` is computed from the
+ * current configuration because nothing was recorded for that process.
  */
 export interface EventExplanation {
   processId: string;
@@ -846,10 +785,6 @@ export interface TraceResponse {
   text: string;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Runs
-// ---------------------------------------------------------------------------------------------
-
 export interface RunSummary {
   id: string;
   processId: string;
@@ -907,10 +842,6 @@ export interface CloseRunRequest extends Reasoned {
   status: 'ok' | 'error' | 'unknown';
 }
 
-// ---------------------------------------------------------------------------------------------
-// Approvals
-// ---------------------------------------------------------------------------------------------
-
 export interface ApprovalItem {
   batchId: string;
   process: { id: string; name: string };
@@ -933,10 +864,6 @@ export interface ApprovalHistoryItem extends ApprovalItem {
 export interface ApprovalRulesResponse {
   processes: { id: string; name: string; rule: string }[];
 }
-
-// ---------------------------------------------------------------------------------------------
-// Plugins
-// ---------------------------------------------------------------------------------------------
 
 export interface PluginSummary {
   name: string;
@@ -976,23 +903,17 @@ export interface InstallPluginRequest extends Reasoned {
   range?: string;
 }
 
-/**
- * The `{kind}` segment of the plugin naming convention (`ai-switchboard-{kind}-{name}`), used as
- * `GET /plugins/search?kind=`.
- */
+/** The `{kind}` in the plugin naming convention `ai-switchboard-{kind}-{name}`. */
 export type PluginSearchKind = 'source' | 'destination' | 'notifier' | 'secrets';
 
-/** One npm package that follows the naming convention. */
 export interface PluginSearchResult {
   package: string;
   /** The instance kind its name promises. */
   kind: PluginKind;
-  /** Latest version on the registry. */
   version: string;
   description: string;
   /** npm user who published the latest version. */
   publisher: string | null;
-  /** When the latest version was published. */
   date: Iso | null;
   links: { npm?: string; homepage?: string; repository?: string };
   weeklyDownloads: number | null;
@@ -1020,16 +941,11 @@ export interface CatalogueEntry {
   homepage?: string;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Notifiers and secret providers (the remaining instance kinds)
-// ---------------------------------------------------------------------------------------------
-
 export interface InstanceSummary {
   id: string;
   kind: 'notifier' | 'secret_provider';
   typeId: string;
   typeName: string;
-  /** The type's declared icon (see `SourceSummary.typeIcon`). */
   typeIcon: string | null;
   name: string;
   enabled: boolean;
@@ -1039,14 +955,12 @@ export interface InstanceSummary {
   settingsSchema: JSONSchema;
   instanceError: string | null;
   /**
-   * Secret providers only: the sources, destinations and notifiers whose settings reference
-   * `secret://<this name>/…`, with their status now. Creating, enabling, disabling, editing or
-   * reloading a provider rebuilds them first, so a mutation's response shows the outcome.
+   * Secret providers only: the instances referencing `secret://<this name>/…`. A mutation rebuilds
+   * them first, so its response shows the outcome.
    */
   dependents?: SecretProviderDependentDTO[];
 }
 
-/** An instance that resolves secrets through a provider (see `InstanceSummary.dependents`). */
 export interface SecretProviderDependentDTO {
   kind: 'source' | 'destination' | 'notifier';
   id: string;
@@ -1112,10 +1026,6 @@ export interface ProviderSecretsResponse {
   missing: MissingSecretDTO[];
 }
 
-// ---------------------------------------------------------------------------------------------
-// Settings, users, audit, export, about
-// ---------------------------------------------------------------------------------------------
-
 export interface RetentionSettings {
   eventsDays: number;
   rawBodiesDays: number;
@@ -1133,9 +1043,8 @@ export interface GlobalSettings {
   systemNotifierId: string | null;
   sourceSilenceMinutes: number;
   /**
-   * Every change must carry a one-line reason (default true). When false, a missing or empty
-   * `reason` is accepted and audited as "(no reason given)". Admin-only to change; the change is
-   * itself audited. Other replicas apply a change within a few seconds.
+   * Default true. When false, a missing reason is audited as "(no reason given)". Other replicas
+   * apply a change within a few seconds.
    */
   requireReasons: boolean;
   export: {

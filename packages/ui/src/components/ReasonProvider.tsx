@@ -3,10 +3,7 @@ import { type ReactNode, useCallback, useRef, useState } from 'react';
 import { type AskReason, ReasonContext, type ReasonPromptOptions } from '../hooks/reason.js';
 import { ReasonDialog } from './ReasonDialog.js';
 
-/**
- * Hosts the one app-wide reason prompt. `useReasonPrompt()` / `useReasonedMutation()` open it and
- * await the typed reason.
- */
+/** Hosts the one app-wide reason prompt that `useReasonPrompt()` / `useReasonedMutation()` open. */
 export function ReasonProvider({ children }: { children: ReactNode }) {
   const [request, setRequest] = useState<ReasonPromptOptions | null>(null);
   const resolver = useRef<((reason: string | null) => void) | null>(null);

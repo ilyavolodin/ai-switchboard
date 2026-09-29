@@ -9,7 +9,6 @@ import { qk } from '../keys.js';
 import { seg } from '../mutation.js';
 import { instancesQuery } from './instances.js';
 
-/** The query for GET /secret-providers/:id/secrets (shared with `useSecretSuggestions`). */
 const providerSecretsQuery = (id: string) =>
   queryOptions({
     queryKey: qk.providerSecrets(id),
@@ -18,7 +17,6 @@ const providerSecretsQuery = (id: string) =>
     staleTime: 30_000,
   });
 
-/** GET /secret-providers/:id/secrets — names only, never values (admin). */
 export function useProviderSecrets(id: string | undefined, options: { enabled?: boolean } = {}) {
   return useQuery({
     ...providerSecretsQuery(id ?? ''),
@@ -29,16 +27,12 @@ export function useProviderSecrets(id: string | undefined, options: { enabled?: 
 /** Never fetches: stands in when a component renders outside a QueryClientProvider. */
 const inertClient = new QueryClient({ defaultOptions: { queries: { enabled: false } } });
 
-/** What `SecretRefInput` knows about the names a provider lists. */
 export interface SecretSuggestions {
-  /** Listed names, or `null` when unknown (not an admin, cannot list, still loading). */
+  /** `null` when unknown (not an admin, cannot list, still loading). */
   names: string[] | null;
 }
 
-/**
- * The secret names a provider lists, for suggestions in a secret-reference input. Only admins may
- * list names, so for everyone else (and outside a query client) it quietly returns `null`.
- */
+/** Only admins may list names, so for everyone else (and outside a query client) it's `null`. */
 export function useSecretSuggestions(provider: string): SecretSuggestions {
   const client = useContext(QueryClientContext);
   const admin = useCan('admin');

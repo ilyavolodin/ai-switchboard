@@ -12,14 +12,10 @@ export interface DialogProps {
   children?: ReactNode;
   footer?: ReactNode;
   size?: 'md' | 'wide';
-  /** Clicking the backdrop closes (default true). */
+  /** Clicking the backdrop closes. */
   dismissible?: boolean;
 }
 
-/**
- * A modal dialog in a portal: `role="dialog"`, `aria-modal`, labelled by its title. Focus moves
- * to the first field (or button) and is kept inside; Escape closes; focus returns to the opener.
- */
 export function Dialog({
   open,
   onClose,

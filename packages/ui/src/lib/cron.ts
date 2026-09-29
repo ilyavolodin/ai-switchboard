@@ -1,6 +1,5 @@
 import cronstrue from 'cronstrue';
 
-/** Plain-language description of a cron expression ("At 07:00"), or an error message. */
 export function describeCron(
   cron: string,
 ): { ok: true; text: string } | { ok: false; error: string } {
@@ -22,7 +21,7 @@ export function describeCron(
   }
 }
 
-/** IANA timezones the browser knows, with the common ones first. */
+/** The common ones first. */
 export function timezones(): string[] {
   const common = [
     'UTC',
@@ -43,7 +42,6 @@ function supportedZones(): string[] {
   }
 }
 
-/** "Sat 07:00" in the given timezone. */
 export function formatInZone(iso: string, timeZone: string): string {
   try {
     return new Date(iso).toLocaleString(undefined, {

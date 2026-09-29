@@ -18,19 +18,16 @@ describe('Trace', () => {
     const items = within(timeline).getAllByRole('listitem');
     expect(items).toHaveLength(9);
 
-    // Filter decision: the expression and its result are open by default.
     const filter = within(timeline).getByText('Filter matched').closest('li');
     expect(filter).toHaveTextContent("attributes.label = 'autofix'");
     expect(filter).toHaveTextContent('true');
 
-    // Gate checks pass/fail, budget check with the binding limit and meter readings.
     const gate = within(timeline).getByText('Gate checks passed').closest('li');
     expect(gate).toHaveTextContent('closed · pass');
     const budget = within(timeline).getByText('Budget ok').closest('li');
     expect(budget).toHaveTextContent('process day cap');
     expect(budget).toHaveTextContent('62% (ceiling 85%)');
 
-    // The invoke links out in a new tab; the terminal state is marked failed.
     const invoke = within(timeline).getByText('Invoked').closest('li');
     expect(within(invoke as HTMLElement).getByRole('link', { name: /open/ })).toHaveAttribute(
       'target',
@@ -84,7 +81,6 @@ describe('Trace', () => {
     expect(within(why).getByRole('link', { name: 'Autofix' })).toBeVisible();
     expect(why).toHaveTextContent('Autofix: process is disabled');
     expect(why).toHaveTextContent('Triage: trigger "labels" is disabled (now)');
-    // A process that did not take the event did not touch it.
     const touched = screen.getByRole('region', { name: 'Processes that touched it' });
     expect(within(touched).getByText('No process matched it.')).toBeVisible();
     const stands = screen.getByRole('region', { name: 'Where it stands' });

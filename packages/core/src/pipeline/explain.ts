@@ -4,11 +4,9 @@ import type { DispatchOutcome, EventStage, MatchSkip } from '../domain/status.js
 import { candidateTriggers, skippedTriggers } from './match.js';
 
 /**
- * "Why nothing ran": for one event, which processes with a trigger on its source took it and,
- * for each that did not, the reason. Pure: the caller passes the event's recorded match
- * decisions and dispatches plus the processes as they are now. Recorded decisions win; a process
- * with nothing recorded (an event matched before skips were recorded, or a trigger added since)
- * is explained from the current configuration and marked `basis: 'now'`.
+ * "Why nothing ran" for one event. Recorded decisions win; a process with nothing recorded (an
+ * event matched before skips were recorded, or a trigger added since) is explained from the
+ * current configuration and marked `basis: 'now'`.
  */
 
 export interface ExplainDecision {
@@ -87,7 +85,6 @@ function decisionReason(
   }
 }
 
-/** Door stages stop an event before match; every process on the source shares the reason. */
 function doorReason(stage: EventStage, type: string, stageReason: string | null): Reason | null {
   const suffix = stageReason ? ` (${stageReason})` : '';
   switch (stage) {
@@ -186,7 +183,6 @@ export function explainEvent(input: ExplainInput): Explanation[] {
     });
   }
 
-  // Nothing recorded for this process: explain it from the configuration as it is now.
   for (const p of onSource) {
     if (recorded.has(p.id)) continue;
     const matchable = [{ id: p.id, enabled: p.enabled, document: p.document }];
@@ -217,11 +213,7 @@ export function explainEvent(input: ExplainInput): Explanation[] {
   );
 }
 
-/**
- * One line for the Activity row of an event nothing took: the most actionable process reason,
- * or that no process listens to the source. Null when something took it, while it waits for
- * match, and at door stages (the stage label already says why).
- */
+/** Null at door stages too: the stage label already says why. */
 export function summarizeWhy(
   stage: EventStage,
   explanations: readonly Explanation[],

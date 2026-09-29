@@ -6,25 +6,16 @@ import type { BatchKind, HoldReason } from '../domain/status.js';
 import { breakerAtGate, breakerClosesAt, type BreakerState } from './breaker.js';
 import { inQuietHours } from './quiet-hours.js';
 
-/**
- * Stage 5, gate. In order: process enabled → every source in the batch enabled → destination
- * instance enabled, its plugin available and healthy → breaker closed → outside quiet hours →
- * approval satisfied. The first failure holds the batch with its reason.
- */
-
 export interface GateInput {
   kind: BatchKind;
   dryRun: boolean;
   process: { enabled: boolean };
-  /** Distinct sources of the events in the batch. */
   sources: readonly { id: string; enabled: boolean }[];
   destination: {
-    /** The row exists. */
     exists: boolean;
     enabled: boolean;
-    /** The destination type's plugin is loaded. */
     pluginAvailable: boolean;
-    /** A live object exists (false when secrets failed or create threw). */
+    /** False when secrets failed or create threw. */
     live: boolean;
     instanceError?: string | undefined;
     health: Health | null;
@@ -34,7 +25,7 @@ export interface GateInput {
   defaultTimezone: string;
   approval: {
     rule: string;
-    /** For an expression rule: its value over the batch (errors count as required). */
+    /** For an expression rule, errors count as required. */
     required: boolean;
     state: 'none' | 'pending' | 'approved' | 'rejected';
     error?: string;
@@ -49,7 +40,7 @@ export interface GateCheck {
 
 export type GateResult = {
   checks: GateCheck[];
-  /** The breaker's cooldown elapsed during this check; persist the close. */
+  /** The cooldown elapsed during this check; the caller persists the close. */
   breakerClosed: boolean;
 } & ({ pass: true } | { pass: false; reason: HoldReason; detail?: string });
 

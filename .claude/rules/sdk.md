@@ -14,6 +14,6 @@ paths:
     reference plugin's `switchboard.sdk` and `peerDependencies` range to the new major.
 - The SDK has no dependency on core. Keep runtime dependencies minimal (Ajv, ajv-formats).
 - Everything a plugin author touches is exported from `src/index.ts` or `src/testing/index.ts`
-  and doc-commented.
+  and doc-commented where its meaning isn't obvious from the name and type.
 - The conformance kit (`src/testing/conformance.ts`) encodes the TDD's plugin rules. When the
   TDD adds a rule, add a check here and a test that the check fails on a bad plugin.

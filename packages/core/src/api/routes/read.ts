@@ -30,7 +30,6 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
   app.get('/api/v1/status', viewer, async () => statusStrip(ctx));
   app.get('/api/v1/board', viewer, async () => board(ctx));
 
-  // Sources, destinations, processes: statistics -----------------------------------------------
   app.get<{ Params: { id: string }; Querystring: { window?: string } }>(
     '/api/v1/sources/:id/stats',
     viewer,
@@ -67,7 +66,6 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
     async (req) => listActivity(ctx, { ...req.query, process: req.params.id }),
   );
 
-  // Activity, events and trace ---------------------------------------------------------------
   app.get<{ Querystring: ActivityQuery }>('/api/v1/events', viewer, async (req) =>
     listActivity(ctx, req.query),
   );
@@ -92,7 +90,6 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
     ctx.preview.traceForEvent(req.params.id),
   );
 
-  // Runs -------------------------------------------------------------------------------------
   app.get<{ Querystring: RunsQuery }>('/api/v1/runs', viewer, async (req) =>
     listRuns(ctx, req.query),
   );
@@ -111,7 +108,6 @@ export function registerReadRoutes(app: FastifyInstance, ctx: ApiContext): void 
     },
   );
 
-  // Approvals --------------------------------------------------------------------------------
   app.get('/api/v1/approvals', viewer, async () => pendingApprovals(ctx));
   app.get<{ Querystring: { cursor?: string; limit?: string } }>(
     '/api/v1/approvals/history',

@@ -35,9 +35,8 @@ function stripCode(text: string): string {
 }
 
 /**
- * Tracker references in a pull request's (or issue's) text: Linear identifiers as
- * `linear.issue`, GitHub closing keywords, cross-repository refs and links as `github.issue`
- * (or `github.pr` for `/pull/` links). `self` (`acme/api#482`) is excluded. Pure.
+ * Linear identifiers become `linear.issue`; closing keywords, cross-repository refs and links
+ * become `github.issue` (`github.pr` for `/pull/` links). `self` is excluded.
  */
 export function extractLinks(text: string, selfRepo: string, selfId: string): ArtifactRef[] {
   const clean = stripCode(text);

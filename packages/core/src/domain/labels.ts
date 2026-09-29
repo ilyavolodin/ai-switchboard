@@ -7,7 +7,6 @@ export interface StatusLabel {
   label: string;
 }
 
-/** The one mapping from run status to the four-colour vocabulary. */
 export const RUN_STATUS_LABELS: Record<RunStatusValue, StatusLabel> = {
   invoking: { tone: 'ok', label: 'invoking' },
   running: { tone: 'ok', label: 'running' },
@@ -23,7 +22,6 @@ export function runStatusLabel(status: RunStatusValue): StatusLabel {
   return RUN_STATUS_LABELS[status];
 }
 
-/** Source or destination instance status. */
 export function instanceStatus(input: {
   enabled: boolean;
   health: Health | null;
@@ -45,7 +43,6 @@ export function instanceStatus(input: {
   return { tone: 'ok', label: 'enabled' };
 }
 
-/** Process status: breaker > disabled > awaiting approval > never run > healthy. */
 export function processStatus(input: {
   enabled: boolean;
   breakerOpen: boolean;

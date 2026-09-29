@@ -19,6 +19,8 @@
   the exception.
 - Keep functions small and pure where possible. Pass dependencies in explicitly (clock, db,
   runtime, logger) rather than importing singletons.
-- Comments explain _why_, not _what_. Doc-comment every exported contract type and function.
+- Keep comments to a minimum. Write one only when the code can't say it: a non-obvious reason,
+  invariant or workaround. Don't restate names or narrate steps, and don't add section banners.
+  Public SDK types get a short doc comment only where the semantics aren't obvious from the name.
 - Formatting belongs to Prettier (single quotes, trailing commas, width 100). Don't hand-format
   against it.

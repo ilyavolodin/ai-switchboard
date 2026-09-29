@@ -6,10 +6,9 @@ import type { BatchKind, BindingLimit } from '../domain/status.js';
 import { isFresh } from './meters.js';
 
 /**
- * Stage 6, budget. Checks, in order: per-process hourly and daily run caps; per-destination
- * caps; meter ceilings (event batches against `events`, sweeps and manual runs against `sweeps`,
- * on the latest reading while fresh, otherwise counters only and `meter_stale`); usage caps on
- * budgetable dimensions from reported usage; the destination's soft-hold. The first failing check is
+ * Check order: process run caps, destination caps, meter ceilings (event batches against
+ * `events`, sweeps and manual runs against `sweeps`; a missing or stale reading skips the ceiling and
+ * reports `meter_stale`), usage caps, the destination's soft-hold. The first failing check is
  * the binding limit. Counters are rolling windows (last 60 minutes, last 24 hours).
  */
 
@@ -46,7 +45,6 @@ export interface BudgetInput {
   };
   counters: BudgetCounters;
   dimensions: readonly UsageDimension[];
-  /** Latest reading per meter id. */
   meters: Record<string, MeterSnapshot | undefined>;
 }
 
@@ -63,7 +61,6 @@ export interface BudgetResult {
   binding: BindingLimit | null;
   detail: string | null;
   checks: BudgetCheck[];
-  /** Meters whose ceiling could not be enforced because the reading is missing or stale. */
   meterStale: string[];
 }
 

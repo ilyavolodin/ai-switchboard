@@ -40,15 +40,13 @@ import {
   type HttpTarget,
 } from './target.js';
 
-/** Backend says "paused on my side": answer 423 Locked. */
 const PAUSED_STATUS = 423;
-/** When a 429 carries no Retry-After. */
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
 const USAGE_EXPRESSION_TIMEOUT_MS = 2_000;
 const USAGE_EXPRESSION_MAX_DEPTH = 500;
 const ERROR_SNIPPET_CHARS = 200;
 
-/** Append a relative path to a base URL; absolute URLs pass through. */
+/** Absolute URLs pass through. */
 export function resolveUrl(baseUrl: string | undefined, url: string): string {
   if (/^https?:\/\//i.test(url)) return url;
   if (baseUrl === undefined) {
@@ -306,7 +304,6 @@ function createHttpDestination(settings: HttpSettings, ctx: PluginContext): Dest
   };
 }
 
-/** The universal destination: one HTTP request per run, tracked sync, by callback, or not at all. */
 export const httpDestinationType: DestinationType = {
   id: 'http',
   displayName: 'HTTP',

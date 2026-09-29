@@ -33,8 +33,8 @@ import {
 } from './context.js';
 
 /**
- * Stages 2–4 for one event: match (filters evaluated outside the transaction because they may
- * call `$resolve`), then dedupe and batch in one transaction per event.
+ * Filters are evaluated outside the transaction because they may call `$resolve`; dedupe and
+ * batch then run in one transaction per event.
  */
 
 interface PendingJob {
@@ -48,7 +48,6 @@ export function batchingOf(row: ProcessRow): BatchingConfig {
   return { debounceSeconds: b.debounceSeconds, maxSize: b.maxSize, maxAgeSeconds: b.maxAgeSeconds };
 }
 
-/** `pipeline.match`: stages 2–4 for one event, in a `switchboard.match` span. */
 export function matchEvent(ctx: Ctx, eventId: string): Promise<void> {
   return ctx.telemetry.span('switchboard.match', { event_id: eventId }, () =>
     matchEventInSpan(ctx, eventId),
@@ -222,7 +221,6 @@ async function matchEventInSpan(ctx: Ctx, eventId: string): Promise<void> {
   }
 }
 
-/** Join the process's open batch for `batchKey` or open one; returns the batch id. */
 async function joinOrOpen(
   tx: Tx,
   proc: ProcessRow,
@@ -313,14 +311,12 @@ async function joinOrOpen(
   return created.id;
 }
 
-/** `pipeline.fire`, in a `switchboard.batch` span. */
 export function fireBatch(ctx: Ctx, batchId: string): Promise<void> {
   return ctx.telemetry.span('switchboard.batch', { batch_id: batchId }, () =>
     fireBatchInSpan(ctx, batchId),
   );
 }
 
-/** `pipeline.fire`: close a batch whose debounce or age elapsed and hand it to the gate. */
 async function fireBatchInSpan(ctx: Ctx, batchId: string): Promise<void> {
   const now = ctx.clock.now();
   const out = await withTx(ctx.db, async (tx) => {

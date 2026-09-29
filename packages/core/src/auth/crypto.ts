@@ -44,7 +44,6 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-/** A URL-safe random token with a recognisable prefix. */
 export function randomToken(prefix: string, bytes = 32): string {
   return `${prefix}${randomBytes(bytes).toString('base64url')}`;
 }
@@ -53,7 +52,6 @@ export function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-/** A readable one-time password for the evaluation admin. */
 export function generatePassword(): string {
   const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const bytes = randomBytes(20);

@@ -5,17 +5,12 @@ import { cx } from '../../lib/cx.js';
 import { coalesce } from './editorModel.js';
 import styles from './ProcessEditor.module.css';
 
-/** A sample burst of events (seconds after the first), the same for every setting. */
+/** Seconds after the first event, the same for every setting. */
 const ARRIVALS = [0, 25, 50, 70, 190, 205, 400, 430, 450, 470];
 const COLORS = ['var(--primary)', 'var(--sky)', 'var(--teal)', 'var(--berry)'];
 const W = 560;
 const H = 64;
 
-/**
- * A small picture of how the chosen batching coalesces a burst of events: dots drop onto a time
- * line, each batch's span is a bracket, and a run marker sits where the batch closes (debounce,
- * max size or max age). Animated unless the viewer prefers reduced motion.
- */
 export function CoalesceDemo({ batching }: { batching: ProcessDocument['batching'] }) {
   const reduced = useReducedMotion();
   const batches = coalesce(ARRIVALS, batching);

@@ -4,7 +4,6 @@ import { cx } from '../lib/cx.js';
 import styles from './Field.module.css';
 import { Icon } from './Icon.js';
 
-/** The ids a control inside a `Field` must use (from the render prop). */
 export interface FieldIds {
   id: string;
   describedBy: string | undefined;
@@ -13,28 +12,19 @@ export interface FieldIds {
 
 export interface FieldProps {
   label: ReactNode;
-  /** Short help under the control; long help can be a node. */
   help?: ReactNode;
   error?: string | null;
-  /** A standing red warning about the current value (not a validation error). */
+  /** A standing warning about the current value, not a validation error. */
   warning?: string | null;
   required?: boolean;
-  /** Shows the tangerine "changed, not saved" dot. */
   changed?: boolean;
   disabled?: boolean;
-  /** `row` puts the label left of the control (settings grids); `stack` above it. */
   layout?: 'stack' | 'row';
-  /** Extra content right of the label (a Reset link, a default value). */
   aside?: ReactNode;
-  /** A render prop receiving the ids to wire (`id`, `aria-describedby`, `aria-invalid`). */
   children: (ids: FieldIds) => ReactNode;
   className?: string;
 }
 
-/**
- * A labelled form row: label (with required marker and changed dot), the control, help and an
- * error message. The control is rendered by a function so ids and descriptions are wired for it.
- */
 export function Field({
   label,
   help,

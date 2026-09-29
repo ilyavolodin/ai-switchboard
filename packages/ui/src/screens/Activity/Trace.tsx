@@ -26,12 +26,6 @@ import {
 } from './traceSummary.js';
 import styles from './Trace.module.css';
 
-/**
- * The trace for one artifact (`/activity/trace/:query`): every event that joined, filter
- * decisions with the expression and result, batch open/close, gate and budget checks with the
- * readings, the invoke with its external link, steps, tracking and the terminal state, as one
- * vertical timeline that copies as text.
- */
 export function Trace() {
   const { query = '' } = useParams();
   const navigate = useNavigate();

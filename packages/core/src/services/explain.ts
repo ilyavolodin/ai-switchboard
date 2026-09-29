@@ -6,10 +6,6 @@ import { explainEvent, type Explanation } from '../pipeline/explain.js';
 
 type EventRow = typeof events.$inferSelect;
 
-/**
- * Explanations ("why nothing ran") for a set of events, keyed by event id. Reads the events'
- * dispatches and every process once; the pure fold is `pipeline/explain.ts`.
- */
 export async function explanationsFor(
   db: Db,
   rows: readonly EventRow[],

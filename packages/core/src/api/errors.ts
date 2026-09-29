@@ -3,7 +3,6 @@ import type { FastifyError, FastifyInstance } from 'fastify';
 import { isPipelineError } from '../services/pipeline/errors.js';
 import type { ApiError } from './contract.js';
 
-/** Throw from a route or service to send a structured error response. */
 export class HttpError extends Error {
   override readonly name = 'HttpError';
 
@@ -12,7 +11,6 @@ export class HttpError extends Error {
     readonly code: string,
     message: string,
     readonly details?: string[],
-    /** See `ApiError.usedBy`. */
     readonly usedBy?: { id: string; name: string }[],
   ) {
     super(message);
@@ -29,9 +27,8 @@ export const unprocessable = (message: string, details?: string[]): HttpError =>
   new HttpError(422, 'unprocessable', message, details);
 
 /**
- * Every mutation carries a non-empty one-line reason. When `requireReasons` is off, the
- * `preValidation` hook in `reasons.ts` has already filled a missing one with "(no reason given)",
- * so this check (and the audit write that follows) is the same in both modes.
+ * When `requireReasons` is off, the `preValidation` hook in `reasons.ts` has already filled a
+ * missing reason, so this check is the same in both modes.
  */
 export function requireReason(body: unknown): string {
   const reason =

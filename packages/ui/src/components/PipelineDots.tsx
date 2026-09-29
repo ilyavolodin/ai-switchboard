@@ -14,14 +14,10 @@ const TONE_WORDS: Record<StatusTone, string> = {
 
 export interface PipelineDotsProps {
   dots: PipelineDotsDTO;
-  /** sm 6 px (legend), md 8 px (nodes), lg 10 px (process cards). */
   size?: 'sm' | 'md' | 'lg';
 }
 
-/**
- * The last hour as five dots — matched › batched › gated › invoked › ok — each coloured by its
- * tone; a quiet stop is a hollow ring. The accessible label reads every stop with its count.
- */
+/** The last hour, one dot per pipeline stop; a quiet stop is a hollow ring. */
 export function PipelineDots({ dots, size = 'md' }: PipelineDotsProps) {
   const px = size === 'sm' ? 6 : size === 'lg' ? 10 : 8;
   const label = PIPELINE_STOPS.map(

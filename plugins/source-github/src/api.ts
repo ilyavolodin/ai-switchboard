@@ -7,13 +7,11 @@ import type { GitHubSettings } from './settings.js';
 
 export const API_BASE = 'https://api.github.com';
 
-/** Refresh an installation token this long before GitHub says it expires. */
 const REFRESH_MARGIN_MS = 60_000;
 /** GitHub accepts App JWTs of at most 10 minutes; backdate `iat` for clock drift. */
 const JWT_LIFETIME_S = 540;
 const JWT_BACKDATE_S = 60;
 
-/** Thrown when a token cannot be obtained (bad key, wrong installation, revoked App). */
 export class GitHubAuthError extends Error {
   override readonly name = 'GitHubAuthError';
 }
@@ -37,7 +35,6 @@ function loadKey(pem: string): KeyObject {
   }
 }
 
-/** An RS256 JWT identifying the App, as GitHub's App authentication requires. */
 export function appJwt(appId: string, key: KeyObject, now: Date): string {
   const iat = Math.floor(now.getTime() / 1000) - JWT_BACKDATE_S;
   const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
@@ -52,15 +49,11 @@ const BASE_HEADERS = {
   'user-agent': 'ai-switchboard',
 };
 
-/** Supplies the `authorization` header value for API calls. */
 export interface GitHubAuth {
   authorization(): Promise<string>;
 }
 
-/**
- * Token mode hands out the PAT. App mode signs a JWT, exchanges it for an installation token and
- * caches that token in memory (never in `ctx.state`) until a minute before it expires.
- */
+/** App installation tokens are cached in memory (never in `ctx.state`). */
 export function createAuth(s: GitHubSettings, ctx: PluginContext): GitHubAuth {
   if (s.authMode === 'token') {
     const header = `Bearer ${s.token ?? ''}`;
@@ -121,12 +114,10 @@ export function jsonOf(res: HttpResponse): unknown {
   }
 }
 
-/** GitHub's `message` from an error body, or the status text. */
 export function errorMessage(res: HttpResponse): string {
   return str(obj(jsonOf(res))?.message) ?? `HTTP ${res.status}`;
 }
 
-/** A thin REST/GraphQL client over the SDK's `HttpClient`. */
 export interface GitHubApi {
   request(method: string, path: string, json?: unknown): Promise<HttpResponse>;
   graphql(query: string, variables: Record<string, unknown>): Promise<HttpResponse>;

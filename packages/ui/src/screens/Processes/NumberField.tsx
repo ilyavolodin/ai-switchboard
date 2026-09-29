@@ -4,9 +4,7 @@ import { TextField } from '../../components/TextField.js';
 import { parseCap } from './editorModel.js';
 
 export interface NumberFieldProps {
-  /** `undefined` = empty ("no cap"). */
   value: number | undefined;
-  /** Called with a valid number, or `undefined` when cleared and `optional`. */
   onChange: (next: number | undefined) => void;
   id?: string;
   describedBy?: string;
@@ -29,8 +27,8 @@ function format(v: number | undefined): string {
 }
 
 /**
- * A numeric text input that keeps what the person typed while it is incomplete ("", "1.") and
- * only reports valid numbers. Accepts "400k" / "1.2M" for large caps.
+ * Keeps what the person typed while it is incomplete ("", "1.") and only reports valid numbers.
+ * Accepts "400k" / "1.2M".
  */
 export function NumberField({
   value,

@@ -9,7 +9,6 @@ import {
   type Settings,
 } from '@ai-switchboard/sdk';
 
-/** Settings of the `env` secret provider. */
 export interface EnvSecretSettings {
   /** Prepended to every name: `secret://env/GITHUB_TOKEN` with prefix `SB_` reads `SB_GITHUB_TOKEN`. */
   prefix: string;
@@ -126,7 +125,7 @@ function globToRegExp(globs: readonly string[]): RegExp | null {
 
 const SYSTEM = globToRegExp(SYSTEM_VARIABLES);
 
-/** The named secret does not exist. The message names the variable, never a value. */
+/** The message names the variable, never a value. */
 export class SecretNotFoundError extends Error {
   override readonly name = 'SecretNotFoundError';
 }

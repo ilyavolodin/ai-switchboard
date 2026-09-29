@@ -1,4 +1,4 @@
-/** How many evaluated rows came out true, false and as errors (an error is neither). */
+/** An error counts as neither true nor false. */
 export function evaluationCounts(rows: readonly { result: unknown; error?: string | null }[]): {
   true: number;
   false: number;

@@ -10,7 +10,6 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
   ref?: Ref<HTMLTextAreaElement>;
 }
 
-/** A multi-line input (card ground). `mono` for expressions and JSON. */
 export function Textarea({
   mono,
   invalid,

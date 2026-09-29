@@ -8,7 +8,6 @@ export interface RadioProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   variant?: 'plain' | 'pill';
 }
 
-/** A labelled radio button; group several with the same `name` inside a `<fieldset>`. */
 export function Radio({
   label,
   variant = 'plain',

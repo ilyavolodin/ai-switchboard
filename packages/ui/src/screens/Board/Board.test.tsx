@@ -92,7 +92,6 @@ describe('Board', () => {
     const reset = within(panel).getByRole('button', { name: 'Reset: Autofix breaker open' });
     expect(reset).toHaveAttribute('aria-disabled', 'true');
     expect(reset).toHaveAccessibleDescription(/needs the Operator role/);
-    // Navigation-only actions stay available.
     expect(within(panel).getByRole('button', { name: /^Plugins:/ })).not.toHaveAttribute(
       'aria-disabled',
     );

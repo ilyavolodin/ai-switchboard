@@ -5,11 +5,6 @@ import { defaultProcessDocument } from '../../src/domain/process.js';
 import { createApiHarness, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
-/**
- * A secret provider's lifecycle rebuilds the instances whose settings reference it, and a
- * provider still referenced anywhere cannot be deleted.
- */
-
 let tdb: TestDatabase;
 let h: ApiHarness;
 const reason = 'secret provider lifecycle test';
@@ -124,7 +119,6 @@ describe('secret provider lifecycle', () => {
     expect(h.ctx.runtime.instanceError(source.id)).toMatch(
       /^secret_error: secret provider "late" is not configured/,
     );
-    // Renaming back restores it.
     const back = await call<InstanceSummary>(
       'PUT',
       `/api/v1/secret-providers/${provider.id}`,
@@ -152,7 +146,6 @@ describe('secret provider lifecycle', () => {
     expect(message).toContain('source "Vault source"');
     expect(message).toContain('secret://late/');
 
-    // Point both elsewhere, then the delete goes through.
     await call(
       'PUT',
       `/api/v1/sources/${source.id}`,

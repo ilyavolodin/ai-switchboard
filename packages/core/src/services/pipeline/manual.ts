@@ -20,8 +20,6 @@ import { batchEvents } from './load.js';
 import { readMeters } from './meters.js';
 import { closeRun } from './runs.js';
 
-/** Operator actions. Each carries a reason and writes `audit_log`. */
-
 function requireReason(reason: string): void {
   if (reason.trim() === '') throw new PipelineError('invalid', 'a reason is required');
 }
@@ -31,9 +29,8 @@ function notFound(what: string, id: string): PipelineError {
 }
 
 /**
- * *Run now* / *Test run*: a manual batch that enters at the gate. With `batchId` it replays that
- * batch's events. Dry runs pass every gate except approval, are not counted toward budgets, and
- * reach the destination with `run.dryRun = true`.
+ * With `batchId` it replays that batch's events. Dry runs pass every gate except approval, are
+ * not counted toward budgets, and reach the destination with `run.dryRun = true`.
  */
 export async function runNow(
   ctx: Ctx,
@@ -89,7 +86,7 @@ export async function runNow(
   return dispatchBatch(ctx, batchId);
 }
 
-/** Release a batch waiting for approval; it re-enters at the gate. */
+/** The batch re-enters at the gate. */
 export async function approve(
   ctx: Ctx,
   batchId: string,
@@ -169,7 +166,6 @@ async function decide(
   });
 }
 
-/** Close an open run by hand (e.g. an `uncertain` run a person checked in the backend). */
 export async function closeRunByHand(
   ctx: Ctx,
   runId: string,

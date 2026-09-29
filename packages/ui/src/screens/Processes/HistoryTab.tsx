@@ -70,10 +70,6 @@ function VersionDiff({
   );
 }
 
-/**
- * Every saved version with who saved it and why; select one to see what changed from the
- * version before it, and Restore any earlier one (with a reason — it becomes a new version).
- */
 export function HistoryTab({
   processId,
   processName,

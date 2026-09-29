@@ -18,7 +18,6 @@ describe('throttleDecision (sliding window)', () => {
     ['five email failures', new Map([['email:abc', times(5, 60)]]), false],
     ['nine IP failures', new Map([['ip:10.0.0.1', times(9, 60)]]), true],
     ['ten IP failures', new Map([['ip:10.0.0.1', times(10, 60)]]), false],
-    // Failures older than the window do not count.
     ['five email failures, all older than 5 min', new Map([['email:abc', times(5, 400)]]), true],
     ['another key failing', new Map([['email:other', times(20, 60)]]), true],
   ])('%s → allowed %s', (_label, failures, allowed) => {

@@ -1,8 +1,4 @@
-/**
- * The four questions the UI exists to answer (TDD, Testing › UI), against the real stack:
- * see a breaker on the Board, find an artifact's trace by id, read a meter, and edit a process
- * then find the change in the audit log.
- */
+// The four questions the UI exists to answer (TDD, Testing › UI).
 import type { ProcessDetail } from '@ai-switchboard/core/contract';
 
 import { expect, open, test } from './fixtures.js';
@@ -15,7 +11,6 @@ test('the Board shows an open breaker, and Reset closes it', async ({ page, api,
     name: `Process ${BREAKER_PROCESS}, breaker open, no sweep`,
   });
   await expect(node).toBeVisible();
-  // The node's border carries the error tone; its label says it in words.
   await expect(node).toHaveAttribute('data-tone', 'error');
 
   const attention = page.getByRole('region', { name: 'Needs attention' });
@@ -93,7 +88,6 @@ test('an edit to a process is in the audit log with its reason', async ({ page, 
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: /Reason/ }).fill(reason);
   await dialog.getByRole('button', { name: 'Save changes' }).click();
-  // Saving returns to the process, one version on.
   await expect(page).toHaveURL(new RegExp(`/processes/${state.healthyProcessId}$`));
   await expect(page.getByRole('link', { name: `History ${before.version + 1}` })).toBeVisible();
 

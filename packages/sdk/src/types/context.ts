@@ -7,16 +7,15 @@ export interface InstanceState {
   set(key: string, value: unknown): Promise<void>;
 }
 
-/** Everything the core hands a plugin when it creates an instance. */
 export interface PluginContext {
   instanceId: string;
   instanceName: string;
   logger: Logger;
   /** Honours the plugin's declared network capability and propagates tracing. */
   http: HttpClient;
-  /** The core's clock; use it instead of `Date.now()` so tests can control time. */
+  /** Use instead of `Date.now()` so tests can control time. */
   now(): Date;
-  /** Public base URL of this installation, e.g. `https://switchboard.example.com`. */
+  /** Public base URL of this installation. */
   publicUrl: string;
   state: InstanceState;
 }

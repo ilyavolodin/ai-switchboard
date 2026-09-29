@@ -46,11 +46,6 @@ import { HistoryTab } from './HistoryTab.js';
 import styles from './ProcessDetail.module.css';
 import { RunsTab } from './RunsTab.js';
 
-/**
- * A process (`/processes/:id`, `/processes/:id/:tab`): the header (status, enabled toggle with a
- * confirm naming what stops, breaker, next sweep, Run now), the pipeline funnel and three small
- * charts for a selectable window, and the Activity · Runs · Definition · History tabs.
- */
 export function ProcessDetail() {
   const { id = '', tab } = useParams();
   const process = useProcess(id);

@@ -45,7 +45,6 @@ export function ruleDefinitions(rules: MappedRule[]): EventTypeDefinition[] {
   return [...byType.values()];
 }
 
-/** Whether the rule's condition holds for the delivery, and the value it looked at. */
 function conditionHolds(rule: MappedRule, delivery: Delivery): { ok: boolean; seen: unknown } {
   const path = rule.when?.path;
   if (path === undefined || path === '') return { ok: true, seen: undefined };
@@ -72,11 +71,7 @@ function optionalText(
   return text;
 }
 
-/**
- * Mapped mode: a list of rules, each an event type with an optional condition, an artifact and
- * attributes read from dotted paths into `{ body, headers, query }`. The first rule whose
- * condition holds produces the event. No JSONata involved.
- */
+/** The first rule whose condition holds produces the event. */
 export function compileMapped(rules: MappedRule[]): Mapper {
   const types = compileEventTypes(SOURCE_ID, ruleDefinitions(rules));
   return {

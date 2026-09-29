@@ -1,8 +1,4 @@
 /* eslint-disable react-refresh/only-export-components -- test helpers are never hot-reloaded */
-/**
- * Test helpers: render a component (or the whole app at a path) with the query client, toasts,
- * reason prompt, a session with the given role, a memory router, and the mock API as `fetch`.
- */
 import type { Role } from '@ai-switchboard/core/contract';
 import { QueryClient } from '@tanstack/react-query';
 import { render, type RenderResult } from '@testing-library/react';
@@ -25,11 +21,10 @@ export { TEST_NOW };
 export interface RenderOptions {
   role?: Role | null;
   path?: string;
-  /** Extra route pattern for the component (so `useParams` works), default `*`. */
+  /** So `useParams` works; default `*`. */
   routePath?: string;
   overrides?: MockHandlers;
   fixtures?: Fixtures;
-  /** The session's `requireReasons` (default true). */
   requireReasons?: boolean;
 }
 
@@ -59,7 +54,6 @@ function installApi(options: RenderOptions): MockApi {
   return api;
 }
 
-/** Renders one component inside providers and a memory router. */
 export function renderWithProviders(ui: ReactElement, options: RenderOptions = {}): Rendered {
   const api = installApi(options);
   const role = options.role === undefined ? 'operator' : options.role;
@@ -88,7 +82,6 @@ export function renderWithProviders(ui: ReactElement, options: RenderOptions = {
   return { ...result, api, user, router };
 }
 
-/** Renders the whole app (shell + route table) at `path`. */
 export function renderApp(path: string, options: RenderOptions = {}): Rendered {
   const api = installApi(options);
   if (options.role !== undefined && !options.overrides?.['GET /auth/me']) {

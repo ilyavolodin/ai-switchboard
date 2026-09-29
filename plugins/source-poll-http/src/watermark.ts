@@ -1,6 +1,5 @@
 import type { EventDraft } from '@ai-switchboard/sdk';
 
-/** How many boundary dedupe keys the watermark keeps; bounds its size. */
 const MAX_SEEN = 500;
 
 /**

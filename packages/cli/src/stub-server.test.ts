@@ -6,13 +6,13 @@ import { verifyHmac } from '@ai-switchboard/sdk';
 
 import { createStubServer, type StubServer } from '../../../deploy/stub/server.js';
 
-/** A tiny receiver standing in for Switchboard's /hooks and /callbacks routes. */
 interface Received {
   path: string;
   headers: IncomingMessage['headers'];
   body: string;
 }
 
+/** Stands in for Switchboard's /hooks and /callbacks routes. */
 async function receiver(): Promise<{ url: string; got: Received[]; close: () => Promise<void> }> {
   const got: Received[] = [];
   const server = createServer((req, res) => {

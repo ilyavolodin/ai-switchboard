@@ -5,14 +5,11 @@ export interface SkeletonProps {
   width?: number | string;
   height?: number | string;
   shape?: 'rect' | 'circle' | 'card';
-  /** Repeat as a stack of lines. */
   lines?: number;
   className?: string;
-  /** Announced once for the whole region. */
   label?: string;
 }
 
-/** A loading placeholder (shimmering block, circle or card); `lines` stacks text lines. */
 export function Skeleton({
   width = '100%',
   height = 14,

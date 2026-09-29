@@ -21,10 +21,6 @@ import {
   WINDOW_OPTIONS,
 } from './sourceModel.js';
 
-/**
- * The source's Overview tab: events per hour (per day for 7 d / 30 d) stacked by event type and
- * by pipeline stage, the 24 h split by type, the processes it feeds and verify failures.
- */
 export function SourceOverview({ source }: { source: SourceDetail }) {
   const [range, setRange] = useState<StatsWindow>('24h');
   const stats = useSourceStats(source.id, range);

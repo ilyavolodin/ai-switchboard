@@ -26,7 +26,6 @@ describe('layoutBoard', () => {
     const order = layoutBoard(f.board)
       .nodes.filter((n) => n.kind === 'process')
       .map((n) => n.id);
-    // GitHub (first source) feeds PR Review before Linear's processes; schedule-only processes last.
     expect(order.indexOf(IDS.processes.prReview)).toBeLessThan(order.indexOf(IDS.processes.sizer));
     expect(order.slice(-2).sort()).toEqual([IDS.processes.nightly, IDS.processes.scorecard].sort());
   });

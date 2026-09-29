@@ -7,18 +7,14 @@ import styles from './ProcessEditor.module.css';
 
 export interface EditorSectionProps {
   title: string;
-  /** One line shown beside the title, collapsed or not. */
   summary: ReactNode;
   open: boolean;
   onToggle: () => void;
-  /** Validation messages that belong to this section (the API's 422 details, client checks). */
   errors?: string[];
-  /** Something in the section differs from the saved version. */
   changed?: boolean;
   children?: ReactNode;
 }
 
-/** One collapsible section of the process editor, in the document's reading order. */
 export function EditorSection({
   title,
   summary,

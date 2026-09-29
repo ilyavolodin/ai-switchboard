@@ -2,11 +2,7 @@ import { type QueryKey, useMutation, useQueryClient } from '@tanstack/react-quer
 
 import { apiFetch } from './client.js';
 
-/**
- * A typed mutation over one API route. `path` builds the URL from the variables; `body` picks the
- * request body (defaults to the variables without `id`/`name`/`batchId`/`version`); every key in
- * `invalidate` is invalidated on success so lists, the board and the status strip refresh.
- */
+/** `body` defaults to the variables minus the path params. */
 export function useApiMutation<TVars, TData>(config: {
   method: 'POST' | 'PUT' | 'DELETE';
   path: (vars: TVars) => string;
@@ -32,7 +28,6 @@ export function useApiMutation<TVars, TData>(config: {
 
 const PATH_PARAMS = new Set(['id', 'batchId', 'version', 'pluginName']);
 
-/** The request body: the variables minus the ones that went into the path. */
 export function stripPathParams(vars: unknown): unknown {
   if (typeof vars !== 'object' || vars === null) return vars;
   const out: Record<string, unknown> = {};
@@ -40,5 +35,4 @@ export function stripPathParams(vars: unknown): unknown {
   return out;
 }
 
-/** `encodeURIComponent` for path segments. */
 export const seg = (s: string | number): string => encodeURIComponent(String(s));

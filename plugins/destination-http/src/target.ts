@@ -12,11 +12,9 @@ import { headersSchema } from './settings.js';
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
 
-/** Tracking modes a process may pick for an `http` target. */
 export const HTTP_TRACKING = ['sync', 'callback', 'none'] as const;
 export type HttpTracking = (typeof HTTP_TRACKING)[number];
 
-/** What a process names to run: one HTTP request. */
 export interface HttpTarget {
   method: HttpMethod;
   /** Absolute, or relative to the instance's base URL. */
@@ -99,7 +97,7 @@ export const inputSchema: JSONSchema = {
   description: 'Any JSON value; sent as the request body with content-type application/json.',
 };
 
-/** Validate a target and apply defaults. A bad target is definitive: retrying cannot fix it. */
+/** A bad target is definitive: retrying cannot fix it. */
 export function readTarget(target: unknown): HttpTarget {
   try {
     return parseWith<HttpTarget>(targetSchema, target, 'http target');
@@ -118,7 +116,7 @@ export function idempotentFor(target: unknown): boolean {
   return tryParse<HttpTarget>(targetSchema, target)?.idempotent ?? false;
 }
 
-/** The HTTP request timeout when the target sets none (the SDK HttpClient's default). */
+/** The SDK HttpClient's default. */
 export const DEFAULT_REQUEST_TIMEOUT_SECONDS = 30;
 /**
  * How much longer than the request timeout the core waits for `invoke`: room for reading the
@@ -127,7 +125,6 @@ export const DEFAULT_REQUEST_TIMEOUT_SECONDS = 30;
  */
 export const INVOKE_TIMEOUT_MARGIN_SECONDS = 10;
 
-/** `DestinationType.invokeTimeoutFor`: the target's request timeout plus a margin. */
 export function invokeTimeoutFor(target: unknown): number {
   const request =
     tryParse<HttpTarget>(targetSchema, target)?.timeoutSeconds ?? DEFAULT_REQUEST_TIMEOUT_SECONDS;

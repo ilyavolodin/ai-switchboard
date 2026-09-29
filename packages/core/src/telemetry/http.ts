@@ -21,15 +21,6 @@ import {
 } from '@opentelemetry/semantic-conventions';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
-/**
- * HTTP server spans and `http.server.request.duration` for the API and the ingress surfaces,
- * with Fastify hooks (no auto-instrumentation): `onRequest` starts a SERVER span whose parent is
- * the caller's W3C `traceparent` (a sender's trace continues into `/hooks`), every route handler
- * runs inside it, and `onResponse` ends it with the route template and status. Probes, `/metrics`
- * and the static UI are not traced.
- */
-
-/** Semantic-convention buckets for `http.server.request.duration` (seconds). */
 export const HTTP_DURATION_BUCKETS = [
   0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
 ];

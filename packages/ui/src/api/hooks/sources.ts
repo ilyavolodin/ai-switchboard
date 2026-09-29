@@ -22,7 +22,6 @@ import { cursorPaging, useIdQuery } from '../query.js';
 
 const fleet = [qk.sources.all, qk.board, qk.status, qk.processes.all];
 
-/** GET /sources */
 export function useSources() {
   return useQuery({
     queryKey: qk.sources.list(),
@@ -31,14 +30,12 @@ export function useSources() {
   });
 }
 
-/** GET /sources/:id */
 export function useSource(id: string | undefined) {
   return useIdQuery<SourceDetail>(id, qk.sources.detail, (i) => `/sources/${seg(i)}`, {
     refetchInterval: POLL.lists,
   });
 }
 
-/** GET /sources/:id/stats?window= */
 export function useSourceStats(id: string | undefined, window: StatsWindow = '24h') {
   return useIdQuery<SourceStatsResponse>(
     id,
@@ -48,7 +45,6 @@ export function useSourceStats(id: string | undefined, window: StatsWindow = '24
   );
 }
 
-/** GET /sources/:id/events?cursor=&type= (paged) */
 export function useSourceEvents(id: string | undefined, type?: string) {
   return useInfiniteQuery({
     queryKey: qk.sources.events(id ?? '', type),
@@ -62,7 +58,6 @@ export function useSourceEvents(id: string | undefined, type?: string) {
   });
 }
 
-/** POST /sources */
 export function useCreateSource() {
   return useApiMutation<CreateSourceRequest, SourceDetail>({
     method: 'POST',
@@ -71,7 +66,6 @@ export function useCreateSource() {
   });
 }
 
-/** PUT /sources/:id */
 export function useUpdateSource() {
   return useApiMutation<UpdateSourceRequest & { id: string }, SourceDetail>({
     method: 'PUT',
@@ -80,7 +74,6 @@ export function useUpdateSource() {
   });
 }
 
-/** DELETE /sources/:id */
 export function useDeleteSource() {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'DELETE',
@@ -89,7 +82,6 @@ export function useDeleteSource() {
   });
 }
 
-/** POST /sources/:id/enable */
 export function useEnableSource() {
   return useApiMutation<EnableRequest & { id: string }, SourceDetail>({
     method: 'POST',
@@ -98,7 +90,6 @@ export function useEnableSource() {
   });
 }
 
-/** POST /sources/:id/provision — register the webhook with the upstream system. */
 export function useProvisionSource() {
   return useApiMutation<Reasoned & { id: string }, { ok: boolean; message: string }>({
     method: 'POST',
@@ -107,7 +98,6 @@ export function useProvisionSource() {
   });
 }
 
-/** POST /sources/:id/test-event */
 export function useSendTestEvent() {
   return useApiMutation<Reasoned & { id: string; type?: string }, { eventIds: string[] }>({
     method: 'POST',
@@ -116,7 +106,6 @@ export function useSendTestEvent() {
   });
 }
 
-/** POST /sources/:id/reload — recreate the live plugin object. */
 export function useReloadSource() {
   return useApiMutation<Reasoned & { id: string }, SourceDetail>({
     method: 'POST',
@@ -125,10 +114,7 @@ export function useReloadSource() {
   });
 }
 
-/**
- * POST /sources/preview — a sample delivery through draft settings (Add source, Source ›
- * Settings). Read-only, so a query keyed by the request; pass `null` to pause (no sample yet).
- */
+/** Read-only, so a query keyed by the request; `null` pauses it (no sample yet). */
 export function usePreviewSource(req: SourcePreviewRequest | null) {
   return useQuery({
     queryKey: qk.preview.source(req ?? { typeId: '', settings: {}, request: { body: '' } }),
@@ -142,8 +128,8 @@ export function usePreviewSource(req: SourcePreviewRequest | null) {
 }
 
 /**
- * GET /sources/:id/last-delivery — never fetched on its own: call `refetch()` when the person
- * asks for it (a stored delivery is a sender's raw body).
+ * Never fetched on its own: call `refetch()` when the person asks for it (a stored delivery is a
+ * sender's raw body).
  */
 export function useLastDelivery(id: string | undefined) {
   return useQuery({

@@ -18,9 +18,8 @@ import { nextConfigVersion } from './instances.js';
 import { getSettings, putSettings } from './settings.js';
 
 /**
- * The portable configuration format (`switchboard export` / `switchboard apply -f`). Instances
- * are referenced by NAME inside processes so a file moves between installations; secret
- * references stay intact and secret values never appear.
+ * Instances are referenced by name inside processes so a file moves between installations.
+ * Secret references stay intact; secret values never appear.
  */
 export interface ConfigurationFile {
   apiVersion: 'switchboard/v1';
@@ -43,7 +42,6 @@ export interface InstanceSpec {
   settings?: Record<string, unknown>;
 }
 
-/** A ProcessDocument with instance ids replaced by names. */
 export type PortableProcess = Omit<
   ProcessDocument,
   'triggers' | 'destination' | 'before' | 'after' | 'notify'
@@ -101,9 +99,8 @@ export function canonical(value: unknown): string {
 }
 
 /**
- * Accept the names a file used before "executor" became "destination" (SDK 2.0.0): a top-level
- * `executors:` list and a process `executor:` binding. Export writes only the new names.
- * These deprecated spellings will be removed in a future major.
+ * Accepts the pre-SDK-2.0 `executors:` list and process `executor:` binding; export writes only
+ * the new names. Remove in a future major.
  */
 export function upgradeLegacyConfiguration(file: unknown): { file: unknown; errors: string[] } {
   if (file === null || typeof file !== 'object' || Array.isArray(file)) return { file, errors: [] };
@@ -202,22 +199,20 @@ export interface ApplyOptions {
   reason: string;
   now: Date;
   dryRun: boolean;
-  /** Validate plugin settings for a type (throws with messages), or undefined when the type is not installed. */
+  /** Undefined when the type is not installed. */
   validateSettings: (
     kind: 'source' | 'destination' | 'notifier' | 'secret_provider',
     typeId: string,
     settings: Record<string, unknown>,
   ) => string[] | undefined;
-  /** Full process validation (structure + references), given the translated document. */
   validateProcess: (doc: ProcessDocument, tx: DbOrTx) => Promise<string[]>;
 }
 
 type Change = ApplyResponse['changes'][number];
 
 /**
- * Apply a configuration file: create or update instances and processes by name, in one
- * transaction. Nothing missing from the file is deleted (apply is additive). A dry run reports
- * the change list and rolls back.
+ * One transaction, matched by name. Additive: nothing missing from the file is deleted. A dry run
+ * rolls back.
  */
 export async function applyConfiguration(
   db: Db,

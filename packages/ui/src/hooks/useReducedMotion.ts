@@ -15,7 +15,6 @@ function snapshot(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia(QUERY).matches;
 }
 
-/** True when the viewer asked for reduced motion (no animated flow dots then). */
 export function useReducedMotion(): boolean {
   return useSyncExternalStore(subscribe, snapshot, () => false);
 }

@@ -1,10 +1,6 @@
 /**
- * Test fixtures for the e2e suite:
- * - `state`: the ids global setup seeded, and `api`, an admin API client for the same stack.
- * - `baseURL` points at the stack global setup started.
- * - `page` is signed in as the local admin (opt out with `test.use({ signedIn: false })`).
- * - Every test fails on an uncaught page error, a console error, or an `/api` response of 400 or
- *   more, unless the test allows it in `allowedApiErrors` (a regex over `401 POST /api/v1/…`).
+ * Every test fails on an uncaught page error, a console error, or an `/api` response of 400 or
+ * more, unless allowed in `allowedApiErrors` (a regex over `401 POST /api/v1/…`).
  *
  * The fixture callback is named `provide`, not Playwright's usual `use`, so the React hooks lint
  * rule doesn't mistake it for `React.use`.
@@ -81,7 +77,6 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 
 export { expect };
 
-/** Open a path and wait until the shell has rendered its top bar. */
 export async function open(page: Page, path: string): Promise<void> {
   await page.goto(path);
   await expect(page.getByRole('banner')).toBeVisible();

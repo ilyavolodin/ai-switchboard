@@ -37,16 +37,11 @@ const ROLE_OPTIONS = (['admin', 'operator', 'viewer'] as const).map((r) => ({
 
 const isRole = (v: string): v is Role => v === 'admin' || v === 'operator' || v === 'viewer';
 
-/**
- * Users: who can sign in and with which role. Admins manage them; every other role sees the same
- * list read-only (`GET /users/directory`: email and role), with the controls visible but disabled.
- */
 export function UsersTab() {
   const isAdmin = useCan('admin');
   return isAdmin ? <UsersAdmin /> : <UsersReadOnly />;
 }
 
-/** The Users tab for operators and viewers: the directory, every control disabled. */
 function UsersReadOnly() {
   const directory = useUserDirectory();
   const { user: me } = useSession();
@@ -350,7 +345,6 @@ function AddUser() {
   const [error, setError] = useState<string | null>(null);
   const [passwordErr, setPasswordErr] = useState<string | null>(null);
   const { oidcConfigured } = useSession();
-  // Operators and viewers see the form, disabled; the button names the role it needs.
   const isAdmin = useCan('admin');
   const create = useReasonedMutation(
     useCreateUser(),

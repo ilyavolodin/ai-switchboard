@@ -8,7 +8,6 @@ import { useToast } from '../../hooks/toast.js';
 import { ChangePasswordForm } from '../ChangePassword/ChangePasswordForm.js';
 import styles from './Settings.module.css';
 
-/** Account: who you are signed in as, how you can sign in, and changing your own password. */
 export function AccountTab() {
   const session = useSession();
   const me = useMe();

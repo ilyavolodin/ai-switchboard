@@ -180,7 +180,6 @@ describe('ProcessDetail', () => {
     expect(within(drawer).getByRole('region', { name: 'Steps' })).toHaveTextContent(
       'src-linear.addLabel',
     );
-    // A step left in doubt by an interrupted attempt reads as a warning, with its word.
     const steps = within(drawer).getByRole('region', { name: 'Steps' });
     expect(steps).toHaveTextContent('src-linear.comment');
     expect(within(steps).getByText('in doubt')).toBeInTheDocument();

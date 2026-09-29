@@ -8,7 +8,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Why one mapping result was dropped (`narrowMapped` returned null). */
 function dropReason(item: unknown, declared: string[], index: number): string {
   const which = `Mapping result ${index + 1}`;
   if (!isRecord(item)) return `${which} is not an object, so it was dropped.`;
@@ -19,10 +18,7 @@ function dropReason(item: unknown, declared: string[], index: number): string {
   return `${which} (${item.type}) needs an artifact with a "kind" and an "id", so it was dropped.`;
 }
 
-/**
- * JSONata mode (the only mode before 1.1): the person declares `eventTypes` and writes a
- * `mapping` from `{ body, headers, query }` to one or more mapping results.
- */
+/** The only mode before 1.1. */
 export function compileJsonata(eventTypes: EventTypeDefinition[], mapping: string): Mapper {
   const types = compileEventTypes(SOURCE_ID, eventTypes);
   const expression = compileExpression(mapping, 'mapping');

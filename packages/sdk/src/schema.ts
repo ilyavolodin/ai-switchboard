@@ -6,7 +6,6 @@ import type { JSONSchema } from './types/common.js';
 // ajv-formats ships CJS with a default export that ESM sees as a namespace.
 const addFormats = addFormatsModule as unknown as (ajv: Ajv2020) => Ajv2020;
 
-/** UI annotation keywords plugin schemas may use. */
 export const UI_KEYWORDS = [
   'x-secret',
   'x-widget',
@@ -20,7 +19,6 @@ export const UI_KEYWORDS = [
   'x-docs',
 ] as const;
 
-/** An Ajv instance for draft 2020-12 with formats and Switchboard's UI annotations registered. */
 export function createAjv(): Ajv2020 {
   const ajv = new Ajv2020({
     allErrors: true,
@@ -37,7 +35,7 @@ export function createAjv(): Ajv2020 {
 const shared = createAjv();
 const cache = new WeakMap<object, ValidateFunction>();
 
-/** Compile (cached per schema object) and return a validator. Throws when the schema is invalid. */
+/** Cached per schema object. Throws when the schema is invalid. */
 export function compileSchema(schema: JSONSchema): ValidateFunction {
   let fn = cache.get(schema);
   if (!fn) {
@@ -58,14 +56,13 @@ export function formatErrors(errors: ErrorObject[] | null | undefined): string[]
   );
 }
 
-/** Validate `value` against `schema`. Returns messages like `/label must be string`. */
+/** Returns messages like `/label must be string`. */
 export function validateAgainst(schema: JSONSchema, value: unknown): SchemaCheck {
   const fn = compileSchema(schema);
   const valid = fn(value);
   return { valid, errors: valid ? [] : formatErrors(fn.errors) };
 }
 
-/** True when `schema` itself is a well-formed JSON Schema. */
 export function isValidSchema(schema: unknown): SchemaCheck {
   if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
     return { valid: false, errors: ['schema must be an object'] };
@@ -78,7 +75,7 @@ export function isValidSchema(schema: unknown): SchemaCheck {
   }
 }
 
-/** Property names marked `x-secret: true` at the top level of an object schema (and nested objects). */
+/** Dotted paths of properties marked `x-secret: true`, including in nested objects. */
 export function secretPaths(schema: JSONSchema, prefix = ''): string[] {
   const props = schema.properties as Record<string, JSONSchema> | undefined;
   if (!props) return [];
@@ -96,9 +93,8 @@ export class SchemaMismatchError extends Error {
   override readonly name = 'SchemaMismatchError';
 }
 
-/** Options for `parseWith`. */
 export interface ParseWithOptions {
-  /** The error class to throw on a mismatch. Defaults to `SchemaMismatchError`. */
+  /** Defaults to `SchemaMismatchError`. */
   error?: new (message: string) => Error;
 }
 
@@ -108,10 +104,8 @@ function validatedCopy(schema: JSONSchema, value: unknown): { copy: unknown; che
 }
 
 /**
- * Validate a copy of `value` against `schema` and return the copy, with the schema's defaults
- * applied, typed as `T`. Working on a copy keeps Ajv's `useDefaults` from mutating the caller's
- * object. Throws `Invalid <what>: <errors>` (a `SchemaMismatchError` unless `options.error` names
- * another class). Use it for settings in `create()` and for targets and inputs in `invoke()`.
+ * Validates a copy with the schema's defaults applied, so Ajv's `useDefaults` never mutates the
+ * caller's object. Throws `Invalid <what>: <errors>`.
  */
 export function parseWith<T>(
   schema: JSONSchema,
@@ -127,7 +121,7 @@ export function parseWith<T>(
   return copy as T;
 }
 
-/** Like `parseWith`, but returns `null` instead of throwing (for paths that must never throw). */
+/** Like `parseWith`, but returns `null` instead of throwing. */
 export function tryParse<T>(schema: JSONSchema, value: unknown): T | null {
   const { copy, check } = validatedCopy(schema, value);
   return check.valid ? (copy as T) : null;

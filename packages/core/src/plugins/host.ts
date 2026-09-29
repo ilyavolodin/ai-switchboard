@@ -77,25 +77,18 @@ export interface PluginHostOptions {
   logger: CoreLogger;
   telemetry: Telemetry;
   config: CoreConfig;
-  /** Plugin definitions registered without discovery (tests, embedded use). */
+  /** Registered without discovery (tests, embedded use). */
   builtin?: { name: string; version: string; definition: PluginDefinition }[];
-  /** Replace the default scan directories. */
   scanDirs?: { path: string; origin: 'baked' | 'installed' }[];
-  /** `npm` runner for installs (injectable for tests). */
   runNpm?: RunNpm;
 }
 
-/** What loading one installed package did. */
 export interface HotLoadResult {
   plugin: LoadedPlugin;
-  /**
-   * True when the running process cannot pick the package up: a different version of it is
-   * already loaded (the ES module cache keeps the old code) and a restart applies the change.
-   */
+  /** Another version is loaded (the ES module cache keeps its code); a restart applies it. */
   pendingRestart: boolean;
 }
 
-/** A package the host is about to validate and register. */
 interface Candidate {
   pkg: Pick<DiscoveredPackage, 'name' | 'version' | 'origin'> & { sdk: string };
   load: () => Promise<unknown>;
@@ -106,27 +99,21 @@ interface TypeEntry<T> {
   pluginName: string;
 }
 
-/** The row version this replica built an instance from (see {@link PluginHost.reconcile}). */
 interface BuiltInstance {
   kind: InstanceKind;
   version: number;
   name: string;
 }
 
-/** One instance a reconcile pass built, rebuilt or dropped. */
 export interface ReconciledInstance {
   kind: InstanceKind;
   id: string;
   name: string;
 }
 
-/** What one {@link PluginHost.reconcile} pass did on this replica. */
 export interface ReconcileResult {
-  /** Rows this replica had never built (created on another replica). */
   built: ReconciledInstance[];
-  /** Rows whose version moved on (changed, enabled, disabled or reloaded elsewhere). */
   rebuilt: ReconciledInstance[];
-  /** Instances whose row is gone (deleted elsewhere). */
   dropped: ReconciledInstance[];
   /** Instances rebuilt because a secret provider they reference changed. */
   dependents: ReconciledInstance[];
@@ -159,7 +146,6 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/** The serializable part of a type, stored in `plugin_types.manifest` and served to the UI. */
 export function serializeType(
   kind: InstanceKind,
   type: SourceType | DestinationType | NotifierType | SecretProviderType,
@@ -198,7 +184,6 @@ export function serializeType(
   return base;
 }
 
-/** Who a plugin call belongs to, for its span. */
 interface CallSpan {
   telemetry: Telemetry;
   kind: InstanceKind;
@@ -207,9 +192,8 @@ interface CallSpan {
 }
 
 /**
- * Wrap every method of a plugin object so an unexpected exception is attributed to its plugin
- * before it propagates, and each call inside a trace gets a child span
- * (`switchboard.plugin.<method>`). Sync methods stay sync.
+ * Attributes unexpected exceptions to the plugin before they propagate and gives each call a
+ * child span. Sync methods stay sync.
  */
 function attribute<T extends object>(
   target: T,
@@ -268,12 +252,10 @@ export class PluginHost implements PluginRuntime {
   private readonly liveProviders = new Map<string, LiveSecretProvider>();
   private readonly providersByName = new Map<string, LiveSecretProvider>();
   private readonly errors = new Map<string, string>();
-  /** Build tickets: see {@link commit}. */
   private buildEpoch = 0;
   private readonly claims = new Map<string, number>();
-  /** The row version behind each committed build: what {@link reconcile} compares against. */
   private readonly built = new Map<string, BuiltInstance>();
-  /** Instances with a reload in flight on this replica; a reconcile pass leaves them alone. */
+  /** Reloads in flight on this replica; a reconcile pass leaves them alone. */
   private readonly pending = new Map<string, number>();
   private reconcileTimer: NodeJS.Timeout | undefined;
   private reconciling: Promise<ReconcileResult> | undefined;
@@ -285,11 +267,6 @@ export class PluginHost implements PluginRuntime {
 
   constructor(private readonly opts: PluginHostOptions) {}
 
-  // ------------------------------------------------------------------------------------------
-  // Boot
-  // ------------------------------------------------------------------------------------------
-
-  /** Discover, load and register plugins, then build every configured instance. */
   async boot(): Promise<void> {
     // Install what other replicas recorded first, so this start loads it like any other package.
     await this.syncInstalled({ load: false });
@@ -320,7 +297,6 @@ export class PluginHost implements PluginRuntime {
     return mod.default;
   }
 
-  /** Validate one candidate like boot does and, when it passes, register its types. */
   private async evaluate({ pkg, load }: Candidate): Promise<LoadedPlugin> {
     const record: LoadedPlugin = {
       name: pkg.name,
@@ -367,7 +343,7 @@ export class PluginHost implements PluginRuntime {
     return record;
   }
 
-  /** The `plugins` row for a loaded (or refused) package. Install columns are left alone. */
+  /** Install columns are left alone. */
   private pluginRow(p: LoadedPlugin, sdkRange: string, now: Date) {
     const def = p.definition;
     return {
@@ -385,7 +361,6 @@ export class PluginHost implements PluginRuntime {
     };
   }
 
-  /** The `plugin_types` rows of every type a plugin registered. */
   private typeRows(pluginName: string | undefined, now: Date) {
     const rows = [];
     for (const kind of ['source', 'destination', 'notifier', 'secret_provider'] as const) {
@@ -442,7 +417,6 @@ export class PluginHost implements PluginRuntime {
           .values(values)
           .onConflictDoUpdate({ target: plugins.name, set: values });
       }
-      // Plugins seen before but missing now are unavailable; their types too.
       const rows = await tx
         .select({ name: plugins.name, removeRequestedAt: plugins.removeRequestedAt })
         .from(plugins);
@@ -469,10 +443,6 @@ export class PluginHost implements PluginRuntime {
     });
   }
 
-  // ------------------------------------------------------------------------------------------
-  // Hot install and replica convergence
-  // ------------------------------------------------------------------------------------------
-
   /** Serializes npm runs in this process: the API and the sync timer share one plugins dir. */
   private installChain: Promise<unknown> = Promise.resolve();
   private syncTimer: NodeJS.Timeout | undefined;
@@ -484,12 +454,7 @@ export class PluginHost implements PluginRuntime {
     return next;
   }
 
-  /**
-   * Load a package that was just installed into `$SWITCHBOARD_HOME/plugins`, without a restart:
-   * import its entry, validate it like boot, register its types, upsert its `plugins` and
-   * `plugin_types` rows and build the configured instances that were waiting for its types.
-   * A package whose other version is already loaded is left for the next start.
-   */
+  /** Without a restart; a package whose other version is loaded waits for the next start. */
   async loadInstalled(name: string): Promise<HotLoadResult> {
     const { db, clock, logger } = this.opts;
     const dir = join(pluginsDir(this.opts.config.home), 'node_modules');
@@ -534,7 +499,6 @@ export class PluginHost implements PluginRuntime {
     return { plugin: record, pendingRestart: false };
   }
 
-  /** Build the configured instances of freshly registered types. */
   private async buildInstancesOf(types: { kind: InstanceKind; typeId: string }[]): Promise<void> {
     const { db } = this.opts;
     const ticket = this.ticket();
@@ -569,10 +533,7 @@ export class PluginHost implements PluginRuntime {
         await this.buildNotifier(row, ticket);
   }
 
-  /**
-   * Install a package from npm (admin action), record it in the database so every replica
-   * converges on it, and load it into this process.
-   */
+  /** Records the install in the database so every replica converges on it. */
   async installAndLoad(
     spec: string,
     runNpm: RunNpm | undefined = this.opts.runNpm,
@@ -591,7 +552,7 @@ export class PluginHost implements PluginRuntime {
     });
   }
 
-  /** Remember an API install in `plugins` (the row may not exist yet on this replica). */
+  /** The row may not exist yet on this replica. */
   private async recordInstall(
     name: string,
     spec: string,
@@ -624,9 +585,8 @@ export class PluginHost implements PluginRuntime {
   }
 
   /**
-   * Record an admin's removal: forget the API install and set the tombstone, so every replica's
-   * sync pass removes its own copy and unregisters it (see {@link syncInstalled}). This process
-   * unregisters it now; the caller has already removed the local package.
+   * Sets the tombstone so every replica's sync pass removes its own copy. The caller has already
+   * removed the local package.
    */
   async forgetInstall(name: string): Promise<void> {
     const now = this.opts.clock.now();
@@ -638,8 +598,7 @@ export class PluginHost implements PluginRuntime {
   }
 
   /**
-   * Take a removed plugin out of this process: drop its types, rebuild the instances that used
-   * them (they report `plugin_unavailable`) and mark its rows unavailable. Idempotent. The ES
+   * Idempotent. Instances that used its types rebuild and report `plugin_unavailable`. The ES
    * module cache keeps its code; a later re-install imports a fresh copy.
    */
   private async unregister(name: string): Promise<void> {
@@ -679,11 +638,9 @@ export class PluginHost implements PluginRuntime {
   }
 
   /**
-   * Converge this replica on the database: install every plugin recorded by an API install that
-   * is missing from (or at another version in) the local `$SWITCHBOARD_HOME`, and with `load`,
-   * hot-load it; remove every tombstoned plugin from the local home and unregister it. A copy
-   * installed locally after the removal (a CLI install) is left alone, as are plugins that were
-   * never recorded. Idempotent; failures are logged and retried on the next pass, never thrown.
+   * Installs recorded plugins missing locally (or at another version) and removes tombstoned ones.
+   * A copy installed locally after the removal (a CLI install) is left alone, as are plugins that
+   * were never recorded. Never throws: failures are logged and retried on the next pass.
    */
   async syncInstalled(options: { load: boolean } = { load: true }): Promise<void> {
     const { db, logger, config } = this.opts;
@@ -777,7 +734,6 @@ export class PluginHost implements PluginRuntime {
     });
   }
 
-  /** Run {@link syncInstalled} every `seconds` on this replica until {@link stop}. */
   startSync(seconds = this.opts.config.pluginSyncSeconds): void {
     if (this.syncTimer) return;
     this.syncTimer = setInterval(() => {
@@ -810,7 +766,7 @@ export class PluginHost implements PluginRuntime {
       this.types.secret_provider.set(t.id, { type: t, pluginName });
   }
 
-  /** First boot: create `env` and `file` provider instances when their types exist and none are configured. */
+  /** First boot only: runs when no secret provider is configured. */
   private async ensureDefaultSecretProviders(): Promise<void> {
     const { db, clock } = this.opts;
     const existing = await db.select({ id: secretProviders.id }).from(secretProviders).limit(1);
@@ -844,10 +800,6 @@ export class PluginHost implements PluginRuntime {
     for (const row of await db.select().from(notifiers)) await this.buildNotifier(row, ticket);
   }
 
-  // ------------------------------------------------------------------------------------------
-  // Instances
-  // ------------------------------------------------------------------------------------------
-
   private context(
     instanceId: string,
     instanceName: string,
@@ -865,7 +817,6 @@ export class PluginHost implements PluginRuntime {
       http: createHttpClient({
         ...(network ? { allowedHosts: network } : {}),
         logger: pluginLogger,
-        // Client spans and W3C trace context from the active span, at the time of each request.
         fetch: createTracedFetch(),
       }),
       now: () => clock.now(),
@@ -895,7 +846,6 @@ export class PluginHost implements PluginRuntime {
     return this.loaded.find((p) => p.name === pluginName)?.definition?.capabilities.network;
   }
 
-  /** Resolve `secret://<provider>/<name>` through the provider instance named `<provider>`. */
   async resolveSecret(ref: string): Promise<string> {
     const parsed = parseSecretRef(ref);
     if (!parsed) throw new Error(`malformed secret reference ${ref}`);
@@ -940,7 +890,7 @@ export class PluginHost implements PluginRuntime {
     this.errors.delete(id);
   }
 
-  /** A new build ticket. Take it before reading the rows the build uses. */
+  /** Take a ticket before reading the rows the build uses. */
   private ticket(): number {
     return ++this.buildEpoch;
   }
@@ -970,7 +920,6 @@ export class PluginHost implements PluginRuntime {
     this.commit(id, ticket, () => this.errors.set(id, error), from);
   }
 
-  /** Mark instances as being rebuilt by this replica until `fn` settles. */
   private async withPending<T>(ids: readonly string[], fn: () => Promise<T>): Promise<T> {
     for (const id of ids) this.pending.set(id, (this.pending.get(id) ?? 0) + 1);
     try {
@@ -1100,10 +1049,8 @@ export class PluginHost implements PluginRuntime {
   }
 
   /**
-   * A throwaway source built from draft settings, for the sample-delivery preview: secret
-   * references are resolved and `create` runs, but nothing is registered, stored, or counted
-   * against the plugin (a half-typed draft is not the plugin's fault). `secretValues` lets the
-   * caller redact what it returns.
+   * For the sample-delivery preview: nothing is registered, stored, or counted against the plugin
+   * (a half-typed draft is not the plugin's fault). `secretValues` lets the caller redact output.
    */
   async buildPreviewSource(
     typeId: string,
@@ -1265,10 +1212,6 @@ export class PluginHost implements PluginRuntime {
     );
   }
 
-  // ------------------------------------------------------------------------------------------
-  // PluginRuntime
-  // ------------------------------------------------------------------------------------------
-
   sourceType(typeId: string): TypeEntry<SourceType> | undefined {
     return this.types.source.get(typeId);
   }
@@ -1312,9 +1255,8 @@ export class PluginHost implements PluginRuntime {
   }
 
   /**
-   * Rebuild one instance from its row now (the replica that changed it). Other replicas pick
-   * the change up on their next {@link reconcile} pass through the row's `config_version`; this
-   * one records the version it built, so its own pass does not build it again.
+   * Other replicas pick the change up on their next reconcile pass through `config_version`; this
+   * one records the version it built so its own pass does not build it again.
    */
   async reload(kind: InstanceKind, id: string): Promise<void> {
     // Claim the instance before reading its row: an older build finishing later cannot win.
@@ -1354,11 +1296,9 @@ export class PluginHost implements PluginRuntime {
   }
 
   /**
-   * Rebuild every source, destination and notifier whose settings reference
-   * `secret://<provider>/…` for one of these provider names, so they re-resolve against the
-   * provider as it is now: created, enabled, disabled, re-configured, renamed (pass the old and
-   * the new name: instances still naming the old one fail with a `secret_error`) or deleted.
-   * Returns the instances it rebuilt.
+   * Rebuilds every instance whose settings reference `secret://<provider>/…` for these names. On a
+   * rename pass the old and the new name: instances still naming the old one fail with a
+   * `secret_error`.
    */
   async reloadDependentsOf(
     providerNames: string | readonly string[],
@@ -1405,17 +1345,10 @@ export class PluginHost implements PluginRuntime {
     return rebuilt;
   }
 
-  // ------------------------------------------------------------------------------------------
-  // Instance convergence across replicas
-  // ------------------------------------------------------------------------------------------
-
   /**
-   * Converge this replica's live objects on the instance tables: build instances another
-   * replica created, rebuild the ones whose `config_version` moved on (changed, enabled,
-   * disabled or reloaded elsewhere), drop the deleted ones, and rebuild the dependents of every
-   * secret provider that changed. One `id, config_version` query per table; only changed rows
-   * are read in full. Instances with a reload in flight here are left for the next pass. A pass
-   * never throws (failures are logged) and concurrent calls share one pass.
+   * Converges live objects on the instance tables by `config_version`, and rebuilds the
+   * dependents of every secret provider that changed. Only changed rows are read in full. Never
+   * throws (failures are logged); concurrent calls share one pass.
    */
   reconcile(): Promise<ReconcileResult> {
     this.reconciling ??= this.reconcileOnce().finally(() => {
@@ -1462,13 +1395,12 @@ export class PluginHost implements PluginRuntime {
     return result;
   }
 
-  /** Reconcile one instance table; returns the touched instances with their previous names. */
+  /** Returns the touched instances with their previous names. */
   private async reconcileKind(
     kind: InstanceKind,
     result: ReconcileResult,
   ): Promise<(ReconciledInstance & { previousName?: string })[]> {
     const { db } = this.opts;
-    // Take the ticket before reading any row, like every other build.
     const ticket = this.ticket();
     const table = INSTANCE_TABLES[kind];
     const rows = await db.select({ id: table.id, version: table.configVersion }).from(table);
@@ -1513,7 +1445,6 @@ export class PluginHost implements PluginRuntime {
     return touched;
   }
 
-  /** Read these rows of one table in full and build each; returns what was read. */
   private async buildRows(
     kind: InstanceKind,
     ids: string[],
@@ -1559,7 +1490,6 @@ export class PluginHost implements PluginRuntime {
     this.opts.telemetry.counter('switchboard.instance.rebuilds', { kind, change });
   }
 
-  /** Run {@link reconcile} every `seconds` on this replica until {@link stop}. */
   startReconcile(seconds = this.opts.config.instanceSyncSeconds): void {
     if (this.reconcileTimer) return;
     this.reconcileTimer = setInterval(() => {
@@ -1588,7 +1518,6 @@ export class PluginHost implements PluginRuntime {
     }, 250);
   }
 
-  /** Persist buffered plugin error counts. */
   async flushPluginErrors(): Promise<void> {
     const pending = [...this.pluginErrorQueue.entries()];
     this.pluginErrorQueue.clear();
@@ -1606,10 +1535,6 @@ export class PluginHost implements PluginRuntime {
       }
     }
   }
-
-  // ------------------------------------------------------------------------------------------
-  // Health
-  // ------------------------------------------------------------------------------------------
 
   private async probe(fn: () => Promise<Health>): Promise<Health> {
     const now = this.opts.clock.now().toISOString();
@@ -1633,7 +1558,6 @@ export class PluginHost implements PluginRuntime {
     }
   }
 
-  /** Call every live instance's `health()` and store the result on its row. */
   async checkHealth(): Promise<void> {
     const { db, telemetry } = this.opts;
     for (const live of this.liveSources.values()) {
@@ -1649,7 +1573,7 @@ export class PluginHost implements PluginRuntime {
         .from(destinations)
         .where(eq(destinations.id, live.id));
       const health = await this.probe(() => live.destination.health());
-      // A destination marked unhealthy by the pipeline (401/403) stays so until a reload or a healthy probe.
+      // Keep an unhealthy status the pipeline set (401/403) when the probe cannot tell.
       if (row?.health?.status === 'unhealthy' && health.status === 'unknown') continue;
       await db.update(destinations).set({ health }).where(eq(destinations.id, live.id));
       telemetry.gauge('switchboard.destination.health', health.status === 'healthy' ? 1 : 0, {

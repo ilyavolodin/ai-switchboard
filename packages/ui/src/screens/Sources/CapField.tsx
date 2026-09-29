@@ -9,7 +9,6 @@ export interface CapFieldProps {
   help?: ReactNode;
   value: number | undefined;
   onChange: (next: number | undefined) => void;
-  /** Unit after the input ("events", "seconds"). */
   suffix?: ReactNode;
   min?: number;
   max?: number;
@@ -19,7 +18,6 @@ export interface CapFieldProps {
   layout?: 'stack' | 'row';
 }
 
-/** A core cap: an optional whole number with its unit; empty means "no cap". */
 export function CapField({
   label,
   help,

@@ -6,13 +6,11 @@ import {
   type UsageDimension,
 } from '@ai-switchboard/sdk';
 
-/** Instance settings of the `github-actions` destination, after secrets are resolved. */
 export interface GithubActionsSettings {
   /** `app`: a GitHub App installation token (recommended). `token`: a fine-grained PAT. */
   auth: 'app' | 'token';
   /** App ID (or Client ID). */
   appId?: string | number;
-  /** The App's PEM private key. */
   privateKey?: string;
   installationId?: string | number;
   token?: string;

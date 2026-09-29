@@ -7,7 +7,6 @@ import pg from 'pg';
 import * as schema from './schema.js';
 
 export type Db = NodePgDatabase<typeof schema>;
-/** A transaction handle; every repository function accepts `Db | Tx`. */
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 export type DbOrTx = Db | Tx;
 

@@ -16,10 +16,6 @@ import { useReasonedMutation } from '../../hooks/reason.js';
 import styles from './Settings.module.css';
 import { parseDomains } from './settingsForm.js';
 
-/**
- * Sign-in: the OIDC issuer, client id and allowed domains. The client secret is a secret
- * reference read from the environment, and sign-in changes take effect after a restart.
- */
 export function SignInTab() {
   const settings = useSettings();
   if (settings.isPending) return <Skeleton shape="card" height={260} label="Loading sign-in" />;

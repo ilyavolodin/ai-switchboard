@@ -25,10 +25,7 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
-/**
- * `switchboard doctor`: database, migrations, plugin manifests, secret resolution and every
- * enabled instance's `health()`. Read-only except for the plugin registry refresh the host does.
- */
+/** Read-only except for the plugin registry refresh the host does. */
 export async function runDoctor(config: CoreConfig): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const database = connect(config.databaseUrl, { max: 2 });

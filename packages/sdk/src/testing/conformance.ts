@@ -34,10 +34,6 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) fail(message);
 }
 
-// ---------------------------------------------------------------------------------------------
-// Sources
-// ---------------------------------------------------------------------------------------------
-
 export interface SourceFixtures {
   /** Resolved settings (secret values inline) for `create`. */
   settings: Settings;
@@ -310,13 +306,8 @@ export function sourceConformanceChecks(
   return checks;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Destinations
-// ---------------------------------------------------------------------------------------------
-
 export interface DestinationFixtures {
   settings: Settings;
-  /** The plugin's own stub of its backend. */
   http: StubHandler;
   /** Defaults to `type.examples[0]`. */
   target?: Target;
@@ -491,12 +482,8 @@ export function destinationConformanceChecks(
   ];
 }
 
-// ---------------------------------------------------------------------------------------------
-// Secret providers
-// ---------------------------------------------------------------------------------------------
-
 export interface SecretProviderFixtures {
-  /** Settings for `create` (secret providers take no secret references themselves). */
+  /** Plain values: secret providers take no secret references themselves. */
   settings: Settings;
   /** Names the provider must list with these settings (the test seeds them first). */
   expectNames?: string[];
@@ -507,7 +494,7 @@ export interface SecretProviderFixtures {
 
 const LISTING_KEYS = new Set(['name', 'description', 'updatedAt']);
 
-/** Every string anywhere in `value` (keys included), for the "no value leaks" check. */
+/** Keys included. */
 function stringsIn(value: unknown): string[] {
   if (typeof value === 'string') return [value];
   if (Array.isArray(value)) return value.flatMap(stringsIn);
@@ -518,11 +505,8 @@ function stringsIn(value: unknown): string[] {
 }
 
 /**
- * Checks for a secret provider type. When the provider implements `list()`, the listing must be
- * well formed (unique non-empty names, only `name` / `description` / `updatedAt`) and must not
- * contain any secret value: every listed name is resolved and its value searched for in the
- * whole listing. Values of 4+ characters are matched as substrings; shorter ones only as an
- * exact field.
+ * A `list()` listing must not contain any resolved value: values of 4+ characters are matched
+ * as substrings, shorter ones only as an exact field.
  */
 export function secretProviderConformanceChecks(
   type: SecretProviderType,
@@ -592,7 +576,7 @@ export function secretProviderConformanceChecks(
           try {
             values.push(await provider.resolve(entry.name));
           } catch {
-            // A listed name that does not resolve (for example an empty value) leaks nothing.
+            // An unresolvable name (e.g. an empty value) leaks nothing.
           }
         }
         const fields = stringsIn(listing);
@@ -606,10 +590,6 @@ export function secretProviderConformanceChecks(
     },
   ];
 }
-
-// ---------------------------------------------------------------------------------------------
-// Whole plugin + test-runner glue
-// ---------------------------------------------------------------------------------------------
 
 export function pluginConformanceChecks(plugin: PluginDefinition): ConformanceCheck[] {
   return [
@@ -629,14 +609,7 @@ interface TestApi {
   it: (name: string, fn: () => Promise<void>) => void;
 }
 
-/**
- * Register checks with any describe/it test runner:
- *
- * ```ts
- * import { describe, it } from 'vitest';
- * runConformance('github source', sourceConformanceChecks(githubSource, fixtures), { describe, it });
- * ```
- */
+/** Registers checks with any describe/it test runner, e.g. vitest's `{ describe, it }`. */
 export function runConformance(title: string, checks: ConformanceCheck[], api: TestApi): void {
   api.describe(`conformance: ${title}`, () => {
     for (const check of checks) api.it(check.name, () => check.run());

@@ -12,15 +12,10 @@ export interface DrawerProps {
   title: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
-  /** `right` side panel (desktop) or `bottom` sheet (phone). */
   side?: 'right' | 'bottom';
   width?: number;
 }
 
-/**
- * A side panel / bottom sheet (event detail, run detail). Modal like `Dialog`: focus is kept
- * inside, Escape and the backdrop close it.
- */
 export function Drawer({
   open,
   onClose,

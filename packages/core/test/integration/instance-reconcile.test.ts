@@ -11,10 +11,7 @@ import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
 import { createApiHarness, testPlugin, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
-/**
- * Two replicas on one database: replica A serves the API (and rebuilds what it changes at once),
- * replica B is a second plugin host that converges on A's changes through `reconcile()`.
- */
+// Replica A serves the API and rebuilds at once; replica B converges through `reconcile()`.
 
 let tdb: TestDatabase;
 let a: ApiHarness;
@@ -59,7 +56,6 @@ async function call<T>(
 
 const ids = (list: { id: string }[]) => list.map((i) => i.id);
 
-/** Replica A handled the change and rebuilt already: its own pass must find nothing to do. */
 async function expectNothingOnA(): Promise<void> {
   const own: ReconcileResult = await a.ctx.host.reconcile();
   expect(own).toEqual({ built: [], rebuilt: [], dropped: [], dependents: [] });
@@ -112,7 +108,6 @@ describe('instance convergence across replicas', () => {
     expect(b.instanceError(source.id)).toBeUndefined();
     expect(b.destination(destinationId)).toBeDefined();
     await expectNothingOnA();
-    // A second pass with nothing changed rebuilds nothing.
     expect(await b.reconcile()).toEqual({ built: [], rebuilt: [], dropped: [], dependents: [] });
   });
 
@@ -191,7 +186,6 @@ describe('instance convergence across replicas', () => {
     expect(b.instanceError(source.id)).toMatch(/^secret_error: .*"vault"/);
     expect(b.source(source.id)).toBeUndefined();
 
-    // Renaming it back resolves the reference again on both replicas.
     await call('PUT', `/api/v1/secret-providers/${provider.id}`, { name: 'vault' });
     await expectNothingOnA();
     expect(ids((await b.reconcile()).dependents)).toEqual([source.id]);

@@ -30,10 +30,6 @@ const FILTER_LABELS: Record<ProcessFilter, string> = {
   off: 'Off',
 };
 
-/**
- * All processes as cards (pipeline dots, 7-day sparkline, status, next sweep, today's runs against
- * the daily cap), with a status filter, search and sorting by activity, status or name.
- */
 export function Processes() {
   const processes = useProcesses();
   const navigate = useNavigate();

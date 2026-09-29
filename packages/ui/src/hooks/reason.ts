@@ -13,35 +13,25 @@ import { errorMessage } from '../api/client.js';
 import { useSession } from '../app/session.js';
 import { useToast } from './toast.js';
 
-/** What the reason prompt shows. */
 export interface ReasonPromptOptions {
-  /** "Reset the Autofix breaker?" */
   title: string;
-  /** The sentence naming the consequence: "Event runs resume immediately; …". */
   consequence?: ReactNode;
-  /** The confirm button repeats the verb: "Reset breaker". */
   confirmLabel: string;
-  /** Coral confirm button for destructive or fleet-affecting actions. */
+  /** For destructive or fleet-affecting actions. */
   danger?: boolean;
   placeholder?: string;
-  /**
-   * Set by `useReasonPrompt` when the installation makes reasons optional: the dialog asks for an
-   * optional note instead of a required reason.
-   */
+  /** Set by `useReasonPrompt` when the installation makes reasons optional. */
   optional?: boolean;
 }
 
-/** Opens the reason dialog; resolves to the reason, or `null` when cancelled. */
+/** Resolves to `null` when cancelled. */
 export type AskReason = (options: ReasonPromptOptions) => Promise<string | null>;
 
-/** Provided by `<ReasonProvider>`. */
 export const ReasonContext = createContext<AskReason | null>(null);
 
 /**
- * The `ask` function of the app-wide reason prompt. When the installation does not require
- * reasons (`Session.requireReasons`), it resolves to an empty reason at once (the server audits
- * "(no reason given)"); a `danger` action still opens the dialog as a confirmation, with the
- * reason optional.
+ * When reasons are not required, resolves to an empty reason at once (the server audits "(no
+ * reason given)"); a `danger` action still opens the dialog as a confirmation.
  */
 export function useReasonPrompt(): AskReason {
   const ask = useContext(ReasonContext);
@@ -60,15 +50,7 @@ export function useReasonPrompt(): AskReason {
   return prompt;
 }
 
-/**
- * Wraps a reason-carrying mutation so that `run(vars)` first asks for a one-line reason, then
- * sends `{ ...vars, reason }`. Every state-changing action in the UI goes through this. With
- * reasons optional (Settings › General), non-danger actions skip the prompt and send `reason: ''`.
- *
- *   const reset = useReasonedMutation(useResetBreaker(), (v) => ({
- *     title: 'Reset the Autofix breaker?', confirmLabel: 'Reset breaker', ... }));
- *   <Button onClick={() => reset.run({ id })}>Reset</Button>
- */
+/** Every state-changing action goes through this: `run(vars)` asks, then sends `{ ...vars, reason }`. */
 export function useReasonedMutation<TData, TVars extends { reason: string }>(
   mutation: UseMutationResult<TData, Error, TVars>,
   prompt: ReasonPromptOptions | ((vars: Omit<TVars, 'reason'>) => ReasonPromptOptions),

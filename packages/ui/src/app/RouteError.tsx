@@ -3,7 +3,6 @@ import { isRouteErrorResponse, useRouteError } from 'react-router';
 import { Banner } from '../components/Banner.js';
 import { LinkButton } from '../components/LinkButton.js';
 
-/** The router's error element: a readable message instead of a blank page. */
 export function RouteError() {
   const error = useRouteError();
   const message = isRouteErrorResponse(error)

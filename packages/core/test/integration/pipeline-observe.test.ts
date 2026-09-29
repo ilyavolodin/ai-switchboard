@@ -245,7 +245,6 @@ describe('stats, retention and maintenance', () => {
     expect(source?.counters).toMatchObject({ total: 2, 'stage:matched': 2 });
     const meter = rows.find((r) => r.dimension === 'meter' && r.key === `${ex.id}|five_hour`);
     expect(meter?.counters).toMatchObject({ utilization_max: 42 });
-    // Idempotent: a second pass writes the same rows.
     await materialiseStats(h.deps, new Date('2026-01-05T08:00:00Z'), h.clock.now());
     expect(await h.db.select().from(statsHourly)).toHaveLength(rows.length);
   });
@@ -294,7 +293,6 @@ describe('stats, retention and maintenance', () => {
     await h.drain();
     expect(await runsOf(h.db, pid)).toHaveLength(1);
 
-    // A pull source is polled on its interval and its watermark advances.
     const pull = await seedSource(h, { caps: { pollIntervalSeconds: 60 } });
     const live = h.runtime.sources.get(pull.id)!;
     live.type = { ...live.type, mode: 'pull' };

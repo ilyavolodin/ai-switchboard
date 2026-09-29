@@ -4,9 +4,6 @@
 #     --from-literal=OTEL_EXPORTER_OTLP_HEADERS='x-honeycomb-team=<api key>'
 #   helm upgrade --install switchboard deploy/helm/switchboard -f my-values.yaml \
 #     -f deploy/helm/examples/otel-values.yaml
-#
-# Pointing straight at a vendor instead of a collector works the same way: set endpoint to the
-# vendor's OTLP URL (docs/observability.md lists Grafana Cloud, Datadog, Honeycomb, New Relic).
 otel:
   endpoint: http://otel-collector.observability:4318
   protocol: http/protobuf

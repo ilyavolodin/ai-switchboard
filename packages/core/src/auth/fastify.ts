@@ -12,10 +12,6 @@ declare module 'fastify' {
   }
 }
 
-/**
- * What a session that must change its password may still call: read who it is, change the
- * password, sign out, or sign in again.
- */
 export const PASSWORD_CHANGE_ALLOWED: ReadonlySet<string> = new Set([
   'GET /api/v1/auth/me',
   'POST /api/v1/auth/password',
@@ -25,10 +21,6 @@ export const PASSWORD_CHANGE_ALLOWED: ReadonlySet<string> = new Set([
   'GET /api/v1/auth/oidc/callback',
 ]);
 
-/**
- * Resolve the caller from the session cookie or a bearer API token on every `/api` request, and
- * hold a session that must change its password to `PASSWORD_CHANGE_ALLOWED`.
- */
 export function registerAuth(app: FastifyInstance, db: Db, clock: Clock): void {
   app.decorateRequest('user', null);
   app.addHook('onRequest', async (req, reply) => {
@@ -58,7 +50,6 @@ function deny(reply: FastifyReply, status: 401 | 403, message: string): FastifyR
     .send({ error: status === 401 ? 'unauthenticated' : 'forbidden', message });
 }
 
-/** preHandler: the caller must be signed in with at least `role`. */
 export function requireRole(role: Role): preHandlerHookHandler {
   return (req: FastifyRequest, reply: FastifyReply, done) => {
     if (!req.user) {
@@ -77,7 +68,6 @@ export function requireRole(role: Role): preHandlerHookHandler {
   };
 }
 
-/** The acting user's audit identity. */
 export function actorOf(req: FastifyRequest): string {
   if (!req.user) return 'anonymous';
   return req.user.via === 'session' ? req.user.email : `${req.user.email} (${req.user.via})`;

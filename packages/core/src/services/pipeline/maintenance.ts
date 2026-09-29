@@ -9,12 +9,7 @@ import { JOBS, type Ctx } from './context.js';
 import { sendSystemAlert } from './notify.js';
 import { recoverRuns } from './runs.js';
 
-/**
- * `pipeline.maintenance` (every minute): re-enqueue work whose job was lost (events waiting for
- * matching, batches past their fire time, closed batches never dispatched), recover runs, claim
- * due pull-source polls and meter reads, and raise silent-source alerts. Every step is safe to
- * run on several replicas at once: claims are conditional updates.
- */
+/** Every step is safe to run on several replicas at once: claims are conditional updates. */
 
 const DEFAULT_POLL_SECONDS = 300;
 const DEFAULT_METER_POLL_SECONDS = 300;
@@ -127,7 +122,6 @@ async function silentSources(ctx: Ctx, now: Date): Promise<void> {
   }
 }
 
-/** One heartbeat: the replicas row and `switchboard.heartbeat`. */
 export async function heartbeat(ctx: Ctx, startedAt: Date): Promise<void> {
   const now = ctx.clock.now();
   await ctx.db

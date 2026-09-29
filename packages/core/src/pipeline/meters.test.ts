@@ -54,7 +54,6 @@ describe('readingFromReport', () => {
   });
 
   it('a reading stamped in the future is observed now', () => {
-    // Otherwise it stays the "latest" reading, and fresh, until that time comes.
     expect(
       readingFromReport(
         { id: 'five_hour', utilization: 99, observedAt: at(86_400).toISOString() },

@@ -71,10 +71,7 @@ const columns: TableColumn<ProviderSecretDTO>[] = [
   { key: 'updated', header: 'Updated', cell: (s) => <Time value={s.updatedAt} /> },
 ];
 
-/**
- * The secrets a provider makes available (names only, never values), who uses each, and the
- * references to it whose names it does not list. Admin only, like the endpoint.
- */
+/** Names only, never values. */
 export function ProviderSecrets({ instance }: { instance: InstanceSummary }) {
   const secrets = useProviderSecrets(instance.id);
   const title = `Secrets in ${instance.name}`;

@@ -1,9 +1,4 @@
-/**
- * An in-memory stand-in for the core's REST API: a `fetch` implementation backed by a handler
- * map (`'GET /board'`, `'POST /processes/:id/breaker/reset'`, ...). Tests install it with
- * `installMockApi()`; `VITE_MOCK_API=1 pnpm dev:ui` installs it in the browser so screens can be
- * built without a backend. Every request is recorded in `calls`.
- */
+// An in-memory `fetch` for the core's REST API, for tests and `VITE_MOCK_API=1 pnpm dev:ui`.
 import type {
   ApiError,
   SourcePreviewRequest,
@@ -14,7 +9,6 @@ import { at } from '../lib/at.js';
 import { API_BASE } from './client.js';
 import { buildFixtures, type Fixtures } from './fixtures.js';
 
-/** What a handler sees. */
 export interface MockRequest {
   method: string;
   path: string;
@@ -23,11 +17,10 @@ export interface MockRequest {
   body: unknown;
 }
 
-/** A handler returns a JSON body, or `{ status, body }` for errors and 204s. */
+/** Returns a JSON body, a string (sent as YAML), or `mockStatus()` for errors and 204s. */
 export type MockHandler = (req: MockRequest) => unknown;
 export type MockHandlers = Record<string, MockHandler>;
 
-/** Wrap a result to send a non-200 status (`mockStatus(404, {...})`, `mockStatus(204)`). */
 export function mockStatus(status: number, body?: unknown): MockStatusResult {
   return { __mockStatus: status, body };
 }
@@ -41,7 +34,6 @@ function isStatusResult(v: unknown): v is MockStatusResult {
   return typeof v === 'object' && v !== null && '__mockStatus' in v;
 }
 
-/** The recorded request log. */
 export interface MockCall {
   method: string;
   path: string;
@@ -52,18 +44,13 @@ export interface MockApi {
   fetch: typeof fetch;
   calls: MockCall[];
   fixtures: Fixtures;
-  /** Replace or add handlers (keys like `'GET /board'`). */
   use(handlers: MockHandlers): void;
-  /** Calls whose `METHOD path` matches exactly, e.g. `callsTo('POST /sources/src-github/reload')`. */
   callsTo(route: string): MockCall[];
 }
 
 const page = <T>(items: T[]) => ({ items, nextCursor: null });
 
-/**
- * A stand-in for `POST /sources/preview`, shaped like the webhook's quick mode: a JSON object
- * body becomes one `webhook.request.received` event with its top-level scalars as attributes.
- */
+/** Like the webhook's quick mode: a JSON object body becomes one event, its scalars as attributes. */
 function samplePreview(body: unknown): SourcePreviewResponse {
   const req = (body ?? {}) as Partial<SourcePreviewRequest>;
   const declaredTypes: SourcePreviewResponse['declaredTypes'] = [
@@ -113,7 +100,6 @@ function samplePreview(body: unknown): SourcePreviewResponse {
   };
 }
 
-/** Default handlers for every route in docs/api.md, answering from fixtures. */
 export function defaultHandlers(f: Fixtures): MockHandlers {
   const byId = <T extends { id: string }>(list: T[], id: string | undefined) =>
     list.find((x) => x.id === id);
@@ -416,9 +402,6 @@ function compile(key: string, handler: MockHandler): CompiledRoute {
   };
 }
 
-/**
- * Creates a mock API. `overrides` replace default handlers by key. `delayMs` simulates latency.
- */
 export function createMockApi(
   options: { fixtures?: Fixtures; overrides?: MockHandlers; delayMs?: number } = {},
 ): MockApi {

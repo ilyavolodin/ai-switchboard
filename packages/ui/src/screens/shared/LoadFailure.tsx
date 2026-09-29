@@ -2,10 +2,6 @@ import { isApiRequestError, errorMessage } from '../../api/client.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { LinkButton } from '../../components/LinkButton.js';
 
-/**
- * A detail screen whose entity did not load: a 404 says it does not exist (it may have been
- * deleted), anything else shows the error. Both link back to the list.
- */
 export function LoadFailure({
   error,
   noun,
@@ -13,7 +9,6 @@ export function LoadFailure({
   listLabel,
 }: {
   error: unknown;
-  /** "source", "destination", "process". */
   noun: string;
   listTo: string;
   listLabel: string;

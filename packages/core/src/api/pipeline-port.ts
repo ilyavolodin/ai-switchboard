@@ -10,10 +10,7 @@ import type {
   TraceResponse,
 } from './contract.js';
 
-/**
- * What the API needs from the pipeline services (`services/pipeline`). Declared here so the HTTP
- * layer depends on a port, not on the pipeline's internals.
- */
+/** Declared here so the HTTP layer depends on a port, not on the pipeline's internals. */
 export interface PipelinePort {
   ingestPush(sourceId: string, req: RawRequest): Promise<{ status: number }>;
   handleCallback(destinationId: string, req: RawRequest): Promise<{ status: number }>;

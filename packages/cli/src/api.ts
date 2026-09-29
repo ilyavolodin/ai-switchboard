@@ -4,13 +4,12 @@ import type { CliDeps } from './deps.js';
 
 export const DEFAULT_URL = 'http://localhost:8080';
 
-/** Where the server is and who is calling. */
 export interface ServerOptions {
   url: string;
   token: string | undefined;
 }
 
-/** `--url` / `--token`, falling back to `SWITCHBOARD_URL` / `SWITCHBOARD_TOKEN`. */
+/** Falls back to `SWITCHBOARD_URL` / `SWITCHBOARD_TOKEN`. */
 export function serverOptions(
   opts: { url?: string; token?: string },
   env: NodeJS.ProcessEnv,
@@ -20,7 +19,6 @@ export function serverOptions(
   return { url, token: token === '' ? undefined : token };
 }
 
-/** A non-2xx answer from the API, with the server's `ApiError` message when it sent one. */
 export class ApiRequestError extends Error {
   override readonly name = 'ApiRequestError';
   constructor(
@@ -45,7 +43,6 @@ const HINTS: Partial<Record<number, string>> = {
   403: 'the token’s role is not allowed to do this',
 };
 
-/** Call `/api/v1<path>` and return the response body as text. */
 export async function apiRequest(
   deps: Pick<CliDeps, 'fetch'>,
   server: ServerOptions,

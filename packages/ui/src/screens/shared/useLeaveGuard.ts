@@ -1,22 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { type Blocker, useBlocker } from 'react-router';
 
-/** What `useLeaveGuard` hands the screen. */
 export interface LeaveGuard {
-  /** The router's blocker: `state === 'blocked'` while the leave prompt should show. */
   blocker: Blocker;
   /**
-   * Lets the next navigation through without asking. Call it right before navigating away
-   * after a successful save: the saved state has not re-rendered yet, so the form still looks
-   * dirty at that moment.
+   * Call right before navigating away after a successful save: the saved state has not re-rendered
+   * yet, so the form still looks dirty.
    */
   allowNextNavigation: () => void;
 }
 
-/**
- * Guards unsaved edits: while `dirty`, an in-app navigation to another path is blocked (render
- * `<LeaveGuardDialog>` to ask) and closing or reloading the tab asks the browser's own question.
- */
 export function useLeaveGuard(dirty: boolean): LeaveGuard {
   const bypass = useRef(false);
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {

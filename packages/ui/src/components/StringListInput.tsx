@@ -6,7 +6,7 @@ import { TextField } from './TextField.js';
 export interface StringListInputProps {
   value: string[];
   onChange: (next: string[]) => void;
-  /** Used for accessible names: "Labels to watch 1". */
+  /** Prefix of each item's accessible name ("Labels to watch 1"). */
   label: string;
   id?: string;
   describedBy?: string;
@@ -15,7 +15,6 @@ export interface StringListInputProps {
   mono?: boolean;
 }
 
-/** An editable list of strings: one input per item, remove buttons, and "Add". */
 export function StringListInput({
   value,
   onChange,

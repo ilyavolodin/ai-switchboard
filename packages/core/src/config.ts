@@ -15,41 +15,31 @@ export interface CoreConfig {
   databaseUrl: string;
   host: string;
   port: number;
-  /** Public base URL used for webhook and callback URLs and OIDC redirects. */
   publicUrl: string;
   /** `$SWITCHBOARD_HOME`: installed plugins, lockfile, local state. */
   home: string;
-  /** Evaluation mode (Compose quick start): local admin password, unauthenticated webhooks allowed. */
+  /** Local admin password, unauthenticated webhooks allowed. */
   evaluation: boolean;
-  /** Email of the first admin, who signs in through OIDC. */
   bootstrapAdmin: string | undefined;
   oidc: OidcConfig | undefined;
   logLevel: string;
   prettyLogs: boolean;
-  /** OpenTelemetry export (`OTEL_*`) and the Prometheus endpoint (`SWITCHBOARD_PROMETHEUS`). */
   telemetry: OtelConfig;
   replicaId: string;
   version: string;
-  /** Directory with the built UI (`packages/core/public`). */
   uiDir: string;
-  /** Extra directories scanned for plugin packages (each a `node_modules`). */
+  /** Each a `node_modules`. */
   pluginDirs: string[];
   /** Load plugins from their `switchboard.source` TypeScript entry (dev with tsx). */
   devSource: boolean;
-  /** npm registry searched by "Browse npm" (`SWITCHBOARD_NPM_REGISTRY`). */
   npmRegistry: string;
-  /** How often each replica installs plugins recorded in the database but missing locally. */
+  /** How often a replica installs plugins recorded in the database but missing locally. */
   pluginSyncSeconds: number;
-  /**
-   * How often each replica rebuilds the source, destination, notifier and secret provider instances
-   * changed on another replica (`SWITCHBOARD_INSTANCE_SYNC_SECONDS`).
-   */
+  /** How often a replica rebuilds instances changed on another replica. */
   instanceSyncSeconds: number;
-  /** Run pipeline workers and the scheduler in this process (false for an API-only replica). */
+  /** False for an API-only replica (no pipeline workers, no scheduler). */
   workers: boolean;
-  /** Trust X-Forwarded-* (behind an ingress or load balancer). */
   trustProxy: boolean;
-  /** Secure cookies (true unless publicUrl is plain http). */
   secureCookies: boolean;
 }
 

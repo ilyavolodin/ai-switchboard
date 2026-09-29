@@ -1,11 +1,7 @@
 import type { ProcessDocument } from '../domain/process.js';
 import type { MatchSkip } from '../domain/status.js';
 
-/**
- * Stage 2, match: which enabled processes and triggers want an event. Filters are evaluated by
- * the caller (they may call `$resolve`); this stage only picks candidates and folds the filter
- * results into one decision per process.
- */
+/** Filters are evaluated by the caller (they may call `$resolve`), not here. */
 
 export interface MatchableProcess {
   id: string;
@@ -26,7 +22,6 @@ export function eventTypeMatches(pattern: string, type: string): boolean {
   return false;
 }
 
-/** Enabled triggers of enabled processes whose source and event types match, in document order. */
 export function candidateTriggers(
   event: { sourceId: string; type: string },
   processes: readonly MatchableProcess[],
@@ -55,9 +50,8 @@ export interface SkippedTrigger {
 }
 
 /**
- * The triggers on the event's source that `candidateTriggers` passed over, and why, so an
- * unmatched event can say what was true when it arrived. A disabled process yields one entry (its
- * first trigger on the source); otherwise one per disabled or non-subscribing trigger.
+ * Recorded so an unmatched event can say what was true when it arrived. A disabled process
+ * yields one entry (its first trigger on the source).
  */
 export function skippedTriggers(
   event: { sourceId: string; type: string },
@@ -90,18 +84,13 @@ export type ProcessMatchOutcome = 'matched' | 'filter_error' | 'filtered';
 
 export interface ProcessMatch {
   processId: string;
-  /** The first trigger that matched (or errored, for `filter_error`). */
   triggerId: string;
   outcome: ProcessMatchOutcome;
   filter?: string;
   error?: string;
 }
 
-/**
- * One decision per process. Any true filter matches (overlapping triggers converge on one
- * dispatch); otherwise an erroring filter is `filter_error` (recorded, evaluates false); otherwise
- * `filtered`.
- */
+/** Any true filter wins, so overlapping triggers converge on one dispatch. */
 export function decideMatches(evaluations: readonly FilterEvaluation[]): ProcessMatch[] {
   const byProcess = new Map<string, FilterEvaluation[]>();
   for (const e of evaluations) {
@@ -126,7 +115,6 @@ export function decideMatches(evaluations: readonly FilterEvaluation[]): Process
   return out;
 }
 
-/** The event's stage after matching: `matched` when any process wants it. */
 export function eventStageAfterMatch(matches: readonly ProcessMatch[]): 'matched' | 'unmatched' {
   return matches.some((m) => m.outcome === 'matched') ? 'matched' : 'unmatched';
 }

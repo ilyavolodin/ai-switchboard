@@ -10,11 +10,6 @@ import { cx } from '../../lib/cx.js';
 import styles from './Processes.module.css';
 import { flowLine } from './processList.js';
 
-/**
- * One process as a small picture: name and status, the five pipeline dots (last hour) with the
- * next sweep, the flow line with a 7-day sparkline of runs, and today's runs against its own
- * daily cap. The whole card links to the process.
- */
 export function ProcessCard({ process: p }: { process: ProcessSummary }) {
   const full = p.dailyCap.limit != null && p.dailyCap.used >= p.dailyCap.limit;
   return (

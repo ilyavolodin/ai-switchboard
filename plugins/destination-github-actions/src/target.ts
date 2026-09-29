@@ -1,12 +1,10 @@
 import { InvokeError, type JSONSchema, SchemaMismatchError, parseWith } from '@ai-switchboard/sdk';
 
-/** Which workflow a process dispatches. */
 export interface WorkflowTarget {
   owner: string;
   repo: string;
   /** Workflow file name (`triage.yml`) or numeric id. */
   workflow: string | number;
-  /** Branch or tag the workflow runs on. */
   ref: string;
 }
 

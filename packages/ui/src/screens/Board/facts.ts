@@ -9,7 +9,6 @@ import { formatCount, formatRelative, formatWhen, toMs } from '../../lib/format.
 import { meterValueText } from '../../lib/meter.js';
 import type { LaidOutNode } from './layout.js';
 
-/** The three key facts a node's hover card shows. */
 export function keyFacts(n: LaidOutNode, nowMs: number): string[] {
   if (n.kind === 'source') {
     const s = n.node as BoardSourceNode;
@@ -41,7 +40,6 @@ export function keyFacts(n: LaidOutNode, nowMs: number): string[] {
   ];
 }
 
-/** Where clicking a node goes. */
 export function nodeHref(n: Pick<LaidOutNode, 'kind' | 'id'>): string {
   const id = encodeURIComponent(n.id);
   if (n.kind === 'source') return `/sources/${id}`;
@@ -49,7 +47,6 @@ export function nodeHref(n: Pick<LaidOutNode, 'kind' | 'id'>): string {
   return `/destinations/${id}`;
 }
 
-/** Where an attention item's target lives. */
 export function attentionHref(item: Pick<AttentionItem, 'targetKind' | 'targetId'>): string {
   const id = encodeURIComponent(item.targetId);
   switch (item.targetKind) {

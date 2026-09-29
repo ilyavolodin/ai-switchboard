@@ -1,4 +1,4 @@
-/** Saves text as a file through a temporary object URL (no-op where the browser lacks one). */
+/** No-op where the browser lacks object URLs. */
 export function downloadText(filename: string, text: string, type: string): void {
   if (typeof URL.createObjectURL !== 'function') return;
   const url = URL.createObjectURL(new Blob([text], { type }));

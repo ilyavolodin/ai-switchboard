@@ -1,10 +1,6 @@
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 
-/**
- * The two states a source or destination instance can be stuck in: its plugin did not load (amber)
- * or the live instance failed to start (coral, with Reload).
- */
 export function InstanceStateBanners({
   noun,
   typeName,
@@ -13,12 +9,10 @@ export function InstanceStateBanners({
   heldProcesses,
   onReload,
 }: {
-  /** "source" / "destination". */
   noun: string;
   typeName: string;
   pluginAvailable: boolean;
   instanceError: string | null | undefined;
-  /** Who is held while the plugin is gone: "its processes are held". */
   heldProcesses: string;
   onReload: () => void;
 }) {

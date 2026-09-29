@@ -17,7 +17,6 @@ import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 const SECRET = 'fixture-preview-secret-value';
 const reason = 'integration test';
 
-/** A pull-only source type: there is no delivery to preview. */
 const pollPlugin = definePlugin({
   id: 'test-poll-plugin',
   displayName: 'Test poll plugin',

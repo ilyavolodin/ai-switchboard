@@ -15,7 +15,7 @@ interface PasswordOptions {
   reason: string;
 }
 
-/** `RecoveryError` from the core, read by shape (it crosses the package boundary). */
+/** Reads the core's `RecoveryError` by shape, since it crosses the package boundary. */
 function suggestionsOf(err: unknown): string[] | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const e = err as { name?: unknown; code?: unknown; suggestions?: unknown };
@@ -49,10 +49,8 @@ function printTemporary(deps: CliDeps, result: TemporaryPasswordResult, headline
 }
 
 /**
- * `switchboard users list|reset-password|create-admin`: account recovery on the server itself.
- * It connects to the database from the server's environment (`DATABASE_URL`), not the HTTP API,
- * so it works when nobody can sign in. Server access is the credential; the audit actor is
- * `cli@<hostname>`.
+ * Connects to `DATABASE_URL` rather than the HTTP API, so it works when nobody can sign in.
+ * Server access is the credential.
  */
 export function usersCommand(deps: CliDeps): Command {
   const { io } = deps;

@@ -1,15 +1,13 @@
 import type { RunStatusValue, StatusTone, StepStatus } from '@ai-switchboard/core/contract';
 
-/** The four tones in the order the UI sorts by urgency. */
+/** In the order the UI sorts by urgency. */
 export const TONES = ['error', 'warn', 'ok', 'off'] as const satisfies readonly StatusTone[];
 
-/** CSS custom properties for a tone: the dot/fill, the chip background, the chip text. */
 export function toneVars(tone: StatusTone): { fill: string; bg: string; fg: string } {
   const key = tone === 'error' ? 'err' : tone;
   return { fill: `var(--st-${key})`, bg: `var(--st-${key}-bg)`, fg: `var(--st-${key}-fg)` };
 }
 
-/** Tone and label for a run status, matching the status vocabulary. */
 export function runStatusTone(status: RunStatusValue): StatusTone {
   switch (status) {
     case 'ok':
@@ -27,7 +25,7 @@ export function runStatusTone(status: RunStatusValue): StatusTone {
   }
 }
 
-/** Tone and label for a step's journal status: in doubt (`started`, `uncertain`) is a warning. */
+/** In doubt (`started`, `uncertain`) is a warning. */
 export function stepStatusTone(status: StepStatus): { tone: StatusTone; label: string } {
   switch (status) {
     case 'ok':
@@ -43,7 +41,6 @@ export function stepStatusTone(status: StepStatus): { tone: StatusTone; label: s
   }
 }
 
-/** Sort weight: errors first, then warnings, ok, off. */
 export function toneRank(tone: StatusTone): number {
   return TONES.indexOf(tone);
 }

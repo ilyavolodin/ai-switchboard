@@ -9,11 +9,8 @@ import {
 } from '@opentelemetry/semantic-conventions';
 
 /**
- * The transport under a plugin's `HttpClient` (`createHttpClient({ fetch })`): each request inside
- * a trace becomes a CLIENT span, and carries W3C `traceparent` / `tracestate` naming that span,
- * so a destination's backend (when instrumented) continues the same trace. Outside a trace it
- * only propagates the active context (an incoming sender's). The URL is recorded without its
- * query string (it may carry a token).
+ * Outside a recording span it only propagates the active context (an incoming sender's). The URL
+ * is recorded without its query string, which may carry a token.
  */
 export function createTracedFetch(
   base: typeof fetch = globalThis.fetch,

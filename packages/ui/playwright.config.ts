@@ -1,10 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/**
- * End-to-end tests against the real stack: Postgres (Docker), the stub server and the built core
- * serving the built UI. `e2e/global-setup.ts` starts and seeds it. Run `pnpm build` first (the
- * `test:e2e` script does). Tests share one seeded database, so they run in one worker, in order.
- */
+// Tests share one seeded database, so they run in one worker, in order.
 export default defineConfig({
   testDir: './e2e',
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}-{platform}{ext}',

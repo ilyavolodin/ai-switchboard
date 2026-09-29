@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import { cx } from '../lib/cx.js';
 import styles from './Table.module.css';
 
-/** One column: a header and a cell renderer. */
 export interface TableColumn<T> {
   key: string;
   header: ReactNode;
@@ -17,16 +16,12 @@ export interface TableProps<T> {
   columns: TableColumn<T>[];
   rows: T[];
   rowKey: (row: T) => string;
-  /** Visually hidden caption (the table's accessible name). */
   caption: string;
   onRowClick?: (row: T) => void;
   empty?: ReactNode;
 }
 
-/**
- * The few tables the UI keeps (runs, audit). Real `<table>` markup; rows are clickable when
- * `onRowClick` is given (put a link in the first cell too, for keyboard users).
- */
+/** With `onRowClick`, also put a link in the first cell for keyboard users. */
 export function Table<T>({ columns, rows, rowKey, caption, onRowClick, empty }: TableProps<T>) {
   return (
     <div className={styles.wrap}>

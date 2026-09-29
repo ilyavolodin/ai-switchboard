@@ -3,11 +3,8 @@ import cronstrue from 'cronstrue';
 import { DateTime } from 'luxon';
 
 /**
- * Cron evaluation in a named IANA timezone, DST-safe:
- * - a wall time skipped by a spring-forward gap fires once, at the first instant after the gap;
- * - a wall time repeated by a fall-back fold fires once, on its first occurrence;
- * so a DST skip or repeat fires a cron at most once. Five fields (minute hour day month weekday)
- * plus the `@hourly`-style aliases; `L`, `W`, `#` and seconds are not supported.
+ * DST rules: a wall time skipped by a spring-forward gap fires once, at the first instant after
+ * the gap; a wall time repeated by a fall-back fold fires once, on its first occurrence.
  */
 
 export interface ParsedCron {
@@ -76,7 +73,6 @@ export function parseCron(expression: string): CronParse {
   }
 }
 
-/** Is `timezone` a zone Luxon can evaluate in (an IANA name, `UTC`, a fixed offset)? */
 export function isValidTimezone(timezone: string): boolean {
   // Any fixed instant will do; the clock plays no part in whether a zone exists.
   return DateTime.fromMillis(0).setZone(timezone).isValid;
@@ -115,7 +111,7 @@ export function matchesWall(cron: ParsedCron, w: Wall): boolean {
 
 const MINUTE = 60_000;
 
-/** Does a wall time skipped by a gap just before `t` match? (Checked at the first instant after.) */
+/** Does a wall time skipped by a gap just before `t` match? */
 function gapMatches(cron: ParsedCron, t: DateTime, prev: DateTime): boolean {
   // The wall clock moved 1 + jump minutes between prev and t; `jump` wall minutes never existed.
   const jump = t.offset - prev.offset;
@@ -145,14 +141,10 @@ function isRepeat(t: DateTime, zone: string): boolean {
 }
 
 export interface TickOptions {
-  /** Stop after this many ticks. */
   limit?: number;
 }
 
-/**
- * The instants in `(fromExclusive, toInclusive]` at which `cron` fires in `timezone`, ascending.
- * Instants are whole UTC minutes.
- */
+/** Ascending; instants are whole UTC minutes. */
 export function ticksBetween(
   cron: ParsedCron,
   timezone: string,
@@ -193,7 +185,6 @@ export function ticksBetween(
   return out;
 }
 
-/** The next `count` firing instants strictly after `after`, searching up to `horizonDays`. */
 export function nextTicks(
   cron: ParsedCron,
   timezone: string,
@@ -206,7 +197,6 @@ export function nextTicks(
   });
 }
 
-/** A plain-language description (cronstrue) or null when it cannot describe the expression. */
 export function describeCron(expression: string): string | null {
   try {
     return cronstrue.toString(expression, { use24HourTimeFormat: true, verbose: false });

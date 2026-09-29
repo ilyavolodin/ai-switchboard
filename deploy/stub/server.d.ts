@@ -1,7 +1,5 @@
 import type { Server } from 'node:http';
 
-/** Types for `server.js`, so TypeScript tests can import the stub. */
-
 export interface StubConfig {
   callbackSecret: string;
   routines429: boolean;

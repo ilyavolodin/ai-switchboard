@@ -4,7 +4,6 @@ import type { PluginHost } from '../plugins/host.js';
 import type { RegistryFetch } from '../plugins/search.js';
 import type { PipelinePort, PreviewPort } from './pipeline-port.js';
 
-/** Everything route handlers use. */
 export interface ApiContext extends Deps {
   host: PluginHost;
   pipeline: PipelinePort;

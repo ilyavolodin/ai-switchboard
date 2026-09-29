@@ -55,7 +55,6 @@ const COPY = {
 
 type Editing = { mode: 'create' } | { mode: 'edit'; instance: InstanceSummary } | null;
 
-/** Notifier or secret-provider instances: list, schema-form create/edit, enable, reload, delete. */
 export function InstancesTab({ route }: { route: InstanceRoute }) {
   const copy = COPY[route];
   const instances = useInstances(route);

@@ -1,7 +1,5 @@
-# Default values for the AI Switchboard chart.
 # Postgres is supplied by the operator; the chart never runs a database.
 
-# Two replicas give zero-downtime rollouts; replicas coordinate through Postgres.
 replicaCount: 2
 
 image:
@@ -31,7 +29,6 @@ oidc:
     existingSecret: ''
     key: SWITCHBOARD_OIDC_CLIENT_SECRET
 
-# Email of the first admin, who signs in through OIDC.
 bootstrapAdmin: ''
 
 # Evaluation mode: local admin password, unauthenticated webhooks allowed. Never in production.
@@ -39,28 +36,23 @@ evaluation: false
 
 logLevel: info
 
-# Trust X-Forwarded-* headers (client IP for rate limits and audit, https detection). Right behind
-# an ingress or load balancer that sets them; set false when clients reach the Service directly
-# (service.type LoadBalancer/NodePort without a proxy), or they can spoof their address.
+# Trust X-Forwarded-* headers. Set false when clients reach the Service directly (no proxy),
+# or they can spoof their address.
 trustProxy: true
 
 metrics:
-  # Serve /metrics in Prometheus exposition format.
   prometheus: true
   # Deprecated: use otel.endpoint (still honoured when otel.endpoint is empty).
   otlpEndpoint: ''
 
-# OpenTelemetry export of traces, metrics and logs (the standard OTEL_* variables; see
-# docs/observability.md). Nothing is exported until an endpoint is set.
+# OpenTelemetry export (the standard OTEL_* variables). Nothing is exported until an endpoint is set.
 otel:
-  # OTLP base URL; the SDK appends /v1/traces, /v1/metrics and /v1/logs (HTTP), e.g.
-  # http://otel-collector.observability:4318, or :4317 with protocol grpc.
+  # OTLP base URL, e.g. http://otel-collector.observability:4318, or :4317 with protocol grpc.
   endpoint: ''
   # http/protobuf (default), http/json or grpc.
   protocol: http/protobuf
   serviceName: switchboard
-  # Extra resource attributes, e.g. { deployment.environment.name: production }. service.version
-  # and service.instance.id (the pod name) are set by Switchboard.
+  # service.version and service.instance.id (the pod name) are set by Switchboard.
   resourceAttributes: {}
   # Per signal: '' (otlp when an endpoint is set), otlp, console, none, or a list (otlp,console).
   exporters:
@@ -71,18 +63,15 @@ otel:
   # parentbased_always_off, parentbased_traceidratio; samplerArg is the ratio.
   sampler: ''
   samplerArg: ''
-  # How often metrics are pushed, in milliseconds (default 30000).
+  # Milliseconds (default 30000).
   metricExportIntervalMs: ''
-  # gzip or none.
   compression: ''
-  # Export headers (vendor API keys), as an existing Secret key holding the whole
-  # OTEL_EXPORTER_OTLP_HEADERS value, e.g. "x-honeycomb-team=abc123" or
-  # "Authorization=Basic%20base64(instance:token)". Never put keys in values.
+  # An existing Secret key holding the whole OTEL_EXPORTER_OTLP_HEADERS value (vendor API keys).
   headers:
     existingSecret: ''
     key: OTEL_EXPORTER_OTLP_HEADERS
 
-# Extra plain environment variables (rendered into the ConfigMap), e.g. SWITCHBOARD_WORKERS: "true".
+# Plain environment variables, rendered into the ConfigMap.
 env: {}
 
 # Raw EnvVar entries appended to the container, e.g. values for the `env` secret provider:
@@ -90,11 +79,9 @@ env: {}
 #     valueFrom: { secretKeyRef: { name: switchboard-secrets, key: GITHUB_TOKEN } }
 extraEnv: []
 
-# Raw EnvFromSource entries, e.g. - secretRef: { name: switchboard-secrets }
 extraEnvFrom: []
 
-# Optional chart-managed Secret, exposed to the container with envFrom. Prefer an external
-# secret manager; this exists for small installs.
+# Chart-managed Secret exposed with envFrom, for small installs; prefer an external secret manager.
 secret:
   create: false
   data: {}
@@ -160,11 +147,8 @@ securityContext:
   readOnlyRootFilesystem: false
 
 plugins:
-  # Plugins are best baked into the image (SWITCHBOARD_PLUGINS build argument). Set a volume to
-  # mount a prepared $SWITCHBOARD_HOME (/opt/switchboard) instead; it replaces the image's copy,
-  # including plugins baked in with SWITCHBOARD_PLUGINS (the reference plugins are unaffected).
-  # e.g. { emptyDir: {} } or a PVC shared by all replicas:
-  #   volume: { persistentVolumeClaim: { claimName: switchboard-plugins } }
+  # Prefer baking plugins into the image (SWITCHBOARD_PLUGINS build argument). A volume mounted at
+  # $SWITCHBOARD_HOME replaces the image's copy, including baked-in plugins (not the reference ones).
   volume: {}
 
 # Extra volumes, e.g. for the `file` secrets provider:

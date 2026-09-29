@@ -13,7 +13,6 @@ import {
 import { isAboveCeiling, meterTimes, meterValueText, shortMeterLabel } from '../lib/meter.js';
 import styles from './MeterGauge.module.css';
 
-/** The fields the gauge needs (a `MeterGaugeDTO` fits). */
 export type GaugeMeter = Pick<
   MeterGaugeDTO,
   | 'title'
@@ -31,16 +30,10 @@ export type GaugeMeter = Pick<
 
 export interface MeterGaugeProps {
   meter: GaugeMeter;
-  /** sm 24 px (top bar), node 38 px (canvas), md 44 px, lg 110 px (destination detail). */
   size?: 'sm' | 'node' | 'md' | 'lg';
-  /** Only draw this process's ceiling marks (the editor); default: every bound process. */
+  /** Only draw this process's ceiling marks; default: every bound process. */
   processId?: string;
-  /** Also draw the sweep ceilings (lighter ticks). */
   showSweepCeilings?: boolean;
-  /**
-   * `below`: title + reset/stale/estimated caption under the arc (md/lg); `compact`: a short
-   * "5 h 62%" under the arc (canvas nodes); `none`.
-   */
   label?: 'below' | 'compact' | 'none';
 }
 
@@ -51,11 +44,6 @@ const SIZES = {
   lg: { px: 110, stroke: 6, text: true },
 } as const;
 
-/**
- * One meter as an arc: the used fraction from 12 o'clock clockwise, a tick per process ceiling,
- * coral above the lowest event ceiling (throttled), grey when the reading is stale ("last read
- * 42 min ago"), and the reset countdown.
- */
 export function MeterGauge({
   meter,
   size = 'md',

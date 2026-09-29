@@ -1,7 +1,5 @@
-/** Copy helpers for applying a YAML configuration. */
 import type { ApplyResponse, StatusTone } from '@ai-switchboard/core/contract';
 
-/** Tone per change action in the dry-run list. */
 export const CHANGE_TONE: Record<ApplyResponse['changes'][number]['action'], StatusTone> = {
   create: 'ok',
   update: 'warn',
@@ -9,7 +7,6 @@ export const CHANGE_TONE: Record<ApplyResponse['changes'][number]['action'], Sta
   unchanged: 'off',
 };
 
-/** "2 to create, 1 to update, 1 to delete" (or "created …" once applied). */
 export function applySummary(res: ApplyResponse): string {
   const count = (a: string) => res.changes.filter((c) => c.action === a).length;
   const parts = (

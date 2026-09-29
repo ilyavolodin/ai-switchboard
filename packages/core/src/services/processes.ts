@@ -14,23 +14,21 @@ import { appendDecisions } from './pipeline/context.js';
 
 type ProcessRow = typeof processes.$inferSelect;
 
-/** Who saves, why and when. */
 export interface SaveMeta {
   actor: string;
   reason: string;
   now: Date;
 }
 
-/** What one save changes: the new document and how the audit log records it. */
 export interface ProcessEdit {
   document: ProcessDocument;
-  /** The version history's reason; defaults to the request's reason. */
+  /** Defaults to the request's reason. */
   versionReason?: string;
   /** `diff`: one audit row per changed field. Otherwise one row with this field. */
   audit: 'diff' | { field: string; before?: unknown; after?: unknown };
 }
 
-/** One level of dotted keys so the audit log reads `gates.approval: none → always`. */
+/** One level only, so the audit log reads `gates.approval: none → always`. */
 export function flattenForAudit(doc: object): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(doc)) {
@@ -43,7 +41,6 @@ export function flattenForAudit(doc: object): Record<string, unknown> {
   return out;
 }
 
-/** Create a process at version 1, with its first history row and audit, in one transaction. */
 export async function createProcess(db: Db, doc: ProcessDocument, meta: SaveMeta): Promise<string> {
   const { actor, reason, now } = meta;
   return db.transaction(async (tx) => {
@@ -81,9 +78,8 @@ export async function createProcess(db: Db, doc: ProcessDocument, meta: SaveMeta
 }
 
 /**
- * Save the next version of a process in one transaction. The row is locked while `edit` derives
- * the new document from it, so concurrent saves serialise; `edit` may throw to refuse (the
- * transaction rolls back). Returns false when there is no such process.
+ * The row is locked while `edit` derives the new document, so concurrent saves serialise; `edit`
+ * may throw to refuse (the transaction rolls back).
  */
 export async function saveProcessVersion(
   db: Db,
@@ -120,25 +116,19 @@ export async function saveProcessVersion(
   });
 }
 
-/** What deleting a process cleaned up. */
 export interface DeletedProcess {
-  /** Batches that had not reached a run (open, closed, awaiting approval), now `rejected`. */
   droppedBatches: number;
-  /** Pending approval requests, now `withdrawn`. */
   withdrawnApprovals: number;
 }
 
-/** Batch outcomes that still lead somewhere: a delete drops them. */
 const UNFINISHED_BATCHES = ['open', 'closed', 'awaiting_approval'] as const;
 
 /**
- * Delete a process and audit its last document, in one transaction with its cleanup: its
- * unfinished batches (open, closed but not dispatched, awaiting approval) end `rejected` with
- * reason `process_deleted`, and its pending approvals end `withdrawn` (one audit row each), so
- * the Approvals queue never shows a request nobody can act on. Runs, events, versions, schedule
- * ticks and decided batches stay for the trace and the audit log. A run already reserved goes
- * on to its terminal state. The dispatch stage re-checks `outcome = 'closed'` under a row lock,
- * so a batch dropped here never reaches the destination. Returns null when there is no such process.
+ * Unfinished batches end `rejected` and pending approvals end `withdrawn`, so the Approvals queue
+ * never shows a request nobody can act on. Runs, events, versions and decided batches stay for
+ * the trace and the audit log; a run already reserved goes on to its terminal state. The dispatch
+ * stage re-checks `outcome = 'closed'` under a row lock, so a batch dropped here never reaches the
+ * destination.
  */
 export async function deleteProcess(
   db: Db,

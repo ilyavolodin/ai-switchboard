@@ -5,19 +5,15 @@ import type { Clock } from '../clock.js';
 /** What the audit log records for a change made without a reason while reasons are optional. */
 export const NO_REASON = '(no reason given)';
 
-/** How long a replica trusts its copy of `settings.requireReasons`. */
 export const REASON_POLICY_TTL_MS = 5_000;
 
 /**
- * Whether every change must carry a reason (`GlobalSettings.requireReasons`), cached in-process so
- * a mutation does not read the settings row on every request. The replica that writes the setting
- * invalidates its copy at once; other replicas pick the change up within the TTL (a few seconds of
- * staleness is acceptable: at worst a change is refused, or audited as "(no reason given)",
- * just after an admin flipped the switch).
+ * Cached in-process so a mutation does not read the settings row on every request. Other replicas
+ * see a change within the TTL; that staleness is acceptable (at worst a change is refused, or
+ * audited as "(no reason given)", just after an admin flipped the switch).
  */
 export interface ReasonPolicy {
   required(): Promise<boolean>;
-  /** Forget the cached value (after `PUT /settings`). */
   invalidate(): void;
 }
 
@@ -67,9 +63,8 @@ function takesReason(req: FastifyRequest): boolean {
 }
 
 /**
- * When reasons are optional, fill a missing or blank `reason` with {@link NO_REASON} before the
- * route validates its body, so every route's `requireReason` and audit write stay unchanged.
- * When reasons are required nothing is touched and an empty reason is still a 400.
+ * When reasons are optional, fill a missing or blank `reason` before the route validates its body,
+ * so every route's `requireReason` and audit write stay unchanged.
  */
 export function registerReasonPolicy(app: FastifyInstance, policy: ReasonPolicy): void {
   app.decorate('reasons', policy);

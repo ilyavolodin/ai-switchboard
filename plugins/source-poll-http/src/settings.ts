@@ -9,7 +9,6 @@ import {
 /** The source id, which is also the namespace of every event type an instance defines. */
 export const SOURCE_ID = 'poll-http';
 
-/** Settings after validation, with defaults applied. */
 export interface PollHttpSettings {
   url: string;
   method: 'GET' | 'POST';
@@ -160,12 +159,11 @@ export const settingsSchema: JSONSchema = {
   },
 };
 
-/** Thrown by `create` when the instance settings are unusable. */
 export class PollHttpSettingsError extends Error {
   override readonly name = 'PollHttpSettingsError';
 }
 
-/** Validate settings against the schema (on a copy, so defaults do not leak back) and narrow. */
+/** Validates a copy, so defaults do not leak back. */
 export function readSettings(settings: Settings): PollHttpSettings {
   return parseWith<PollHttpSettings>(settingsSchema, settings, 'poll-http settings', {
     error: PollHttpSettingsError,

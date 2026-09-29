@@ -1,11 +1,5 @@
-/**
- * Plugin-declared type icons (since SDK 1.3). A source, destination, notifier or secret provider
- * type may set `icon` to either the name of one of the UI's built-in icons (`ICON_NAMES`) or a
- * `data:image/svg+xml;base64,…` URI of at most `MAX_ICON_DATA_URI_LENGTH` characters. The UI
- * renders a data URI through `<img>`, never as inline markup, so an SVG cannot run script.
- */
+// The UI renders a data URI icon through `<img>`, never as inline markup, so an SVG cannot run script.
 
-/** The UI's built-in icon set, by name. */
 export const ICON_NAMES = [
   'board',
   'processes',
@@ -55,26 +49,20 @@ export const ICON_NAMES = [
   'user',
 ] as const;
 
-/** One of the UI's built-in icon names. */
 export type IconName = (typeof ICON_NAMES)[number];
 
-/** The only data URI prefix a plugin icon may use. */
 export const ICON_DATA_URI_PREFIX = 'data:image/svg+xml;base64,';
 
-/** The longest accepted data URI, in characters (8 KB). */
+/** In characters. */
 export const MAX_ICON_DATA_URI_LENGTH = 8192;
 
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
-/** True for a built-in icon name. */
 export function isIconName(value: unknown): value is IconName {
   return typeof value === 'string' && (ICON_NAMES as readonly string[]).includes(value);
 }
 
-/**
- * Check a declared `icon`. Returns `null` when it is acceptable (a built-in name, or an SVG data
- * URI within the size limit whose payload decodes to an `<svg>` document), else the reason.
- */
+/** `null` when the icon is acceptable, else the reason. */
 export function iconProblem(icon: unknown): string | null {
   if (typeof icon !== 'string' || icon === '') return 'icon must be a non-empty string';
   if (isIconName(icon)) return null;

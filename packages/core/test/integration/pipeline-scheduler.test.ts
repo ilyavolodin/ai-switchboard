@@ -27,7 +27,6 @@ beforeEach(async () => {
   await resetDb(tdb.db);
 });
 
-/** Run the scheduler every minute from the clock's time to `until`. */
 async function tickEveryMinute(harness: Harness, until: string): Promise<void> {
   const end = Date.parse(until);
   while (harness.clock.now().getTime() <= end) {

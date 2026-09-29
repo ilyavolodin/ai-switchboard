@@ -2,16 +2,8 @@ import jsonata from 'jsonata';
 
 import type { ArtifactRef } from '@ai-switchboard/sdk';
 
-/**
- * The expression engine: JSONata with a fixed function library, a compile cache, a time limit per
- * evaluation and a bounded number of live lookups. It performs no I/O itself; `$resolve` and
- * `$linked` call back into the functions the caller binds for one evaluation.
- */
-
-/** Default limits from the TDD: 2 s per evaluation and at most 10 live lookups. */
 export const DEFAULT_TIMEOUT_MS = 2000;
 export const DEFAULT_MAX_RESOLVE_CALLS = 10;
-/** Only deployment values with this prefix are visible to `$env`. */
 export const ENV_PREFIX = 'SWITCHBOARD_VAR_';
 
 const SECRET_REF_KEY = '$secretRef';
@@ -21,32 +13,28 @@ export interface SecretRefMarker {
   $secretRef: string;
 }
 
-/** Why an evaluation failed. `timeout` and `resolve_limit` are the engine's own limits. */
 export type ExprErrorCode = 'syntax' | 'timeout' | 'resolve_limit' | 'runtime';
 
 export type EvalResult =
   { ok: true; value: unknown } | { ok: false; error: string; code: ExprErrorCode };
 
-/** Functions bound for one evaluation. Missing lookups make `$resolve`/`$linked` an error. */
+/** Missing lookups make `$resolve`/`$linked` an error. */
 export interface EvalFunctions {
-  /** Live state for an artifact through the event's source; `null` when it is gone. */
+  /** Resolves `null` when the artifact is gone. */
   resolve?: (ref: ArtifactRef) => Promise<unknown>;
   linked?: (ref: ArtifactRef) => Promise<ArtifactRef[]>;
-  /** The core clock's current time; `$now()` returns it as ISO-8601. */
   now: Date;
 }
 
 export interface ExpressionEngineOptions {
   timeoutMs?: number;
   maxResolveCalls?: number;
-  /** Non-secret deployment values; only keys starting with `SWITCHBOARD_VAR_` are kept. */
+  /** Only keys starting with `SWITCHBOARD_VAR_` are kept. */
   env?: Record<string, string | undefined>;
-  /** Compiled expressions kept in memory. */
   cacheSize?: number;
 }
 
 export interface ExpressionEngine {
-  /** Parse an expression; `ok: false` carries the syntax error. */
   check(expr: string): { ok: true } | { ok: false; error: string };
   /** Evaluate against `context`. Never throws. */
   evaluate(expr: string, context: unknown, fns: EvalFunctions): Promise<EvalResult>;
@@ -86,13 +74,12 @@ function isArtifactRef(value: unknown): value is ArtifactRef {
   return typeof v.kind === 'string' && typeof v.id === 'string';
 }
 
-/** Turn JSONata output (sequences, frozen arrays, functions) into plain JSON. */
+/** JSONata output (sequences, frozen arrays, functions) as plain JSON. */
 export function toPlain(value: unknown): unknown {
   if (value === undefined || typeof value === 'function') return undefined;
   return JSON.parse(JSON.stringify(value)) as unknown;
 }
 
-/** Normalise a secret name to a full `secret://<provider>/<name>` reference. */
 export function secretRefString(name: string): string {
   const trimmed = name.trim();
   const bare = trimmed.startsWith('secret://') ? trimmed.slice('secret://'.length) : trimmed;
@@ -116,7 +103,6 @@ export function isSecretRefMarker(value: unknown): value is SecretRefMarker {
   );
 }
 
-/** Every secret reference inside a mapped value. */
 export function collectSecretRefs(value: unknown, out = new Set<string>()): Set<string> {
   if (isSecretRefMarker(value)) {
     out.add(value.$secretRef);
@@ -128,7 +114,6 @@ export function collectSecretRefs(value: unknown, out = new Set<string>()): Set<
   return out;
 }
 
-/** Replace every secret marker using `replace(ref)`; the input is not modified. */
 export function replaceSecretRefs(value: unknown, replace: (ref: string) => unknown): unknown {
   if (isSecretRefMarker(value)) return replace(value.$secretRef);
   if (Array.isArray(value)) return value.map((item) => replaceSecretRefs(item, replace));
@@ -140,10 +125,7 @@ export function replaceSecretRefs(value: unknown, replace: (ref: string) => unkn
   return value;
 }
 
-/**
- * Resolve every secret marker to its value through `resolve`. Used by the destination bridge after
- * validation, immediately before `invoke`; the resolved value is never stored.
- */
+/** Called by the destination bridge immediately before `invoke`; the result is never stored. */
 export async function resolveSecretRefs(
   value: unknown,
   resolve: (ref: string) => Promise<string>,
@@ -155,9 +137,8 @@ export async function resolveSecretRefs(
 }
 
 /**
- * Data an expression reads (event context, `$resolve`/`$linked` results, a destination's result)
- * comes from outside. A marker in it is forged: only `$secretRef` inside the expression may make
- * one, so the bridge never resolves a secret that a payload asked for. Forged markers become null.
+ * Only `$secretRef` inside the expression may make a marker; one in the data it reads is forged
+ * and becomes null, so the bridge never resolves a secret a payload asked for.
  */
 export function neutralizeSecretRefs(value: unknown): unknown {
   return collectSecretRefs(value).size === 0 ? value : replaceSecretRefs(value, () => null);
@@ -181,7 +162,6 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
   function compile(expr: string): jsonata.Expression {
     const hit = cache.get(expr);
     if (hit) {
-      // refresh LRU position
       cache.delete(expr);
       cache.set(expr, hit);
       return hit;

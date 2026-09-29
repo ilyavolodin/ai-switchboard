@@ -43,7 +43,6 @@ function switchboardField(pkg: Record<string, unknown>): SwitchboardField | null
   };
 }
 
-/** Package directories directly inside a `node_modules` (including `@scope/name`). */
 async function packageDirs(nodeModules: string): Promise<string[]> {
   if (!(await isDir(nodeModules))) return [];
   const out: string[] = [];
@@ -61,9 +60,8 @@ async function packageDirs(nodeModules: string): Promise<string[]> {
 }
 
 /**
- * Scan `node_modules` directories for packages whose `package.json` carries a `switchboard`
- * field. The first occurrence of a package name wins (installed plugins are scanned first, so an
- * admin-installed version overrides a baked one).
+ * The first occurrence of a package name wins: installed dirs are scanned first, so an
+ * admin-installed version overrides a baked one.
  */
 export async function discoverPlugins(
   dirs: { path: string; origin: 'baked' | 'installed' }[],

@@ -6,21 +6,19 @@ import {
 } from '@ai-switchboard/sdk';
 
 /**
- * Stage 7a, invoke classification: the idempotency rule. A non-idempotent invoke is retried only
- * when the request never left (`TransportError.sent === false`) or the backend answered 503.
- * Anything that may have reached the backend leaves the run `uncertain` for tracking to settle,
- * never a second invoke. Idempotent destinations retry a lost response with the same run id.
+ * The idempotency rule: a non-idempotent invoke is retried only when the request never left
+ * (`sent === false`) or the backend answered 503. Anything that may have reached the backend
+ * leaves the run `uncertain`, never a second invoke. Idempotent destinations retry a lost
+ * response with the same run id.
  */
 
 export const MAX_INVOKE_ATTEMPTS = 5;
-/** Delay before retry n (1-based), in seconds. */
 export const RETRY_DELAYS_SECONDS = [5, 10, 20, 40] as const;
 
 export function retryDelaySeconds(attempt: number): number {
   return RETRY_DELAYS_SECONDS[Math.min(attempt, RETRY_DELAYS_SECONDS.length) - 1] ?? 40;
 }
 
-/** Core default invoke timeout, when neither the instance, the target nor the type sets one. */
 export const DEFAULT_INVOKE_TIMEOUT_SECONDS = 300;
 export const MIN_INVOKE_TIMEOUT_SECONDS = 1;
 /** Matches the SDK's `MAX_INVOKE_TIMEOUT_SECONDS`. */
@@ -30,12 +28,7 @@ function usableSeconds(n: unknown): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-/**
- * The effective invoke timeout, in seconds: the destination's `invokeTimeoutSeconds` cap,
- * else the type's per-target value (`invokeTimeoutFor`), else the type's default
- * (`invokeTimeoutSeconds`), else 300 s; clamped to 1–3600 s. A value that is not a positive
- * finite number is ignored at its level.
- */
+/** A level that is not a positive finite number falls through to the next. */
 export function effectiveInvokeTimeoutSeconds(levels: {
   cap?: unknown;
   perTarget?: unknown;
@@ -49,16 +42,10 @@ export function effectiveInvokeTimeoutSeconds(levels: {
   return Math.min(MAX_INVOKE_TIMEOUT_SECONDS, Math.max(MIN_INVOKE_TIMEOUT_SECONDS, chosen));
 }
 
-/**
- * Slack added to an attempt's deadline beyond its invoke timeout and step budget, so recovery
- * only calls an attempt stale once the worker running it has certainly given up.
- */
+/** So recovery only calls an attempt stale once the worker running it has certainly given up. */
 export const INVOKE_DEADLINE_MARGIN_SECONDS = 30;
 
-/**
- * When recovery may treat an attempt claimed at `startedAt` as stale: after the `before` steps'
- * budget (each step's own time limit plus evaluation), the invoke timeout and a margin.
- */
+/** When recovery may treat an attempt claimed at `startedAt` as stale. */
 export function invokeAttemptDeadline(
   startedAt: Date,
   invokeTimeoutSeconds: number,
@@ -68,10 +55,7 @@ export function invokeAttemptDeadline(
   return new Date(startedAt.getTime() + total * 1000);
 }
 
-/**
- * What `invoke` did: answered, threw, or gave no answer within the invoke timeout. A timeout is
- * a lost response (the request may have reached the backend), not a plugin error.
- */
+/** A timeout is a lost response (the request may have reached the backend), not a plugin error. */
 export type InvokeOutcome =
   | { kind: 'result'; result: InvokeResult }
   | { kind: 'error'; error: unknown }
@@ -101,7 +85,7 @@ export type InvokeClassification =
       reason: string;
       errors: string[];
       softHoldSeconds?: number;
-      /** 401/403: the credentials were refused; mark the destination unhealthy. */
+      /** 401/403: mark the destination unhealthy. */
       unhealthy?: boolean;
     }
   | { action: 'uncertain'; reason: string };
@@ -116,7 +100,7 @@ function message(err: unknown): string {
 
 export interface ClassifyInput {
   idempotent: boolean;
-  /** Attempts made including this one (1-based). */
+  /** 1-based, including this one. */
   attempt: number;
   maxAttempts?: number;
 }
@@ -218,7 +202,6 @@ export function classifyInvoke(input: ClassifyInput, outcome: InvokeOutcome): In
   return lost(`exception: ${message(err)}`);
 }
 
-/** The run status an accepted invoke moves to, by tracking mode. `none` closes as ok at once. */
 export function statusAfterStart(tracking: TrackingMode): 'running' | 'ok' {
   return tracking === 'none' ? 'ok' : 'running';
 }

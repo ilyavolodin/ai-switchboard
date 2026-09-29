@@ -15,7 +15,6 @@ import { cursorPaging } from '../query.js';
 
 const affected = [qk.approvals.all, qk.board, qk.status, qk.processes.all, qk.runs.all];
 
-/** GET /approvals — batches waiting. Polls 10 s. */
 export function useApprovals() {
   return useQuery({
     queryKey: qk.approvals.pending(),
@@ -24,7 +23,6 @@ export function useApprovals() {
   });
 }
 
-/** GET /approvals/history?cursor= (paged) */
 export function useApprovalHistory() {
   return useInfiniteQuery({
     queryKey: qk.approvals.history(),
@@ -37,7 +35,6 @@ export function useApprovalHistory() {
   });
 }
 
-/** GET /approvals/rules — which processes have approval rules (for the empty state). */
 export function useApprovalRules() {
   return useQuery({
     queryKey: qk.approvals.rules(),
@@ -45,7 +42,6 @@ export function useApprovalRules() {
   });
 }
 
-/** POST /approvals/:batchId/approve */
 export function useApprove() {
   return useApiMutation<
     Reasoned & { batchId: string },
@@ -57,7 +53,6 @@ export function useApprove() {
   });
 }
 
-/** POST /approvals/:batchId/reject */
 export function useReject() {
   return useApiMutation<Reasoned & { batchId: string }, undefined>({
     method: 'POST',

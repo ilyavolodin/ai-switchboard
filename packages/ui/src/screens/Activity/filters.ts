@@ -1,11 +1,6 @@
-/**
- * The Activity stream's filters live in the URL (`?source=&process=&destination=&stage=&artifact=
- * &range=`) so a filtered view can be shared. These helpers read them and turn them into the
- * `GET /events` query.
- */
+/** The filters live in the URL so a filtered view can be shared. */
 import type { ActivityQuery, ActivityRow, StatusTone } from '@ai-switchboard/core/contract';
 
-/** The filter keys kept in the URL. */
 export const FILTER_KEYS = [
   'source',
   'process',
@@ -17,7 +12,7 @@ export const FILTER_KEYS = [
 export type FilterKey = (typeof FILTER_KEYS)[number];
 export type ActivityFilters = Partial<Record<FilterKey, string>>;
 
-/** Time ranges the stream offers; `all` sends no lower bound. */
+/** `all` sends no lower bound. */
 export const RANGES = [
   { value: '1h', label: 'Last hour', ms: 60 * 60_000 },
   { value: '24h', label: 'Last 24 h', ms: 24 * 60 * 60_000 },
@@ -27,7 +22,6 @@ export const RANGES = [
 ] as const;
 export const DEFAULT_RANGE = '24h';
 
-/** Where an event stopped at the door or at match (`events.stage`). */
 export const STAGE_OPTIONS = [
   { value: 'matched', label: 'matched a process' },
   { value: 'unmatched', label: 'no process matched' },
@@ -38,7 +32,6 @@ export const STAGE_OPTIONS = [
   { value: 'event_invalid', label: 'invalid event' },
 ];
 
-/** Reads the filters from the URL search params (empty values dropped). */
 export function readFilters(params: URLSearchParams): ActivityFilters {
   const out: ActivityFilters = {};
   for (const key of FILTER_KEYS) {
@@ -48,7 +41,6 @@ export function readFilters(params: URLSearchParams): ActivityFilters {
   return out;
 }
 
-/** The next search params with one filter set (or removed when empty). */
 export function withFilter(
   params: URLSearchParams,
   key: FilterKey,
@@ -60,7 +52,7 @@ export function withFilter(
   return next;
 }
 
-/** The `GET /events` query for the filters; `anchorMs` is when the range was chosen. */
+/** `anchorMs` is when the range was chosen. */
 export function toActivityQuery(
   filters: ActivityFilters,
   anchorMs: number,
@@ -79,22 +71,19 @@ export function toActivityQuery(
   return q;
 }
 
-/** How many loaded rows ended in each tone (for the legend). */
 export function toneCounts(rows: ActivityRow[]): Record<StatusTone, number> {
   const out: Record<StatusTone, number> = { ok: 0, warn: 0, error: 0, off: 0 };
   for (const r of rows) out[r.indicator.tone] += 1;
   return out;
 }
 
-/** True when any filter other than the default range is set. */
 export function hasFilters(filters: ActivityFilters): boolean {
   return FILTER_KEYS.some((k) => k !== 'range' && filters[k] != null);
 }
 
 /**
- * Select options for an id filter. When the URL names an id the list does not have (deleted, or
- * a typo in a shared link) it is kept as an extra "(not found)" option, so the select shows the
- * filter that is really applied rather than "All …".
+ * An id the list does not have (deleted, or a typo in a shared link) is kept as a "(not found)"
+ * option, so the select shows the filter really applied rather than "All …".
  */
 export function idFilterOptions(
   items: { id: string; name: string }[] | undefined,

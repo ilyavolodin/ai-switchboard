@@ -2,10 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { now } from '../lib/clock.js';
 
-/**
- * The current time (epoch ms), re-rendering every `intervalMs`. Relative times and countdowns
- * read time through this hook so render stays pure and they tick on their own.
- */
+/** Relative times and countdowns read time through this so render stays pure and they tick. */
 export function useNow(intervalMs = 30_000): number {
   const [t, setT] = useState(now);
   useEffect(() => {

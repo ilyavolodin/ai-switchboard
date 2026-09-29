@@ -24,7 +24,6 @@ import { qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
 import { cursorPaging } from '../query.js';
 
-/** GET /settings */
 export function useSettings() {
   return useQuery({
     queryKey: qk.settings,
@@ -32,7 +31,6 @@ export function useSettings() {
   });
 }
 
-/** PUT /settings (admin) */
 export function useUpdateSettings() {
   return useApiMutation<UpdateSettingsRequest, GlobalSettings>({
     method: 'PUT',
@@ -41,7 +39,6 @@ export function useUpdateSettings() {
   });
 }
 
-/** GET /users (admin) */
 export function useUsers() {
   return useQuery({
     queryKey: qk.users,
@@ -49,7 +46,6 @@ export function useUsers() {
   });
 }
 
-/** GET /users/directory (every role): email and role only, for the read-only Users tab. */
 export function useUserDirectory(enabled = true) {
   return useQuery({
     queryKey: [...qk.users, 'directory'],
@@ -58,7 +54,6 @@ export function useUserDirectory(enabled = true) {
   });
 }
 
-/** POST /users (admin) */
 export function useCreateUser() {
   return useApiMutation<CreateUserRequest, UserDTO>({
     method: 'POST',
@@ -67,7 +62,6 @@ export function useCreateUser() {
   });
 }
 
-/** PUT /users/:id (admin) — change role. */
 export function useUpdateUser() {
   return useApiMutation<UpdateUserRequest & { id: string }, UserDTO>({
     method: 'PUT',
@@ -76,7 +70,6 @@ export function useUpdateUser() {
   });
 }
 
-/** DELETE /users/:id (admin) */
 export function useDeleteUser() {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'DELETE',
@@ -85,7 +78,6 @@ export function useDeleteUser() {
   });
 }
 
-/** POST /users/:id/sessions/revoke (admin) — signs the user out everywhere. */
 export function useRevokeUserSessions() {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'POST',
@@ -94,10 +86,6 @@ export function useRevokeUserSessions() {
   });
 }
 
-/**
- * PUT /users/:id/password (admin) — set or reset a temporary password. The user must change it at
- * their next password sign-in, and every session they have ends.
- */
 export function useSetUserPassword() {
   return useApiMutation<SetPasswordRequest & { id: string }, UserDTO>({
     method: 'PUT',
@@ -106,7 +94,7 @@ export function useSetUserPassword() {
   });
 }
 
-/** DELETE /users/:id/password (admin) — the account becomes OIDC-only. */
+/** The account becomes OIDC-only. */
 export function useRemoveUserPassword() {
   return useApiMutation<Reasoned & { id: string }, UserDTO>({
     method: 'DELETE',
@@ -115,7 +103,6 @@ export function useRemoveUserPassword() {
   });
 }
 
-/** GET /tokens — the signed-in user's API tokens. */
 export function useTokens() {
   return useQuery({
     queryKey: qk.tokens,
@@ -123,7 +110,7 @@ export function useTokens() {
   });
 }
 
-/** POST /tokens — the secret is in the response once; show it and never store it. */
+/** The secret is in the response once; show it and never store it. */
 export function useCreateToken() {
   return useApiMutation<CreateApiTokenRequest, CreateApiTokenResponse>({
     method: 'POST',
@@ -132,7 +119,6 @@ export function useCreateToken() {
   });
 }
 
-/** DELETE /tokens/:id — revoke. */
 export function useDeleteToken() {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'DELETE',
@@ -141,7 +127,6 @@ export function useDeleteToken() {
   });
 }
 
-/** GET /audit?scope=&target=&actor=&cursor= (paged) */
 export function useAudit(query: Omit<AuditQuery, 'cursor'> = {}) {
   return useInfiniteQuery({
     queryKey: qk.audit(query),
@@ -151,14 +136,13 @@ export function useAudit(query: Omit<AuditQuery, 'cursor'> = {}) {
   });
 }
 
-/** GET /export — the whole configuration as YAML (secret references intact, values absent). */
+/** Secret references intact, values absent. */
 export function useExportYaml() {
   return useMutation({
     mutationFn: () => apiFetch<string>('/export', { as: 'text' }),
   });
 }
 
-/** POST /apply (admin) — apply a YAML configuration; `dryRun` shows the changes only. */
 export function useApply() {
   const qc = useQueryClient();
   return useMutation<ApplyResponse, Error, ApplyRequest>({
@@ -169,7 +153,6 @@ export function useApply() {
   });
 }
 
-/** GET /about — version and replicas. */
 export function useAbout() {
   return useQuery({
     queryKey: qk.about,

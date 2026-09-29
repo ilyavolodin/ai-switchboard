@@ -72,10 +72,7 @@ async function usersByName(
   return byName;
 }
 
-/**
- * Everything that references `secret://<provider>/…`, one entry per instance or process, for
- * the 409 that refuses to delete a provider still in use. The provider itself is left out.
- */
+/** For the 409 that refuses to delete a provider still in use; the provider itself is left out. */
 export async function providerUsers(
   ctx: ApiContext,
   provider: string,

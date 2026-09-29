@@ -1,9 +1,3 @@
-/**
- * A small structural diff over process documents: the editor's "unsaved changes" footer and the
- * History tab's version diff both list leaf changes as "runs per hour 4 → 2".
- */
-
-/** One changed leaf: its path, the old and the new value (`undefined` = absent). */
 export interface Change {
   path: (string | number)[];
   before: unknown;
@@ -14,7 +8,6 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** Every leaf that differs between `before` and `after`, in document order. */
 export function diffValues(
   before: unknown,
   after: unknown,
@@ -92,7 +85,6 @@ const LABELS: Record<string, string> = {
   trackingDeadlineMinutes: 'tracking deadline',
 };
 
-/** "runs per hour", "trigger 1 filter", "ceiling five_hour events", "target routineId". */
 export function changeLabel(path: (string | number)[]): string {
   const parts: string[] = [];
   let parent: string | number | undefined;
@@ -118,7 +110,6 @@ export function changeLabel(path: (string | number)[]): string {
   return parts.join(' ').trim() || 'document';
 }
 
-/** A short rendering of a changed value: "—" when absent, strings trimmed to 40 characters. */
 export function formatChangeValue(v: unknown): string {
   if (v === undefined || v === null || v === '') return '—';
   if (typeof v === 'string') return v.length > 40 ? `${v.slice(0, 39)}…` : v;
@@ -127,15 +118,10 @@ export function formatChangeValue(v: unknown): string {
   return json.length > 40 ? `${json.slice(0, 39)}…` : json;
 }
 
-/** "runs per hour 4 → 2". */
 export function describeChange(c: Change): string {
   return `${changeLabel(c.path)} ${formatChangeValue(c.before)} → ${formatChangeValue(c.after)}`;
 }
 
-/**
- * Collapses list-valued leaves (event types, days, `on`) into one change per list so "event types"
- * is one line, not one per index.
- */
 export function groupChanges(changes: Change[], before: unknown, after: unknown): Change[] {
   const listKeys = new Set(['eventTypes', 'days', 'on']);
   const out: Change[] = [];
@@ -166,7 +152,6 @@ function getPath(v: unknown, path: (string | number)[]): unknown {
   return cur;
 }
 
-/** The diff as the UI shows it: grouped leaf changes between two documents. */
 export function documentChanges(before: unknown, after: unknown): Change[] {
   return groupChanges(diffValues(before, after), before, after);
 }

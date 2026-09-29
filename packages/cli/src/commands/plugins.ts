@@ -31,7 +31,6 @@ const homeOption = (cmd: Command): Command =>
     `$SWITCHBOARD_HOME: installs go to <dir>/plugins (env SWITCHBOARD_HOME, default ${DEFAULT_HOME})`,
   );
 
-/** `switchboard plugins add|remove|list|inspect`. */
 export function pluginsCommand(deps: CliDeps): Command {
   const { io } = deps;
   const plugins = new Command('plugins').description(

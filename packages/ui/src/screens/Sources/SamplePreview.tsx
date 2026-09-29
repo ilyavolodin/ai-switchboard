@@ -21,9 +21,7 @@ import styles from './SamplePreview.module.css';
 
 export interface SamplePreviewProps {
   typeId: string;
-  /** The draft settings as they are in the form right now. */
   settings: Record<string, unknown>;
-  /** The existing source (Settings tab): enables "Use the last delivery". */
   sourceId?: string;
   sample: SampleDraft;
   onSampleChange: (next: SampleDraft) => void;
@@ -31,11 +29,6 @@ export interface SamplePreviewProps {
 
 const EXAMPLE = '{\n  "id": "dep_48213",\n  "service": "api",\n  "status": "success"\n}';
 
-/**
- * "Try it with a sample delivery": paste what the sender would send (or take the source's last
- * delivery) and see the events it becomes — type, artifact, attributes — or why it becomes none,
- * updating as the settings change. Runs `POST /sources/preview`: nothing is stored.
- */
 export function SamplePreview({
   typeId,
   settings,

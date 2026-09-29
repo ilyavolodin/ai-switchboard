@@ -12,30 +12,20 @@ import styles from './SecretRefInput.module.css';
 import { TextField } from './TextField.js';
 
 export interface SecretRefInputProps {
-  /** The stored value: `secret://<provider>/<name>`. Anything else is never displayed. */
+  /** `secret://<provider>/<name>`. Anything else is never displayed. */
   value: unknown;
   onChange: (next: string | undefined) => void;
-  /**
-   * The configured secret provider ids to choose from. `undefined` while they are loading; an
-   * empty list shows a hint pointing to Settings › Secret providers.
-   */
+  /** `undefined` while loading; an empty list shows a hint pointing to Settings. */
   providers?: string[];
-  /** Resolution status from the API (`SecretRefDTO`), for "resolved 13 h ago". */
   status?: SecretRefDTO;
   id?: string;
   describedBy?: string;
   disabled?: boolean;
   invalid?: boolean;
-  /** Accessible name prefix, e.g. the field title. */
   label?: string;
 }
 
-/**
- * A secret-reference input: provider select + name, stored as `secret://<provider>/<name>`.
- * Secret values never touch the UI: a stored plain value is not shown, only flagged. For admins
- * the name offers the names the chosen provider lists (free typing still works) and flags a
- * name the provider does not list.
- */
+/** Secret values never touch the UI: a stored plain value is not shown, only flagged. */
 export function SecretRefInput({
   value,
   onChange,
@@ -66,7 +56,6 @@ export function SecretRefInput({
   );
 
   const emit = (p: string, n: string) => {
-    // Without a provider there is no reference to form yet.
     if (p === '') return;
     onChange(n.trim() ? formatSecretRef(p, n.trim()) : undefined);
   };

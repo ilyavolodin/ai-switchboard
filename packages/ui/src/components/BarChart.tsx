@@ -3,39 +3,28 @@ import type { ReactNode } from 'react';
 import { chartValue } from '../lib/chart.js';
 import styles from './BarChart.module.css';
 
-/** One series: a colour token and a value per label. */
 export interface BarSeries {
   id: string;
   label: string;
-  /** A CSS colour, e.g. `var(--primary)`, `var(--sky)`, `var(--st-warn)`. */
   color: string;
   values: number[];
 }
 
 export interface BarChartProps {
-  /** X labels (days, hours). */
   labels: string[];
   series: BarSeries[];
-  /** Stack series in one bar (events by type) instead of side by side. */
   stacked?: boolean;
-  /** Accessible name; the data is also listed in a visually hidden table. */
   ariaLabel: string;
   height?: number;
-  /** Indices of partial buckets, drawn dashed ("Thu partial"). */
+  /** Indices of partial buckets, drawn dashed. */
   partial?: number[];
   showLegend?: boolean;
-  /** Formats the max label on the tallest bar. */
   formatValue?: (v: number) => string;
-  /** Show every nth x label (dense hourly charts). */
   labelEvery?: number;
 }
 
 const W = 340;
 
-/**
- * A hand-rolled SVG bar chart: grouped or stacked series per label, gridlines at 0 / 50 / 100 %,
- * the maximum labelled on its bar. Accessible via a hidden data table.
- */
 export function BarChart({
   labels,
   series: given,
@@ -47,7 +36,6 @@ export function BarChart({
   formatValue = (v) => String(Math.round(v)),
   labelEvery = 1,
 }: BarChartProps) {
-  // One value per label for every series, each drawable (see `chartValue`).
   const series = given.map((s) => ({
     ...s,
     values: labels.map((_, i) => chartValue(s.values[i])),

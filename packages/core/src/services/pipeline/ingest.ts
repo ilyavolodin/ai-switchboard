@@ -20,12 +20,6 @@ import { recordAudit } from '../audit.js';
 import { JOBS, callPlugin, errorMessage, lockKey, withTx, type Ctx } from './context.js';
 import { PipelineError, isUuid } from './errors.js';
 
-/**
- * Stage 1, receive: verify, store the raw delivery, parse, validate each event against its
- * declared schema, apply the door rules (disabled source, caps, muted types), write `events`
- * rows and enqueue matching. Everything after is a queue job.
- */
-
 type SourceRow = typeof sources.$inferSelect;
 
 const DROPPED_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization']);
@@ -49,7 +43,7 @@ function storedHeaders(
 interface CheckedDraft {
   stage: EventStage | null;
   reason: string | null;
-  /** Each validation problem on its own (`reason` joins them). */
+  /** `reason` joins them. */
   problems: string[];
   type: string;
   occurredAt: Date;
@@ -68,7 +62,6 @@ function isFlatValue(v: unknown): boolean {
   );
 }
 
-/** Validate one plugin-produced draft against the source's declared event types. */
 export function checkDraft(draft: unknown, live: LiveSource, now: Date): CheckedDraft {
   const d = (draft !== null && typeof draft === 'object' ? draft : {}) as Partial<
     Record<keyof EventDraft, unknown>
@@ -144,7 +137,6 @@ export interface StoreResult {
   received: string[];
 }
 
-/** Door rules and insert, in one transaction per delivery. */
 export async function storeDrafts(
   ctx: Ctx,
   row: SourceRow,
@@ -291,7 +283,6 @@ async function storeRaw(
   return ref;
 }
 
-/** POST /hooks/:sourceId, in a `switchboard.ingest` span (the HTTP span's child). */
 export function ingestPush(
   ctx: Ctx,
   sourceId: string,
@@ -308,7 +299,6 @@ export function ingestPush(
   );
 }
 
-/** POST /hooks/:sourceId */
 async function ingestPushInSpan(
   ctx: Ctx,
   sourceId: string,
@@ -398,7 +388,6 @@ async function ingestPushInSpan(
   }
 }
 
-/** Pull sources: one poll, in a `switchboard.ingest` span. */
 export function pollSource(ctx: Ctx, sourceId: string): Promise<void> {
   return ctx.telemetry.span(
     'switchboard.ingest',
@@ -407,7 +396,7 @@ export function pollSource(ctx: Ctx, sourceId: string): Promise<void> {
   );
 }
 
-/** Pull sources: one poll, events and the new watermark in one transaction. */
+/** Events and the new watermark are written in one transaction. */
 async function pollSourceInSpan(ctx: Ctx, sourceId: string): Promise<void> {
   const [row] = await ctx.db.select().from(sources).where(eq(sources.id, sourceId));
   if (!row?.enabled) return;
@@ -463,7 +452,6 @@ class WatermarkMoved extends Error {
   override readonly name = 'WatermarkMoved';
 }
 
-/** Replay, in a `switchboard.ingest` span. */
 export function replayEvent(
   ctx: Ctx,
   eventId: string,
@@ -477,7 +465,6 @@ export function replayEvent(
   );
 }
 
-/** Re-inject a stored raw body through the same parse; new events carry `replayOf`. */
 async function replayEventInSpan(
   ctx: Ctx,
   eventId: string,
@@ -544,7 +531,6 @@ async function replayEventInSpan(
   return { eventIds: out.eventIds };
 }
 
-/** "Send test event", in a `switchboard.ingest` span. */
 export function injectTestEvent(
   ctx: Ctx,
   sourceId: string,
@@ -559,7 +545,6 @@ export function injectTestEvent(
   );
 }
 
-/** "Send test event": the source type's first example for `type` (or its first event type). */
 async function injectTestEventInSpan(
   ctx: Ctx,
   sourceId: string,

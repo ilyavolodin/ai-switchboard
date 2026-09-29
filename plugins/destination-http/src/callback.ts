@@ -11,7 +11,6 @@ import {
 export const SIGNATURE_HEADER = 'x-switchboard-signature';
 export const SIGNATURE_PREFIX = 'sha256=';
 
-/** What the backend POSTs to `run.callbackUrl` when a callback-tracked run finishes. */
 export interface HttpCallbackBody {
   runId: string;
   status: 'ok' | 'error';
@@ -36,7 +35,6 @@ export const callbackBodySchema: JSONSchema = {
   },
 };
 
-/** Keep only declared, finite dimensions. */
 export function declaredUsage(
   usage: Record<string, unknown> | undefined,
   declared: ReadonlySet<string>,
@@ -50,9 +48,8 @@ export function declaredUsage(
 }
 
 /**
- * Authenticate a callback (HMAC-SHA256 of the raw body) and map it to a run status. Returns
- * `null` for anything unsigned, wrongly signed or malformed; never throws. Unknown top-level
- * fields are ignored and undeclared usage keys are dropped.
+ * HMAC-SHA256 of the raw body. `null` for anything unsigned, wrongly signed or malformed; never
+ * throws. Undeclared usage keys are dropped.
  */
 export function verifySignedCallback(
   req: RawRequest,

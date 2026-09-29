@@ -1,7 +1,4 @@
-/**
- * Vitest setup for the `ui` project (jsdom): jest-dom matchers, cleanup, and the browser APIs
- * jsdom lacks that React Flow and the components use.
- */
+// Stubs the browser APIs jsdom lacks that React Flow and the components use.
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup } from '@testing-library/react';
@@ -10,7 +7,6 @@ import { afterEach, vi } from 'vitest';
 import { setClock } from '../lib/clock.js';
 import { TEST_NOW } from './constants.js';
 
-// Relative times ("42 min ago") are computed against the fixtures' fixed now.
 setClock(() => TEST_NOW);
 
 afterEach(() => {

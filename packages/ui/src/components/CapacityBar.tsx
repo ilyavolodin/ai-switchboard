@@ -1,9 +1,8 @@
 import { cx } from '../lib/cx.js';
 import styles from './CapacityBar.module.css';
 
-/** A tick on the bar: a reserve, a ceiling, a projection. */
 export interface CapacityMark {
-  /** Position as a fraction of the limit, 0–1. */
+  /** Fraction of the limit, 0–1. */
   at: number;
   label: string;
   color?: string;
@@ -11,19 +10,16 @@ export interface CapacityMark {
 
 export interface CapacityBarProps {
   used: number;
-  /** `null` = no cap: the bar is empty and the text reads "4/—". */
+  /** `null` = no cap: the bar is empty. */
   limit: number | null;
-  /** Accessible name: "Runs today". */
   label: string;
   marks?: CapacityMark[];
-  /** Beyond the first mark the fill turns this colour (into the reserve / above ceiling). */
+  /** Fill colour beyond the first mark. */
   overColor?: string;
   size?: 'md' | 'lg';
-  /** Hide the "6/8" text. */
   hideText?: boolean;
 }
 
-/** A budget used against its cap as a thin bar with optional ticks (a process's daily cap). */
 export function CapacityBar({
   used,
   limit,

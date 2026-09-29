@@ -29,20 +29,11 @@ const KIND_OPTIONS: { value: KindFilter; label: string }[] = [
 ];
 
 export interface NpmSearchProps {
-  /** A fixed kind (the add-source / add-destination pickers); otherwise a kind filter is shown. */
   kind?: PluginSearchKind;
-  /** Starts the inspect → review → reason → install flow for a package. */
   onInstall: (result: PluginSearchResult) => void;
-  /** One column of smaller cards (inside a dialog). */
   compact?: boolean;
 }
 
-/**
- * "Browse npm": packages named `ai-switchboard-{kind}-{name}` (or `@scope/…`, or
- * `@ai-switchboard/{kind}-{name}`) found on the registry, with their version, publisher,
- * weekly downloads, the reviewed badge and whether they are installed. Everyone can search;
- * installing is for admins.
- */
 export function NpmSearch({ kind, onInstall, compact = false }: NpmSearchProps) {
   const [filter, setFilter] = useState<KindFilter>('all');
   const [query, setQuery] = useState('');

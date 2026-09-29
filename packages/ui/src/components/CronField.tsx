@@ -7,7 +7,6 @@ import styles from './CronField.module.css';
 import { Select } from './Select.js';
 import { TextField } from './TextField.js';
 
-/** A cron schedule and the timezone it fires in. */
 export interface CronValue {
   cron: string;
   timezone: string;
@@ -16,18 +15,13 @@ export interface CronValue {
 export interface CronFieldProps {
   value: CronValue;
   onChange: (next: CronValue) => void;
-  /** Id for the cron input (from `<Field>`). */
   id?: string;
   describedBy?: string;
-  /** Hide the timezone select (when a schema field stores only the cron string). */
+  /** For a schema field that stores only the cron string. */
   hideTimezone?: boolean;
   disabled?: boolean;
 }
 
-/**
- * A cron input with a plain-language preview (cronstrue, instant) and the next three fire times
- * from `POST /processes/preview/cron` in the chosen timezone.
- */
 export function CronField({
   value,
   onChange,

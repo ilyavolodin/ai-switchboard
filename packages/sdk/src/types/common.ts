@@ -1,25 +1,15 @@
 /**
- * Shared primitive types used across every plugin interface.
- */
-
-/**
- * A JSON Schema (draft 2020-12) document. UI annotations: `x-secret`, `x-widget`, `x-group`,
- * `x-order`, `x-placeholder`, `x-help`, `x-enumLabels` (`{ "<value>": "<label>" }`) and
- * `x-warning` (`{ when: <schema>, message }`: a red
- * warning under the field while its value matches `when`) and `x-effectiveDefault` (since 1.4:
- * `[{ when?: <schema over the parent object>, value }]`, what the plugin does while the field is
- * unset, shown by the form but never written into settings). `x-widget: 'path'` (1.4) offers
- * dotted paths from a sample delivery. See the plugin author guide.
+ * Draft 2020-12. The UI reads `x-*` annotations (`x-secret`, `x-widget`, `x-warning`,
+ * `x-effectiveDefault`, ...); the plugin author guide lists them.
  */
 export type JSONSchema = Record<string, unknown>;
 
 /** Instance settings after `secret://` references have been resolved to their values. */
 export type Settings = Record<string, unknown>;
 
-/** A JSONata expression. */
+/** JSONata. */
 export type Expr = string;
 
-/** ISO-8601 timestamp string. */
 export type IsoDateTime = string;
 
 export type HealthStatus = 'healthy' | 'unhealthy' | 'unknown';
@@ -30,7 +20,7 @@ export interface Health {
   checkedAt: IsoDateTime;
 }
 
-/** A raw inbound HTTP request, as ingress received it. Header names are lower-cased. */
+/** Header names are lower-cased. */
 export interface RawRequest {
   method: string;
   path: string;
@@ -49,14 +39,12 @@ export interface ActionSpec {
   title: string;
   description?: string;
   argsSchema: JSONSchema;
-  /** A short sentence template shown in the UI, e.g. "Add label {{label}}". */
+  /** Sentence template shown in the UI, e.g. "Add label {{label}}". */
   describe?: string;
   /**
-   * Optional (since SDK 1.3), default `false`. True when running the action again is harmless
-   * even if a previous attempt may or may not have happened (add a label, set a state, mark a
-   * PR ready). When a crash leaves a step's outcome in doubt, the core re-runs an idempotent
-   * action; a non-idempotent one (post a comment) is never repeated: a `before` step in doubt
-   * fails the run before invoke, an `after` step in doubt is recorded `uncertain`.
+   * True when repeating the action is harmless (add a label, not post a comment). When a crash
+   * leaves a step in doubt, only an idempotent action is re-run; otherwise a `before` step fails
+   * the run before invoke and an `after` step is recorded `uncertain`.
    */
   idempotent?: boolean;
 }
@@ -67,10 +55,10 @@ export interface ActionResult {
   data?: unknown;
 }
 
-/** Declared I/O a plugin may perform, shown at install time and enforced for SDK-provided I/O. */
+/** Shown at install time and enforced for SDK-provided I/O. */
 export interface Capabilities {
-  /** Host globs the plugin's HttpClient may reach, e.g. `api.github.com`, `*.atlassian.net`, `*`. */
+  /** Host globs the plugin's HttpClient may reach, e.g. `*.atlassian.net`. */
   network?: string[];
-  /** Secret names the plugin expects to be given (documentation; resolution is by reference). */
+  /** Documentation only; resolution is by reference. */
   secrets?: string[];
 }

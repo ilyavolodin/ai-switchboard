@@ -25,11 +25,6 @@ import { runStatusTone } from '../../lib/tone.js';
 import { whyFromExplanations } from '../../lib/why.js';
 import styles from './detail.module.css';
 
-/**
- * The source's Events tab: its recent events, newest first, each with the processes it matched;
- * expanding a row shows its attributes (collapsible key/value list) and delivery facts, and
- * offers Replay. Pages with Load more.
- */
 export function SourceEventsTab({ source }: { source: SourceDetail }) {
   const [type, setType] = useState('');
   const events = useSourceEvents(source.id, type || undefined);

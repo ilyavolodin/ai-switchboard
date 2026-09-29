@@ -12,11 +12,6 @@ function needsSessionCheck(error: unknown): boolean {
   );
 }
 
-/**
- * The app's QueryClient. Client errors (4xx) are not retried; a 401 (or a pending password change)
- * from any query re-checks `/auth/me` so the shell can send the person to sign in or to
- * `/change-password`.
- */
 export function createQueryClient(): QueryClient {
   const client: QueryClient = new QueryClient({
     queryCache: new QueryCache({

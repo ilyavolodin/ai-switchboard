@@ -12,7 +12,7 @@ export interface LinkButtonProps extends LinkProps {
   children?: ReactNode;
 }
 
-/** A router link styled as a button (navigation, not an action: "New process", "Edit"). */
+/** For navigation, not actions. */
 export function LinkButton({
   variant = 'secondary',
   size = 'md',

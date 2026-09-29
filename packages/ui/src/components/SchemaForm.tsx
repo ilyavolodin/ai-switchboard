@@ -42,13 +42,11 @@ import { TextField } from './TextField.js';
 import { Toggle } from './Toggle.js';
 
 export interface SchemaFormProps {
-  /** The plugin's JSON Schema (draft 2020-12) for an object. */
   schema: JSONSchema;
   value: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
-  /** Secret provider ids for secret-reference fields (default env, file). */
   secretProviders?: string[];
-  /** Resolution status of stored secret references, matched by field name. */
+  /** Matched to secret fields by field name. */
   secretStatus?: SecretRefDTO[];
   /** Show every validation message (after a save attempt); otherwise only touched fields. */
   showAllErrors?: boolean;
@@ -57,10 +55,7 @@ export interface SchemaFormProps {
   disabled?: boolean;
   /** `row` puts labels beside controls (settings pages). */
   layout?: 'stack' | 'row';
-  /**
-   * A sample delivery (`{ body, headers, query }`): `x-widget: 'path'` fields suggest its dotted
-   * paths with example values, and expression fields offer them as completions.
-   */
+  /** Its dotted paths feed `x-widget: 'path'` suggestions and expression completions. */
   sample?: DeliverySample | null;
 }
 
@@ -74,23 +69,13 @@ interface Ctx {
   baseline: Record<string, unknown> | undefined;
   disabled: boolean;
   layout: 'stack' | 'row';
-  /** Paths of the sample delivery, for path fields and expression completion. */
   paths: Suggestion[];
 }
 
 /**
- * Renders a plugin's JSON Schema as a native-looking form: strings, numbers, integers, booleans,
- * enums, arrays of strings (or of enum values), arrays of objects and nested objects; `x-group`
- * becomes fieldsets, `x-order` orders fields, `x-secret` fields are secret-reference inputs
- * (`secret://<provider>/<name>`, values never shown), `x-widget` picks textarea / password /
- * select / code / cron / expression, `x-placeholder` and `x-help` add hints, and `x-warning`
- * (`{ when, message }`) shows a red warning under a field while its value matches `when`.
- * `x-widget: 'path'` fields suggest the dotted paths of `sample`; `x-docs` adds a docs link;
- * `x-effectiveDefault` shows what the plugin does while a field is unset.
- * `if`/`then`/`else` (also inside `allOf`) and `dependentRequired` decide which fields are shown
- * and required for the current value (see `resolveConditionals`). Titles, descriptions,
- * defaults and required markers come from the schema; Ajv validates as you type.
- * Controlled: `value` in, `onChange` out. Use `validateAgainstSchema` to gate a save.
+ * Renders a plugin's JSON Schema as a form, honouring the `x-group`, `x-order`, `x-secret`,
+ * `x-widget`, `x-placeholder`, `x-help`, `x-warning`, `x-docs` and `x-effectiveDefault` extensions
+ * and `if`/`then`/`else` / `dependentRequired`. Gate a save with `validateAgainstSchema`.
  */
 export function SchemaForm({
   schema,
@@ -136,7 +121,6 @@ export function SchemaForm({
 }
 
 function ObjectFields({ schema, path, ctx }: { schema: JSONSchema; path: ValuePath; ctx: Ctx }) {
-  // `if`/`then`/`else` decide which fields apply to the current value and which are required.
   const { required, hidden } = resolveConditionals(schema, getIn(ctx.root, path));
   const groups = groupProperties(orderedProperties(schema).filter(([key]) => !hidden.has(key)));
   return (
@@ -195,7 +179,6 @@ function helpFor(s: JSONSchema, title: string): ReactNode {
   );
 }
 
-/** What every field renderer gets: the resolved schema and where its value lives. */
 interface FieldProps {
   name: string;
   schema: JSONSchema;
@@ -245,7 +228,6 @@ function PropertyField({
   return <ControlField {...props} kind={kind} />;
 }
 
-/** A fieldset with the field's title as legend, its required marker and help. */
 function FieldGroup({
   title,
   required,
@@ -278,7 +260,6 @@ function FieldError({ error }: { error: string | null }) {
   );
 }
 
-/** Nested object: a fieldset of its own properties. */
 function NestedObjectField({ schema, path, title, required, help, ctx }: FieldProps) {
   return (
     <FieldGroup title={title} required={required} help={help}>
@@ -287,7 +268,6 @@ function NestedObjectField({ schema, path, title, required, help, ctx }: FieldPr
   );
 }
 
-/** Array of objects: one fieldset per item, with remove and add buttons. */
 function ObjectListField({
   path,
   title,
@@ -344,7 +324,6 @@ function ObjectListField({
   );
 }
 
-/** Array of enum values: a checkbox group. */
 function EnumListField({
   path,
   title,
@@ -379,7 +358,6 @@ function EnumListField({
   );
 }
 
-/** One labelled control: secret reference, enum, toggle, number, list, cron, expression, text. */
 function ControlField({
   name,
   schema,
@@ -452,7 +430,6 @@ interface ControlProps {
   required: boolean;
   value: unknown;
   changed: boolean;
-  /** `x-placeholder`, else the default. */
   placeholder: string | undefined;
   ctx: Ctx;
   set: (v: unknown) => void;
@@ -617,7 +594,6 @@ function Control(props: ControlProps) {
   );
 }
 
-/** `enum` (or `x-widget: select` over `examples`) as a select, or radios with `x-widget: radio`. */
 function EnumControl({
   ids,
   schema,
@@ -635,7 +611,7 @@ function EnumControl({
   const index = indexOf(value);
   const labelOf = (o: unknown): string => enumLabel(schema, o) ?? formatDefault(o);
   if (radio) {
-    // An unset value shows what the plugin will do: `x-effectiveDefault`, else the default.
+    // Unset shows what the plugin will do: `x-effectiveDefault`, else the default.
     const unset = effectiveDefault(schema, getIn(ctx.root, path.slice(0, -1)));
     const shown =
       index === -1 && value === undefined && unset !== undefined ? indexOf(unset) : index;

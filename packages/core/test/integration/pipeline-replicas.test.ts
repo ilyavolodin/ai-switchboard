@@ -41,7 +41,6 @@ describe('two replicas on one database', () => {
       batching: { groupBy: 'attributes.repository' },
     });
 
-    // The source redelivers to both replicas concurrently, several times over.
     for (let round = 0; round < 3; round++) {
       await Promise.all([
         deliver(h, src.id, [{ id: '1', version: 'v1', repository: 'acme/api' }], {

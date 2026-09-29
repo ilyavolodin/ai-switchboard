@@ -140,9 +140,7 @@ describe('poll-http poll', () => {
       },
       dedupeKey: 'poll-http.incident.resolved:incident:inc_01J8Y7:2026-09-27T09:31:05Z',
     });
-    // The single-component incident still yields a string[].
     expect(events[1]!.attributes.components).toEqual(['API']);
-    // Authenticated, and no cursor on the very first poll.
     expect(calls[0]!.headers.authorization).toBe(`Bearer ${TOKEN}`);
     expect(calls[0]!.url.searchParams.has('updated_since')).toBe(false);
   });

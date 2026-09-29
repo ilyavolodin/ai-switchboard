@@ -17,14 +17,12 @@ import type {
 
 import { resolveServerEntry } from './serve-entry.js';
 
-/** Where command output goes. Tests capture it; `main` writes to the process streams. */
 export interface CliIO {
   out(text: string): void;
   err(text: string): void;
   setExitCode(code: number): void;
 }
 
-/** The plugin installer from `@ai-switchboard/core`, injectable for tests. */
 export interface Installer {
   install(options: InstallOptions): Promise<InstallResult>;
   remove(options: RemoveOptions): Promise<void>;
@@ -32,7 +30,6 @@ export interface Installer {
   inspect(options: InspectOptions): Promise<InspectResult>;
 }
 
-/** Everything a command touches outside its own arguments. */
 export interface CliDeps {
   io: CliIO;
   env: NodeJS.ProcessEnv;
@@ -40,21 +37,20 @@ export interface CliDeps {
   installer: Installer;
   loadConfig(env: NodeJS.ProcessEnv): Promise<CoreConfig>;
   runDoctor(config: CoreConfig): Promise<DoctorCheck[]>;
-  /** Start the server entry with `node` and resolve with its exit code. */
+  /** Resolves with the child's exit code. */
   spawnServer(entry: string, env: NodeJS.ProcessEnv): Promise<number>;
-  /** Resolve the `@ai-switchboard/core` server entry (`<package root>/dist/main.js`). */
   resolveServerEntry(): Promise<string>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
-  /** Account recovery straight against the server's database (`switchboard users ...`). */
+  /** Talks straight to the server's database, not the API. */
   recovery: AccountRecovery;
-  /** This machine's name, for the `cli@<hostname>` audit actor. */
+  /** For the `cli@<hostname>` audit actor. */
   hostname(): string;
 }
 
 const core = (): Promise<typeof CoreModule> => import('@ai-switchboard/core');
 
-/** A child's exit status as a shell reports it: its code, or 128 + the signal number. */
+/** As a shell reports it: the code, or 128 + the signal number. */
 export function childExitCode(code: number | null, signal: NodeJS.Signals | null): number {
   if (code !== null) return code;
   if (signal !== null) return 128 + constants.signals[signal];

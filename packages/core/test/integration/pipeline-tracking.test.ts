@@ -84,7 +84,6 @@ describe('tracking', () => {
     expect(h.runtime.errors).toContainEqual(
       expect.objectContaining({ plugin: EXEC_PLUGIN, kind: 'invalid_usage' }),
     );
-    // A repeated callback is a no-op.
     expect(
       (
         await h.pipeline.handleCallback(
@@ -144,7 +143,6 @@ describe('tracking', () => {
     await h.pipeline.maintenance();
     await h.drain();
     expect(ex.state.invocations).toHaveLength(1);
-    // Tracking settles it.
     await h.pipeline.handleCallback(
       ex.id,
       callbackRequest('callback-token', { runId: run.id, state: 'ok' }),
@@ -273,7 +271,6 @@ describe('tracking', () => {
       tracking: 'callback',
       idempotent: false,
       caps: { invokeTimeoutSeconds: 1 },
-      // The instance cap wins over the type's value.
       invokeTimeoutSeconds: 600,
     });
     const pid = await seedProcess(h, ex.id, src.id);

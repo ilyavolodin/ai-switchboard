@@ -8,23 +8,18 @@ import { Tooltip } from './Tooltip.js';
 export interface ToggleProps {
   checked: boolean;
   onChange: (next: boolean) => void;
-  /** Visible label; when omitted, `ariaLabel` is required. */
+  /** When omitted, `ariaLabel` is required. */
   label?: string;
   ariaLabel?: string;
   size?: 'sm' | 'md';
-  /** The bordered "Enabled [toggle]" control from process and destination headers. */
   boxed?: boolean;
   disabled?: boolean;
   requires?: Role;
-  /** Id for an external `<label htmlFor>` (inside `<Field>`). */
   id?: string;
   describedBy?: string;
 }
 
-/**
- * A switch (`role="switch"`). Tangerine when on, line-strong when off. Enabling or disabling a
- * process, source or destination should route `onChange` through a reason prompt.
- */
+/** Enabling or disabling a process, source or destination goes through a reason prompt. */
 export function Toggle({
   checked,
   onChange,

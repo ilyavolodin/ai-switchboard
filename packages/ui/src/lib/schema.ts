@@ -1,9 +1,3 @@
-/**
- * JSON Schema (draft 2020-12) helpers for `SchemaForm`: reading the UI annotations plugins use
- * (`x-secret`, `x-widget`, `x-group`, `x-order`, `x-placeholder`, `x-help`, `x-effectiveDefault`,
- * `x-docs`), defaults, immutable
- * path updates, secret references and client-side validation with Ajv.
- */
 import type { JSONSchema } from '@ai-switchboard/core/contract';
 import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormatsModule from 'ajv-formats';
@@ -11,19 +5,16 @@ import addFormatsModule from 'ajv-formats';
 // ajv-formats ships CJS with a default export that ESM sees as a namespace.
 const addFormats = addFormatsModule as unknown as (ajv: Ajv2020) => Ajv2020;
 
-/** A path into a value: object keys and array indexes. */
 export type ValuePath = (string | number)[];
 
-/** The field kinds SchemaForm renders. */
 export type FieldKind =
   'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'unknown';
 
-/** Narrows an unknown to a schema object. */
 export function asSchema(v: unknown): JSONSchema | null {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as JSONSchema) : null;
 }
 
-/** The kind of a schema: enum wins over type; `["string","null"]` reads as string. */
+/** Enum wins over type; `["string","null"]` reads as string. */
 export function fieldKind(s: JSONSchema): FieldKind {
   if (Array.isArray(s.enum)) return 'enum';
   const t = Array.isArray(s.type) ? (s.type as unknown[]).find((x) => x !== 'null') : s.type;
@@ -41,10 +32,8 @@ export function fieldKind(s: JSONSchema): FieldKind {
 }
 
 /**
- * The schema a field is drawn from. A nullable `anyOf` / `oneOf` (`[{ type: 'integer' }, { type:
- * 'null' }]`, as zod and pydantic emit) reads as its one non-null option, with the outer title,
- * description and default kept; anything else is returned as is. Validation still uses the full
- * schema.
+ * A nullable `anyOf` / `oneOf` (as zod and pydantic emit) reads as its one non-null option, with
+ * the outer title, description and default kept. Validation still uses the full schema.
  */
 export function fieldSchema(s: JSONSchema): JSONSchema {
   if (s.type !== undefined || s.enum !== undefined) return s;
@@ -62,10 +51,7 @@ export function fieldSchema(s: JSONSchema): JSONSchema {
   return s;
 }
 
-/**
- * One typed entry of a list field: numbers for `number` / `integer` items (text that is not a
- * number stays text, so validation names the problem), the text itself otherwise.
- */
+/** Text that is not a number stays text, so validation names the problem. */
 export function listItemValue(items: JSONSchema, text: string): string | number {
   const kind = fieldKind(items);
   if (kind !== 'number' && kind !== 'integer') return text;
@@ -73,14 +59,12 @@ export function listItemValue(items: JSONSchema, text: string): string | number 
   return text.trim() !== '' && Number.isFinite(n) ? n : text;
 }
 
-/** A default or enum option as text: lists joined, objects as JSON. */
 export function formatDefault(v: unknown): string {
   if (Array.isArray(v)) return v.length ? v.map(String).join(', ') : 'none';
   if (typeof v === 'object' && v !== null) return JSON.stringify(v);
   return String(v);
 }
 
-/** The `<input type>` for a text field from `x-widget` and `format`. */
 export function textInputType(s: JSONSchema): 'password' | 'email' | 'url' | 'text' {
   if (s['x-widget'] === 'password') return 'password';
   if (s.format === 'email') return 'email';
@@ -88,10 +72,7 @@ export function textInputType(s: JSONSchema): 'password' | 'email' | 'url' | 'te
   return 'text';
 }
 
-/**
- * A readable label for an enum option from `x-enumLabels` (`{ "<value>": "<label>" }`), or null
- * to fall back to the raw value.
- */
+/** From `x-enumLabels` (`{ "<value>": "<label>" }`); null falls back to the raw value. */
 export function enumLabel(s: JSONSchema, option: unknown): string | null {
   const labels = asSchema(s['x-enumLabels']);
   if (!labels) return null;
@@ -99,7 +80,7 @@ export function enumLabel(s: JSONSchema, option: unknown): string | null {
   return typeof label === 'string' ? label : null;
 }
 
-/** `properties` as an ordered list: `x-order` first, then declaration order. */
+/** `x-order` first, then declaration order. */
 export function orderedProperties(s: JSONSchema): [string, JSONSchema][] {
   const props = asSchema(s.properties) ?? {};
   const entries = Object.entries(props)
@@ -116,7 +97,7 @@ export function orderedProperties(s: JSONSchema): [string, JSONSchema][] {
     .map((x) => x.e);
 }
 
-/** Groups properties by `x-group`, in order of first appearance; ungrouped fields come first. */
+/** In order of first appearance; ungrouped fields come first. */
 export function groupProperties(
   props: [string, JSONSchema][],
 ): { group: string | null; fields: [string, JSONSchema][] }[] {
@@ -135,17 +116,15 @@ export function groupProperties(
   return groups;
 }
 
-/** The required property names of an object schema. */
 export function requiredOf(s: JSONSchema): string[] {
   return Array.isArray(s.required) ? (s.required as unknown[]).map(String) : [];
 }
 
-/** True for `x-secret: true` fields: stored as `secret://<provider>/<name>`, never shown. */
+/** Stored as `secret://<provider>/<name>`, never shown. */
 export function isSecretField(s: JSONSchema): boolean {
   return s['x-secret'] === true;
 }
 
-/** "pollIntervalSeconds" → "Poll interval seconds"; "api_key" → "Api key". */
 export function humanize(key: string): string {
   const spaced = key
     .replace(/[_-]+/g, ' ')
@@ -155,26 +134,22 @@ export function humanize(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-/** The label of a field: its `title`, else the humanized key. */
 export function fieldTitle(key: string, s: JSONSchema): string {
   return typeof s.title === 'string' && s.title ? s.title : humanize(key);
 }
 
 const SECRET_RE = /^secret:\/\/([^/]+)\/(.+)$/;
 
-/** Parses `secret://env/NAME`; `null` for anything else. */
 export function parseSecretRef(v: unknown): { provider: string; name: string } | null {
   if (typeof v !== 'string') return null;
   const m = SECRET_RE.exec(v);
   return m ? { provider: m[1] ?? '', name: m[2] ?? '' } : null;
 }
 
-/** Builds `secret://<provider>/<name>`. */
 export function formatSecretRef(provider: string, name: string): string {
   return `secret://${provider}/${name}`;
 }
 
-/** An initial value from `default`s (objects recurse; arrays and scalars take their default). */
 export function schemaDefaults(s: JSONSchema): unknown {
   if ('default' in s) return structuredClone(s.default);
   if (fieldKind(s) === 'object') {
@@ -188,7 +163,6 @@ export function schemaDefaults(s: JSONSchema): unknown {
   return undefined;
 }
 
-/** Reads a nested value. */
 export function getIn(value: unknown, path: ValuePath): unknown {
   let cur: unknown = value;
   for (const key of path) {
@@ -198,7 +172,7 @@ export function getIn(value: unknown, path: ValuePath): unknown {
   return cur;
 }
 
-/** Returns a copy of `value` with `path` set (`undefined` deletes object keys). */
+/** `undefined` deletes object keys. */
 export function setIn(value: unknown, path: ValuePath, next: unknown): unknown {
   if (path.length === 0) return next;
   const [head, ...rest] = path as [string | number, ...ValuePath];
@@ -216,7 +190,6 @@ export function setIn(value: unknown, path: ValuePath, next: unknown): unknown {
   return Object.fromEntries(Object.entries(obj).filter(([k]) => k !== head));
 }
 
-/** A JSON pointer for a path ("/repositories/0/name"). */
 export function pointer(path: ValuePath): string {
   return path.map((p) => `/${String(p).replace(/~/g, '~0').replace(/\//g, '~1')}`).join('');
 }
@@ -280,10 +253,7 @@ function friendly(e: ErrorObject): string {
   }
 }
 
-/**
- * Validates `value` against `schema`; returns messages keyed by JSON pointer (`/team`,
- * `/repositories/0/name`). Empty object = valid.
- */
+/** Messages keyed by JSON pointer; an empty object means valid. */
 export function validateAgainstSchema(
   schema: JSONSchema,
   value: unknown,
@@ -305,10 +275,6 @@ export function validateAgainstSchema(
   }
   return out;
 }
-
-// ---------------------------------------------------------------------------------------------
-// Conditionals: `if`/`then`/`else` (also inside `allOf`) and `dependentRequired`
-// ---------------------------------------------------------------------------------------------
 
 interface Conditional {
   if: JSONSchema | boolean;
@@ -337,7 +303,6 @@ function conditionalsOf(s: JSONSchema): Conditional[] {
   return out;
 }
 
-/** Property names a branch talks about: its `properties` and its `required`. */
 function mentioned(branch: JSONSchema | null): string[] {
   if (!branch) return [];
   return [...Object.keys(asSchema(branch.properties) ?? {}), ...requiredOf(branch)];
@@ -349,7 +314,6 @@ function matches(schema: JSONSchema | boolean, value: unknown): boolean {
   return validate ? validate(value) : true;
 }
 
-/** What an object schema's conditionals mean for the form, given the current value. */
 export interface ResolvedObject {
   /** Top-level `required`, plus the active branches' and `dependentRequired`'s. */
   required: string[];
@@ -358,10 +322,9 @@ export interface ResolvedObject {
 }
 
 /**
- * Resolves `if`/`then`/`else` (at the top level and inside `allOf`) and `dependentRequired`
- * against the current value. A property named by a branch (in its `properties` or `required`)
- * is conditional: it is shown only while a branch that names it applies. Properties no branch
- * names are always shown. So `verification: none` hides the webhook's secret and header fields.
+ * Resolves `if`/`then`/`else` (also inside `allOf`) and `dependentRequired`. A property a branch
+ * names is shown only while a branch that names it applies; properties no branch names are always
+ * shown.
  */
 export function resolveConditionals(s: JSONSchema, value: unknown): ResolvedObject {
   const base = requiredOf(s);
@@ -405,11 +368,9 @@ export function resolveConditionals(s: JSONSchema, value: unknown): ResolvedObje
 }
 
 /**
- * The `x-effectiveDefault` annotation (SDK 1.4): `[{ when?: <schema>, value }]`, what the plugin
- * does while a field is unset, decided by the rest of the object (`parent`). Returns the value of
- * the first entry whose `when` matches (an entry without `when` always does), else the plain
- * `default`, else `undefined`. Unlike `default` it is only shown, never written into settings,
- * so a plugin can tell "unset" from a chosen value (the webhook keeps old instances on JSONata).
+ * `x-effectiveDefault` (`[{ when?: <schema>, value }]`, matched against `parent`) is what the
+ * plugin does while the field is unset. Unlike `default` it is only shown, never written into
+ * settings, so a plugin can tell "unset" from a chosen value.
  */
 export function effectiveDefault(s: JSONSchema, parent: unknown): unknown {
   const raw = s['x-effectiveDefault'];
@@ -423,17 +384,13 @@ export function effectiveDefault(s: JSONSchema, parent: unknown): unknown {
   return 'default' in s ? s.default : undefined;
 }
 
-/** `x-docs: { url, label? }`: a link to the field's documentation, or null. */
 export function docsLink(s: JSONSchema): { url: string; label: string } | null {
   const d = asSchema(s['x-docs']);
   if (!d || typeof d.url !== 'string' || !/^https?:\/\//.test(d.url)) return null;
   return { url: d.url, label: typeof d.label === 'string' ? d.label : 'Documentation' };
 }
 
-/**
- * The `x-warning` annotation: `{ when: <schema>, message }` (or a list of them). Returns the
- * message of the first entry whose `when` matches the value, else `null`.
- */
+/** `x-warning`: `{ when: <schema>, message }` or a list of them; the first match wins. */
 export function warningFor(s: JSONSchema, value: unknown): string | null {
   const raw = s['x-warning'];
   const list = Array.isArray(raw) ? (raw as unknown[]) : raw === undefined ? [] : [raw];

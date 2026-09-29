@@ -7,10 +7,6 @@ import { WhyNothingRan } from '../../components/WhyNothingRan.js';
 import { traceHref } from '../../lib/artifact.js';
 import { whyFromExplanations } from '../../lib/why.js';
 
-/**
- * What became of the test event just sent: polls it until match has run, then says which
- * processes took it or, when none did, why nothing ran, with a link to its trace.
- */
 export function TestEventResult({
   eventIds,
   onDismiss,

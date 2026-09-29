@@ -26,11 +26,6 @@ import { batchEvents } from './load.js';
 import { notifyProcess, sendSystemAlert, type NotifyOn } from './notify.js';
 import { beforeStepsSettled, runSteps, runView, type RunRow } from './steps.js';
 
-/**
- * Run lifecycle after invoke: tracking (poll, callback, deadline), closing a run with its usage,
- * the breaker, and the terminal follow-up (after steps and notifications).
- */
-
 export type UpdateSource = 'invoke' | 'poll' | 'callback' | 'deadline' | 'manual' | 'recovery';
 
 export interface CloseInput {
@@ -38,7 +33,7 @@ export interface CloseInput {
   source: UpdateSource;
   reason?: string | null;
   result?: unknown;
-  /** Raw usage report from the plugin; validated against the declared dimensions here. */
+  /** Unvalidated; checked against the declared dimensions here. */
   usage?: unknown;
   errors?: string[] | null;
   externalId?: string | null;
@@ -50,7 +45,6 @@ function isOpen(status: RunStatusValue): boolean {
   return OPEN_RUN_STATUSES.includes(status);
 }
 
-/** The RunHandle destination methods receive for an existing run. */
 export function runHandle(ctx: Ctx, run: RunRow, processName: string): RunHandle {
   return {
     id: run.id,
@@ -67,8 +61,8 @@ export function runHandle(ctx: Ctx, run: RunRow, processName: string): RunHandle
 }
 
 /**
- * Move a run to a terminal status. Idempotent: a run that is already terminal is left alone and
- * `false` is returned. Evaluates the breaker in the same transaction.
+ * Idempotent: an already terminal run is left alone and `false` is returned. Evaluates the
+ * breaker in the same transaction.
  */
 export async function closeRun(ctx: Ctx, runId: string, input: CloseInput): Promise<boolean> {
   const now = ctx.clock.now();
@@ -220,7 +214,7 @@ function notifyOnFor(status: RunStatusValue): NotifyOn | null {
   }
 }
 
-/** A job for a run found by recovery: it continues the run's trace (`queue/traced.ts`). */
+/** The job continues the run's trace (`queue/traced.ts`). */
 function runJob(run: { id: string; traceContext: string | null }): Record<string, unknown> {
   return {
     runId: run.id,
@@ -228,7 +222,6 @@ function runJob(run: { id: string; traceContext: string | null }): Record<string
   };
 }
 
-/** `pipeline.finish`: after steps and notifications on the terminal state. */
 export async function finishRun(ctx: Ctx, runId: string): Promise<void> {
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
   if (!run || !isTerminalRunStatus(run.status)) return;
@@ -266,7 +259,6 @@ export async function finishRun(ctx: Ctx, runId: string): Promise<void> {
   }
 }
 
-/** Append one entry to a run's tracking history (`run_updates`). */
 export async function recordUpdate(
   ctx: Ctx,
   runId: string,
@@ -277,11 +269,7 @@ export async function recordUpdate(
   await ctx.db.insert(runUpdates).values({ runId, at: ctx.clock.now(), source, status, detail });
 }
 
-/**
- * Move an `invoking` run to `uncertain` (the invoke may have reached the backend) and schedule
- * tracking to settle it. With `attemptStartedAt`, only while that attempt is still the current
- * one. A run that already moved on is left alone.
- */
+/** With `attemptStartedAt`, only while that attempt is still the current one. */
 export async function markUncertain(
   ctx: Ctx,
   runId: string,
@@ -313,7 +301,6 @@ export async function markUncertain(
   await scheduleTracking(ctx, moved, 0);
 }
 
-/** Schedule the tracking jobs for an open run: the next poll (poll tracking) and the deadline. */
 export async function scheduleTracking(ctx: Ctx, run: RunRow, pollCount: number): Promise<void> {
   const now = ctx.clock.now();
   const deadline = run.deadlineAt ?? now;
@@ -336,7 +323,6 @@ function validStatus(value: unknown): RunStatus | null {
   return s as RunStatus;
 }
 
-/** Apply a tracking report (poll or callback) to a run. */
 async function applyTracking(
   ctx: Ctx,
   run: RunRow,
@@ -385,7 +371,6 @@ async function applyTracking(
   });
 }
 
-/** `pipeline.poll`, in a `switchboard.track` span. */
 export function pollRun(ctx: Ctx, runId: string): Promise<void> {
   return ctx.telemetry.span(
     'switchboard.track',
@@ -394,7 +379,6 @@ export function pollRun(ctx: Ctx, runId: string): Promise<void> {
   );
 }
 
-/** `pipeline.poll` */
 async function pollRunInSpan(ctx: Ctx, runId: string): Promise<void> {
   const now = ctx.clock.now();
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
@@ -463,7 +447,6 @@ async function pollRunInSpan(ctx: Ctx, runId: string): Promise<void> {
   );
 }
 
-/** `pipeline.deadline`, in a `switchboard.track` span. */
 export function deadlineRun(ctx: Ctx, runId: string): Promise<void> {
   return ctx.telemetry.span(
     'switchboard.track',
@@ -472,7 +455,6 @@ export function deadlineRun(ctx: Ctx, runId: string): Promise<void> {
   );
 }
 
-/** `pipeline.deadline`: an open run past its deadline becomes `unknown`. */
 async function deadlineRunInSpan(ctx: Ctx, runId: string): Promise<void> {
   const now = ctx.clock.now();
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
@@ -485,7 +467,6 @@ async function deadlineRunInSpan(ctx: Ctx, runId: string): Promise<void> {
   await closeRun(ctx, runId, { status: 'unknown', source: 'deadline', reason: 'deadline' });
 }
 
-/** POST /callbacks/:destinationId */
 export async function handleCallback(
   ctx: Ctx,
   destinationId: string,
@@ -559,12 +540,8 @@ export async function handleCallback(
 }
 
 /**
- * Recovery (at startup and every minute): an `invoking` run whose attempt is past its invoke
- * deadline (`invoke_deadline_at`: the steps' budget, the effective invoke timeout and a margin)
- * becomes `uncertain`, or is re-invoked with the same run id when idempotent. An attempt that
- * stopped in its `before` steps never reached `invoke`, so it is resumed regardless (the step
- * journal then decides what may run again). Runs whose invoke job was lost are resumed; open runs
- * past their deadline close as `unknown`.
+ * An attempt that stopped in its `before` steps never reached `invoke`, so it is resumed even
+ * when not idempotent; the step journal then decides what may run again.
  */
 export async function recoverRuns(ctx: Ctx): Promise<void> {
   const now = ctx.clock.now();

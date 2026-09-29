@@ -3,9 +3,8 @@ import { type ReactNode, useState } from 'react';
 import styles from './KeyValueList.module.css';
 
 export interface KeyValueListProps {
-  /** A record (attributes, settings) or explicit pairs. */
   data: Record<string, unknown> | [string, ReactNode][];
-  /** Rows shown before "show all N" (collapsible). Omit to show everything. */
+  /** Omit to show everything. */
   initialRows?: number;
   label?: string;
 }
@@ -22,7 +21,6 @@ function render(v: unknown): ReactNode {
   return scalar(v);
 }
 
-/** Attributes as a key/value list in mono, collapsible after `initialRows`. */
 export function KeyValueList({ data, initialRows, label }: KeyValueListProps) {
   const [open, setOpen] = useState(false);
   const rows: [string, ReactNode][] = Array.isArray(data)

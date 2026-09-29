@@ -1,7 +1,4 @@
-/**
- * The UI's API layer: `apiFetch`, query keys and one TanStack Query hook per endpoint in
- * docs/api.md. Components import hooks from here and never call `fetch` directly.
- */
+// Components import hooks from here and never call `fetch` directly.
 export * from './client.js';
 export * from './keys.js';
 export * from './mutation.js';

@@ -1,4 +1,4 @@
-/* Shared by the source and destination forms: the core caps block and the create dialog. */
+/* Shared by the source and destination forms. */
 .caps {
   display: flex;
   flex-direction: column;
@@ -108,7 +108,6 @@
   flex-grow: 1;
 }
 
-/* The sticky save bar under a settings form. */
 .saveBar {
   position: sticky;
   bottom: 0;

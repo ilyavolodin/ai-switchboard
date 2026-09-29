@@ -9,10 +9,7 @@ declare module 'vitest' {
 
 let container: StartedPostgreSqlContainer | undefined;
 
-/**
- * Starts one Postgres for the integration project (or uses DATABASE_URL). Each test file then
- * creates its own database from it with `createTestDatabase()`.
- */
+/** Each test file creates its own database from this Postgres with `createTestDatabase()`. */
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   let url = process.env.TEST_DATABASE_URL;
   if (url === undefined || url === '') {

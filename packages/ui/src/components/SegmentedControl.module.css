@@ -38,7 +38,6 @@
   box-shadow: var(--shadow-card);
 }
 
-/* The window picker (24 h / 7 d / 30 d): mono, tangerine-soft selection. */
 .window .option {
   height: 24px;
   font-family: var(--font-mono);

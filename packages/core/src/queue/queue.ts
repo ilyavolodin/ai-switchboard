@@ -6,7 +6,6 @@ import type { CoreLogger } from '../logger.js';
 const DEFAULT_EXPIRE_SECONDS = 300;
 
 export interface SendOptions {
-  /** Do not run before this time. */
   startAfter?: Date;
   /** At most one queued (not yet active) job per key. */
   singletonKey?: string;
@@ -21,21 +20,16 @@ export interface JobInfo {
 export type JobHandler = (data: Record<string, unknown>, job: JobInfo) => Promise<void>;
 
 export interface WorkOptions {
-  /** Parallel handlers per replica. */
   concurrency?: number;
   pollingIntervalSeconds?: number;
   /**
-   * How long one job may run before the queue treats its worker as dead and redelivers it
-   * (default 300). Jobs that call a plugin's invoke need room for the longest invoke timeout.
+   * After this the queue treats the worker as dead and redelivers the job. Jobs that call a
+   * plugin's invoke need room for the longest invoke timeout.
    */
   expireInSeconds?: number;
 }
 
-/**
- * The job queue. Jobs carry ids, not payloads, and handlers are idempotent (re-read the row, do
- * nothing if the state already moved on). Backed by pg-boss in production and by `MemoryQueue`
- * in tests.
- */
+/** Jobs carry ids, not payloads, and handlers are idempotent. */
 export interface JobQueue {
   send(name: string, data: Record<string, unknown>, options?: SendOptions): Promise<string | null>;
   work(name: string, handler: JobHandler, options?: WorkOptions): Promise<void>;
@@ -50,7 +44,6 @@ export interface JobQueue {
   stop(): Promise<void>;
 }
 
-/** pg-boss–backed queue. */
 export class PgBossQueue implements JobQueue {
   private readonly boss: PgBoss;
   private readonly created = new Set<string>();
@@ -141,11 +134,7 @@ interface MemoryJob {
   retryLimit: number;
 }
 
-/**
- * A deterministic in-process queue for tests. Nothing runs until `drain()` is called; `drain`
- * runs every job whose `startAfter` is at or before the clock, including jobs those jobs send,
- * until the queue is quiet. Failed jobs are retried up to their retry limit on later drains.
- */
+/** A deterministic queue for tests: nothing runs until `drain()`. */
 export class MemoryQueue implements JobQueue {
   readonly jobs: MemoryJob[] = [];
   readonly completed: { name: string; data: Record<string, unknown> }[] = [];
@@ -198,7 +187,6 @@ export class MemoryQueue implements JobQueue {
     return Promise.resolve();
   }
 
-  /** Enqueue one run of every scheduled job (tests call this to simulate a cron tick). */
   async tick(name?: string): Promise<void> {
     for (const s of this.schedules) {
       if (name === undefined || s.name === name) await this.send(s.name, s.data);
@@ -209,7 +197,7 @@ export class MemoryQueue implements JobQueue {
     return this.jobs.filter((j) => name === undefined || j.name === name);
   }
 
-  /** Run due jobs until none are due. Returns how many ran. */
+  /** Runs due jobs (including ones they send) until none are due; returns how many ran. */
   async drain(maxJobs = 10_000): Promise<number> {
     let ran = 0;
     for (;;) {

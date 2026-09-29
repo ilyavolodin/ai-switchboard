@@ -23,8 +23,6 @@
   white-space: nowrap;
 }
 
-/* ---- charts ----------------------------------------------------------------------------- */
-
 .charts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -74,8 +72,6 @@
   color: var(--foreground);
 }
 
-/* ---- activity --------------------------------------------------------------------------- */
-
 .traceList {
   margin: 0;
   padding: 0;
@@ -123,8 +119,6 @@
   text-decoration: underline;
 }
 
-/* ---- runs ------------------------------------------------------------------------------- */
-
 .external {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -159,8 +153,6 @@
 .errorText {
   color: var(--st-err-fg);
 }
-
-/* ---- definition ------------------------------------------------------------------------- */
 
 .definition {
   display: flex;
@@ -200,8 +192,6 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-
-/* ---- history ---------------------------------------------------------------------------- */
 
 .history {
   display: grid;

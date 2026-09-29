@@ -1,12 +1,7 @@
-/**
- * The sample delivery a person pastes into the "Try it with a sample delivery" panel: as typed
- * (`SampleDraft`), as the path fields read it (`DeliverySample`) and as the preview request.
- */
 import type { LastDeliveryResponse, SourcePreviewRequest } from '@ai-switchboard/core/contract';
 
 import { parseSampleBody, type DeliverySample } from './suggest.js';
 
-/** The panel's text fields. */
 export interface SampleDraft {
   body: string;
   /** One `name: value` per line. */
@@ -17,7 +12,7 @@ export interface SampleDraft {
 
 export const EMPTY_SAMPLE: SampleDraft = { body: '', headers: '', query: '' };
 
-/** `name: value` lines → lower-cased header names. Lines without a colon are ignored. */
+/** Header names are lower-cased; lines without a colon are ignored. */
 export function headerLines(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const line of text.split('\n')) {
@@ -29,12 +24,11 @@ export function headerLines(text: string): Record<string, string> {
   return out;
 }
 
-/** `?a=1&b=2` → `{ a: '1', b: '2' }`. */
 export function queryParams(text: string): Record<string, string> {
   return Object.fromEntries(new URLSearchParams(text.trim().replace(/^\?/, '')));
 }
 
-/** What path fields suggest from; `null` until a body is pasted. */
+/** `null` until a body is pasted. */
 export function deliverySample(draft: SampleDraft): DeliverySample | null {
   if (draft.body.trim() === '') return null;
   return {
@@ -44,7 +38,7 @@ export function deliverySample(draft: SampleDraft): DeliverySample | null {
   };
 }
 
-/** A stored delivery as panel text: the body pretty-printed when it is JSON. */
+/** The body is pretty-printed when it is JSON. */
 export function draftFromDelivery(last: LastDeliveryResponse): SampleDraft {
   const parsed = parseSampleBody(last.body);
   return {
@@ -56,7 +50,6 @@ export function draftFromDelivery(last: LastDeliveryResponse): SampleDraft {
   };
 }
 
-/** The preview request, or `null` while there is no body to try. */
 export function previewRequest(
   typeId: string,
   settings: Record<string, unknown>,

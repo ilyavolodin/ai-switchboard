@@ -20,11 +20,6 @@ function initials(email: string): string {
   return (second ? `${first.charAt(0)}${second.charAt(0)}` : first.slice(0, 2)).toUpperCase();
 }
 
-/**
- * The left rail: brand, the eight sections (Board · Processes · Sources · Destinations · Activity ·
- * Approvals · Plugins · Settings) with counts and badges, keyboard hints and the signed-in user.
- * Collapses to icons at tablet width and to a bottom bar on phones.
- */
 export function Rail({ onSignOut }: { onSignOut: () => void }) {
   const { user } = useSession();
   const { theme, toggle } = useTheme();

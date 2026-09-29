@@ -5,20 +5,16 @@ import styles from './Card.module.css';
 
 export interface CardProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   title?: ReactNode;
-  /** Beside the title in mono (a count) or muted text. */
   meta?: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
-  /** `lg` uses the 17 px card-title; default is the 15 px panel heading. */
   titleSize?: 'md' | 'lg';
   padding?: 'normal' | 'roomy' | 'flush';
-  /** Heading level for the title (default h2). */
   headingLevel?: 2 | 3;
   as?: 'section' | 'div' | 'article';
   children?: ReactNode;
 }
 
-/** A surface card (radius-lg, shadow-card) with an optional heading row and actions. */
 export function Card({
   title,
   meta,

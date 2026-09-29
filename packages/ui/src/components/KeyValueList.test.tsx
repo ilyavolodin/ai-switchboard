@@ -5,7 +5,6 @@ import { KeyValueList } from './KeyValueList.js';
 
 describe('KeyValueList', () => {
   it('renders scalars, lists and nested values readably', () => {
-    // The shape of a real budget trace entry's data: an array of check objects.
     render(
       <KeyValueList
         data={{

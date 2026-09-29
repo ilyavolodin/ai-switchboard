@@ -1,9 +1,6 @@
 import type { UsageDimension, UsageReport } from '@ai-switchboard/sdk';
 
-/**
- * Validate a plugin's usage report against the destination's declared dimensions. Undeclared keys
- * and non-numeric values are dropped (and counted against the plugin by the caller).
- */
+/** Undeclared keys and non-numeric values are dropped; the caller counts them against the plugin. */
 export function sanitizeUsage(
   report: unknown,
   dimensions: readonly UsageDimension[],
@@ -25,7 +22,6 @@ export function sanitizeUsage(
   return { usage: Object.keys(usage).length > 0 ? usage : null, dropped };
 }
 
-/** Merge a later report into an earlier one per the dimension's aggregate (sum or max). */
 export function mergeUsage(
   earlier: UsageReport | null,
   later: UsageReport | null,

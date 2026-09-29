@@ -296,7 +296,6 @@ describe('http destination: invoke timeout', () => {
     expect(httpDestinationType.invokeTimeoutFor?.({ url: '/x' })).toBe(40);
     expect(httpDestinationType.invokeTimeoutFor?.({ url: '/x', timeoutSeconds: 120 })).toBe(130);
     expect(httpDestinationType.invokeTimeoutFor?.({ url: '/x', timeoutSeconds: 2.5 })).toBe(13);
-    // An invalid target falls back to the default rather than throwing.
     expect(httpDestinationType.invokeTimeoutFor?.({ timeoutSeconds: 'soon' })).toBe(40);
   });
 });

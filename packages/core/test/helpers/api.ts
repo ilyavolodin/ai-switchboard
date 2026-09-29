@@ -18,13 +18,11 @@ import { buildServer } from '../../src/server.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
 import type { TestDatabase } from './db.js';
 
-/** What the `test-vault` secret provider holds (fixture values). */
 export const TEST_VAULT: Record<string, string> = {
   SOURCE_SECRET: 's-fixture-vault-secret',
   UNUSED_TOKEN: 'fixture-vault-unused',
 };
 
-/** A minimal push source for API tests: shared-secret verify, one event type. */
 export const testSourceType: SourceType = {
   id: 'test-source',
   displayName: 'Test source',
@@ -229,11 +227,9 @@ export const ADMIN_EMAIL = 'admin@switchboard.local';
 export const ADMIN_PASSWORD = 'correct-horse-battery';
 
 export interface ApiHarnessOptions {
-  /** `$SWITCHBOARD_HOME` (default a fresh path under /tmp). */
   home?: string;
   runNpm?: ApiContext['runNpm'];
   registryFetch?: ApiContext['registryFetch'];
-  /** More built-in plugins next to `test-plugin` (e.g. a reference plugin). */
   plugins?: { name: string; version: string; definition: PluginDefinition }[];
 }
 

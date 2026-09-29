@@ -1,7 +1,6 @@
 /**
- * Stage 4, batch. A dispatch joins its process's open batch for its batch key (or opens one) and
- * pushes `fireAfter` to `now + debounceSeconds`. A batch closes at `maxSize`, at `maxAgeSeconds`
- * since it opened, or when the debounce elapses. `maxAgeSeconds: 0` means no age cap.
+ * Each join pushes `fireAfter` to `now + debounceSeconds`. A batch closes at `maxSize`, at
+ * `maxAgeSeconds` since it opened (`0` means no age cap), or when the debounce elapses.
  */
 
 export interface BatchingConfig {
@@ -53,7 +52,6 @@ function closeReason(
   return null;
 }
 
-/** Join `open` (or open a new batch when there is none) at `now`. */
 export function joinBatch(
   open: OpenBatchState | null,
   config: BatchingConfig,
@@ -82,7 +80,7 @@ export function joinBatch(
 
 export type CloseCheck = { close: true; reason: CloseReason } | { close: false; checkAt: Date };
 
-/** Should an open batch close at `now`? When not, `checkAt` is when to look again. */
+/** When the batch stays open, `checkAt` is when to look again. */
 export function closeCheck(batch: OpenBatchState, config: BatchingConfig, now: Date): CloseCheck {
   const reason = closeReason(batch.size, batch.openedAt, batch.fireAfter, config, now);
   if (reason !== null) return { close: true, reason };
@@ -92,14 +90,9 @@ export function closeCheck(batch: OpenBatchState, config: BatchingConfig, now: D
   };
 }
 
-/** Open batches of one process, by batch key. */
 export type OpenBatches = Readonly<Record<string, OpenBatchState | undefined>>;
 
-/**
- * The batch stage as a reducer over a process's open batches: one arrival with its batch key.
- * Events with different keys go to different batches ("one run per repository"). A batch that
- * closes on this arrival leaves the state.
- */
+/** A batch that closes on this arrival leaves the state. */
 export function batchArrival(
   state: OpenBatches,
   key: string,

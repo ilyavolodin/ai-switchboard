@@ -10,10 +10,8 @@ import { redactSecretValues } from '../../secrets/refs.js';
 import { callPlugin, errorMessage, evalFunctions, type Ctx, type ProcessRow } from './context.js';
 
 /**
- * `before` and `after` steps: actions on a source or destination instance, with arguments and an
- * optional `when`, each journaled in `steps` (unique per run, phase and index). A failing
- * `before` step fails the run before invoke; `after` steps run on the terminal state and never
- * change it. Dry runs record every step as skipped (actions have side effects).
+ * A failing `before` step fails the run before invoke; `after` steps run on the terminal state
+ * and never change it. Dry runs record every step as skipped, since actions have side effects.
  */
 
 export type RunRow = typeof runs.$inferSelect;
@@ -35,20 +33,18 @@ export function runView(run: RunRow): Record<string, unknown> {
   };
 }
 
-/** What running a phase's steps came to. `reason` is set when a `before` phase must fail the run. */
+/** `ok: false` only when a `before` phase must fail the run. */
 export type StepsOutcome = { ok: true } | { ok: false; reason: string };
 
 type StepRow = typeof steps.$inferSelect;
 type StepValues = Pick<StepRow, 'status'> & Partial<Pick<StepRow, 'args' | 'error'>>;
 
-/** Whether the provider declares the action idempotent (`ActionSpec.idempotent`). */
 function actionIdempotent(ctx: Ctx, provider: string, action: string): boolean {
   const source = ctx.runtime.source(provider);
   const actions = source ? source.type.actions : ctx.runtime.destination(provider)?.type.actions;
   return actions?.find((a) => a.id === action)?.idempotent === true;
 }
 
-/** A run's `before` or `after` steps, in a `switchboard.steps` span when there are any. */
 export function runSteps(
   ctx: Ctx,
   phase: StepPhase,
@@ -72,12 +68,10 @@ export function runSteps(
 }
 
 /**
- * Run the process's steps for `phase` against the step journal. Each step's row is written
- * `started` before its action runs and settled (`ok`/`error`) after, so a resumed or redelivered
- * phase knows exactly where the last attempt stopped:
+ * Each step's row is written `started` before its action runs and settled after, so a resumed or
+ * redelivered phase knows exactly where the last attempt stopped:
  * - a settled step (`ok`, `skipped`, `uncertain`) is not run again; a recorded `before` error
  *   fails the phase again;
- * - a step never started runs;
  * - a step left `started` is in doubt (the action may or may not have happened). It is re-run
  *   when its action is idempotent. Otherwise a `before` phase fails with
  *   `step_in_doubt:before[<index>] <action>` (so nothing is invoked) and an `after` step is
@@ -137,11 +131,7 @@ async function runStepsInSpan(
       continue;
     }
 
-    /**
-     * Claim the step: a new `started` row, or (re-running an in-doubt idempotent step) the
-     * `started` row while it is still `started`. Returns the row id, or null when another
-     * worker got there first.
-     */
+    /** Null when another worker got there first. */
     const claim = async (args: unknown): Promise<string | null> => {
       if (prior) {
         const [row] = await ctx.db
@@ -168,7 +158,6 @@ async function runStepsInSpan(
         .returning({ id: steps.id });
       return row?.id ?? null;
     };
-    /** Record an outcome that ran no action (dry run, `when` false, an args error). */
     const settleWithoutAction = async (values: StepValues): Promise<void> => {
       if (prior) {
         await ctx.db
@@ -281,11 +270,7 @@ async function runStepsInSpan(
   return allOk ? { ok: true } : { ok: false, reason: 'after_step_failed' };
 }
 
-/**
- * True when every `before` step of `process` has a settled journal row (`ok` or `skipped`), i.e.
- * the attempt may have reached `invoke`. False means the attempt stopped in its steps, so
- * `invoke` was certainly never called for it.
- */
+/** False means the attempt stopped in its steps, so `invoke` was certainly never called for it. */
 export async function beforeStepsSettled(
   ctx: Pick<Ctx, 'db'>,
   runId: string,

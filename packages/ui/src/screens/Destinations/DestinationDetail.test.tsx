@@ -37,7 +37,6 @@ describe('DestinationDetail', () => {
     });
     expect(band.querySelectorAll('[data-part="band"]')).toHaveLength(2);
     expect(band.querySelectorAll('[data-part="run"]').length).toBeGreaterThan(0);
-    // Run markers name their process; the picker highlights one process's runs.
     await user.selectOptions(
       screen.getByRole('combobox', { name: 'Highlight a process' }),
       'p-autofix',

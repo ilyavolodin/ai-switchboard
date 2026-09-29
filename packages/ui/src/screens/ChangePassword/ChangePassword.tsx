@@ -16,9 +16,8 @@ function fromState(state: unknown): string {
 }
 
 /**
- * `/change-password`: where a session signed in with a temporary password lands (every other API
- * route refuses it until the password changes), and where anyone can change their own password.
- * Continues to where the person was going afterwards.
+ * Where a session signed in with a temporary password lands: every other API route refuses it until
+ * the password changes.
  */
 export function ChangePassword() {
   const me = useMe();

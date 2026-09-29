@@ -6,7 +6,6 @@ import { Button } from '../../components/Button.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import styles from '../Sources/instanceCard.module.css';
 
-/** The query fields the grid reads (a TanStack Query result fits). */
 interface ListQuery<T> {
   data: T[] | undefined;
   isPending: boolean;
@@ -15,10 +14,6 @@ interface ListQuery<T> {
   refetch: () => Promise<unknown>;
 }
 
-/**
- * The Sources and Destinations card grids: skeletons while loading, an error with Retry, the
- * teaching empty state, and an amber banner naming the instances whose plugin did not load.
- */
 export function InstanceGrid<T extends { id: string; name: string; pluginAvailable: boolean }>({
   query,
   title,
@@ -28,7 +23,6 @@ export function InstanceGrid<T extends { id: string; name: string; pluginAvailab
   footer,
 }: {
   query: ListQuery<T>;
-  /** "Sources", "Destinations". */
   title: string;
   empty: ReactNode;
   /** Finishes "<names> stay configured, but their plugin did not load at start; …". */

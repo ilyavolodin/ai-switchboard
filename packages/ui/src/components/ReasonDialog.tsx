@@ -8,27 +8,19 @@ import { TextField } from './TextField.js';
 
 export interface ReasonDialogProps {
   open: boolean;
-  /** "Reset the Autofix breaker?" */
   title: ReactNode;
-  /** The sentence naming the consequence. */
   consequence?: ReactNode;
-  /** The confirm button repeats the verb ("Reset breaker"). */
   confirmLabel: string;
   danger?: boolean;
   placeholder?: string;
-  /** Reasons are optional on this installation: ask for an optional note, allow a blank one. */
+  /** An admin made reasons optional: ask for an optional note and allow a blank one. */
   optional?: boolean;
   busy?: boolean;
   onConfirm: (reason: string) => void;
   onCancel: () => void;
 }
 
-/**
- * Asks for the one-line reason every state-changing action carries (it becomes the audit
- * entry). Confirm is refused until a non-blank reason is typed, unless `optional` (the
- * installation does not require reasons), when the field is an optional note. Prefer
- * `useReasonedMutation`, which opens this through `<ReasonProvider>`.
- */
+/** Prefer `useReasonedMutation`, which opens this through `<ReasonProvider>`. */
 export function ReasonDialog({
   open,
   title,

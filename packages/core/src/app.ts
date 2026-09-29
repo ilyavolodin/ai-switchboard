@@ -44,7 +44,7 @@ export interface CreateOptions {
   telemetryRuntime?: TelemetryRuntime;
   database?: Database;
   plugins?: Pick<PluginHostOptions, 'builtin' | 'scanDirs'>;
-  /** Evaluation admin password (tests, e2e); otherwise generated and printed once. */
+  /** Otherwise generated and printed once. */
   adminPassword?: string;
   runNpm?: ApiContext['runNpm'];
   registryFetch?: ApiContext['registryFetch'];
@@ -63,7 +63,7 @@ async function waitForDatabase(database: Database, logger: CoreLogger): Promise<
   }
 }
 
-/** A cookie-signing key shared by every replica (so an OIDC flow can finish on any of them). */
+/** Shared by every replica so an OIDC flow can finish on any of them. */
 async function sharedCookieKey(database: Database, now: Date): Promise<string> {
   const key = 'cookie_key';
   await database.db
@@ -74,7 +74,6 @@ async function sharedCookieKey(database: Database, now: Date): Promise<string> {
   return String(row?.value);
 }
 
-/** Wire every component. `start()` registers workers and listens; `stop()` drains. */
 export async function createSwitchboard(options: CreateOptions): Promise<Switchboard> {
   const { config } = options;
   const logger =

@@ -41,7 +41,6 @@ describe('dedupe', () => {
   });
 
   it('a new version is a new key, so the service never finds prior dispatches for it', () => {
-    // Keys are `${type}:${kind}:${id}:${version}`; version 2 has no prior dispatches.
     expect(dedupe([], now)).toEqual({ outcome: 'batched' });
   });
 

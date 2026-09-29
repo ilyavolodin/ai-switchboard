@@ -8,10 +8,6 @@ import { useInUseRefusal } from '../shared/useInUseRefusal.js';
 import { DestinationCapsFields } from './DestinationCapsFields.js';
 import { estimatedMeters } from './destinationModel.js';
 
-/**
- * The destination's Settings tab: the plugin's schema form, the core's caps (runs, usage per day,
- * meter poll, staleness, estimated limits) and a save bar that asks for a reason.
- */
 export function DestinationSettings({ destination }: { destination: DestinationDetail }) {
   const save = useReasonedMutation(
     useUpdateDestination(),

@@ -63,12 +63,6 @@ import styles from './ProcessEditor.module.css';
 import { type StepProvider, StepsFields } from './StepsFields.js';
 import { TriggersFields } from './TriggersFields.js';
 
-/**
- * The process editor (`/processes/new`, `/processes/:id/edit`): a live diagram on top, the
- * document's sections below in reading order, and a sticky footer with the unsaved changes,
- * Test run and Save (a one-line reason; `expectedVersion` guards against overwriting someone
- * else's save).
- */
 export function ProcessEditor() {
   const { id } = useParams();
   const process = useProcess(id);

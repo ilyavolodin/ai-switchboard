@@ -51,12 +51,7 @@ function withUsageCap(
   };
 }
 
-/**
- * Budgets: a "Limit runs" switch (off = no caps of the process's own; derived from the
- * document, see `budgetsOn`), then runs per hour and per day, a daily cap per budgetable usage dimension the bound
- * destination declares (with its unit), and per-meter ceilings drawn as marks on each meter's gauge
- * — the dark tick is the event ceiling, the light one the sweep ceiling.
- */
+/** On each meter's gauge the dark tick is the event ceiling, the light one the sweep ceiling. */
 export function BudgetsFields({
   doc,
   baseline,
@@ -131,7 +126,6 @@ export function BudgetsFields({
   );
 }
 
-/** The limits themselves, while "Limit runs" is on. */
 function BudgetLimits({
   doc,
   baseline,

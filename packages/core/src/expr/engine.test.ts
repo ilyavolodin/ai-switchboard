@@ -138,7 +138,6 @@ describe('expression engine', () => {
     );
     expect(out).toMatchObject({ ok: false, code: 'timeout' });
     expect(Date.now() - started).toBeLessThan(190);
-    // The abandoned evaluation may not start further lookups.
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(second).toBe(false);
   });

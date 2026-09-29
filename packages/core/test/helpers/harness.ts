@@ -51,9 +51,7 @@ export interface Harness extends Replica {
   telemetry: ReturnType<typeof createRecordingTelemetry>;
   secrets: Map<string, string>;
   replica(): Promise<Replica>;
-  /** Drain the queue, advancing nothing. */
   drain(): Promise<number>;
-  /** Advance the clock by `seconds` and drain. */
   advance(seconds: number): Promise<void>;
 }
 
@@ -106,7 +104,6 @@ export async function createHarness(db: Db, start = '2026-01-05T09:00:00Z'): Pro
   };
 }
 
-/** Wipe every pipeline table between tests (the schema stays). */
 export async function resetDb(db: Db): Promise<void> {
   await db.execute(
     sql.raw(`TRUNCATE sources, destinations, processes, events, event_raw, dispatches,
@@ -115,7 +112,6 @@ export async function resetDb(db: Db): Promise<void> {
   );
 }
 
-/** What the seed helpers need: a database, the clock and the fake runtime. */
 export type SeedTarget = Pick<Harness, 'db' | 'clock' | 'runtime'>;
 
 export async function seedSource(
@@ -143,7 +139,6 @@ export async function seedDestination(
     idempotent?: boolean;
     caps?: DestinationCaps;
     enabled?: boolean;
-    /** The type's invoke timeout (`LiveDestination.invokeTimeoutFor`). */
     invokeTimeoutSeconds?: number;
   } = {},
 ): Promise<{ id: string; state: FakeDestinationState }> {

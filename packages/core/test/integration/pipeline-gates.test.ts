@@ -121,7 +121,6 @@ describe('approval', () => {
       reason: 'test run',
     });
     expect(again.outcome).toBe('ok');
-    // A real manual run still needs approval.
     const real = await h.pipeline.runNow(pid, { actor: 'op@example.com', reason: 'go' });
     expect(real).toMatchObject({ outcome: 'awaiting_approval', runId: null });
   });
@@ -174,7 +173,6 @@ describe('breaker', () => {
     await h.pipeline.resetBreaker(pid, 'op@example.com', 'fixed the routine');
     await fireOne(src.id, '4');
     expect((await batchesOf(h.db, pid)).at(-1)?.outcome).toBe('invoked');
-    // Old failures do not count after a reset: one more error does not re-open.
     const run = (await runsOf(h.db, pid)).at(-1)!;
     await h.pipeline.handleCallback(
       ex.id,
@@ -183,7 +181,6 @@ describe('breaker', () => {
     const [still] = await h.db.select().from(processes).where(eq(processes.id, pid));
     expect(still?.breakerState).toBe('closed');
 
-    // A second failure re-opens; the cooldown closes it.
     await fireOne(src.id, '5');
     const run5 = (await runsOf(h.db, pid)).at(-1)!;
     await h.pipeline.handleCallback(

@@ -5,7 +5,7 @@ function hourOf(hhmm: string): number {
   return Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 0;
 }
 
-/** Whether hour `h` (0–23) falls inside the window, which may wrap past midnight. */
+/** The window may wrap past midnight. */
 export function isQuietHour(h: number, w: QuietWindow): boolean {
   const start = hourOf(w.start);
   const end = hourOf(w.end);

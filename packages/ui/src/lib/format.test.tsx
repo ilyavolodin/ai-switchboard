@@ -25,7 +25,6 @@ describe('formatCount', () => {
     [1_200_000, '1.2M'],
     [-2500, '-2.5k'],
   ])('%s → %s', (n, text) => {
-    // Rounding must not produce "1000" or "1000k" at a unit boundary.
     expect(formatCount(n)).toBe(text);
   });
 });

@@ -8,16 +8,13 @@ import { passwordError } from '../ChangePassword/passwordRules.js';
 import styles from './Settings.module.css';
 
 export interface SetPasswordDialogProps {
-  /** The account, or null when the dialog is closed. */
   email: string | null;
-  /** True when the account already has a password ("Reset" rather than "Set"). */
   reset: boolean;
   onClose: () => void;
-  /** Called with the chosen password; the caller asks for the reason and sends it. */
   onSubmit: (password: string) => void;
 }
 
-/** A readable random temporary password (no look-alike characters). */
+/** No look-alike characters. */
 function generateTemporaryPassword(): string {
   const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const bytes = crypto.getRandomValues(new Uint8Array(20));
@@ -27,8 +24,8 @@ function generateTemporaryPassword(): string {
 }
 
 /**
- * Choose a temporary password for someone else. It is shown in the clear so the admin can pass it
- * on; the user must change it at their next password sign-in.
+ * Shown in the clear so the admin can pass it on; the user must change it at their next password
+ * sign-in.
  */
 export function SetPasswordDialog({ email, reset, onClose, onSubmit }: SetPasswordDialogProps) {
   const [password, setPassword] = useState('');

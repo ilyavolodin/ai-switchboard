@@ -7,19 +7,14 @@ import styles from './BreakerBanner.module.css';
 import { Countdown } from './Countdown.js';
 
 export interface BreakerBannerProps {
-  /** When the breaker opened. */
   openedAt: string | null;
-  /** The last failed runs, oldest first or newest first (drawn by time). */
+  /** Any order; drawn by time. */
   failures: RunSummary[];
-  /** When the cooldown ends, if known. */
   cooldownEndsAt?: string | null;
-  /** What still runs, e.g. "the daily sweep still runs". */
   note?: ReactNode;
-  /** The Reset breaker button (a reasoned mutation). */
   action?: ReactNode;
 }
 
-/** The red "Breaker open" banner with the last failed runs as dots on a line and a Reset slot. */
 export function BreakerBanner({
   openedAt,
   failures,

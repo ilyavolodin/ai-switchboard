@@ -1,9 +1,8 @@
 import { BREAKER_RUN_STATUSES, type RunStatusValue } from '../domain/status.js';
 
 /**
- * The breaker opens after `threshold` consecutive `error` or `unknown` runs and closes by hand or
- * after `cooldownMinutes` (`0` means only by hand). Runs finished before the last reset are not
- * counted, so a reset gives the process a clean slate.
+ * Opens after `threshold` consecutive `error` or `unknown` runs; closes by hand or after
+ * `cooldownMinutes` (`0` means only by hand). Runs finished before the last reset don't count.
  */
 
 export interface BreakerState {
@@ -11,10 +10,7 @@ export interface BreakerState {
   openedAt: Date | null;
 }
 
-/**
- * Consecutive failures from the newest run backwards. `ok` ends the streak; `failed` (a refused
- * invoke) and `held` neither count nor end it.
- */
+/** `ok` ends the streak; `failed` (a refused invoke) and `held` neither count nor end it. */
 export function consecutiveFailures(newestFirst: readonly RunStatusValue[]): number {
   let n = 0;
   for (const status of newestFirst) {
@@ -26,7 +22,6 @@ export function consecutiveFailures(newestFirst: readonly RunStatusValue[]): num
 
 export type BreakerTransition = 'opened' | 'closed_cooldown' | null;
 
-/** After a run closes: open the breaker when the streak reaches the threshold. */
 export function breakerAfterRun(
   current: BreakerState,
   newestFirst: readonly RunStatusValue[],
@@ -40,7 +35,6 @@ export function breakerAfterRun(
   return { next: current, transition: null, failures };
 }
 
-/** At the gate: an open breaker whose cooldown elapsed closes. */
 export function breakerAtGate(
   current: BreakerState,
   cooldownMinutes: number,
@@ -54,7 +48,6 @@ export function breakerAtGate(
   return { next: current, transition: null };
 }
 
-/** When an open breaker will close on its own, or null. */
 export function breakerClosesAt(current: BreakerState, cooldownMinutes: number): Date | null {
   if (current.state !== 'open' || current.openedAt === null || cooldownMinutes <= 0) return null;
   return new Date(current.openedAt.getTime() + cooldownMinutes * 60_000);

@@ -1,15 +1,9 @@
-/**
- * Shapes of the Routines trigger, OAuth token and seat usage responses. Values are fake; the
- * usage shape mirrors what Claude Code's `/usage` command reads.
- */
-
 export const fireResponse = {
   type: 'routine_fire',
   id: 'session_01FixtureSession',
   session_url: 'https://claude.ai/code/session_01FixtureSession',
 };
 
-/** The variant with Claude Code-prefixed field names. */
 export const fireResponsePrefixed = {
   claude_code_session_id: 'session_01Prefixed',
   claude_code_session_url: 'https://claude.ai/code/session_01Prefixed',

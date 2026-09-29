@@ -1,7 +1,4 @@
-/**
- * THE route table. Every screen in the IA has a path here (`handle.title` is what the top bar
- * shows). Detail tabs are URL segments (`/processes/:id/:tab`) so they deep-link.
- */
+// Detail tabs are URL segments (`/processes/:id/:tab`) so they deep-link.
 import type { RouteObject } from 'react-router';
 
 import { Activity } from '../screens/Activity/Activity.js';

@@ -150,7 +150,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
   const viewer = { preHandler: requireRole('viewer') };
   const admin = { preHandler: requireRole('admin') };
 
-  // Settings -----------------------------------------------------------------------------------
   app.get('/api/v1/settings', viewer, async () => getSettings(db));
 
   app.put<{ Body: UpdateSettingsRequest }>(
@@ -191,7 +190,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
     },
   );
 
-  // Users --------------------------------------------------------------------------------------
   app.get('/api/v1/users', admin, async () =>
     (await db.select().from(users).orderBy(users.email)).map(toUserDTO),
   );
@@ -381,7 +379,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
     },
   );
 
-  // API tokens ---------------------------------------------------------------------------------
   app.get('/api/v1/tokens', viewer, async (req) => {
     const rows = await db
       .select()
@@ -446,7 +443,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
     },
   );
 
-  // Audit log ----------------------------------------------------------------------------------
   app.get<{ Querystring: AuditQuery }>(
     '/api/v1/audit',
     viewer,
@@ -497,7 +493,6 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
     },
   );
 
-  // About --------------------------------------------------------------------------------------
   app.get('/api/v1/about', viewer, async (): Promise<AboutResponse> => {
     const now = clock.now().getTime();
     const [reps, pluginRows, version] = await Promise.all([

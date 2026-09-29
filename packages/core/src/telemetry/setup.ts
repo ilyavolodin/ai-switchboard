@@ -63,11 +63,9 @@ import {
 } from './otel-config.js';
 
 export interface TelemetryRuntime {
-  /** Serves the Prometheus exposition, when enabled. */
   prometheus: ((req: IncomingMessage, res: ServerResponse) => void) | undefined;
-  /** Where each signal goes, for Settings › About (no headers). */
+  /** For Settings › About; carries no headers. */
   status: TelemetryStatus;
-  /** Export what is buffered (tests, shutdown). */
   flush(): Promise<void>;
   shutdown(): Promise<void>;
 }
@@ -82,8 +80,8 @@ function httpOptions(c: OtlpExporterConfig) {
 }
 
 /**
- * gRPC exporters take headers as grpc-js `Metadata`; they read `OTEL_EXPORTER_OTLP_[SIGNAL_]HEADERS`
- * from the environment themselves, which is where `OtelConfig` got them.
+ * No headers: gRPC exporters take them as grpc-js `Metadata` and read
+ * `OTEL_EXPORTER_OTLP_[SIGNAL_]HEADERS` from the environment themselves.
  */
 function grpcOptions(c: OtlpExporterConfig) {
   return { url: c.url, timeoutMillis: c.timeoutMillis, compression: c.compression as never };
@@ -125,7 +123,7 @@ function sampler(t: OtelConfig['traces']): Sampler {
   }
 }
 
-/** The SDK's own diagnostics (export failures) as pino lines that are never exported themselves. */
+/** Tagged so the log bridge never exports them: a failing exporter must not loop. */
 function diagLogger(logger: CoreLogger): DiagLogger {
   const log = logger.child({ component: OTEL_DIAG_COMPONENT });
   const line = (level: 'error' | 'warn' | 'info' | 'debug') => (message: string) => {
@@ -154,7 +152,7 @@ function exporterList(exporters: readonly string[] | undefined): string {
   return exporters && exporters.length > 0 ? exporters.join(',') : 'none';
 }
 
-/** Unregister every global so a later `setupTelemetry` in the same process starts clean (tests). */
+/** So a later `setupTelemetry` in the same process starts clean (tests). */
 function disableGlobals(): void {
   trace.disable();
   metrics.disable();
@@ -164,12 +162,6 @@ function disableGlobals(): void {
   diag.disable();
 }
 
-/**
- * Register the OpenTelemetry providers from `config.telemetry`: traces, metrics (OTLP push and the
- * Prometheus reader) and logs (the pino bridge emits into the LoggerProvider registered here).
- * The tracer provider is registered even when traces do not export (sampling nothing), so
- * incoming `traceparent` headers still reach plugin HTTP calls and log lines carry trace ids.
- */
 export function setupTelemetry(config: CoreConfig, logger?: CoreLogger): TelemetryRuntime {
   const t = config.telemetry;
   const status = telemetryStatus(t);
@@ -199,7 +191,6 @@ export function setupTelemetry(config: CoreConfig, logger?: CoreLogger): Telemet
     [ATTR_SERVICE_VERSION]: config.version,
   });
 
-  // Traces
   const spanProcessors: SpanProcessor[] = [];
   if (t.traces.otlp) spanProcessors.push(new BatchSpanProcessor(spanExporter(t.traces.otlp)));
   if (t.traces.exporters.includes('console'))
@@ -213,7 +204,6 @@ export function setupTelemetry(config: CoreConfig, logger?: CoreLogger): Telemet
   });
   tracerProvider.register();
 
-  // Metrics
   const readers: IMetricReader[] = [];
   let prometheus: PrometheusExporter | undefined;
   if (t.metrics.prometheus) {
@@ -231,7 +221,6 @@ export function setupTelemetry(config: CoreConfig, logger?: CoreLogger): Telemet
   const meterProvider = new MeterProvider({ resource, readers });
   metrics.setGlobalMeterProvider(meterProvider);
 
-  // Logs
   const logProcessors: LogRecordProcessor[] = [];
   if (t.logs.otlp)
     logProcessors.push(new BatchLogRecordProcessor({ exporter: logExporter(t.logs.otlp) }));

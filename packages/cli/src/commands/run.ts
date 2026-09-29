@@ -1,10 +1,7 @@
 import type { CliDeps } from '../deps.js';
 import { errorMessage } from '../output.js';
 
-/**
- * Wrap a command action: an exception prints `error: <message>` (plus any details) and sets
- * exit code 1 instead of a stack trace.
- */
+/** An exception prints `error: <message>` and sets exit code 1 instead of a stack trace. */
 export function run<A extends unknown[]>(
   deps: Pick<CliDeps, 'io'>,
   action: (...args: A) => Promise<void>,

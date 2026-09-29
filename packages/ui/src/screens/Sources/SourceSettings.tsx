@@ -10,12 +10,7 @@ import { useInUseRefusal } from '../shared/useInUseRefusal.js';
 import { SamplePreview } from './SamplePreview.js';
 import { SourceCapsFields } from './SourceCapsFields.js';
 
-/**
- * The source's Settings tab: the plugin's schema form, the core's caps and mute list, and a save
- * bar that asks for a reason. Delete lives at the bottom.
- */
 export function SourceSettings({ source }: { source: SourceDetail }) {
-  // A pasted sample delivery (push sources): the preview panel and the path fields use it.
   const [sample, setSample] = useState<SampleDraft>(EMPTY_SAMPLE);
   const push = source.mode !== 'pull';
   const save = useReasonedMutation(

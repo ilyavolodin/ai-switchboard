@@ -6,17 +6,13 @@ import type { DbOrTx } from '../db/client.js';
 import { users } from '../db/schema.js';
 import { recordAudit } from './audit.js';
 
-/** Who did it and why, for the audit row. The password itself is never audited or logged. */
 export interface PasswordChangeAudit {
   actor: string;
   reason: string;
   at: Date;
 }
 
-/**
- * Store a new password for `userId` and sign the user out of every session except `keepToken`.
- * `temporary` (an admin or bootstrap chose it) makes the next password sign-in change it.
- */
+/** `temporary` (an admin or bootstrap chose it) makes the next password sign-in change it. */
 export async function storePassword(
   db: DbOrTx,
   userId: string,
@@ -44,7 +40,6 @@ export async function storePassword(
   return row;
 }
 
-/** Remove the local password (the account becomes OIDC-only) and sign the user out everywhere. */
 export async function removePassword(
   db: DbOrTx,
   userId: string,

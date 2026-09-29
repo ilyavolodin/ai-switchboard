@@ -16,16 +16,13 @@ import { REDACTED, redactSecretValues } from '../secrets/refs.js';
 import { checkDraft } from './pipeline/ingest.js';
 
 /**
- * The sample-delivery preview behind Add source and Source › Settings: build a throwaway
- * instance from draft settings, run the sample through `parse` (never `verify`: the person is
- * trying a mapping, not a signature) and check each event the way ingest would. Nothing is
- * stored and nothing counts against the plugin.
+ * The sample runs through `parse`, never `verify`: the person is trying a mapping, not a
+ * signature. Nothing is stored and nothing counts against the plugin.
  */
 
-/** A parse that takes longer than this is reported as an error (JSONata has its own 2 s limit). */
+/** JSONata has its own 2 s limit; this bounds the whole parse. */
 const PARSE_TIMEOUT_MS = 5_000;
 
-/** What the preview needs from the plugin host. */
 export interface PreviewBuilder {
   buildPreviewSource(
     typeId: string,
@@ -54,7 +51,7 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-/** The sample as the plugin would receive it: lower-cased headers, the body's exact bytes. */
+/** Lower-cased headers and the body's exact bytes, as the plugin would receive them. */
 function sampleRequest(
   sample: SampleDeliveryDTO,
   sourceId: string,
@@ -100,9 +97,8 @@ async function runParse(
 }
 
 /**
- * Preview `sample` through a throwaway instance of `typeId` built from `settings` (already
- * validated by the route, secret fields holding references). Secret values are resolved for
- * `create` and redacted from everything returned.
+ * `settings` are already validated by the route. Secret values are resolved for `create` and
+ * redacted from everything returned.
  */
 export async function previewSourceDelivery(
   deps: Deps,
@@ -167,10 +163,8 @@ export async function previewSourceDelivery(
   ) as SourcePreviewResponse;
 }
 
-/** Headers that may carry a credential or a signature, redacted in a returned sample. */
 const SENSITIVE_HEADER = /(auth|cookie|secret|signature|token|api[-_]?key|password|session)/i;
 
-/** The source row the preview edits: its type, name and stored settings. */
 export async function sourceForPreview(
   deps: Deps,
   sourceId: string,
@@ -182,11 +176,7 @@ export async function sourceForPreview(
   return row ?? null;
 }
 
-/**
- * The newest stored raw delivery of a source that a person could use as a sample: a verified
- * push delivery with a body (not a poll page, test event or rejected delivery). Headers whose
- * names suggest a credential or a signature are redacted.
- */
+/** Only a verified push delivery with a body (not a poll page, test event or rejected delivery). */
 export async function lastDelivery(
   deps: Deps,
   sourceId: string,

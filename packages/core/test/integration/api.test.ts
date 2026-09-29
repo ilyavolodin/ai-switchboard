@@ -243,7 +243,6 @@ describe('sources and destinations', () => {
     expect(res.statusCode).toBe(422);
     const [after] = await tdb.db.select().from(sources).where(eq(sources.id, row!.id));
     expect(after?.settings).toEqual({ token: 'secret://env/X' });
-    // A rename without settings still works.
     const renamed = await h.request('PUT', `/api/v1/sources/${row!.id}`, {
       cookie: h.adminCookie,
       body: { name: 'Orphan 2', reason },
@@ -298,7 +297,6 @@ describe('sources and destinations', () => {
     const pid = proc.json<ProcessDetail>().id;
     expect(body.usedBy).toEqual([{ id: pid, name: 'Uses them' }]);
 
-    // Once the process is gone the source can go too.
     const gone = await h.request('DELETE', `/api/v1/processes/${pid}`, {
       cookie: h.adminCookie,
       body: { reason: 'retired' },
@@ -765,7 +763,6 @@ describe('unauthenticated sources', () => {
 });
 
 describe('edge cases', () => {
-  /** Walk every page of a list endpoint with `limit=1`, collecting the ids it returns. */
   async function walk(url: string, idOf: (item: never) => string): Promise<string[]> {
     const seen: string[] = [];
     let cursor: string | null = null;
@@ -917,7 +914,6 @@ describe('edge cases', () => {
     expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
     const left = await tdb.db.select().from(users).where(eq(users.role, 'admin'));
     expect(left).toHaveLength(1);
-    // Put things back for the tests that follow.
     for (const a of admins)
       await tdb.db.update(users).set({ role: 'admin' }).where(eq(users.id, a.id));
     await tdb.db.delete(users).where(eq(users.email, 'second-admin@acme.test'));

@@ -99,7 +99,6 @@ describe('Sources', () => {
         eventTypesEnabled: ['issue.label_added'],
       },
     });
-    // Secret fields only ever carry references.
     const settings = body.settings as Record<string, unknown>;
     expect(settings.apiKey).toMatch(/^secret:\/\//);
     await vi.waitFor(() => {
@@ -140,7 +139,6 @@ describe('Sources', () => {
       }),
     );
     const form = await screen.findByRole('dialog', { name: 'New Webhook source' });
-    // No separate "accept unauthenticated" switch: the plugin's Verification is the one switch.
     expect(within(form).queryByText(/Accept unauthenticated/)).toBeNull();
     expect(within(form).getByRole('textbox', { name: /^Secret/ })).toBeInTheDocument();
     expect(within(form).queryByText(/Anyone who knows the URL/)).toBeNull();
@@ -183,7 +181,6 @@ describe('Sources', () => {
     expect(within(form).getByText('Some fields need attention')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Reason/ })).toBeNull();
 
-    // Shared secret shows its own header field instead of the signature header.
     await user.selectOptions(within(form).getByLabelText(/^Verification/), 'shared_secret');
     expect(within(form).getByLabelText(/Shared-secret header/)).toBeInTheDocument();
     expect(within(form).queryByLabelText(/Signature header/)).toBeNull();
@@ -196,7 +193,6 @@ describe('Sources', () => {
     const picker = await screen.findByRole('dialog', { name: 'Add a source' });
     const npm = within(picker).getByRole('region', { name: 'Find more on npm' });
     const results = await within(npm).findByRole('list', { name: 'npm packages' });
-    // Only source plugins are offered here.
     expect(
       within(results).queryByRole('listitem', { name: 'ai-switchboard-destination-n8n' }),
     ).toBeNull();
@@ -225,7 +221,6 @@ describe('Sources', () => {
       });
     });
     const form = await screen.findByRole('dialog', { name: 'New Sentry source' });
-    // The new type's own settings form.
     expect(within(form).getByText('API token')).toBeInTheDocument();
   });
 

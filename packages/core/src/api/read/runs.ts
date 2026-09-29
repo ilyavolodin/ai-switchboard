@@ -20,7 +20,6 @@ import { afterCursor, decodeCursor, encodeCursor, pageLimit } from './paging.js'
 
 type RunRow = typeof runs.$inferSelect;
 
-/** Artifacts and event counts per batch, from the dispatches that joined it. */
 export async function batchArtifacts(
   ctx: ApiContext,
   batchIds: string[],

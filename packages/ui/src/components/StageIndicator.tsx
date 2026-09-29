@@ -8,15 +8,10 @@ import styles from './StageIndicator.module.css';
 
 export interface StageIndicatorProps {
   indicator: StageIndicatorDTO;
-  /** Show the label ("held at batched") beside the stops. */
   showLabel?: boolean;
   compact?: boolean;
 }
 
-/**
- * How far an event got: five stops, passed ones filled grey, the last one reached in the outcome
- * tone, the rest hollow. Always carries its label (visible or as the accessible name).
- */
 export function StageIndicator({ indicator, showLabel = true, compact }: StageIndicatorProps) {
   const { reached, tone, label } = indicator;
   const where = reached > 0 ? STAGE_STOPS[reached - 1] : 'not received';

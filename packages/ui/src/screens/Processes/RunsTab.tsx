@@ -154,7 +154,6 @@ function RunDrawerBody({ runId }: { runId: string }) {
   );
 }
 
-/** The process's runs as a table; a row's Details opens its steps, updates and input. */
 export function RunsTab({ processId }: { processId: string }) {
   const runs = useRuns({ process: processId });
   const [open, setOpen] = useState<string | null>(null);

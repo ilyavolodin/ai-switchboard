@@ -22,11 +22,7 @@ import {
 } from '../../src/db/schema.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
-/**
- * The 0008 migration renames "executor" to "destination". This test builds a database on the
- * schema just before it (migrations 0000–0007), writes rows the way the old code did, then runs
- * the full migration set and checks that every row survived under the new names.
- */
+// Rows written on the 0007 schema must survive migration 0008 under the new names.
 
 const DEST = '11111111-1111-4111-8111-111111111111';
 const PROC = '22222222-2222-4222-8222-222222222222';

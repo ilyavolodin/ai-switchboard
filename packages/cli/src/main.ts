@@ -13,13 +13,10 @@ import { serveCommand } from './commands/serve.js';
 import { usersCommand } from './commands/users.js';
 import { defaultDeps, type CliDeps } from './deps.js';
 
-/** The CLI's version; the CLI and the core release together, so it is also the core version. */
+/** The CLI and the core release together, so this is also the core version. */
 export const CLI_VERSION = '1.0.0';
 
-/**
- * Build the `switchboard` program. Every side effect goes through `deps`, so tests pass stubs
- * for fetch, the installer, the doctor and the server spawn.
- */
+/** Every side effect goes through `deps`, so tests can stub them. */
 export function buildProgram(
   overrides: Partial<CliDeps> = {},
   options: { exitOverride?: boolean } = {},

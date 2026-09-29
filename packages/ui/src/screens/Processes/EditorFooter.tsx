@@ -10,12 +10,10 @@ import styles from './ProcessEditor.module.css';
 
 export interface EditorFooterProps {
   changes: Change[];
-  /** Saved processes get Test run and "No unsaved changes"; a new one says "Not saved yet". */
   isNew: boolean;
   saving: boolean;
   onDiscard: () => void;
   onSave: () => void;
-  /** Test run controls, only for a saved process. */
   testRun?: {
     batches: RecentBatchDTO[];
     batchId: string;
@@ -27,7 +25,6 @@ export interface EditorFooterProps {
   };
 }
 
-/** The editor's sticky footer: the unsaved changes, Test run (saved processes), Discard, Save. */
 export function EditorFooter({
   changes,
   isNew,

@@ -9,15 +9,12 @@ const FOCUSABLE =
  */
 const stack: object[] = [];
 
-/** True while a `Dialog` or `Drawer` is open (the global shortcuts check this). */
 export function isModalOpen(): boolean {
   return stack.length > 0;
 }
 
-/** Where focus goes when the modal opens. */
 export type InitialFocus = 'first-field' | 'container';
 
-/** Moves Tab / Shift+Tab around the focusable elements inside `node`, never out of it. */
 function trapTab(e: KeyboardEvent, node: HTMLElement): void {
   const items = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE));
   const first = items[0];
@@ -40,11 +37,7 @@ function trapTab(e: KeyboardEvent, node: HTMLElement): void {
   }
 }
 
-/**
- * What a modal does while open: focuses its first field (or itself), keeps Tab inside, closes on
- * Escape when it is the top modal, and returns focus to the opener when it closes. `ref` is the
- * modal element; it needs `tabIndex={-1}` so it can hold focus when nothing inside can.
- */
+/** The modal element needs `tabIndex={-1}` so it can hold focus when nothing inside can. */
 export function useModal(
   ref: RefObject<HTMLElement | null>,
   open: boolean,

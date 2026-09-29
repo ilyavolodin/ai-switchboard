@@ -8,11 +8,8 @@ export type MappingOutcome =
   | { ok: false; input?: unknown; stage: 'evaluate' | 'validate'; errors: string[] };
 
 /**
- * Evaluate an input mapping and validate the result against the destination type's `inputSchema`.
- * This runs before any budget is spent: an invalid input fails the run with no reservation.
- *
- * Secret markers stay in the returned input; for validation they stand in as their
- * `secret://` reference string, so a schema that expects a string accepts them.
+ * Runs before any budget is spent: an invalid input fails the run with no reservation. Secret
+ * markers stay in the returned input; for validation they stand in as their `secret://` string.
  */
 export async function evaluateMapping(
   engine: ExpressionEngine,

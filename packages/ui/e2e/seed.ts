@@ -1,7 +1,4 @@
 /**
- * The configuration the e2e suite runs against, applied through `POST /api/v1/apply`, and the
- * pipeline outcomes it waits for before any test starts.
- *
  * One webhook source feeds three processes, routed by the alert's `route` attribute:
  * - "Breaker demo" calls the stub's `/exec/callback?outcome=error`; the error callback closes the
  *   run as `error` and a breaker threshold of 1 opens the breaker.
@@ -169,7 +166,6 @@ function byName<T extends { name: string }>(items: T[], name: string): T {
   return found;
 }
 
-/** Apply the configuration, send one alert per process and wait for each outcome. */
 export async function seed(baseUrl: string, stubUrl: string): Promise<StackState> {
   const api = await Api.signIn(baseUrl);
   const applied = await api.post<ApplyResponse>('/api/v1/apply', {

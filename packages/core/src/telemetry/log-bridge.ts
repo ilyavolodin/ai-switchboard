@@ -1,14 +1,6 @@
 import { context } from '@opentelemetry/api';
 import { logs, SeverityNumber, type AnyValue, type LogAttributes } from '@opentelemetry/api-logs';
 
-/**
- * pino → OpenTelemetry logs. A pino destination stream: it receives each line after pino has
- * serialised and redacted it, and emits it as an OTel log record through the global
- * LoggerProvider (registered in `telemetry/setup.ts`; a no-op until then). pino writes to its
- * streams synchronously, so the active context is the one of the log call and the record carries
- * its trace and span ids.
- */
-
 const SEVERITY: Record<string, { number: SeverityNumber; text: string }> = {
   trace: { number: SeverityNumber.TRACE, text: 'TRACE' },
   debug: { number: SeverityNumber.DEBUG, text: 'DEBUG' },
@@ -26,7 +18,6 @@ const NUMERIC_LEVELS: Record<number, string> = {
   60: 'fatal',
 };
 
-/** Fields that become the record's own parts, or are on the resource already. */
 const RESERVED = new Set(['level', 'time', 'msg', 'service', 'trace_id', 'span_id', 'trace_flags']);
 
 /** Records from the OTel SDK's own diagnostics are not exported, so a failing exporter cannot loop. */
@@ -52,7 +43,6 @@ function toAnyValue(value: unknown): AnyValue {
   return typeof value === 'bigint' ? value.toString() : null;
 }
 
-/** One pino JSON line as an OTel log record's parts. Exported for tests. */
 export function toLogRecord(line: Record<string, unknown>): {
   timestamp: Date | undefined;
   severityNumber: SeverityNumber;
@@ -67,7 +57,6 @@ export function toLogRecord(line: Record<string, unknown>): {
   for (const [k, v] of Object.entries(line)) {
     if (RESERVED.has(k) || v === undefined) continue;
     if (k === 'err' && v !== null && typeof v === 'object') {
-      // pino's error serializer: { type, message, stack }; the OTel exception attributes.
       const e = v as { type?: unknown; message?: unknown; stack?: unknown };
       if (typeof e.type === 'string') attributes['exception.type'] = e.type;
       if (typeof e.message === 'string') attributes['exception.message'] = e.message;
@@ -88,7 +77,10 @@ export function toLogRecord(line: Record<string, unknown>): {
   };
 }
 
-/** A pino destination (`{ write }`) that emits every line as an OTel log record. */
+/**
+ * Lines arrive after pino has redacted them. pino writes to its streams synchronously, so the
+ * active context is the log call's and the record carries its trace and span ids.
+ */
 export function createOtelLogStream(scope = 'switchboard'): { write(line: string): void } {
   return {
     write(line: string) {

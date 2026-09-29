@@ -37,10 +37,7 @@ import type {
   PluginRuntime,
 } from '../../src/plugins/runtime.js';
 
-/**
- * An in-memory PluginRuntime for integration tests: a webhook-like source with HMAC verify, an
- * http-like destination whose behaviour per invoke is scripted, and a recording notifier.
- */
+/** The destination's behaviour per invoke is scripted. */
 
 export const HOOK_TYPE = 'fake-hook';
 export const EXEC_TYPE = 'fake-exec';
@@ -93,7 +90,6 @@ export interface HookBody {
   events: HookEventBody[];
 }
 
-/** Build a signed delivery for the fake hook source. */
 export function signedDelivery(secret: string, body: HookBody, receivedAt: Date): RawRequest {
   const text = JSON.stringify(body);
   return rawRequest({
@@ -163,7 +159,6 @@ export interface FakeDestinationState {
   readings: MeterReading[];
   usageOnComplete: Record<string, number> | undefined;
   actions: { action: string; args: unknown }[];
-  /** What the type reports as its invoke timeout (`LiveDestination.invokeTimeoutFor`). */
   invokeTimeoutSeconds: number | undefined;
 }
 
@@ -260,11 +255,7 @@ async function behave(
   }
 }
 
-/**
- * Mirrors `PluginHost`'s attribution proxy: a plugin method that throws (anything but a
- * TransportError or InvokeError) is counted against its plugin, then the error propagates. The
- * pipeline relies on this layer, so the fake has it too.
- */
+/** Mirrors `PluginHost`'s attribution proxy: the pipeline relies on this layer. */
 function attributed<T extends object>(
   target: T,
   pluginName: string,
@@ -542,7 +533,6 @@ export class FakeRuntime implements PluginRuntime {
   }
 }
 
-/** A callback request for the fake destination. */
 export function callbackRequest(token: string, body: Record<string, unknown>): RawRequest {
   return rawRequest({
     path: '/callbacks/x',

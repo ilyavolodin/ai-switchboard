@@ -1,23 +1,15 @@
-/** One instance row as the reconcile pass reads it: its id and build version. */
 export interface InstanceVersion {
   id: string;
   version: number;
 }
 
-/** What a replica must do to match one instance table. */
 export interface InstanceDiff {
-  /** Rows this replica has never built. */
   added: string[];
-  /** Rows whose version differs from the one this replica built. */
   changed: string[];
-  /** Instances this replica built whose row is gone. */
   removed: string[];
 }
 
-/**
- * Compare an instance table's rows with the versions this replica last built. Ids for which
- * `skip` returns true (a build of them is in flight) are left for the next pass.
- */
+/** Ids for which `skip` returns true (a build is in flight) are left for the next pass. */
 export function diffInstances(
   rows: readonly InstanceVersion[],
   built: ReadonlyMap<string, number>,

@@ -17,10 +17,6 @@ import { SETTINGS_TABS, type SettingsTabId, settingsHref, settingsTab } from './
 import { TokensTab } from './TokensTab.js';
 import { UsersTab } from './UsersTab.js';
 
-/**
- * Settings (`/settings`, `/settings/:tab`): General, Sign-in, Users, Account, API tokens, Notifiers,
- * Secret providers, Retention, Export, About and the Audit log. Every save asks for a reason.
- */
 export function Settings() {
   const { tab: segment } = useParams();
   const tab = settingsTab(segment);

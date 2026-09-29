@@ -6,7 +6,7 @@ import type { Role } from '../domain/status.js';
 import { randomToken, roleAtLeast, sha256 } from './crypto.js';
 
 export const SESSION_COOKIE = 'sb_session';
-/** 12-hour sliding lifetime. */
+/** Sliding. */
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export interface AuthUser {
@@ -15,14 +15,10 @@ export interface AuthUser {
   role: Role;
   /** `session` or `token:<name>` */
   via: string;
-  /**
-   * A password session whose user must change the password: every route except the few in
-   * `PASSWORD_CHANGE_ALLOWED` answers 403 `password_change_required`.
-   */
+  /** Every route outside `PASSWORD_CHANGE_ALLOWED` answers 403 `password_change_required`. */
   passwordChangeRequired: boolean;
 }
 
-/** How a session signed in. */
 export type SessionMethod = 'password' | 'oidc';
 
 export async function createSession(
@@ -44,7 +40,7 @@ export async function createSession(
   return token;
 }
 
-/** The session's user, sliding the expiry forward; null when missing or expired. */
+/** Slides the expiry forward; null when missing or expired. */
 export async function userForSession(
   db: DbOrTx,
   token: string,
@@ -82,7 +78,6 @@ export async function revokeSession(db: DbOrTx, token: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.tokenHash, sha256(token)));
 }
 
-/** Sign the user out everywhere, or everywhere except the session whose cookie is `keepToken`. */
 export async function revokeUserSessions(
   db: DbOrTx,
   userId: string,
@@ -117,7 +112,7 @@ export async function createApiToken(
   return { id: row.id, secret };
 }
 
-/** A personal API token's user, with the token's role capped at the user's current role. */
+/** The token's role is capped at the user's current role. */
 export async function userForApiToken(
   db: DbOrTx,
   secret: string,

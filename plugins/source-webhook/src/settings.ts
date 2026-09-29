@@ -21,10 +21,8 @@ export type VerificationMode = (typeof VERIFICATION_MODES)[number];
 export const MAPPING_MODES = ['quick', 'mapped', 'jsonata'] as const;
 export type MappingMode = (typeof MAPPING_MODES)[number];
 
-/** The event type quick mode emits unless the person names another. */
 export const QUICK_DEFAULT_TYPE = 'webhook.request.received';
 
-/** One attribute of a mapped-mode rule: a name filters use, read from a path in the delivery. */
 export interface MappedAttribute {
   name: string;
   path: string;
@@ -32,7 +30,6 @@ export interface MappedAttribute {
   description?: string;
 }
 
-/** One mapped-mode rule: when it applies, the event type it produces and where its facts are. */
 export interface MappedRule {
   type: string;
   title: string;
@@ -46,7 +43,6 @@ export interface MappedRule {
   attributes?: MappedAttribute[];
 }
 
-/** Settings after validation, with defaults applied. */
 export interface WebhookSettings {
   verification: VerificationMode;
   secret?: string;
@@ -409,12 +405,11 @@ export const settingsSchema: JSONSchema = {
   ],
 };
 
-/** Thrown by `create` when the instance settings are unusable. */
 export class WebhookSettingsError extends Error {
   override readonly name = 'WebhookSettingsError';
 }
 
-/** Validate settings against the schema (on a copy, so defaults do not leak back) and narrow. */
+/** Validates a copy, so defaults do not leak back. */
 export function readSettings(settings: Settings): WebhookSettings {
   return parseWith<WebhookSettings>(settingsSchema, settings, 'webhook settings', {
     error: WebhookSettingsError,

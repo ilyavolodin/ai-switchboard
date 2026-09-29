@@ -1,16 +1,10 @@
-/**
- * Every main route of the real app renders against the real API: no error state, no uncaught
- * page or console error and no failed API call (the fixtures fail the test on those). This is
- * the suite that catches UI ↔ API contract mismatches.
- */
+// Catches UI ↔ API contract mismatches: every main route renders against the real API.
 import type { Page } from '@playwright/test';
 
 import { expect, open, test } from './fixtures.js';
 
-/** Error states the screens render: route errors, failed queries, unknown tabs. */
 async function expectNoErrorState(page: Page): Promise<void> {
   await expect(page.getByRole('main')).toBeVisible();
-  // Let the screen's queries settle before looking for an error state.
   await page.waitForLoadState('networkidle');
   await expect(page.getByText(/something went wrong|couldn.t load|no such tab/i)).toHaveCount(0);
   // A field the UI expects but the API doesn't send renders as one of these.

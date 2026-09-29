@@ -14,13 +14,13 @@ export class TransportError extends Error {
   }
 }
 
-/** Thrown by `HttpClient` when a request targets a host outside the plugin's declared network capability. */
+/** A request targeted a host outside the plugin's declared network capability. */
 export class CapabilityError extends Error {
   override readonly name = 'CapabilityError';
 }
 
 /**
- * Thrown by a destination's `invoke` to describe a backend refusal precisely.
+ * Thrown by a destination's `invoke` to describe a backend refusal.
  *
  * - `status: 503` or `sent: false` → the core may retry.
  * - `definitive: true` (a 4xx the backend will repeat) → the run is `failed`.
@@ -61,10 +61,8 @@ export function isInvokeError(err: unknown): err is InvokeError {
 }
 
 /**
- * The `InvokeError` for a refused HTTP response, following the core's retry rules: a 503 may be
- * retried (carrying `retryAfterSeconds` when given), any other 4xx is definitive, and anything
- * else leaves a non-idempotent run `uncertain`. Handle 429 (return `retryAfterSeconds` in the
- * `InvokeResult`) and backend-specific states such as "paused" before calling this.
+ * Handle 429 (return `retryAfterSeconds` in the `InvokeResult`) and backend-specific states
+ * such as "paused" before calling this.
  */
 export function invokeErrorForStatus(
   status: number,

@@ -21,7 +21,6 @@ const object = (name: string, extra: Record<string, unknown> = {}) => ({
   downloads: { monthly: 400, weekly: 100 },
 });
 
-/** A registry stub answering by the `text` parameter; records every URL. */
 function stubRegistry(byText: Record<string, unknown[]>): RegistryFetch & { urls: string[] } {
   const urls: string[] = [];
   const fn = (url: string) => {

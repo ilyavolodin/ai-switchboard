@@ -1,11 +1,5 @@
-/**
- * Realistic API fixtures that mirror the "AI Switchboard UI" canvas: GitHub — acme org, Linear —
- * lola, Datadog — prod; Autofix, Triage, Nightly sweep and friends; Claude Routines — automation
- * seat, GitHub Actions — lola org, HTTP — internal jobs; meters 5 h 62 %, 7 d 41 %, 14/22 runs,
- * API 18 %. Used by `mockApi` in tests and by `VITE_MOCK_API=1 pnpm dev:ui`.
- *
- * Times are relative to `now`, so `buildFixtures(fixedNow)` gives stable data in tests.
- */
+// Mirrors the "AI Switchboard UI" design canvas. Times are relative to `now`, so a fixed `now`
+// gives stable data in tests.
 import type {
   AboutResponse,
   ActivityRow,
@@ -113,14 +107,7 @@ const OFF5: [StatusTone, StatusTone, StatusTone, StatusTone, StatusTone] = [
   'off',
 ];
 
-// ---------------------------------------------------------------------------------------------
-// Schemas (plugin manifests)
-// ---------------------------------------------------------------------------------------------
-
-/**
- * The generic webhook's verification settings (as `@ai-switchboard/source-webhook` declares
- * them): `if`/`then` branches name the fields each mode uses, and `x-warning` flags `none`.
- */
+/** As `@ai-switchboard/source-webhook` declares it. */
 export const webhookSettingsSchema: JSONSchema = {
   type: 'object',
   required: ['mapping'],
@@ -184,7 +171,6 @@ export const webhookSettingsSchema: JSONSchema = {
   ],
 };
 
-/** Linear source settings: groups, secrets, enum, array, long help. */
 export const linearSettingsSchema: JSONSchema = {
   type: 'object',
   required: ['team', 'apiKey', 'webhookSecret'],
@@ -245,7 +231,6 @@ export const linearSettingsSchema: JSONSchema = {
   },
 };
 
-/** Claude Routines target: routine id, token secret, a mode enum and extra args. */
 export const routinesTargetSchema: JSONSchema = {
   type: 'object',
   required: ['routineId', 'token'],
@@ -357,11 +342,7 @@ const slackSettingsSchema: JSONSchema = {
   },
 };
 
-// ---------------------------------------------------------------------------------------------
-// Builders
-// ---------------------------------------------------------------------------------------------
-
-/** Every fixture, with times relative to `now` (epoch ms). */
+/** `now` is epoch ms. */
 export function buildFixtures(now: number) {
   const iso = (offsetMs: number): string => new Date(now + offsetMs).toISOString();
   const nextAt = (hour: number): string => {
@@ -371,7 +352,6 @@ export function buildFixtures(now: number) {
     return d.toISOString();
   };
 
-  // ---- Auth -----------------------------------------------------------------------------
   const user: UserDTO = {
     id: 'u-ilya',
     email: 'ilya@lola.com',
@@ -393,7 +373,6 @@ export function buildFixtures(now: number) {
     requireReasons: true,
   };
 
-  // ---- Meters ---------------------------------------------------------------------------
   const fiveHour: MeterGaugeDTO = {
     destinationId: E.routines,
     destinationName: 'Claude Routines — automation seat',
@@ -467,7 +446,6 @@ export function buildFixtures(now: number) {
     oidcConfigured: false,
   };
 
-  // ---- Sources --------------------------------------------------------------------------
   const health = (s: 'healthy' | 'unhealthy' | 'unknown', message?: string) => ({
     status: s,
     checkedAt: iso(-1 * MIN),
@@ -657,7 +635,6 @@ export function buildFixtures(now: number) {
     updatedAt: iso(-3 * DAY),
   });
 
-  // ---- Destinations ------------------------------------------------------------------------
   const destinations: DestinationSummary[] = [
     {
       id: E.routines,
@@ -761,7 +738,6 @@ export function buildFixtures(now: number) {
     updatedAt: iso(-5 * DAY),
   });
 
-  // ---- Processes ------------------------------------------------------------------------
   const exRef = (id: string) => {
     const x = destinations.find((e) => e.id === id);
     return x ? { id: x.id, name: x.name } : null;
@@ -1189,7 +1165,7 @@ export function buildFixtures(now: number) {
     },
   ];
 
-  /** The stored document of each version: 12 is current, 11 had 4 runs/h, 10 no quiet hours. */
+  // 12 is current, 11 had 4 runs/h, 10 no quiet hours.
   const versionDocument = (version: number): ProcessDocument => {
     if (version >= 12) return autofixDocument;
     const v11: ProcessDocument = {
@@ -1222,7 +1198,6 @@ export function buildFixtures(now: number) {
     },
   ];
 
-  // ---- Activity & trace -----------------------------------------------------------------
   const art = (kind: string, id: string) => ({
     kind,
     id,
@@ -1518,7 +1493,6 @@ export function buildFixtures(now: number) {
     text: 'LOL-1712\n07:36:41 Event joined · Linear · issue.label_added\n07:44:50 Run error after 6 m 38 s',
   };
 
-  // ---- Approvals ------------------------------------------------------------------------
   const approvals: ApprovalItem[] = [
     {
       batchId: 'b-merge-480',
@@ -1575,7 +1549,6 @@ export function buildFixtures(now: number) {
     ],
   };
 
-  // ---- Board ----------------------------------------------------------------------------
   const edge = (
     kind: BoardEdge['kind'],
     from: string,
@@ -1729,7 +1702,6 @@ export function buildFixtures(now: number) {
     generatedAt: iso(0),
   };
 
-  // ---- Stats for sources / destinations -----------------------------------------------------
   const hours = Array.from({ length: 24 }, (_, i) => iso(-(23 - i) * HOUR));
   const shape = [
     20, 12, 8, 6, 6, 10, 30, 55, 70, 85, 100, 80, 65, 75, 90, 70, 60, 40, 25, 15, 10, 8, 12, 45,
@@ -1751,7 +1723,6 @@ export function buildFixtures(now: number) {
     verifyFailures: [{ hour: iso(-5 * HOUR), count: 2 }],
   };
 
-  // The newest stored delivery of a source (Source › Settings › "Use the last delivery").
   const lastDelivery: LastDeliveryResponse = {
     receivedAt: iso(-2 * HOUR),
     body: JSON.stringify(
@@ -1836,7 +1807,6 @@ export function buildFixtures(now: number) {
     })),
   };
 
-  // ---- Plugins and types ------------------------------------------------------------------
   const pluginTypes: PluginTypeDTO[] = [
     {
       kind: 'source',
@@ -2040,7 +2010,6 @@ export function buildFixtures(now: number) {
     },
   ];
 
-  // npm packages that follow the naming convention (GET /plugins/search).
   const searchResult = (
     pkg: string,
     kind: PluginSearchResult['kind'],
@@ -2108,7 +2077,6 @@ export function buildFixtures(now: number) {
     ),
   ];
 
-  // ---- Instances, settings, users, audit ---------------------------------------------------
   const notifiers: InstanceSummary[] = [
     {
       id: 'n-slack',
@@ -2165,7 +2133,7 @@ export function buildFixtures(now: number) {
       dependents: [],
     },
   ];
-  // GET /secret-providers/:id/secrets, keyed by provider id. Names only, never values.
+  // Names only, never values.
   const providerSecrets: Record<string, ProviderSecretsResponse> = {
     'sp-env': {
       providerId: 'sp-env',
@@ -2370,7 +2338,6 @@ export function buildFixtures(now: number) {
     },
   };
 
-  // ---- Previews -----------------------------------------------------------------------------
   const filterPreview: FilterPreviewResponse = {
     rows: [
       ['LOL-1712', 'autofix · complexity:simple', true, 23],
@@ -2454,10 +2421,9 @@ export function buildFixtures(now: number) {
   };
 }
 
-/** The fixture bundle type. */
 export type Fixtures = ReturnType<typeof buildFixtures>;
 
-/** An empty installation: no sources, destinations or processes (the Board's first-run state). */
+/** The Board's first-run state. */
 export function emptyBoard(now: number): BoardResponse {
   return {
     sources: [],

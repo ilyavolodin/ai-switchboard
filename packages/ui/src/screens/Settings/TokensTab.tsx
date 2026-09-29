@@ -20,10 +20,6 @@ import { useToast } from '../../hooks/toast.js';
 import styles from './Settings.module.css';
 import { grantableRoles } from './settingsForm.js';
 
-/**
- * API tokens: personal tokens for the CLI and CI, each scoped to a role no higher than the
- * owner's. The secret is shown once, right after creation, and never again.
- */
 export function TokensTab() {
   const tokens = useTokens();
   const [created, setCreated] = useState<CreateApiTokenResponse | null>(null);

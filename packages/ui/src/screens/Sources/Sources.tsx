@@ -25,10 +25,6 @@ function describeSourceType(t: PluginTypeDTO): string {
     .join(' · ');
 }
 
-/**
- * Sources: one card per source instance (health, last event, events per hour and by type,
- * enabled toggle) and the "Add source" flow.
- */
 export function Sources() {
   const sources = useSources();
   const types = usePluginTypes('source');

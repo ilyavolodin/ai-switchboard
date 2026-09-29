@@ -14,7 +14,6 @@ import { apiFetch } from '../client.js';
 import { POLL, qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
 
-/** GET /plugins — installed plugins with health. */
 export function usePlugins() {
   return useQuery({
     queryKey: qk.plugins.installed(),
@@ -23,7 +22,6 @@ export function usePlugins() {
   });
 }
 
-/** GET /plugins/catalogue — the project's reviewed plugins. */
 export function useCatalogue() {
   return useQuery({
     queryKey: qk.plugins.catalogue(),
@@ -32,10 +30,7 @@ export function useCatalogue() {
   });
 }
 
-/**
- * GET /plugins/search — npm packages that follow the plugin naming convention. A 503 means the
- * registry is unreachable (offline installs); the error says so.
- */
+/** A 503 means the registry is unreachable (offline installs). */
 export function usePluginSearch(kind: PluginSearchKind | undefined, q: string, enabled = true) {
   return useQuery({
     queryKey: qk.plugins.search(kind ?? 'all', q),
@@ -47,7 +42,6 @@ export function usePluginSearch(kind: PluginSearchKind | undefined, q: string, e
   });
 }
 
-/** POST /plugins/inspect — read a package's manifest before installing (no side effect). */
 export function useInspectPlugin() {
   return useMutation<InspectPluginResponse, Error, InspectPluginRequest>({
     mutationFn: (body) =>
@@ -55,10 +49,7 @@ export function useInspectPlugin() {
   });
 }
 
-/**
- * POST /plugins — install and load it now (`pendingRestart` when another version of it is
- * already loaded). Its types appear in the add-instance pickers straight away.
- */
+/** `pendingRestart` is set when another version of the plugin is already loaded. */
 export function useInstallPlugin() {
   return useApiMutation<InstallPluginRequest, PluginSummary>({
     method: 'POST',
@@ -67,7 +58,7 @@ export function useInstallPlugin() {
   });
 }
 
-/** DELETE /plugins/:name — remove; applies on restart. */
+/** Applies on restart. */
 export function useRemovePlugin() {
   return useApiMutation<Reasoned & { pluginName: string }, undefined>({
     method: 'DELETE',

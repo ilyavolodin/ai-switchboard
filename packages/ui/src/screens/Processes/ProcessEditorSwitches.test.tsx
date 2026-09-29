@@ -9,7 +9,6 @@ import { ProcessEditor } from './ProcessEditor.js';
 
 const editAutofix = { path: '/processes/p-autofix/edit', routePath: '/processes/:id/edit' };
 
-/** The Autofix process with part of its document replaced. */
 function autofixWith(patch: Partial<ProcessDetail['document']>) {
   const f = buildFixtures(TEST_NOW);
   const summary = f.processes.find((p) => p.id === 'p-autofix');
@@ -69,7 +68,6 @@ describe('Batch events switch', () => {
     expect(within(section).getByRole('textbox', { name: /^Debounce/ })).toHaveValue('90');
     expect(within(section).getByRole('textbox', { name: /^Max size/ })).toHaveValue('3');
     expect(within(section).getByRole('textbox', { name: /^Group by/ })).toHaveValue('artifact.id');
-    // Back to the saved document: nothing to save.
     expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true');
   });
 
@@ -121,7 +119,6 @@ describe('Limit runs switch', () => {
     await user.click(toggle);
     expect(within(section).getByRole('textbox', { name: /^Runs per day/ })).toHaveValue('20');
     expect(within(section).getByRole('textbox', { name: /^Runs per hour/ })).toHaveValue('');
-    // Clearing the last cap keeps the fields open while editing.
     await user.clear(within(section).getByRole('textbox', { name: /^Runs per day/ }));
     expect(toggle).toHaveAttribute('aria-checked', 'true');
     expect(within(section).getByRole('textbox', { name: /^Runs per day/ })).toBeInTheDocument();

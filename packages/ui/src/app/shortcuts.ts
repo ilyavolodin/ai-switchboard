@@ -2,10 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { isModalOpen } from '../hooks/useModal.js';
 
-/**
- * The single place for keyboard bindings. `/` focuses search; `g` then a letter navigates.
- * Bindings are ignored while typing in a field and while a dialog or drawer is open (it is modal).
- */
+/** Bindings are ignored while typing in a field and while a dialog or drawer is open. */
 export const SHORTCUTS = [
   { keys: '/', label: 'search', action: 'search' },
   { keys: 'g b', label: 'board', action: 'navigate', to: '/' },
@@ -13,7 +10,6 @@ export const SHORTCUTS = [
   { keys: 'g a', label: 'activity', action: 'navigate', to: '/activity' },
 ] as const;
 
-/** How long after `g` the second key counts. */
 const SEQUENCE_MS = 1200;
 
 function isTyping(target: EventTarget | null): boolean {
@@ -28,7 +24,6 @@ function isTyping(target: EventTarget | null): boolean {
   return false;
 }
 
-/** Installs the global bindings on `document`. */
 export function useGlobalShortcuts(handlers: {
   onSearch: () => void;
   onNavigate: (to: string) => void;

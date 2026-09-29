@@ -4,7 +4,6 @@ import { cx } from '../lib/cx.js';
 import styles from './FilterChips.module.css';
 import { Icon } from './Icon.js';
 
-/** One filter chip. */
 export interface FilterChip {
   value: string;
   label: ReactNode;
@@ -13,19 +12,12 @@ export interface FilterChip {
 
 export interface FilterChipsProps {
   chips: FilterChip[];
-  /** The chips that are on. */
   selected: string[];
   onToggle: (value: string) => void;
-  /** Accessible name for the group. */
   label: string;
-  /** Show an × on selected chips (removable filters). */
   removable?: boolean;
 }
 
-/**
- * Toggleable pill filters (multi-select, `aria-pressed`): "Hide disabled", "Autofix only", a
- * source or stage filter on Activity.
- */
 export function FilterChips({ chips, selected, onToggle, label, removable }: FilterChipsProps) {
   return (
     <div role="group" aria-label={label} className={styles.row}>

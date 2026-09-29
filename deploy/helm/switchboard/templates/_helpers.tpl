@@ -1,9 +1,7 @@
-{{/* Chart name. */}}
 {{- define "switchboard.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/* Fully qualified app name. */}}
 {{- define "switchboard.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}

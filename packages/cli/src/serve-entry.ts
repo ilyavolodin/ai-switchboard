@@ -14,9 +14,8 @@ async function packageName(dir: string): Promise<string | undefined> {
 }
 
 /**
- * Find `@ai-switchboard/core`'s package root from any resolved module URL inside it and return
- * its built server entry, `<root>/dist/main.js`. Works from source (the `@ai-switchboard/source`
- * condition resolves to `src/index.ts`), from an installed package and in the image.
+ * Walks up from any resolved module URL inside `@ai-switchboard/core` to its package root, so it
+ * works from source (the `@ai-switchboard/source` condition), an installed package and the image.
  */
 export async function resolveServerEntry(resolvedUrl: string): Promise<string> {
   let dir = dirname(fileURLToPath(resolvedUrl));

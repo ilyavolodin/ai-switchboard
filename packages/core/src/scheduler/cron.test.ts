@@ -168,7 +168,6 @@ describe('dueSweep and catchUp', () => {
       new Date('2026-01-07T07:20:00Z'),
     );
     expect(out).toEqual({ tickAt: new Date('2026-01-07T07:00:00Z'), catchUp: true });
-    // Once it has fired, the next minute owes nothing.
     expect(
       dueSweep(
         schedule('once', '0 * * * *'),

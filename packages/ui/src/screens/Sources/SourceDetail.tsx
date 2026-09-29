@@ -31,10 +31,6 @@ import { enableSourcePrompt, modeLabel } from './sourceModel.js';
 import { SourceSettings } from './SourceSettings.js';
 import { TestEventResult } from './TestEventResult.js';
 
-/**
- * A source instance: header (status, webhook URL or poll interval, secret references, Register
- * webhook, Send test event, Reload, Enabled) and the Overview / Settings / Events tabs.
- */
 export function SourceDetail() {
   const { id, tab } = useParams();
   const source = useSource(id);

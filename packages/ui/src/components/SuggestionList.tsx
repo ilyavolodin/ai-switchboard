@@ -2,11 +2,6 @@ import { cx } from '../lib/cx.js';
 import type { SuggestionsState } from '../hooks/useSuggestions.js';
 import styles from './SuggestionList.module.css';
 
-/**
- * The popover list under a control that `useSuggestions` drives: a `listbox` of options, each a
- * value and a muted hint (an example value, a type). Clicking an option keeps focus in the
- * control.
- */
 export function SuggestionList({ state, label }: { state: SuggestionsState; label: string }) {
   if (!state.open) return null;
   return (

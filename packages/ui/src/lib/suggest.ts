@@ -1,17 +1,9 @@
-/**
- * Autocomplete helpers, pure: dotted paths from a sample delivery (for `x-widget: 'path'`
- * fields), JSONata completions (for `ExpressionEditor`), the word under the cursor and ranking.
- */
-
-/** One suggestion: what is inserted, and a hint shown beside it (an example value, a type). */
 export interface Suggestion {
   value: string;
   hint?: string;
-  /** Longer text for the option's title (a function's signature, an attribute's description). */
   detail?: string;
 }
 
-/** A sample delivery as the path fields see it. */
 export interface DeliverySample {
   body: unknown;
   headers: Record<string, string>;
@@ -40,9 +32,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Every dotted path in a sample `{ body, headers, query }`, with an example value: objects
- * recurse, lists offer their first items by index (`body.labels.0`) and, for lists of objects,
- * each field across the list (`body.labels.name`), as the webhook reads them.
+ * Lists offer their first items by index (`body.labels.0`) and, for lists of objects, each field
+ * across the list (`body.labels.name`), as the webhook reads them.
  */
 export function samplePaths(sample: DeliverySample): Suggestion[] {
   const out: Suggestion[] = [];
@@ -75,10 +66,7 @@ export function samplePaths(sample: DeliverySample): Suggestion[] {
   return out;
 }
 
-/**
- * Parse the text a person pasted as a sample delivery. JSON becomes the body; `null` when it is
- * not JSON (the webhook would then see it as text, but paths need structure).
- */
+/** `null` when it is not JSON: the webhook would read it as text, but paths need structure. */
 export function parseSampleBody(text: string): unknown {
   if (text.trim() === '') return null;
   try {
@@ -88,10 +76,7 @@ export function parseSampleBody(text: string): unknown {
   }
 }
 
-/**
- * Rank suggestions for what was typed: those starting with it first, then those containing it,
- * each in their original order; `limit` at most. An empty query returns the first `limit`.
- */
+/** Prefix matches first, then substring matches, each in their original order. */
 export function rankSuggestions(items: Suggestion[], typed: string, limit = 8): Suggestion[] {
   const q = typed.toLowerCase();
   if (q === '') return items.slice(0, limit);
@@ -106,7 +91,6 @@ export function rankSuggestions(items: Suggestion[], typed: string, limit = 8): 
   return [...starts, ...contains].slice(0, limit);
 }
 
-/** The word being typed at `cursor` in an expression: `$`, letters, digits, `_` and dots. */
 export function wordAt(text: string, cursor: number): { start: number; word: string } {
   const before = text.slice(0, cursor);
   const m = /[$A-Za-z_][\w.$]*$/.exec(before);
@@ -116,7 +100,6 @@ export function wordAt(text: string, cursor: number): { start: number; word: str
   return { start: cursor - m[0].length, word: m[0] };
 }
 
-/** The context variables each expression sees, with what they hold. */
 export const EXPRESSION_VARIABLES: Record<string, string> = {
   event: 'the event being filtered: type, artifact, attributes, occurredAt',
   type: 'the event’s type (filters)',
@@ -130,7 +113,6 @@ export const EXPRESSION_VARIABLES: Record<string, string> = {
   result: 'what the destination returned (after-steps)',
 };
 
-/** Switchboard's own functions, then the JSONata built-ins people reach for most. */
 export const EXPRESSION_FUNCTIONS: Suggestion[] = [
   { value: '$resolve(artifact)', hint: 'live', detail: 'The artifact as its system has it now' },
   { value: '$linked(artifact)', hint: 'live', detail: 'Artifacts linked to this one' },
@@ -165,24 +147,18 @@ export const EXPRESSION_FUNCTIONS: Suggestion[] = [
   { value: '$match()', hint: 'array', detail: '$match(text, /regex/)' },
 ];
 
-/** What `expressionCompletions` builds from. */
 export interface CompletionSources {
-  /** Context variable names this expression sees (default: every one). */
+  /** Default: every one. */
   variables?: string[];
   /** Declared attribute names, offered as `attributes.<name>` (and under `event.`). */
   attributes?: { name: string; type?: string; description?: string }[];
-  /** More entries (the editor's insert chips, a sample delivery's paths). */
   extra?: Suggestion[];
-  /**
-   * Offer Switchboard's functions (`$resolve`, `$linked`, `$env`, `$secretRef`; default true).
-   * Plugin expressions (a webhook mapping) run elsewhere and have only JSONata's.
-   */
+  /** Default true. Plugin expressions (a webhook mapping) run elsewhere and have only JSONata's. */
   switchboardFunctions?: boolean;
 }
 
 const SWITCHBOARD_FUNCTIONS = new Set(['$resolve', '$linked', '$env', '$secretRef']);
 
-/** Every completion an expression editor offers, de-duplicated. */
 export function expressionCompletions(sources: CompletionSources = {}): Suggestion[] {
   const vars = sources.variables ?? Object.keys(EXPRESSION_VARIABLES);
   const out: Suggestion[] = [];

@@ -18,7 +18,6 @@ import { asList, compileExpression } from './mapping.js';
 import { readSettings, settingsSchema, SOURCE_ID, type PollHttpSettings } from './settings.js';
 import { decodeWatermark, encodeWatermark, selectNew } from './watermark.js';
 
-/** Thrown by `poll` when the endpoint refuses or answers with something that is not JSON. */
 export class PollError extends Error {
   override readonly name = 'PollError';
 }
@@ -131,7 +130,7 @@ function createPollSource(settings: Settings, ctx: PluginContext): Source {
   return { poll, health };
 }
 
-/** The instance's event types, compiled from its settings. Invalid settings yield none. */
+/** Invalid settings yield none. */
 export function instanceEventTypes(settings: Settings): EventTypeSpec[] {
   try {
     return [...compileEventTypes(SOURCE_ID, readSettings(settings).eventTypes).values()].map(

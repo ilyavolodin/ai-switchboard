@@ -180,7 +180,6 @@ describe('webhook instanceEventTypes', () => {
         rollback: { type: 'boolean' },
       },
     });
-    // The given example is used where present; placeholders fill the rest.
     expect(finishedSpec!.examples).toEqual([
       {
         service: 'api',

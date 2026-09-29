@@ -125,7 +125,6 @@
   border-radius: 50%;
 }
 
-/* Events tab rows. */
 .events {
   display: flex;
   flex-direction: column;

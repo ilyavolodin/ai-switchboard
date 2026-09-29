@@ -9,7 +9,6 @@ function minutes(hhmm: string): number | null {
 }
 
 /**
- * Is `now` inside the quiet window, evaluated in the window's timezone (or `defaultTimezone`)?
  * `start == end` is an empty window. An overnight window (`22:00`–`07:00`) belongs to the day it
  * starts on, so `days: [5]` covers Friday 22:00 to Saturday 07:00.
  */
@@ -26,7 +25,6 @@ export function inQuietHours(window: QuietWindow, now: Date, defaultTimezone: st
   if (start < end) {
     return t >= start && t < end && (days === null || days.includes(today));
   }
-  // Overnight: the evening part belongs to today, the morning part to yesterday's window.
   if (t >= start) return days === null || days.includes(today);
   if (t < end) return days === null || days.includes(yesterday);
   return false;

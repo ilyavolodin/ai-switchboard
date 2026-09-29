@@ -8,7 +8,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../client.js';
 import { qk } from '../keys.js';
 
-/** GET /auth/me — the signed-in user (null when signed out), auth mode and evaluation flag. */
 export function useMe() {
   return useQuery({
     queryKey: qk.me,
@@ -18,7 +17,6 @@ export function useMe() {
   });
 }
 
-/** POST /auth/login (local mode) — stores the returned session in the `me` query. */
 export function useLogin() {
   const qc = useQueryClient();
   return useMutation<MeResponse, Error, LocalLoginRequest>({
@@ -29,10 +27,6 @@ export function useLogin() {
   });
 }
 
-/**
- * POST /auth/password — change the signed-in user's own password. Lifts the temporary-password
- * restriction and signs out the user's other sessions; the returned `me` replaces the cached one.
- */
 export function useChangePassword() {
   const qc = useQueryClient();
   return useMutation<MeResponse, Error, ChangePasswordRequest>({
@@ -47,7 +41,6 @@ export function useChangePassword() {
   });
 }
 
-/** POST /auth/logout — clears every cached query. */
 export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
@@ -59,7 +52,6 @@ export function useLogout() {
   });
 }
 
-/** GET /auth/whoami — the audit identity of the caller (`{ actor }`). */
 export function useWhoami() {
   return useQuery({
     queryKey: qk.whoami,
@@ -68,5 +60,5 @@ export function useWhoami() {
   });
 }
 
-/** Where the OIDC sign-in button points (a full-page navigation, not a fetch). */
+/** A full-page navigation target, not a fetch. */
 export const OIDC_START_URL = '/api/v1/auth/oidc/start';

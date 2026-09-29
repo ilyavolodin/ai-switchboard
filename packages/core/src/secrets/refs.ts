@@ -1,8 +1,3 @@
-/**
- * `secret://<provider>/<name>` references. Settings store references, never values; the plugin
- * host resolves them through secret-provider instances when it builds a live object.
- */
-
 export const SECRET_SCHEME = 'secret://';
 
 export interface SecretRef {
@@ -26,7 +21,6 @@ export function formatSecretRef(ref: SecretRef): string {
   return `${SECRET_SCHEME}${ref.provider}/${ref.name}`;
 }
 
-/** Every `secret://` string anywhere in a settings object, with its dotted path. */
 export function collectSecretRefs(value: unknown, path = ''): { path: string; ref: string }[] {
   if (isSecretRef(value)) return [{ path, ref: value }];
   if (Array.isArray(value)) return value.flatMap((v, i) => collectSecretRefs(v, `${path}[${i}]`));
@@ -41,10 +35,7 @@ export function collectSecretRefs(value: unknown, path = ''): { path: string; re
 /** `$secretRef('<provider>/<name>')` (or with a full `secret://` reference) in expression text. */
 const EXPRESSION_REF = /\$secretRef\(\s*(['"])(?:secret:\/\/)?([^'"\s]+)\1\s*\)/g;
 
-/**
- * Every secret reference a process document makes: `secret://` strings in fields, plus the
- * literal `$secretRef('<provider>/<name>')` calls inside expression strings.
- */
+/** Also finds literal `$secretRef('<provider>/<name>')` calls inside expression strings. */
 export function collectDocumentSecretRefs(value: unknown): { path: string; ref: string }[] {
   const out = collectSecretRefs(value);
   const walk = (v: unknown, path: string): void => {
@@ -65,7 +56,6 @@ export function collectDocumentSecretRefs(value: unknown): { path: string; ref: 
   return out;
 }
 
-/** Whether a settings object references any of these providers (`secret://<provider>/…`). */
 export function referencesProvider(value: unknown, providers: ReadonlySet<string>): boolean {
   return collectSecretRefs(value).some((r) => {
     const parsed = parseSecretRef(r.ref);
@@ -75,7 +65,6 @@ export function referencesProvider(value: unknown, providers: ReadonlySet<string
 
 export type SecretLookup = (ref: string) => Promise<string>;
 
-/** Deep-copy `value`, replacing every secret reference with its resolved value. */
 export async function resolveSecretRefs(
   value: unknown,
   lookup: SecretLookup,
@@ -98,10 +87,7 @@ export async function resolveSecretRefs(
   return { value: await walk(value), secrets };
 }
 
-/**
- * Settings fields marked `x-secret` must hold a reference (or be empty), never a literal. Returns
- * the offending paths so the API can reject a save that would store a secret value in Postgres.
- */
+/** Fields marked `x-secret` must hold a reference (or be empty), never a literal value. */
 export function literalSecretFields(
   secretPaths: string[],
   settings: Record<string, unknown>,
@@ -121,10 +107,8 @@ export function literalSecretFields(
 export const REDACTED = '[redacted]';
 
 /**
- * Deep-copy `value` with every occurrence of a secret value inside a string replaced by
- * `[redacted]`. Used on what a backend sends back (results, error messages) before it is stored,
- * since a backend may echo the credentials or input it received. Values shorter than 4
- * characters are not matched (too many false positives).
+ * Applied to what a backend sends back before it is stored, since a backend may echo the
+ * credentials it received. Values shorter than 4 characters are not matched (false positives).
  */
 export function redactSecretValues(value: unknown, secrets: readonly string[]): unknown {
   const list = [...new Set(secrets.filter((s) => s.length >= 4))].sort(

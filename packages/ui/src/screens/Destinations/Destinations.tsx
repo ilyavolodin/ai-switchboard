@@ -14,10 +14,6 @@ import { DestinationCapsFields } from './DestinationCapsFields.js';
 import { DestinationCard } from './DestinationCard.js';
 import { describeDestinationType, estimatedMeters } from './destinationModel.js';
 
-/**
- * Destinations: one card per destination with its meters as arcs, and the "Add destination"
- * flow (the type's settings form plus the core's caps).
- */
 export function Destinations() {
   const destinations = useDestinations();
   const types = usePluginTypes('destination');

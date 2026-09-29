@@ -17,8 +17,8 @@ function hrefOf(d: SecretProviderDependentDTO): string {
 }
 
 /**
- * The instances whose settings reference a secret provider, with their status now. The provider's
- * create, enable, edit and reload rebuild them, so this is the outcome of the last change.
+ * The provider's create, enable, edit and reload rebuild these instances, so their status is the
+ * outcome of the last change.
  */
 export function ProviderDependents({
   provider,

@@ -1,12 +1,11 @@
 import type { RawRequest } from '../types/common.js';
 
-/** A JSON-serialisable form of `RawRequest` for committed fixtures. */
+/** JSON-serialisable `RawRequest` for committed fixtures. */
 export interface RecordedRequest {
   method: string;
   path: string;
   headers: Record<string, string | undefined>;
   query: Record<string, string | undefined>;
-  /** UTF-8 body text. */
   body: string;
   receivedAt: string;
 }
@@ -27,22 +26,15 @@ export function deserializeRequest(rec: RecordedRequest): RawRequest {
 }
 
 export interface ScrubOptions {
-  /** Secret values to replace wherever they appear in headers or body. */
+  /** Replaced wherever they appear in headers or body. */
   secrets: string[];
-  /** Header names removed outright (auth tokens, cookies). */
+  /** Removed outright (auth tokens, cookies). */
   dropHeaders?: string[];
   replacement?: string;
-  /**
-   * Recompute signature headers over the scrubbed body with a fixture secret, so the recorded
-   * delivery still verifies in tests: `(body) => ({ 'x-hub-signature-256': ... })`.
-   */
+  /** Recompute signature headers over the scrubbed body so the fixture still verifies. */
   resign?: (body: Buffer) => Record<string, string>;
 }
 
-/**
- * The fixture recorder: capture a real delivery with secrets scrubbed. Use it in a small script
- * that reads real requests (from the Events page's raw view or a proxy) and writes JSON fixtures.
- */
 export function scrubRequest(req: RawRequest, options: ScrubOptions): RecordedRequest {
   const replacement = options.replacement ?? '[scrubbed]';
   const drop = new Set(

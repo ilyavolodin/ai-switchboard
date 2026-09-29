@@ -3,10 +3,7 @@ import type { MeterGaugeDTO } from '@ai-switchboard/core/contract';
 import { formatDuration, formatRelative, toMs } from './format.js';
 import { meterFraction } from './gauge.js';
 
-/**
- * A compact label for the capacity strip and canvas nodes: "5-hour window" → "5 h",
- * "weekly window" → "7 d", "API rate limit" → "API", "daily runs" → "runs".
- */
+/** "5-hour window" → "5 h", "weekly window" → "7 d", "API rate limit" → "API". */
 export function shortMeterLabel(title: string): string {
   const t = title.toLowerCase();
   const hours = /(\d+)[\s-]*(hour|h)\b/.exec(t);
@@ -36,13 +33,12 @@ function formatNumber(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-/** The lowest event ceiling bound to the meter (the one that throttles event runs first). */
+/** The one that throttles event runs first. */
 export function lowestEventCeiling(m: Pick<MeterGaugeDTO, 'ceilings'>): number | null {
   if (m.ceilings.length === 0) return null;
   return Math.min(...m.ceilings.map((c) => c.events));
 }
 
-/** True when the meter's utilization is at or above its lowest event ceiling. */
 export function isAboveCeiling(
   m: Pick<MeterGaugeDTO, 'ceilings' | 'utilization' | 'used' | 'limit'>,
 ): boolean {
@@ -51,7 +47,7 @@ export function isAboveCeiling(
   return c != null && f != null && f * 100 >= c;
 }
 
-/** Primary meters, one per destination (falls back to each destination's first meter). */
+/** One per destination; falls back to each destination's first meter. */
 export function primaryMeters(meters: MeterGaugeDTO[]): MeterGaugeDTO[] {
   const byDestination = new Map<string, MeterGaugeDTO[]>();
   for (const m of meters) {
@@ -67,10 +63,7 @@ export function primaryMeters(meters: MeterGaugeDTO[]): MeterGaugeDTO[] {
   return out;
 }
 
-/**
- * The time words about a meter reading: `lastRead` ("last read 42 min ago", or "never read") and
- * `resets` ("resets in 2 h 10 m" while the reset is still ahead, else `null`).
- */
+/** `resets` is `null` once the reset has passed. */
 export function meterTimes(
   m: Pick<MeterGaugeDTO, 'observedAt' | 'resetsAt'>,
   nowMs: number,

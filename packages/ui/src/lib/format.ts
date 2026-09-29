@@ -1,13 +1,7 @@
-/**
- * Formatting helpers shared by every screen: relative and absolute times, compact durations,
- * counts. The copy follows the canvas: "2 h 10 m", "4 min ago", "48.2k".
- */
-
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** Parses an ISO string to epoch ms; `null` for missing or invalid values. */
 export function toMs(iso: string | null | undefined): number | null {
   if (iso == null) return null;
   const t = Date.parse(iso);
@@ -48,7 +42,7 @@ export function formatDuration(ms: number, compact = false): string {
   return sign + shown.map(([v, u]) => `${v}${sep}${u}`).join(sep);
 }
 
-/** Seconds as a duration ("9 m 12 s" for longer runs keeps seconds). */
+/** Like `formatDuration` but keeps seconds: "9 m 12 s". */
 export function formatSeconds(seconds: number): string {
   // Round once, up front, so 119.7 s reads "2 m" rather than "1 m 60 s".
   const total = Math.round(seconds);
@@ -70,12 +64,10 @@ const absoluteFormat = new Intl.DateTimeFormat(undefined, {
   timeZoneName: 'short',
 });
 
-/** Full absolute time, shown on hover next to every relative time. */
 export function formatAbsolute(ms: number): string {
   return absoluteFormat.format(new Date(ms));
 }
 
-/** "07:38" or "07:38:12" in the viewer's timezone. */
 export function formatClock(ms: number, seconds = false): string {
   return new Date(ms).toLocaleTimeString(undefined, {
     hour: '2-digit',
@@ -116,7 +108,7 @@ function trim(v: number): string {
   return Math.abs(v) >= 100 ? String(Math.round(v)) : v.toFixed(1).replace(/\.0$/, '');
 }
 
-/** Value with its unit as destinations declare it: tokens, seconds, usd, count. */
+/** Units as destinations declare them: tokens, seconds, usd, count. */
 export function formatUsage(value: number, unit: string): string {
   switch (unit) {
     case 'usd':

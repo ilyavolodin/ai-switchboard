@@ -4,14 +4,12 @@ import { cx } from '../lib/cx.js';
 import styles from './Banner.module.css';
 import { Icon, type IconName } from './Icon.js';
 
-/** Banner tones: error (red, breaker open), warn (amber, plugin unavailable), info, neutral. */
 export type BannerTone = 'error' | 'warn' | 'info' | 'neutral';
 
 export interface BannerProps {
   tone: BannerTone;
   title?: ReactNode;
   children?: ReactNode;
-  /** Right-aligned actions (Reset breaker, Open routine ↗). */
   actions?: ReactNode;
   icon?: IconName;
   size?: 'md' | 'lg';
@@ -25,11 +23,6 @@ const DEFAULT_ICON: Record<BannerTone, IconName> = {
   neutral: 'info',
 };
 
-/**
- * A full-width message strip. Errors and warnings are announced (`role="alert"` / `status`).
- * Use for: breaker open (see `BreakerBanner`), plugin unavailable (warn), OIDC not configured,
- * stats unavailable (neutral).
- */
 export function Banner({
   tone,
   title,

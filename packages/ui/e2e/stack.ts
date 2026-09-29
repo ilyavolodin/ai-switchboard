@@ -1,7 +1,3 @@
-/**
- * The real stack the e2e suite runs against: Postgres in Docker, the stub server and the built
- * core (serving the built UI), plus a tiny typed client for seeding and polling through the API.
- */
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -21,7 +17,6 @@ export const ADMIN_PASSWORD = 'e2e-admin-password';
 export const WEBHOOK_SECRET = 'e2e-webhook-secret';
 export const CALLBACK_SECRET = 'e2e-callback-secret-0123456789';
 
-/** What global setup hands the tests (through `process.env.E2E_STATE`). */
 export interface StackState {
   baseUrl: string;
   stubUrl: string;
@@ -50,7 +45,6 @@ export function freePort(): Promise<number> {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Poll `probe` until it returns a value other than undefined, or throw after `timeoutMs`. */
 export async function waitFor<T>(
   what: string,
   probe: () => Promise<T | undefined>,
@@ -99,7 +93,6 @@ async function stopProcess(child: ChildProcess | undefined): Promise<void> {
   if (!done) child.kill('SIGKILL');
 }
 
-/** The processes and containers global setup starts; `stop()` removes all of them. */
 export interface Stack {
   baseUrl: string;
   stubUrl: string;
@@ -205,7 +198,6 @@ export async function startStack(): Promise<Stack> {
   }
 }
 
-/** A JSON client for the API, authenticated with a bearer token or a session cookie. */
 export class Api {
   constructor(
     readonly baseUrl: string,
@@ -235,7 +227,6 @@ export class Api {
     return this.request<T>('POST', path, body);
   }
 
-  /** Sign in as the local admin and mint an admin API token. */
   static async signIn(baseUrl: string): Promise<Api> {
     const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: 'POST',
@@ -261,11 +252,7 @@ export class Api {
   }
 }
 
-/**
- * Ask the stub to sign and send one alert to a source's webhook; returns the alert id (the
- * event's artifact id). `route` becomes the event's `route` attribute, which the seeded
- * processes filter on.
- */
+/** Returns the alert id (the event's artifact id). The seeded processes filter on `route`. */
 export async function sendAlert(
   stubUrl: string,
   baseUrl: string,

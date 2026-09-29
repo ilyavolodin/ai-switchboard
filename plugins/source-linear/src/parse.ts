@@ -214,7 +214,6 @@ function commentEvents(body: Json, data: Json, fallback: string): Draft[] {
   ];
 }
 
-/** Map one Linear delivery to events. Pure: reads only the request. */
 export function parseDelivery(req: RawRequest, teamKeys: string[]): EventDraft[] {
   const body = parseJsonObject(req.body.toString('utf8'));
   const data = obj(body?.data);

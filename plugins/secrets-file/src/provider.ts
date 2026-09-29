@@ -13,7 +13,6 @@ import {
   type Settings,
 } from '@ai-switchboard/sdk';
 
-/** Settings of the `file` secret provider. */
 export interface FileSecretSettings {
   /** One file per secret: `secret://file/github-token` reads `<directory>/github-token`. */
   directory: string;
@@ -40,7 +39,7 @@ export const settingsSchema: JSONSchema = {
   },
 };
 
-/** The named secret does not exist or cannot be read. The message never carries a value. */
+/** Also thrown when the file cannot be read. The message never carries a value. */
 export class SecretNotFoundError extends Error {
   override readonly name = 'SecretNotFoundError';
 }
@@ -88,9 +87,8 @@ function createFileProvider(settings: FileSecretSettings, ctx: PluginContext): S
     },
 
     /**
-     * Names only: the regular, non-empty files in the directory, following symlinks (Kubernetes
-     * mounts each key as a symlink into `..data/`). Dotfiles, including `..data` itself, are
-     * skipped. `updatedAt` is the file's mtime. File contents are never read.
+     * Follows symlinks (Kubernetes mounts each key as a symlink into `..data/`) and skips dotfiles,
+     * including `..data`. File contents are never read.
      */
     async list(): Promise<SecretListing[]> {
       let entries: string[];

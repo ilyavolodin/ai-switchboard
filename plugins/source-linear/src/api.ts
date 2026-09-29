@@ -4,7 +4,6 @@ import { arr, obj, str, type Json } from './json.js';
 
 export const GRAPHQL_URL = 'https://api.linear.app/graphql';
 
-/** Thrown when Linear refuses a request or answers with GraphQL errors. */
 export class LinearApiError extends Error {
   override readonly name = 'LinearApiError';
   readonly notFound: boolean;
@@ -18,13 +17,11 @@ export class LinearApiError extends Error {
 const NOT_FOUND = /not found|could not find/i;
 
 export interface LinearApi {
-  /** Run a query or mutation and return `data`; throws `LinearApiError` on any error. */
+  /** Throws `LinearApiError` on any error, including GraphQL errors. */
   graphql(query: string, variables?: Record<string, unknown>): Promise<Json>;
 }
 
-/**
- * Personal API keys go in `Authorization` as-is; OAuth tokens already carry `Bearer`.
- */
+/** Personal API keys go in `Authorization` as-is; OAuth tokens already carry `Bearer`. */
 export function createApi(http: HttpClient, apiKey: string): LinearApi {
   return {
     async graphql(query, variables = {}) {

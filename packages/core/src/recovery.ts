@@ -9,7 +9,6 @@ import {
   type TemporaryPasswordResult,
 } from './services/recovery.js';
 
-/** What the CLI passes for a reset or a break-glass admin; the core adds the time. */
 export interface RecoveryRequest {
   email: string;
   password?: string;
@@ -17,11 +16,7 @@ export interface RecoveryRequest {
   reason: string;
 }
 
-/**
- * Account recovery against the server's database (`switchboard users list|reset-password|
- * create-admin`). Each call opens a small pool from `config.databaseUrl` and closes it, so the
- * CLI needs no running server and nobody signed in.
- */
+/** Each call opens and closes its own pool, so the CLI needs no running server and no sign-in. */
 export interface AccountRecovery {
   listUsers(config: CoreConfig): Promise<AccountSummary[]>;
   resetPassword(config: CoreConfig, request: RecoveryRequest): Promise<TemporaryPasswordResult>;
@@ -37,7 +32,6 @@ async function withDb<T>(config: CoreConfig, fn: (db: Db) => Promise<T>): Promis
   }
 }
 
-/** The recovery functions bound to a real database; `clock` is for tests. */
 export function accountRecovery(clock: Clock = systemClock): AccountRecovery {
   const input = (r: RecoveryRequest) => ({
     email: r.email,

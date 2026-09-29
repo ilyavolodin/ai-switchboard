@@ -3,10 +3,6 @@ import type { ProcessDetail } from '@ai-switchboard/core/contract';
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 
-/**
- * A 409 on save: nothing was saved because someone else saved first. Offers to load their
- * version (dropping the draft) or to keep the draft and save over it with the new version.
- */
 export function ConflictBanner({
   baseVersion,
   stored,
@@ -14,7 +10,6 @@ export function ConflictBanner({
   onKeepMine,
 }: {
   baseVersion: number;
-  /** The process as stored now, once re-fetched. */
   stored: ProcessDetail | undefined;
   onLoadStored: (stored: ProcessDetail) => void;
   onKeepMine: (stored: ProcessDetail) => void;

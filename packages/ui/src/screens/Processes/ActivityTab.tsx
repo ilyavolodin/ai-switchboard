@@ -15,10 +15,6 @@ import { artifactLabel, traceHref } from '../../lib/artifact.js';
 import { runStatusTone } from '../../lib/tone.js';
 import styles from './ProcessDetail.module.css';
 
-/**
- * The process's trace list: every event that reached it, newest first, with a stage indicator
- * showing how far it got and a link to the artifact's full trace.
- */
 export function ActivityTab({ processId }: { processId: string }) {
   const activity = useProcessActivity(processId);
   const rows = activity.data?.pages.flatMap((p) => p.items) ?? [];

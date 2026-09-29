@@ -12,7 +12,7 @@ export interface AuditInput {
   at: Date;
 }
 
-/** Write one audit row. Call inside the same transaction as the change it records. */
+/** Call inside the same transaction as the change it records. */
 export async function recordAudit(db: DbOrTx, entry: AuditInput): Promise<void> {
   await db.insert(auditLog).values({
     actor: entry.actor,
@@ -26,10 +26,7 @@ export async function recordAudit(db: DbOrTx, entry: AuditInput): Promise<void> 
   });
 }
 
-/**
- * Audit a document change field by field: one row per top-level key whose JSON differs, so the
- * audit log reads "gates.approval: none → always".
- */
+/** One row per top-level key whose JSON differs. */
 export async function recordAuditDiff(
   db: DbOrTx,
   base: Omit<AuditInput, 'field' | 'before' | 'after'>,

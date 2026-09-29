@@ -9,7 +9,6 @@ import {
 import { useReducedMotion } from '../../hooks/useReducedMotion.js';
 import styles from './Board.module.css';
 
-/** What the board's edges carry (see `layout.ts`). */
 export interface BoardEdgeData extends Record<string, unknown> {
   width: number;
   dashed: boolean;
@@ -22,11 +21,6 @@ export interface BoardEdgeData extends Record<string, unknown> {
 
 export type BoardFlowEdge = Edge<BoardEdgeData, 'switchboard'>;
 
-/**
- * A trigger or binding edge: stroke width ∝ 24 h volume, dashed when quiet or disabled, an
- * animated tangerine dot when something flowed in the last minutes, and the event types as a
- * label when the edge is highlighted.
- */
 export function BoardEdge({
   id,
   sourceX,

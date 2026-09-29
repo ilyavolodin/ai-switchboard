@@ -1,4 +1,4 @@
-/* Instance cards on the Sources and Destinations lists (the canvas "cards, not rows"). */
+/* Shared by the Sources and Destinations lists. */
 .legendKeys {
   display: flex;
   gap: 14px;

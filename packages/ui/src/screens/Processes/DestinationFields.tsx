@@ -27,11 +27,6 @@ function asRecord(v: unknown): Record<string, unknown> {
     : {};
 }
 
-/**
- * The destination: pick an instance, fill the target form rendered from the type's `targetSchema`,
- * and write the input mapping with a live preview of the produced input — validated by the API
- * against the type's `inputSchema` — for a chosen recent batch.
- */
 export function DestinationFields({
   doc,
   baseline,

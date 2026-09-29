@@ -1,4 +1,3 @@
-/** Pure helpers for the destination screens: prompt copy, run-status series, estimated meters. */
 import type {
   DestinationSummary,
   MeterGaugeDTO,
@@ -12,15 +11,12 @@ import type { BarSeries } from '../../components/BarChart.js';
 import type { ReasonPromptOptions } from '../../hooks/reason.js';
 import { toMs } from '../../lib/format.js';
 
-/** The core reads meters every 300 s unless the destination's caps say otherwise (minimum 30 s). */
 export const DEFAULT_METER_POLL_SECONDS = 300;
 export const MIN_METER_POLL_SECONDS = 30;
 
-/** Without a cap or a type value, the core waits 300 s for `invoke` to answer (1–3600 s). */
 export const DEFAULT_INVOKE_TIMEOUT_SECONDS = 300;
 export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;
 
-/** One line under a type in the "Add destination" picker. */
 export function describeDestinationType(t: PluginTypeDTO): string {
   const meters = t.meters?.length ?? 0;
   return [
@@ -32,7 +28,6 @@ export function describeDestinationType(t: PluginTypeDTO): string {
     .join(' · ');
 }
 
-/** The reason prompt for enabling or disabling a destination, naming the effect. */
 export function enableDestinationPrompt(
   x: Pick<DestinationSummary, 'name' | 'processCount'>,
   enabled: boolean,
@@ -52,7 +47,6 @@ export function enableDestinationPrompt(
       };
 }
 
-/** Run statuses in legend order with their colours (the four-tone vocabulary). */
 export const RUN_STATUS_SERIES: { status: RunStatusValue; label: string; color: string }[] = [
   { status: 'ok', label: 'ok', color: 'var(--st-ok)' },
   { status: 'error', label: 'error', color: 'var(--st-err)' },
@@ -64,7 +58,6 @@ export const RUN_STATUS_SERIES: { status: RunStatusValue; label: string; color: 
   { status: 'invoking', label: 'invoking', color: 'var(--border-4)' },
 ];
 
-/** "Sep 27" day labels. */
 export function dayLabel(iso: string): string {
   return new Date(toMs(iso) ?? 0).toLocaleDateString(undefined, {
     month: 'short',
@@ -72,7 +65,6 @@ export function dayLabel(iso: string): string {
   });
 }
 
-/** Stacked series of runs per day by status, only statuses that occur. */
 export function runStatusSeries(usage: UsageHistoryResponse): BarSeries[] {
   return RUN_STATUS_SERIES.map((s) => ({
     id: s.status,
@@ -82,7 +74,7 @@ export function runStatusSeries(usage: UsageHistoryResponse): BarSeries[] {
   })).filter((s) => s.values.some((v) => v > 0));
 }
 
-/** Meters whose limit the core estimates from its own run counts (the person types the limit). */
+/** Meters whose limit the core estimates from its own run counts; the person types the limit. */
 export function estimatedMeters(
   specs: MeterSpec[],
   gauges: Pick<MeterGaugeDTO, 'meterId' | 'estimated'>[] = [],
@@ -92,7 +84,6 @@ export function estimatedMeters(
   );
 }
 
-/** Distinct processes that have run markers, for the band's highlight picker. */
 export function runProcesses(runs: { processId: string; processName: string }[]) {
   const seen = new Map<string, string>();
   for (const r of runs) seen.set(r.processId, r.processName);

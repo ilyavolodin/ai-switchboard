@@ -4,12 +4,11 @@ export interface SparklineProps {
   values: number[];
   width?: number;
   height?: number;
-  /** Accessible description; values are appended. */
+  /** Values are appended to it. */
   label?: string;
   color?: string;
 }
 
-/** A tiny line of values (runs per day over 7 days on process cards). */
 export function Sparkline({
   values,
   width = 72,
@@ -18,7 +17,7 @@ export function Sparkline({
   color = 'var(--primary)',
 }: SparklineProps) {
   const clean = values.map(chartValue);
-  // A lone value is drawn flat across the width (a one-point polyline is invisible).
+  // A one-point polyline is invisible, so a lone value is drawn flat across the width.
   const drawn = clean.length === 1 ? [clean[0] ?? 0, clean[0] ?? 0] : clean;
   const max = Math.max(1, ...drawn);
   const step = drawn.length > 1 ? width / (drawn.length - 1) : 0;

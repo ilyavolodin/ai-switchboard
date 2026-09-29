@@ -5,16 +5,13 @@ import styles from './EmptyState.module.css';
 
 export interface EmptyStateProps {
   title: ReactNode;
-  /** Teach the next step: what to do and why. */
   children?: ReactNode;
   actions?: ReactNode;
-  /** `ghost` draws a dashed source → process → destination sketch above the text. */
   illustration?: 'ghost' | 'none';
   compact?: boolean;
   className?: string;
 }
 
-/** An empty state that teaches the next step, with an optional ghost-node illustration. */
 export function EmptyState({
   title,
   children,

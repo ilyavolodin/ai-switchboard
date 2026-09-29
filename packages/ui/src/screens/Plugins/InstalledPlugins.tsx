@@ -15,11 +15,6 @@ function instanceCount(p: PluginSummary): number {
   return p.types.reduce((s, t) => s + t.instanceCount, 0);
 }
 
-/**
- * The Installed tab: every plugin with its version, origin, contributed types (with instance
- * counts), declared capabilities, and health (status, errors and invalid events the core
- * attributed to it in 24 h, pending restart). Admins can remove plugins they installed.
- */
 export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
   const remove = useReasonedMutation(
     useRemovePlugin(),

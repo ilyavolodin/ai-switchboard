@@ -9,18 +9,15 @@ import styles from './forms.module.css';
 export interface SourceCapsFieldsProps {
   value: SourceCapsDTO;
   onChange: (next: SourceCapsDTO) => void;
-  /** The declared event types (the mute list ticks them). */
   eventTypes: EventTypeSpec[];
   mode: 'push' | 'pull' | 'both' | undefined;
-  /** The saved caps; changed fields get the tangerine dot. */
   baseline?: SourceCapsDTO;
   disabled?: boolean;
 }
 
 /**
- * The core's own caps for a source, beside the plugin's settings: hourly and daily event caps,
- * the poll interval (pull sources) and which declared event types are muted. Whether deliveries
- * are verified is the plugin's own setting (the webhook's Verification), not a cap.
+ * Whether deliveries are verified is the plugin's own setting (the webhook's Verification), not a
+ * cap.
  */
 export function SourceCapsFields({
   value,

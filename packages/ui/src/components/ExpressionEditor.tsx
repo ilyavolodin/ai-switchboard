@@ -18,46 +18,32 @@ import { Skeleton } from './Skeleton.js';
 import { SuggestionList } from './SuggestionList.js';
 import { Textarea } from './Textarea.js';
 
-/** One evaluated event row (from `POST /processes/preview/filter`). */
 export type EvaluationRow = FilterPreviewResponse['rows'][number];
 
-/** A snippet the helper can insert at the cursor. */
 export interface ExpressionInsertion {
   label: string;
-  /** Text to insert (defaults to `label`). */
+  /** Defaults to `label`. */
   insert?: string;
-  /** Tooltip: the attribute's type and description. */
   title?: string;
 }
 
 export interface ExpressionEditorProps {
   value: string;
   onChange: (next: string) => void;
-  /** Accessible name ("Filter expression"). */
   label: string;
   id?: string;
   describedBy?: string;
-  /** Live evaluation rows; omit to hide the panel (e.g. input mappings). */
+  /** Omit to hide the evaluation panel. */
   rows?: EvaluationRow[];
-  /** The preview is loading. */
   evaluating?: boolean;
-  /** The preview request itself failed. */
   previewError?: string | null;
-  /** Declared attributes and helpers, inserted at the cursor. */
   insertions?: ExpressionInsertion[];
-  /** How a row is summarised (default: its attributes). */
   summarize?: (row: EvaluationRow) => ReactNode;
-  /** Rows shown before "show all N" (default 6). */
+  /** Rows shown before "show all N". */
   visibleRows?: number;
   textareaRows?: number;
-  /** Describes the scope, e.g. "last 20 real events of these types". */
   scope?: string;
   disabled?: boolean;
-  /**
-   * What completion offers as you type (or on Ctrl+Space): the context variables this
-   * expression sees, declared attribute names, extra entries, and JSONata functions. The insert
-   * chips are offered too.
-   */
   completions?: CompletionSources;
 }
 
@@ -67,19 +53,13 @@ function defaultSummary(row: EvaluationRow): string {
     .join(' · ');
 }
 
-/** The insert chips as completions (chips that insert a fragment, like `"name": `, are not). */
+/** Chips that insert a fragment (like `"name": `) are not completions. */
 function chipCompletions(insertions: ExpressionInsertion[]): Suggestion[] {
   return insertions
     .filter((i) => i.insert === undefined)
     .map((i) => ({ value: i.label, hint: 'insert', ...(i.title ? { detail: i.title } : {}) }));
 }
 
-/**
- * A JSONata editor: a monospace textarea with completion (context variables, declared
- * attributes, functions; arrows move, Enter accepts, Escape closes, Ctrl+Space opens), insert
- * chips for declared attributes, and the live evaluation panel — one row per recent event, green
- * `true`, grey `false`, coral error — with a "14 true · 6 false · 0 errors" summary.
- */
 export function ExpressionEditor({
   value,
   onChange,
@@ -203,7 +183,6 @@ export function ExpressionEditor({
   );
 }
 
-/** The live evaluation: a true / false / error summary and one row per recent event. */
 function EvaluationPanel({
   rows,
   evaluating,

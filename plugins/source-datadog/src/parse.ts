@@ -73,7 +73,7 @@ const OPTIONAL: [attribute: string, key: string][] = [
   ['orgId', 'orgId'],
 ];
 
-/** Map one Datadog webhook delivery (the README's payload template) to events. Pure. */
+/** Maps one delivery of the README's payload template. Pure. */
 export function parseDelivery(req: RawRequest): EventDraft[] {
   const body = parseJsonObject(req.body.toString('utf8'));
   if (!body) return [];

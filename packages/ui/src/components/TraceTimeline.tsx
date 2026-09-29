@@ -15,15 +15,13 @@ export interface TraceTimelineProps {
   entries: TraceEntry[];
   /** The server's plain-text rendering for "Copy as text"; generated from entries if absent. */
   text?: string;
-  /** Hide the copy button. */
   hideCopy?: boolean;
-  /** Entries of these kinds start with their details open (filter, gate, budget on a trace). */
+  /** Entries of these kinds start with their details open. */
   expandKinds?: readonly TraceEntryKind[];
 }
 
 const TONE_WORD = { ok: 'passed', warn: 'stopped', error: 'failed', off: 'info' } as const;
 
-/** Plain-text version of a trace, one line per entry. */
 function toText(entries: TraceEntry[]): string {
   return entries
     .map((e) => {
@@ -33,11 +31,6 @@ function toText(entries: TraceEntry[]): string {
     .join('\n');
 }
 
-/**
- * One vertical timeline of every decision about an artifact: events joining, filter results,
- * batch open/close, gate and budget checks, invoke (external link), steps, tracking, terminal
- * state. A dot per entry in its tone; `data` expands as key/values; copyable as text.
- */
 export function TraceTimeline({ entries, text, hideCopy, expandKinds }: TraceTimelineProps) {
   const [open, setOpen] = useState<Set<number>>(
     () =>

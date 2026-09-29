@@ -81,7 +81,7 @@ function makeVerify(s: WebhookSettings): ((req: RawRequest) => VerifyResult) | u
   }
 }
 
-/** Compile the instance's mode. `raw` is the settings as given (before defaults), for the mode. */
+/** `raw` is the settings as given, before defaults. */
 function compileMapper(raw: Settings, s: WebhookSettings): Mapper {
   switch (mappingModeOf(raw)) {
     case 'quick':
@@ -134,7 +134,7 @@ function createWebhookSource(settings: Settings, ctx: PluginContext): Source {
   return source;
 }
 
-/** The instance's event types, compiled from its settings. Invalid settings yield none. */
+/** Invalid settings yield none. */
 export function instanceEventTypes(settings: Settings): EventTypeSpec[] {
   try {
     return compileMapper(settings, readSettings(settings)).eventTypes;

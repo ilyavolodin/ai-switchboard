@@ -19,7 +19,6 @@ export interface EditorDiagramProps {
   doc: ProcessDocument;
   sources: SourceSummary[];
   destination: DestinationSummary | undefined;
-  /** The saved process's id (for its ceiling marks); undefined while creating. */
   processId: string | undefined;
   status: StatusLabel | undefined;
 }
@@ -38,12 +37,6 @@ function Connector() {
   );
 }
 
-/**
- * The editor's persistent picture: the triggers' sources on the left (event types beneath,
- * dimmed when the trigger is off), the process in the middle with its batching, gate, budget and
- * sweep badges, and the bound destination on the right with this process's ceilings on its meters.
- * Redraws on every edit.
- */
 export function EditorDiagram({
   doc,
   sources,

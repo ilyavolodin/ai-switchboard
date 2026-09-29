@@ -29,10 +29,6 @@ import { DestinationOverview } from './DestinationOverview.js';
 import { DestinationRuns } from './DestinationRuns.js';
 import { DestinationSettings } from './DestinationSettings.js';
 
-/**
- * A destination: header (health, tracking, Read meters now, Reload, Enabled, soft hold)
- * and the Overview / Settings / Runs tabs.
- */
 export function DestinationDetail() {
   const { id, tab } = useParams();
   const destination = useDestination(id);

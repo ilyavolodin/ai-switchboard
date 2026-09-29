@@ -27,10 +27,8 @@ import type { TelemetryRuntime } from './telemetry/setup.js';
 
 export interface ServerOptions {
   telemetry?: TelemetryRuntime;
-  /** Serve the built UI (and the SPA fallback) from `config.uiDir`. */
   serveUi?: boolean;
   ready?: () => boolean;
-  /** A secret for signing short-lived cookies (OIDC flow). */
   cookieSecret?: string;
 }
 
@@ -43,7 +41,6 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/** Build the Fastify app: the API, the ingress surfaces, and the UI. */
 export async function buildServer(
   ctx: ApiContext,
   options: ServerOptions = {},
@@ -96,7 +93,6 @@ export async function buildServer(
   const uiIndex = join(ctx.config.uiDir, 'index.html');
   if (options.serveUi !== false && (await exists(uiIndex))) {
     await app.register(fastifyStatic, { root: ctx.config.uiDir, wildcard: false, index: false });
-    // The SPA owns every other path.
     app.setNotFoundHandler((req, reply) => {
       if (req.method !== 'GET' || req.url.startsWith('/api/')) {
         return reply.code(404).send({ error: 'not_found', message: 'Not found.' });

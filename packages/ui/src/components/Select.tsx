@@ -3,7 +3,6 @@ import type { Ref, SelectHTMLAttributes } from 'react';
 import { cx } from '../lib/cx.js';
 import styles from './controls.module.css';
 
-/** One option; `value` is always a string in the DOM. */
 export interface SelectOption {
   value: string;
   label: string;
@@ -12,7 +11,7 @@ export interface SelectOption {
 
 export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
   options: SelectOption[];
-  /** An empty first option ("Choose a source…"). */
+  /** Label of an empty first option. */
   placeholder?: string;
   size?: 'sm' | 'md';
   invalid?: boolean;
@@ -20,7 +19,6 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
   ref?: Ref<HTMLSelectElement>;
 }
 
-/** A native select styled as a Zest input. */
 export function Select({
   options,
   placeholder,

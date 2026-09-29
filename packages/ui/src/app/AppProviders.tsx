@@ -4,10 +4,7 @@ import type { ReactNode } from 'react';
 import { ReasonProvider } from '../components/ReasonProvider.js';
 import { ToastProvider } from '../components/ToastProvider.js';
 
-/**
- * Everything a screen needs above it except the router and the session: TanStack Query, toasts
- * and the reason prompt. Tests wrap components in this too (see `test/render.tsx`).
- */
+/** Everything above a screen except the router and the session; tests wrap components in it too. */
 export function AppProviders({ client, children }: { client: QueryClient; children: ReactNode }) {
   return (
     <QueryClientProvider client={client}>

@@ -20,13 +20,12 @@ export interface PluginSpec {
 
 export interface PluginDefinition extends Required<Omit<PluginSpec, 'description'>> {
   description?: string;
-  /** Marker the plugin host checks; the SDK major the plugin was built against. */
+  /** The SDK the plugin was built against; the plugin host checks the major. */
   readonly switchboardSdk: { major: number; version: string };
 }
 
 export type PluginKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
 
-/** Build a plugin's default export. */
 export function definePlugin(spec: PluginSpec): PluginDefinition {
   return Object.freeze({
     id: spec.id,
@@ -51,7 +50,6 @@ export function isPluginDefinition(value: unknown): value is PluginDefinition {
   );
 }
 
-/** The longest invoke timeout the core honours, in seconds (since SDK 1.3). */
 export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;
 
 const KEBAB = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
@@ -82,10 +80,7 @@ function checkFlatAttributes(errors: string[], where: string, schema: JSONSchema
   }
 }
 
-/**
- * Validate a plugin definition: unique kebab-case ids, well-formed schemas, flat event
- * attributes with conforming examples. Returns an empty array when the plugin is valid.
- */
+/** Returns an empty array when the plugin is valid. */
 export function validatePlugin(plugin: PluginDefinition): string[] {
   const errors: string[] = [];
   if (!KEBAB.test(plugin.id)) errors.push(`plugin id "${plugin.id}" must be kebab-case`);

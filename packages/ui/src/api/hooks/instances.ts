@@ -11,29 +11,24 @@ import { apiFetch } from '../client.js';
 import { qk } from '../keys.js';
 import { seg, useApiMutation } from '../mutation.js';
 
-/** The two routes that share the instance shape. */
 export type InstanceRoute = 'notifiers' | 'secret-providers';
 
-/** The query for GET /notifiers or /secret-providers (shared with `useSecretSuggestions`). */
 export const instancesQuery = (route: InstanceRoute) =>
   queryOptions({
     queryKey: qk.instances(route),
     queryFn: ({ signal }) => apiFetch<InstanceSummary[]>(`/${route}`, { signal }),
   });
 
-/** GET /notifiers or /secret-providers */
 export function useInstances(route: InstanceRoute) {
   return useQuery(instancesQuery(route));
 }
 
-/** GET /notifiers */
 export const useNotifiers = () => useInstances('notifiers');
-/** GET /secret-providers */
 export const useSecretProviders = () => useInstances('secret-providers');
 
 /**
- * What a mutation refreshes. A secret-provider change rebuilds the sources, destinations and
- * notifiers that reference it, so their lists (and the board) refresh too.
+ * A secret-provider change rebuilds the sources, destinations and notifiers that reference it, so
+ * their lists (and the board) refresh too.
  */
 function refreshed(route: InstanceRoute) {
   return route === 'secret-providers'
@@ -47,7 +42,6 @@ function refreshed(route: InstanceRoute) {
     : [qk.instances(route)];
 }
 
-/** POST /notifiers | /secret-providers */
 export function useCreateInstance(route: InstanceRoute) {
   return useApiMutation<CreateInstanceRequest, InstanceSummary>({
     method: 'POST',
@@ -56,7 +50,6 @@ export function useCreateInstance(route: InstanceRoute) {
   });
 }
 
-/** PUT /notifiers/:id | /secret-providers/:id */
 export function useUpdateInstance(route: InstanceRoute) {
   return useApiMutation<UpdateInstanceRequest & { id: string }, InstanceSummary>({
     method: 'PUT',
@@ -65,7 +58,6 @@ export function useUpdateInstance(route: InstanceRoute) {
   });
 }
 
-/** POST /:route/:id/enable */
 export function useEnableInstance(route: InstanceRoute) {
   return useApiMutation<EnableRequest & { id: string }, InstanceSummary>({
     method: 'POST',
@@ -74,7 +66,6 @@ export function useEnableInstance(route: InstanceRoute) {
   });
 }
 
-/** POST /:route/:id/reload */
 export function useReloadInstance(route: InstanceRoute) {
   return useApiMutation<Reasoned & { id: string }, InstanceSummary>({
     method: 'POST',
@@ -83,7 +74,6 @@ export function useReloadInstance(route: InstanceRoute) {
   });
 }
 
-/** DELETE /:route/:id */
 export function useDeleteInstance(route: InstanceRoute) {
   return useApiMutation<Reasoned & { id: string }, undefined>({
     method: 'DELETE',
@@ -92,7 +82,6 @@ export function useDeleteInstance(route: InstanceRoute) {
   });
 }
 
-/** POST /notifiers/:id/test — send a test notification. */
 export function useTestNotifier() {
   return useApiMutation<Reasoned & { id: string }, unknown>({
     method: 'POST',

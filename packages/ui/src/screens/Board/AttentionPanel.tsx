@@ -21,11 +21,6 @@ import { attentionHref } from './facts.js';
 
 type Run = (item: AttentionItem) => Promise<unknown>;
 
-/**
- * The Board's "Needs attention" panel: breakers, unhealthy instances, stale meters, silent
- * sources, pending approvals, unavailable plugins — each with its one-click action. Every action
- * that changes state asks for a reason first.
- */
 export function AttentionPanel({ items }: { items: AttentionItem[] }) {
   const navigate = useNavigate();
   const reset = useReasonedMutation(

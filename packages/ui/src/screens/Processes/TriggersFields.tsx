@@ -5,10 +5,7 @@ import { errorsUnder, newTrigger } from './editorModel.js';
 import type { SectionProps } from './EditorSections.js';
 import { TriggerEditor } from './TriggerEditor.js';
 
-/**
- * The Triggers section: one collapsible editor per trigger and Add trigger (a new one opens
- * itself). Which triggers are open is kept by the editor, so it survives collapsing the section.
- */
+/** Which triggers are open is kept by the editor, so it survives collapsing the section. */
 export function TriggersFields({
   doc,
   set,

@@ -54,7 +54,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # The plugin-host test loads plugins the way an install does: through the SDK's dist.
       - run: pnpm --filter @ai-switchboard/sdk build
-      # Docker is available on ubuntu runners; Testcontainers starts Postgres.
       - run: pnpm test:integration
 
   e2e:
@@ -74,9 +73,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm --filter @ai-switchboard/ui exec playwright install --with-deps chromium
-      # Global setup starts Postgres with `docker run`, the stub and the built core. The Board
-      # screenshot baselines are recorded on macOS only (packages/ui/README.md), so CI runs the
-      # `flows` project without its `visual` dependency.
+      # Board screenshot baselines are recorded on macOS only, so skip the `visual` dependency.
       - run: pnpm --filter @ai-switchboard/ui test:e2e:only --project=flows --no-deps
       - uses: actions/upload-artifact@v4
         if: failure()

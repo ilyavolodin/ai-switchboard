@@ -7,15 +7,14 @@ import { runs } from '../../db/schema.js';
 import type { BudgetCounters } from '../../pipeline/budget.js';
 
 /**
- * Rolling budget counters, computed from `runs` (never stored), so a corrected run corrects the
- * budget. A run counts from its reservation (`invoked_at`) unless it is a dry run, a `held`
- * (paused) run, or a run that failed before any invoke attempt (a before-step failure).
+ * Counters are computed from `runs`, never stored, so a corrected run corrects the budget. A run
+ * counts from its reservation (`invoked_at`) unless it is a dry run, `held`, or failed before any
+ * invoke attempt (a before-step failure).
  */
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
 
-/** The predicate for runs that count toward budgets. */
 export function countedRun(): SQL {
   return sql`(${runs.dryRun} = false AND ${runs.status} <> 'held' AND NOT (${runs.status} = 'failed' AND ${runs.attempts} = 0))`;
 }
@@ -60,7 +59,6 @@ async function usageLastDay(
   return out;
 }
 
-/** Counters for the budget stage: the process's and the destination's rolling windows. */
 export async function countersFor(
   db: DbOrTx,
   scope: { processId: string; destinationId: string; dimensions: readonly UsageDimension[] },
@@ -83,7 +81,6 @@ export async function countersFor(
   };
 }
 
-/** A destination's counted runs since `since` (estimated meters). */
 export async function destinationRunsSince(
   db: DbOrTx,
   destinationId: string,

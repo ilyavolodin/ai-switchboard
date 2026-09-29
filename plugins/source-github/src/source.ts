@@ -31,7 +31,6 @@ interface Numbered {
   number: number;
 }
 
-/** `acme/api#482` → its parts; `undefined` for anything else. */
 export function parseNumberedId(id: string): Numbered | undefined {
   const m = NUMBERED_ID.exec(id);
   if (!m) return undefined;

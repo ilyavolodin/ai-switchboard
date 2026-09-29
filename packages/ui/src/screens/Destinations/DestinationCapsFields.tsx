@@ -13,21 +13,13 @@ import {
 export interface DestinationCapsFieldsProps {
   value: DestinationCapsDTO;
   onChange: (next: DestinationCapsDTO) => void;
-  /** Declared usage dimensions; budgetable ones get a per-day cap with their unit. */
   usage: UsageDimension[];
-  /** Meters the core estimates from run counts (a limit to type in). */
   estimated: MeterSpec[];
-  /** Whether the type declares any meter (poll and staleness only matter then). */
   hasMeters: boolean;
   baseline?: DestinationCapsDTO;
   disabled?: boolean;
 }
 
-/**
- * The core's own caps for a destination: runs per hour and day, a per-day cap per budgetable usage
- * dimension (with its unit), how long to wait for `invoke` to answer, how often meters are read
- * and when a reading counts as stale, and the limits of estimated meters.
- */
 export function DestinationCapsFields({
   value,
   onChange,

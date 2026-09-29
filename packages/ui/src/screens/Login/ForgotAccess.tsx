@@ -7,11 +7,7 @@ export interface ForgotAccessProps {
   evaluationAdminEmail: string | null;
 }
 
-/**
- * How to get back in without email delivery: an admin resets the password in Settings › Users,
- * or whoever runs the server resets it with the CLI. Names no email except the evaluation
- * admin's, which the server sends only in evaluation mode.
- */
+/** Names no email except the evaluation admin's, which the server sends only in evaluation mode. */
 export function ForgotAccess({ id, evaluationAdminEmail }: ForgotAccessProps) {
   return (
     <section id={id} className={styles.forgotPanel} aria-label="Forgot password or email">

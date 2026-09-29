@@ -1,4 +1,3 @@
-/** Summaries of a `TraceResponse` for the trace screen's header and side panel. */
 import type {
   StageIndicator,
   StatusTone,
@@ -8,17 +7,14 @@ import type {
 
 import { isWhyEntry } from '../../lib/why.js';
 
-/** The entries whose details (expression + result, gate checks, meter readings) start open. */
 export const EXPANDED_KINDS: readonly TraceEntryKind[] = ['filter', 'gate', 'budget', 'approval'];
 
-/** Query forms the trace understands, for the not-found state. */
 export const QUERY_FORMS = [
   { example: 'LOL-1712', help: 'an artifact id as the system shows it' },
   { example: '#482', help: 'a GitHub pull request or issue number' },
   { example: 'linear.issue:LOL-1712', help: 'kind:id, when the same id exists in two systems' },
 ];
 
-/** How a process's part in the trace ended, for its chip. */
 export const TOUCH_WORD: Record<StatusTone, string> = {
   ok: 'run ok',
   warn: 'held or throttled',
@@ -34,7 +30,6 @@ export interface TraceSummary {
   errors: number;
 }
 
-/** Counts for the header: events, processes, runs, and how the runs ended. */
 export function summarizeTrace(entries: TraceEntry[]): TraceSummary {
   const events = new Set<string>();
   const runs = new Set<string>();
@@ -94,7 +89,6 @@ const REACHED: Partial<Record<TraceEntryKind, 1 | 2 | 3 | 4 | 5>> = {
 
 const STOPS = [0, 1, 2, 3, 4, 5] as const;
 
-/** "Where it stands": the furthest stop reached, in the tone of the latest entry. */
 export function traceStage(entries: TraceEntry[]): StageIndicator {
   let reached: StageIndicator['reached'] = 0;
   for (const e of entries) {

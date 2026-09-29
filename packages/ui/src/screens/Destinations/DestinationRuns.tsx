@@ -13,7 +13,6 @@ import { Table, type TableColumn } from '../../components/Table.js';
 import { Time } from '../../components/Time.js';
 import { formatSeconds, formatUsage } from '../../lib/format.js';
 
-/** The destination's Runs tab: every run on it, newest first, with external links (new tab). */
 export function DestinationRuns({ destination }: { destination: DestinationDetail }) {
   const runs = useRuns({ destination: destination.id });
   const rows = runs.data?.pages.flatMap((p) => p.items) ?? [];

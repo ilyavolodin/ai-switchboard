@@ -19,7 +19,6 @@ function Expr({ value }: { value: string | undefined }) {
   );
 }
 
-/** A read-only rendering of the stored process document, section by section, with Edit. */
 export function DefinitionTab({ processId, doc }: { processId: string; doc: ProcessDocument }) {
   const sources = useSources();
   const destinations = useDestinations();

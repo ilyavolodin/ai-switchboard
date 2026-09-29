@@ -29,9 +29,8 @@ import { closeRun, markUncertain, recordUpdate, runHandle, scheduleTracking } fr
 import { runSteps, type RunRow } from './steps.js';
 
 /**
- * The destination bridge: one invoke attempt for a reserved run. The attempt is claimed with a
- * conditional update, so two replicas never invoke the same run; secret references in the input
- * are resolved immediately before the call and never stored.
+ * The attempt is claimed with a conditional update, so two replicas never invoke the same run.
+ * Secret references in the input are resolved immediately before the call and never stored.
  */
 
 function targetFor(
@@ -53,14 +52,12 @@ function isInvokeResult(value: unknown): value is InvokeResult {
   );
 }
 
-/** One invoke attempt, in a `switchboard.invoke` span (the plugin's invoke is its child). */
 export function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
   return ctx.telemetry.span('switchboard.invoke', { run_id: runId }, () =>
     attemptInvokeInSpan(ctx, runId),
   );
 }
 
-/** `pipeline.invoke` and the dispatch stage's first attempt. */
 async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
   const [pending] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
   if (pending?.status !== 'invoking' || pending.invokeStartedAt !== null) return;
@@ -120,9 +117,9 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
   const tracking = live.trackingFor(target);
   const idempotent = live.idempotentFor(target);
 
-  // `before` steps run under this attempt's claim, so recovery never invokes past a step that is
-  // still in flight. `runSteps` resumes from the step journal: a retried or recovered attempt
-  // skips settled steps, re-runs an in-doubt idempotent step, and fails on a non-idempotent one.
+  // Steps run under this attempt's claim, so recovery never invokes past a step still in flight.
+  // A retried attempt skips settled steps, re-runs an in-doubt idempotent step, and fails on a
+  // non-idempotent one.
   if (proc.document.before.length > 0) {
     const [batch] = await ctx.db.select().from(batches).where(eq(batches.id, run.batchId));
     const events = batch ? await batchEvents(ctx.db, batch) : [];
@@ -142,7 +139,6 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
     }
   }
 
-  // Every secret value this attempt handles: the resolved input's and the instance's own.
   const secretValues: string[] = [...(live.secretValues ?? [])];
   let input: unknown;
   try {

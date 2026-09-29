@@ -8,20 +8,18 @@ import {
 import { bodyHash, draftFor, type Delivery, type Mapper } from './mapper.js';
 import { describeValue, readPath, scalarText } from './paths.js';
 
-/** Quick mode's settings. */
 export interface QuickSettings {
   quickEventType: string;
   artifactIdPath?: string;
   artifactVersionPath?: string;
 }
 
-/** `webhook.deploy.finished` → `webhook.deploy`, the artifact kind quick mode uses. */
 export function quickArtifactKind(type: string): string {
   const object = type.split('.')[1] ?? 'request';
   return `webhook.${object}`;
 }
 
-/** The one event type a quick-mode instance declares: any flat attribute is accepted. */
+/** Any flat attribute is accepted. */
 export function quickEventType(s: QuickSettings): EventTypeSpec {
   return {
     type: s.quickEventType,

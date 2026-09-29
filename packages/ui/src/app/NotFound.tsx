@@ -2,7 +2,6 @@ import { Card } from '../components/Card.js';
 import { EmptyState } from '../components/EmptyState.js';
 import { LinkButton } from '../components/LinkButton.js';
 
-/** Unknown paths inside the shell. */
 export function NotFound() {
   return (
     <Card>

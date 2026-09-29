@@ -233,7 +233,6 @@ describe('ProcessEditor', () => {
     await user.type(screen.getByRole('textbox', { name: /^Name/ }), 'Nightly digest');
     await user.click(screen.getByRole('button', { name: 'Create process' }));
     const dialog = await screen.findByRole('dialog');
-    // A new process starts enabled, and the prompt says so.
     expect(within(dialog).getByText(/created enabled/)).toBeInTheDocument();
     await user.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'new digest');
     await user.click(within(dialog).getByRole('button', { name: 'Create process' }));

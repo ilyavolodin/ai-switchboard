@@ -13,11 +13,10 @@ export interface DestinationNodeProps {
   dimmed?: boolean;
   highlighted?: boolean;
   describedBy?: string;
-  /** Draw only this process's ceilings on the arcs (the editor). */
+  /** Draw only this process's ceilings on the arcs. */
   processId?: string;
 }
 
-/** A destination on the canvas: name, type and its meters as small arcs. */
 export function DestinationNode({
   destination,
   href,

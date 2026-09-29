@@ -7,30 +7,27 @@ import {
   type UsageDimension,
 } from '@ai-switchboard/sdk';
 
-/** Where the seat's usage windows are read from (all optional: without a refresh token, no meters). */
+/** All optional: without a refresh token there are no meters. */
 export interface RoutinesUsageSettings {
   oauthRefreshToken?: string;
   oauthClientId: string;
   oauthTokenUrl: string;
   usageUrl: string;
-  /** Typed-in limit for the estimated `daily_runs` meter. */
   dailyRunLimit: number;
 }
 
-/** Instance settings of the `claude-routines` destination, after secrets are resolved. */
 export interface RoutinesSettings {
   apiBaseUrl: string;
   /** The routine's API trigger bearer token. */
   token: string;
   /** Sent as `anthropic-beta`. */
   betaHeader: string;
-  /** Shared secret the routine's completion step signs its callback with. */
   callbackSecret: string;
   usage: RoutinesUsageSettings;
 }
 
 export const DEFAULT_API_BASE_URL = 'https://api.anthropic.com';
-/** The dated beta the Routines trigger API is served under; configurable because it moves. */
+/** Configurable because the dated beta moves. */
 export const DEFAULT_BETA_HEADER = 'experimental-cc-routine-2026-04-01';
 export const DEFAULT_OAUTH_TOKEN_URL = 'https://console.anthropic.com/v1/oauth/token';
 export const DEFAULT_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
@@ -172,7 +169,6 @@ function meters(dailyRunLimit: number): MeterSpec[] {
 
 export const METERS = meters(DEFAULT_DAILY_RUN_LIMIT);
 
-/** The instance's meters: the daily-run estimate uses the instance's typed-in limit. */
 export function metersFor(settings: Settings): MeterSpec[] {
   const parsed = tryParse<RoutinesSettings>(settingsSchema, settings);
   return meters(parsed?.usage.dailyRunLimit ?? DEFAULT_DAILY_RUN_LIMIT);

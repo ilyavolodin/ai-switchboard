@@ -11,7 +11,6 @@ function port(value: string): string {
   return String(n);
 }
 
-/** `switchboard serve`: start the server (`node <@ai-switchboard/core>/dist/main.js`). */
 export function serveCommand(deps: CliDeps): Command {
   return new Command('serve')
     .description(

@@ -11,11 +11,7 @@ import { generatePassword, hashPassword } from './crypto.js';
 
 export const LOCAL_ADMIN_EMAIL = 'admin@switchboard.local';
 
-/**
- * Evaluation installs only: the bootstrap local admin's email when that account exists with a
- * password, for the sign-in page's "forgot" hint. Null outside evaluation mode, so a production
- * install never reveals an email to someone who is not signed in.
- */
+/** Null outside evaluation mode, so a production install never reveals an email to a stranger. */
 export async function evaluationAdminEmail(
   db: DbOrTx,
   config: Pick<CoreConfig, 'evaluation' | 'bootstrapAdmin'>,
@@ -30,13 +26,9 @@ export async function evaluationAdminEmail(
 }
 
 /**
- * First start: make sure there is a way in.
- *
- * - OIDC configured with `SWITCHBOARD_BOOTSTRAP_ADMIN`: create that admin with no password; they
- *   sign in through the issuer.
- * - Otherwise, when no account has a password yet (and, with OIDC, no admin exists), create a local
- *   admin. A generated password is printed once and must be changed at first sign-in; an explicit
- *   `SWITCHBOARD_ADMIN_PASSWORD` is used as given (automation and e2e rely on it).
+ * With OIDC and a named bootstrap admin, creates that admin with no password. Otherwise, when no
+ * account has a password (and, with OIDC, no admin exists), creates a local admin. An explicit
+ * `SWITCHBOARD_ADMIN_PASSWORD` is used as given and need not be changed (automation relies on it).
  */
 export async function bootstrapAdmin(
   db: Db,
@@ -70,7 +62,6 @@ export async function bootstrapAdmin(
     .limit(1);
   if (locals.length > 0) return { created: false };
   if (config.oidc) {
-    // OIDC without a named bootstrap admin: only step in when nobody could administer the install.
     const admins = await db
       .select({ id: users.id })
       .from(users)
@@ -99,8 +90,7 @@ export async function bootstrapAdmin(
     at: now,
   });
   if (generated) {
-    // Printed once, on the start that creates it; the first sign-in must replace it. Stdout only:
-    // never exported to an OpenTelemetry backend.
+    // Stdout only: never exported to an OpenTelemetry backend.
     logger.warn(
       { email, [LOCAL_ONLY]: true },
       `Local admin created: ${email} / temporary password: ${password} (shown once; you will be asked to change it at first sign-in)`,

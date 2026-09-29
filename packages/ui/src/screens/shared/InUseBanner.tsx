@@ -5,10 +5,8 @@ import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 
 export interface InUseBannerProps {
-  /** "Linear — acme" */
   name: string;
   kind: 'source' | 'destination' | 'notifier';
-  /** The processes the API's 409 named (`ApiError.usedBy`). */
   processes: { id: string; name: string }[];
   onDismiss: () => void;
 }
@@ -20,9 +18,8 @@ const WHAT_TO_DO: Record<InUseBannerProps['kind'], string> = {
 };
 
 /**
- * Why a delete was refused: the processes that still use the instance, each a link to its
- * editor, and what to change there. Removing the references is left to a person on purpose —
- * each edit changes what that process does (and a process cannot lose its destination).
+ * Removing the references is left to a person on purpose: each edit changes what that process does
+ * (and a process cannot lose its destination).
  */
 export function InUseBanner({ name, kind, processes, onDismiss }: InUseBannerProps) {
   const many = processes.length > 1;

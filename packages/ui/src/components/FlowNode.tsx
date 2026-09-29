@@ -12,7 +12,6 @@ import styles from './FlowNode.module.css';
 import { ProcessNode } from './ProcessNode.js';
 import { SourceNode } from './SourceNode.js';
 
-/** The data every canvas node carries. */
 export type FlowNodeData = (
   | { kind: 'source'; source: BoardSourceNode }
   | { kind: 'process'; process: BoardProcessNode }
@@ -20,21 +19,15 @@ export type FlowNodeData = (
 ) & {
   href: string;
   width: number;
-  /** The hover card's three key facts. */
   facts?: string[];
   dimmed?: boolean;
   highlighted?: boolean;
   onHover?: (id: string | null) => void;
 };
 
-/** A React Flow node of the board. */
 export type FlowNodeType = Node<FlowNodeData, 'switchboard'>;
 
-/**
- * The React Flow node type for the Board (register as `nodeTypes={{ switchboard: FlowNode }}`):
- * a `SourceNode`, `ProcessNode` or `DestinationNode` with invisible left/right handles, and a hover
- * card with the node's three key facts on hover or keyboard focus.
- */
+/** Register as `nodeTypes={{ switchboard: FlowNode }}`. */
 export function FlowNode({ id, data }: NodeProps<FlowNodeType>) {
   const [open, setOpen] = useState(false);
   const cardId = useId();

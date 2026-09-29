@@ -40,7 +40,6 @@ describe('deleting a process', () => {
       gates: { approval: "events.attributes.repository = 'acme/prod'" },
       batching: { groupBy: 'attributes.repository' },
     });
-    // One run that finished, one batch awaiting approval, one batch still open.
     await deliver(h, src.id, [
       { id: '1', version: 'a', repository: 'acme/dev' },
       { id: '2', version: 'a', repository: 'acme/prod' },

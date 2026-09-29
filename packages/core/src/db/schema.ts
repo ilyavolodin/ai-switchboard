@@ -38,10 +38,8 @@ const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' 
 const createdAt = () => ts('created_at').notNull().defaultNow();
 const id = () => uuid('id').primaryKey().defaultRandom();
 /**
- * An instance's build version: every write that changes what the plugin host builds the live
- * object from (name, settings, enabled) and every explicit reload increments it, so each replica
- * can tell which instances it must rebuild (`PluginHost.reconcile`). Caps and target defaults are
- * read from the row where they are used and do not need a rebuild.
+ * Incremented by every write to name, settings or enabled and by every explicit reload, so each
+ * replica can tell which instances it must rebuild. Caps and target defaults need no rebuild.
  */
 const configVersion = () => integer('config_version').notNull().default(1);
 
@@ -66,16 +64,9 @@ export interface DestinationCaps {
   meterStalenessMinutes?: number;
   /** Typed-in limits for estimated meters, keyed by meter id. */
   estimatedLimits?: Record<string, number>;
-  /**
-   * How long to wait for `invoke` to answer (1–3600 s); overrides the destination type's
-   * per-target and default timeouts.
-   */
+  /** 1–3600 s; overrides the destination type's per-target and default timeouts. */
   invokeTimeoutSeconds?: number;
 }
-
-// ------------------------------------------------------------------------------------------
-// Plugins
-// ------------------------------------------------------------------------------------------
 
 export const plugins = pgTable('plugins', {
   name: text('name').primaryKey(),
@@ -94,16 +85,14 @@ export const plugins = pgTable('plugins', {
   /** `baked` (image node_modules) or `installed` ($SWITCHBOARD_HOME/plugins). */
   origin: text('origin').notNull().default('baked'),
   /**
-   * Set when an admin installed the plugin through the API: the npm spec and exact version every
-   * replica converges on (installing it into its own $SWITCHBOARD_HOME). Null for baked plugins
-   * and for plugins added with the CLI.
+   * Set for installs through the API: the npm spec every replica converges on. Null for baked
+   * plugins and plugins added with the CLI.
    */
   installSpec: text('install_spec'),
   installVersion: text('install_version'),
   installedAt: ts('installed_at'),
   /**
-   * Tombstone set by `DELETE /plugins/:name`: every replica's sync pass removes the package from
-   * its own $SWITCHBOARD_HOME (when installed there before this time) and unregisters it. An API
+   * Tombstone set by `DELETE /plugins/:name`: every replica's sync pass removes its own copy. An API
    * re-install clears it.
    */
   removeRequestedAt: ts('remove_requested_at'),
@@ -120,20 +109,13 @@ export const pluginTypes = pgTable(
     kind: text('kind').$type<PluginKindColumn>().notNull(),
     typeId: text('type_id').notNull(),
     displayName: text('display_name').notNull(),
-    /**
-     * Serializable manifest: schemas, event types, actions, usage, meters, tracking. `json`, not
-     * `jsonb`: jsonb reorders object keys, and a settings form must keep the declared field order.
-     */
+    /** `json`, not `jsonb`: jsonb reorders object keys, and a settings form must keep field order. */
     manifest: json('manifest').$type<Record<string, unknown>>().notNull(),
     available: boolean('available').notNull().default(true),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.kind, t.typeId] })],
 );
-
-// ------------------------------------------------------------------------------------------
-// Instances
-// ------------------------------------------------------------------------------------------
 
 export const sources = pgTable('sources', {
   id: id(),
@@ -233,16 +215,11 @@ export const instanceState = pgTable(
   (t) => [primaryKey({ columns: [t.instanceId, t.key] })],
 );
 
-// ------------------------------------------------------------------------------------------
-// Processes
-// ------------------------------------------------------------------------------------------
-
 export const processes = pgTable('processes', {
   id: id(),
   name: text('name').notNull(),
   document: jsonb('document').$type<ProcessDocument>().notNull(),
   enabled: boolean('enabled').notNull().default(false),
-  /** `closed` | `open` */
   breakerState: text('breaker_state').$type<'closed' | 'open'>().notNull().default('closed'),
   breakerOpenedAt: ts('breaker_opened_at'),
   /** Runs finished before this are ignored by the breaker (set on reset by hand or cooldown). */
@@ -278,10 +255,6 @@ export const scheduleTicks = pgTable(
   },
   (t) => [primaryKey({ columns: [t.processId, t.scheduleId, t.tickAt] })],
 );
-
-// ------------------------------------------------------------------------------------------
-// Pipeline records
-// ------------------------------------------------------------------------------------------
 
 export const events = pgTable(
   'events',
@@ -356,7 +329,6 @@ export const batches = pgTable(
     scheduleId: text('schedule_id'),
     /** When a sweep merged an open event batch into its run. */
     mergedInto: uuid('merged_into'),
-    /** Manual runs: requested dry run. */
     dryRun: boolean('dry_run').notNull().default(false),
     requestedBy: text('requested_by'),
     /** Manual test runs: the batch whose events this run replays. */
@@ -378,9 +350,8 @@ export const batches = pgTable(
 );
 
 /**
- * One trigger filter evaluation, stored on the event for the trace ("why did nothing happen").
  * A trigger on the event's source that was never evaluated is recorded too, with `skip` naming
- * why (process disabled, trigger disabled, event type not subscribed) and `result: false`.
+ * why and `result: false`.
  */
 export interface MatchDecisionRecord {
   processId: string;
@@ -454,10 +425,7 @@ export const runs = pgTable(
     pollCount: integer('poll_count').notNull().default(0),
     /** Set while an invoke attempt is in flight; cleared while a retry waits. */
     invokeStartedAt: ts('invoke_started_at'),
-    /**
-     * When the in-flight attempt is past its time (its steps' budget, the effective invoke
-     * timeout and a margin): before this, recovery leaves the attempt alone.
-     */
+    /** Before this (steps' budget + invoke timeout + a margin), recovery leaves the attempt alone. */
     invokeDeadlineAt: ts('invoke_deadline_at'),
     /** Earliest event occurredAt in the batch, for latency. */
     firstEventAt: ts('first_event_at'),
@@ -533,10 +501,6 @@ export const runUpdates = pgTable(
   (t) => [index('run_updates_run').on(t.runId, t.at)],
 );
 
-// ------------------------------------------------------------------------------------------
-// Users, auth, audit, settings, stats
-// ------------------------------------------------------------------------------------------
-
 export const users = pgTable('users', {
   id: id(),
   email: text('email').notNull().unique(),
@@ -565,10 +529,7 @@ export const sessions = pgTable(
   (t) => [index('sessions_user').on(t.userId)],
 );
 
-/**
- * Failed sign-in (and password confirmation) attempts, one row per failure and throttle key, so
- * every replica counts the same window (`auth/throttle.ts`). Pruned by the `auth.prune` job.
- */
+/** One row per failed attempt and throttle key, so every replica counts the same window. */
 export const loginAttempts = pgTable(
   'login_attempts',
   {
@@ -608,7 +569,6 @@ export const auditLog = pgTable(
   (t) => [index('audit_at').on(t.at.desc()), index('audit_target').on(t.scope, t.targetId)],
 );
 
-/** Global settings as one row per key. */
 export const settings = pgTable('settings', {
   key: text('key').primaryKey(),
   value: jsonb('value').notNull(),

@@ -13,10 +13,6 @@ import { cardTone } from '../../lib/instances.js';
 import styles from './instanceCard.module.css';
 import { enableSourcePrompt, hourlyTotals, modeLabel, typeSplit } from './sourceModel.js';
 
-/**
- * One source instance: type icon, name (links to the detail), enabled toggle, status with the
- * last-event age, a 24-bar histogram of events per hour and a bar of events by type.
- */
 export function SourceCard({ source }: { source: SourceSummary }) {
   const stats = useSourceStats(source.enabled ? source.id : undefined, '24h');
   const enable = useReasonedMutation(useEnableSource(), (v: { id: string; enabled: boolean }) =>

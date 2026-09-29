@@ -8,7 +8,6 @@ import { GITHUB_API, type GithubActionsSettings } from './settings.js';
 const TOKEN_MARGIN_MS = 5 * 60_000;
 const FRESH_MS = 30_000;
 
-/** The credentials could not be turned into a token. `status` is the GitHub status, if any. */
 export class GithubAuthError extends Error {
   override readonly name = 'GithubAuthError';
   readonly status: number | undefined;
@@ -47,7 +46,6 @@ export interface GithubAuth {
   invalidate(): void;
 }
 
-/** Token auth, or an App installation token cached in memory until shortly before expiry. */
 export function createAuth(settings: GithubActionsSettings, ctx: PluginContext): GithubAuth {
   if (settings.auth === 'token') {
     const token = settings.token ?? '';

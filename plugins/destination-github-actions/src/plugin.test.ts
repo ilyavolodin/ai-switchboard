@@ -41,7 +41,6 @@ type Routes = Partial<
   Record<'token' | 'dispatch' | 'list' | 'run' | 'timing' | 'jobs' | 'rateLimit', StubHandler>
 >;
 
-/** A fake GitHub REST API. */
 function github(routes: Routes = {}): StubHandler {
   const reply = (
     key: keyof Routes,

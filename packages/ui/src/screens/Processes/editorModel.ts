@@ -1,8 +1,3 @@
-/**
- * Pure helpers for the process editor: new documents and list items, the one-line summaries on
- * collapsed sections, the generated `describe` sentence, the batching coalescing model, and how
- * server validation details map back onto sections and fields.
- */
 import type {
   EventTypeSpec,
   Notification,
@@ -16,7 +11,6 @@ import { describeCron } from '../../lib/cron.js';
 import { formatCount, formatDays } from '../../lib/format.js';
 import { asSchema } from '../../lib/schema.js';
 
-/** The editor's sections, in reading order. */
 export const SECTIONS = [
   'triggers',
   'batching',
@@ -30,8 +24,8 @@ export const SECTIONS = [
 export type SectionId = (typeof SECTIONS)[number] | 'basics';
 
 /**
- * A blank document, like the core's `defaultProcessDocument` but enabled: a process made in the
- * editor is meant to run, and the Create reason prompt already says it starts enabled.
+ * Unlike the core's `defaultProcessDocument`, enabled: a process made in the editor is meant to
+ * run.
  */
 export function newProcessDocument(destinationInstanceId: string): ProcessDocument {
   return {
@@ -52,7 +46,6 @@ export function newProcessDocument(destinationInstanceId: string): ProcessDocume
   };
 }
 
-/** `t3` when t1 and t2 exist. */
 export function nextId(prefix: string, taken: string[]): string {
   let i = 1;
   while (taken.includes(`${prefix}${i}`)) i++;
@@ -93,7 +86,6 @@ export function newNotification(notifierId: string): Notification {
   return { notifierId, template: '"Process " & process.name & " " & run.status', on: ['error'] };
 }
 
-/** Declared attributes of the ticked event types: `[name, schema]`, de-duplicated. */
 export function declaredAttributes(
   specs: EventTypeSpec[],
   selected: string[],
@@ -115,10 +107,6 @@ export function declaredAttributes(
   return [...out.values()];
 }
 
-/**
- * A default `describe` sentence: "Linear: Issue labelled or Issue state changed where label is
- * autofix". Equality tests on attributes read as words; anything else is summarised.
- */
 export function defaultDescribe(
   sourceName: string,
   specs: EventTypeSpec[],
@@ -141,7 +129,6 @@ export function defaultDescribe(
   return text;
 }
 
-/** Events joining at `arrivals` (seconds): which batch each lands in, and when each closes. */
 export interface CoalescedBatch {
   events: number[];
   closesAt: number;
@@ -149,9 +136,8 @@ export interface CoalescedBatch {
 }
 
 /**
- * The batching model the editor animates: a batch opens on its first event, every join restarts
- * the debounce; it closes when the debounce elapses, on `maxSize`, or at `maxAgeSeconds` after
- * opening, whichever comes first.
+ * A batch opens on its first event and every join restarts the debounce; it closes when the
+ * debounce elapses, on `maxSize`, or `maxAgeSeconds` after opening, whichever comes first.
  */
 export function coalesce(
   arrivals: number[],
@@ -191,7 +177,6 @@ export function coalesce(
   return out;
 }
 
-/** "Linear issue.label_added, issue.state_changed" style summary of the triggers. */
 export function triggersSummary(doc: ProcessDocument, sourceName: (id: string) => string): string {
   if (doc.triggers.length === 0) return 'no triggers · sweeps only';
   const on = doc.triggers.filter((t) => t.enabled);
@@ -205,29 +190,25 @@ export function triggersSummary(doc: ProcessDocument, sourceName: (id: string) =
 type Batching = ProcessDocument['batching'];
 type Budgets = ProcessDocument['budgets'];
 
-/** What a new process batches with, and what switching batching back on restores by default. */
 export const BATCHING_DEFAULTS: Batching = { debounceSeconds: 30, maxSize: 20, maxAgeSeconds: 600 };
 
 /**
- * Batching off, as the document stores it: a batch closes on its first event (`maxSize: 1`, the
- * size rule), so every event is its own run at once. Debounce and max age are 0 so the document
- * reads the same way (`maxAgeSeconds: 0` is "no age cap", which a one-event batch never needs).
+ * `maxSize: 1` closes a batch on its first event. Debounce and max age are 0 so the document reads
+ * the same way (`maxAgeSeconds: 0` is "no age cap").
  */
 export const BATCHING_OFF: Batching = { debounceSeconds: 0, maxSize: 1, maxAgeSeconds: 0 };
 
 /**
- * Whether the process batches at all. Derived from the document, with no field of its own: at
- * `maxSize` 1 the batch closes on arrival whatever the debounce and age say, so that is exactly
- * "off" in the pipeline too.
+ * No field of its own: at `maxSize` 1 the batch closes on arrival whatever the debounce and age
+ * say, so that is exactly "off" in the pipeline too.
  */
 export function batchingOn(b: Batching): boolean {
   return b.maxSize > 1;
 }
 
 /**
- * The document with batching switched on or off. Off writes `BATCHING_OFF` (the group-by goes:
- * one-event batches have nothing to group). On restores `previous` when it batched, else the
- * defaults.
+ * Off drops the group-by (one-event batches have nothing to group). On restores `previous` when it
+ * batched, else the defaults.
  */
 export function withBatching(
   doc: ProcessDocument,
@@ -239,13 +220,9 @@ export function withBatching(
   return { ...doc, batching: { ...restored } };
 }
 
-/** What switching budgets on starts from when there is nothing to restore. */
 export const BUDGETS_DEFAULTS: Budgets = { runsPerDay: 20, meterCeilings: {} };
 
-/**
- * Whether the process limits its own runs: any runs-per-hour or per-day cap, usage cap or meter
- * ceiling. Derived from the document; "off" is `{ meterCeilings: {} }`.
- */
+/** Any run cap, usage cap or meter ceiling counts; "off" is `{ meterCeilings: {} }`. */
 export function budgetsOn(b: Budgets): boolean {
   return (
     b.runsPerHour != null ||
@@ -255,7 +232,6 @@ export function budgetsOn(b: Budgets): boolean {
   );
 }
 
-/** The document with its budgets switched on (restoring `previous`, else the defaults) or off. */
 export function withBudgets(
   doc: ProcessDocument,
   on: boolean,
@@ -335,7 +311,6 @@ export function notificationsSummary(
     .join(' · ');
 }
 
-/** An empty input means "no cap"; anything else is a non-negative number (or `NaN`). */
 export function parseCap(text: string): number | undefined {
   const t = text.trim().replace(/_/g, '');
   if (t === '') return undefined;
@@ -344,9 +319,7 @@ export function parseCap(text: string): number | undefined {
   return Number(t);
 }
 
-/** One validation message and where it belongs. */
 export interface PlacedError {
-  /** JSON pointer into the document, e.g. `/budgets/runsPerHour`, or `''`. */
   pointer: string;
   message: string;
   section: SectionId | null;
@@ -369,15 +342,10 @@ const SECTION_OF: Record<string, SectionId> = {
   notify: 'notifications',
 };
 
-/** The section a top-level document key is edited in. */
 export function sectionForKey(key: string | number | undefined): SectionId | null {
   return typeof key === 'string' ? (SECTION_OF[key] ?? null) : null;
 }
 
-/**
- * Places API validation details ("/budgets/runsPerHour must be >= 0", "document/triggers/0: …")
- * on a section by the first pointer segment. Details without a pointer stay general.
- */
 export function placeErrors(details: string[]): PlacedError[] {
   return details.map((d) => {
     const m = /^(?:document)?(\/[^\s:]*)\s*:?\s*(.*)$/.exec(d.trim());
@@ -389,7 +357,6 @@ export function placeErrors(details: string[]): PlacedError[] {
   });
 }
 
-/** Client-side checks the API would also reject, keyed by pointer. */
 export function checkDocument(doc: ProcessDocument): Record<string, string> {
   const out: Record<string, string> = {};
   if (!doc.name.trim()) out['/name'] = 'A process needs a name';
@@ -405,17 +372,13 @@ export function checkDocument(doc: ProcessDocument): Record<string, string> {
   return out;
 }
 
-/** Client checks and placed server details, merged for the form. */
 export interface EditorErrors {
-  /** Pointer → message; a client check wins over a server detail on the same pointer. */
+  /** A client check wins over a server detail on the same pointer. */
   byPointer: Record<string, string>;
-  /** The messages each collapsible section lists in its header. */
   bySection: Partial<Record<SectionId, string[]>>;
-  /** Server details that belong to no section. */
   general: PlacedError[];
 }
 
-/** Merges the client checks and the server's placed details into what each part shows. */
 export function collectErrors(client: Record<string, string>, server: PlacedError[]): EditorErrors {
   const byPointer: Record<string, string> = { ...client };
   for (const e of server) if (e.pointer && !byPointer[e.pointer]) byPointer[e.pointer] = e.message;
@@ -431,7 +394,6 @@ export function collectErrors(client: Record<string, string>, server: PlacedErro
   return { byPointer, bySection, general: server.filter((e) => e.section == null) };
 }
 
-/** The errors under `prefix` (e.g. `/triggers/2`), with the prefix cut off. */
 export function errorsUnder(
   errors: Record<string, string>,
   prefix: string,
@@ -443,7 +405,6 @@ export function errorsUnder(
   );
 }
 
-/** The reason prompt's consequence sentence for Create / Save. */
 export function saveConsequence(opts: {
   isNew: boolean;
   enabled: boolean;

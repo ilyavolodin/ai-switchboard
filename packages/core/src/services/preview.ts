@@ -25,11 +25,10 @@ import { isUuid } from './pipeline/errors.js';
 import { batchEvents } from './pipeline/load.js';
 
 /**
- * Live previews for the process editor. They evaluate with the same engine, contexts and limits
- * as the pipeline, against real stored events, and change nothing.
+ * Previews evaluate with the same engine, contexts and limits as the pipeline, against real
+ * stored events, and change nothing.
  */
 
-/** The filter evaluated against the last `limit` (default 20) real events of those types. */
 export async function filterPreview(
   deps: Deps,
   req: FilterPreviewRequest,
@@ -72,7 +71,6 @@ export async function filterPreview(
   return { rows: out };
 }
 
-/** The input mapping evaluated over a recent batch (or an empty sweep) and validated. */
 export async function inputPreview(
   deps: Deps,
   req: InputPreviewRequest,
@@ -134,7 +132,6 @@ export async function inputPreview(
   };
 }
 
-/** Validate a cron, describe it and list the next three times from the core clock's now. */
 export function cronPreview(req: CronPreviewRequest, clock: Clock): CronPreviewResponse {
   return previewCron(req, clock.now());
 }

@@ -10,8 +10,8 @@ import { toEvent } from './context.js';
 export type BatchRow = typeof batches.$inferSelect;
 
 /**
- * The events a batch runs with: its own batched dispatches, those of event batches a sweep
- * merged, and, for a manual test run, the events of the batch it replays.
+ * Includes events of event batches a sweep merged and, for a manual test run, of the batch it
+ * replays.
  */
 export async function batchEvents(db: DbOrTx, batch: BatchRow): Promise<Event[]> {
   const roots = [batch.id, ...(batch.eventsFrom !== null ? [batch.eventsFrom] : [])];

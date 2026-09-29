@@ -15,11 +15,7 @@ import {
   type ProcessRow,
 } from './context.js';
 
-/**
- * Notifications: per-process notifications on a batch or run outcome (the process's `notify`
- * list, each rendered from its template), and system alerts to the installation's system
- * notifier, rate-limited per subject. Every send is logged in `notification_log` for the trace.
- */
+/** Every send is logged in `notification_log` for the trace. */
 
 export type NotifyOn = 'ok' | 'error' | 'held' | 'throttled';
 
@@ -29,7 +25,7 @@ export interface ProcessNotification {
   batchId: string;
   runId?: string | null;
   events: readonly Event[];
-  /** Extra context for the template: `run`, `batch`, `reason`. */
+  /** Template context: `run`, `batch`, `reason`. */
   context: Record<string, unknown>;
   url?: string | null;
 }
@@ -41,7 +37,6 @@ const SEVERITY: Record<NotifyOn, NotificationMessage['severity']> = {
   throttled: 'warning',
 };
 
-/** A process's notifications for one outcome, in a `switchboard.notify` span when any apply. */
 export function notifyProcess(ctx: Ctx, n: ProcessNotification): Promise<void> {
   if (!n.process.document.notify.some((x) => x.on.includes(n.on))) return Promise.resolve();
   return ctx.telemetry.span(
@@ -114,7 +109,6 @@ async function notifyProcessInSpan(ctx: Ctx, n: ProcessNotification): Promise<vo
   }
 }
 
-/** Send through a notifier instance, time-limited; the outcome as `notification_log` records it. */
 async function send(
   ctx: Ctx,
   notifierId: string,
@@ -138,10 +132,7 @@ export interface SystemAlert {
   rateLimitMinutes?: number;
 }
 
-/**
- * Send a system alert (breaker opened, plugin load failure, meter ceiling crossed, silent source,
- * failed callback verification) to `GlobalSettings.systemNotifierId`. Never throws.
- */
+/** Sends to `GlobalSettings.systemNotifierId`. Never throws. */
 export async function sendSystemAlert(ctx: Ctx, alert: SystemAlert): Promise<boolean> {
   try {
     const now = ctx.clock.now();

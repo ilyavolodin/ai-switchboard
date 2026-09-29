@@ -42,7 +42,6 @@ describe('SchemaForm', () => {
     expect(within(workspace).getByLabelText(/Team key/)).toBeInTheDocument();
     expect(within(credentials).getByRole('textbox', { name: /^API key/ })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Advanced' })).toBeInTheDocument();
-    // Descriptions become help text wired to the control.
     expect(screen.getByLabelText(/Team key/)).toHaveAccessibleDescription(/The Linear team/);
   });
 
@@ -152,7 +151,6 @@ describe('SchemaForm', () => {
     expect(screen.queryByText('Secret')).toBeNull();
     expect(screen.queryByLabelText(/Signature header/)).toBeNull();
     expect(screen.queryByLabelText(/Shared-secret header/)).toBeNull();
-    // Fields no branch names stay.
     expect(screen.getByLabelText(/^Mapping/)).toBeInTheDocument();
     expect(validateAgainstSchema(webhookSettingsSchema, { ...latest, mapping: 'x' })).toEqual({});
   });

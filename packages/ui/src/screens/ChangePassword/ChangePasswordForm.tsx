@@ -13,15 +13,10 @@ import { passwordError, passwordRules } from './passwordRules.js';
 
 export interface ChangePasswordFormProps {
   email: string;
-  /** Called with the refreshed session after the server accepted the new password. */
   onChanged: (me: MeResponse) => void;
   submitLabel?: string;
 }
 
-/**
- * Current password, new password and confirmation, with the password rules listed under the new
- * password as they are met. Sends `POST /auth/password`.
- */
 export function ChangePasswordForm({
   email,
   onChanged,

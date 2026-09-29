@@ -5,11 +5,6 @@ import { loginAttempts } from '../../src/db/schema.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD, createApiHarness, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
-/**
- * The sign-in throttle is counted in Postgres: two replicas (two servers over one database) see
- * each other's failures, per client address and per account.
- */
-
 let tdb: TestDatabase;
 let a: ApiHarness;
 let b: ApiHarness;
@@ -40,7 +35,6 @@ describe('sign-in throttle across replicas', () => {
       const res = await login(i % 2 === 0 ? a : b, ADMIN_EMAIL, 'wrong-guess', `10.0.1.${i}`);
       expect(res.statusCode, res.body).toBe(401);
     }
-    // Even the right password is refused while the account is locked, on either replica.
     for (const h of [a, b]) {
       const res = await login(h, ` ${ADMIN_EMAIL.toUpperCase()} `, ADMIN_PASSWORD, '10.0.1.99');
       expect(res.statusCode, res.body).toBe(429);
@@ -48,11 +42,9 @@ describe('sign-in throttle across replicas', () => {
       expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
       expect(Number(res.headers['retry-after'])).toBeLessThanOrEqual(300);
     }
-    // The table names no address in clear.
     const keys = (await tdb.db.select().from(loginAttempts)).map((r) => r.key);
     expect(keys.join(' ')).not.toContain(ADMIN_EMAIL);
 
-    // After the window the account signs in again, and success resets its counter.
     a.clock.advanceMinutes(6);
     b.clock.advanceMinutes(6);
     const ok = await login(a, ADMIN_EMAIL, ADMIN_PASSWORD, '10.0.1.99');
@@ -67,7 +59,6 @@ describe('sign-in throttle across replicas', () => {
     }
     const locked = await login(a, ADMIN_EMAIL, ADMIN_PASSWORD, ip);
     expect(locked.statusCode).toBe(429);
-    // Another address is not affected.
     const other = await login(b, ADMIN_EMAIL, ADMIN_PASSWORD, '10.0.2.2');
     expect(other.statusCode, other.body).toBe(200);
   });

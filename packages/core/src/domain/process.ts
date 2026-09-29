@@ -1,17 +1,16 @@
 import type { Expr, JSONSchema } from '@ai-switchboard/sdk';
 
-/** `HH:MM` 24-hour clock times in the process's (or installation's) timezone. */
+/** `HH:MM` 24-hour clock times. */
 export interface QuietWindow {
   start: string;
   end: string;
-  /** IANA timezone; defaults to the installation timezone. */
+  /** Defaults to the installation timezone. */
   timezone?: string;
-  /** ISO weekdays 1 (Mon) – 7 (Sun) the window applies to; all days when omitted. */
+  /** ISO weekdays 1 (Mon) – 7 (Sun); all days when omitted. */
   days?: number[];
 }
 
 export interface Trigger {
-  /** Stable id within the process, used by dispatches. */
   id: string;
   sourceId: string;
   eventTypes: string[];
@@ -43,9 +42,8 @@ export interface Notification {
 }
 
 export interface MeterCeiling {
-  /** Utilization % above which event-driven batches are throttled. */
+  /** Utilization % above which batches of that kind are throttled. */
   events: number;
-  /** Utilization % above which sweeps are throttled. */
   sweeps: number;
 }
 
@@ -54,7 +52,6 @@ export interface ProcessDocument {
   description: string;
   enabled: boolean;
   triggers: Trigger[];
-  /** Sweeps; may be the only way a process starts. */
   schedules: Schedule[];
   batching: { debounceSeconds: number; maxSize: number; maxAgeSeconds: number; groupBy?: Expr };
   gates: {
@@ -66,22 +63,19 @@ export interface ProcessDocument {
   budgets: {
     runsPerHour?: number;
     runsPerDay?: number;
-    /** Keyed by usage dimension id. */
+    /** Keyed by usage dimension id / meter id. */
     usagePerDay?: Record<string, number>;
-    /** Keyed by meter id. */
     meterCeilings: Record<string, MeterCeiling>;
   };
   destination: { instanceId: string; target: unknown };
-  /** JSONata over the batch context → the destination's inputSchema. */
   input: Expr;
   before: Step[];
   after: Step[];
   notify: Notification[];
-  /** When an open run becomes `unknown`. */
+  /** After this an open run becomes `unknown`. */
   trackingDeadlineMinutes: number;
 }
 
-/** The TDD's `Process`: the stored document plus its identity. */
 export interface Process extends ProcessDocument {
   id: string;
 }
@@ -117,7 +111,6 @@ const step: JSONSchema = {
   properties: { provider: { type: 'string' }, action: { type: 'string' }, args: expr, when: expr },
 };
 
-/** JSON Schema for a stored process document; the API validates every save against it. */
 export const processDocumentSchema: JSONSchema = {
   type: 'object',
   additionalProperties: false,

@@ -9,7 +9,6 @@ import {
   type Settings,
 } from '@ai-switchboard/sdk';
 
-/** Instance settings of the `slack` notifier, after secrets are resolved. */
 export interface SlackSettings {
   mode: 'webhook' | 'bot';
   webhookUrl?: string;
@@ -67,7 +66,6 @@ export const settingsSchema: JSONSchema = {
   ],
 };
 
-/** Slack refused a message. */
 export class SlackError extends Error {
   override readonly name = 'SlackError';
 }
@@ -94,7 +92,6 @@ const SEVERITY_WORD: Record<NotificationMessage['severity'], string> = {
 
 type Block = Record<string, unknown>;
 
-/** Block Kit layout: header, severity line, text, fields, and a link button. */
 export function buildMessage(message: NotificationMessage): { text: string; blocks: Block[] } {
   const severity = SEVERITY_WORD[message.severity];
   const blocks: Block[] = [

@@ -11,7 +11,6 @@ import type { SectionProps } from './EditorSections.js';
 import { newStep } from './editorModel.js';
 import styles from './ProcessEditor.module.css';
 
-/** A source or destination the process is bound to, whose actions steps may call. */
 export interface StepProvider {
   id: string;
   name: string;
@@ -134,10 +133,6 @@ function StepEditor({
   );
 }
 
-/**
- * Before and after steps: actions from the catalogue of the process's bound sources and its
- * destination, each with an argument expression and an optional condition.
- */
 export function StepsFields({
   doc,
   set,

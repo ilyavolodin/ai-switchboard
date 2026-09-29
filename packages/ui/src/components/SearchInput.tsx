@@ -5,16 +5,14 @@ import { Icon } from './Icon.js';
 import styles from './SearchInput.module.css';
 
 export interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
-  /** Accessible name (there is no visible label). */
+  /** Accessible name; there is no visible label. */
   label: string;
-  /** A keyboard hint shown inside the box (`/`). */
   shortcut?: string;
   mono?: boolean;
   ref?: Ref<HTMLInputElement>;
   className?: string;
 }
 
-/** A search box with a magnifier and an optional shortcut hint. */
 export function SearchInput({ label, shortcut, mono, className, ref, ...rest }: SearchInputProps) {
   return (
     <label className={cx(styles.box, className)}>

@@ -23,13 +23,7 @@ import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
 import { createApiHarness, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
-/**
- * Installing plugins at runtime: the host hot-loads a freshly installed package (no restart),
- * records it in Postgres, and every other replica converges on the record — at boot and on its
- * sync pass — by installing it into its own $SWITCHBOARD_HOME. npm is a fake that "installs" by
- * copying fixture package directories; the fixtures import the SDK's built dist, as a real
- * installed plugin would (needs `pnpm --filter @ai-switchboard/sdk build`).
- */
+// The fixtures import the SDK's built dist, as an installed plugin would: needs a built SDK.
 
 const sdkDir = join(dirname(fileURLToPath(import.meta.url)), '../../../sdk');
 
@@ -42,7 +36,6 @@ interface FixturePackage {
   dir: string;
 }
 
-/** A notifier plugin package whose entry is plain JS importing the SDK. */
 async function writeFixture(name: string, version: string, typeId: string): Promise<string> {
   const dir = join(root, 'fixtures', `${name.replace('/', '__')}-${version}`);
   await mkdir(dir, { recursive: true });
@@ -89,7 +82,6 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
 }
 
-/** A fake npm over a spec → package map: `install` copies the fixture, `uninstall` removes it. */
 function fakeNpm(registry: Record<string, FixturePackage>): RunNpm & { installs: string[] } {
   const installs: string[] = [];
   const run: RunNpm = async (args, cwd) => {
@@ -482,7 +474,6 @@ describe('removal reaches every replica', () => {
   let home2: string;
   let notifierId: string;
 
-  /** fakeNpm that also counts `npm uninstall` calls. */
   function countingNpm(): ReturnType<typeof fakeNpm> & { uninstalls: string[] } {
     const inner = fakeNpm(registry);
     const uninstalls: string[] = [];
@@ -528,7 +519,6 @@ describe('removal reaches every replica', () => {
     await removePlugin({ home: home1, name: BELL, runNpm: fakeNpm(registry) });
     await r1.forgetInstall(BELL);
     expect(r1.notifierType('bell')).toBeUndefined();
-    // r2 keeps serving it until its pass.
     expect(r2.notifierType('bell')).toBeDefined();
 
     await r2.syncInstalled();
@@ -544,10 +534,8 @@ describe('removal reaches every replica', () => {
       .where(and(eq(pluginTypes.kind, 'notifier'), eq(pluginTypes.typeId, 'bell')));
     expect(t?.available).toBe(false);
 
-    // Idempotent: another pass changes nothing.
     await r2.syncInstalled();
     expect(npm2.uninstalls).toEqual([BELL]);
-    // The CLI-only plugin is untouched.
     expect((await listInstalled(home2)).map((l) => l.name)).toContain(CLI);
   });
 

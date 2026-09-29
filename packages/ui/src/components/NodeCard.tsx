@@ -13,31 +13,21 @@ const BORDER: Record<StatusTone, string> = {
 };
 
 export interface NodeCardProps {
-  /** The border colour is the status tone. */
   tone: StatusTone;
   title: string;
-  /** Top-right text ("push", "callback", "disabled"). */
   meta?: ReactNode;
   children?: ReactNode;
   width?: number;
-  /** Navigates on click. */
   href?: string;
-  /** Accessible name when `href` is set (defaults to the title). */
+  /** Used when `href` is set; defaults to the title. */
   ariaLabel?: string;
-  /** A dashed placeholder (empty-state ghost nodes). */
   ghost?: boolean;
-  /** Faded when outside the focused neighbourhood. */
   dimmed?: boolean;
   highlighted?: boolean;
-  /** Id of a hover card describing the node. */
   describedBy?: string;
   className?: string;
 }
 
-/**
- * The canvas node shell shared by source, process and destination nodes (and the editor's diagram):
- * a card whose 2 px border is its status colour, a title row and a body row.
- */
 export function NodeCard({
   tone,
   title,

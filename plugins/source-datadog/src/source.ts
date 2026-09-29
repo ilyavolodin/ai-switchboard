@@ -23,7 +23,6 @@ import {
   type DatadogSettings,
 } from './settings.js';
 
-/** Thrown when an API call needs keys the instance was not given, or Datadog refuses. */
 export class DatadogApiError extends Error {
   override readonly name = 'DatadogApiError';
 }
@@ -127,5 +126,4 @@ export const datadogSource: SourceType = {
   create: createDatadogSource,
 };
 
-/** Every API host a Datadog instance may call, for the plugin's network capability. */
 export const API_HOSTS = SITES.map(apiHost);

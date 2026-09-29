@@ -147,7 +147,6 @@ async function recordInvocation(ctx: PluginContext, now: Date): Promise<number[]
   return recent;
 }
 
-/** The invoke timeout for a target: its simulated delay plus 10 s, at least 30 s. */
 export function invokeTimeoutFor(target: unknown): number {
   const delayMs =
     target !== null && typeof target === 'object'

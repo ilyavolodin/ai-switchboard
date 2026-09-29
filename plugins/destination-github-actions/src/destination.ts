@@ -51,7 +51,6 @@ import {
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
 /** Look this far back from the dispatch when listing runs, for clock skew between us and GitHub. */
 const CORRELATION_SKEW_MS = 2 * 60_000;
-/** Runs listed per page, and how many pages a correlation reads before giving up. */
 const CORRELATION_PAGE_SIZE = 50;
 const CORRELATION_MAX_PAGES = 5;
 
@@ -61,7 +60,6 @@ export interface PendingDispatch {
   repo: string;
   workflow: string;
   dispatchedAt: string;
-  /** Set once a later poll found the run. */
   runId?: number;
 }
 
@@ -100,7 +98,7 @@ function rateLimitedFor(res: HttpResponse, now: Date): number | undefined {
   return DEFAULT_RETRY_AFTER_SECONDS;
 }
 
-/** Map a refused dispatch; rate limits are returned, everything else throws. */
+/** Rate limits are returned; everything else throws. */
 export function refusal(res: HttpResponse, now: Date): InvokeResult {
   const retryAfterSeconds = rateLimitedFor(res, now);
   const message = `GitHub answered ${res.status} to the dispatch: ${messageOf(res)}`;
@@ -154,7 +152,7 @@ function createGithubActionsDestination(
     }
   }
 
-  /** Find the dispatched run by the run id in its name. Never throws. */
+  /** Never throws. */
   async function correlate(
     owner: string,
     repo: string,
@@ -297,7 +295,6 @@ function createGithubActionsDestination(
     if (ref === 'missing') {
       return { state: 'unknown', errors: ['No workflow run is known for this run'] };
     }
-    // Dispatched but not listed yet.
     if (!ref) return { state: 'running' };
     const res = await api({
       method: 'GET',
@@ -370,7 +367,6 @@ function createGithubActionsDestination(
   return { invoke, poll, readMeters, health };
 }
 
-/** Dispatches a `workflow_dispatch` workflow and polls its run. */
 export const githubActionsDestinationType: DestinationType = {
   id: 'github-actions',
   displayName: 'GitHub Actions',

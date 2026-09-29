@@ -6,18 +6,12 @@ import {
   type PluginNameKind,
 } from './naming.js';
 
-/**
- * Searching the npm registry for plugin packages (`GET /-/v1/search`). The registry is read
- * through an injected {@link RegistryFetch} so tests never reach the network.
- */
-
-/** The subset of `fetch` the registry search uses; the global `fetch` satisfies it. */
 export type RegistryFetch = (
   url: string,
   init?: { signal?: AbortSignal; headers?: Record<string, string> },
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
-/** The registry did not answer (offline install, proxy, outage); `message` is for the admin. */
+/** `message` is shown to the admin. */
 export class RegistryUnavailableError extends Error {
   override readonly name = 'RegistryUnavailableError';
 }
@@ -26,7 +20,6 @@ export function isRegistryUnavailableError(err: unknown): err is RegistryUnavail
   return err instanceof Error && err.name === 'RegistryUnavailableError';
 }
 
-/** One package the registry returned, normalized. */
 export interface RegistryPackage {
   name: string;
   kind: PluginNameKind;
@@ -39,12 +32,10 @@ export interface RegistryPackage {
 }
 
 export interface SearchRegistryOptions {
-  /** Base URL of the registry, e.g. `https://registry.npmjs.org`. */
   registry: string;
   kind?: PluginNameKind;
-  /** Free text the person typed (may be empty). */
   q?: string;
-  /** Results per registry query (npm caps it at 250). */
+  /** Per registry query; npm caps it at 250. */
   size?: number;
   fetch?: RegistryFetch;
   timeoutMs?: number;
@@ -58,7 +49,6 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
-/** The two registry queries whose union is the result: the name prefix and the keyword. */
 export function searchTexts(kind: PluginNameKind | undefined, q: string): string[] {
   const words = q.trim();
   const prefix = kind ? `${PLUGIN_NAME_PREFIX}${kind}` : PLUGIN_NAME_PREFIX.replace(/-$/, '');
@@ -66,7 +56,6 @@ export function searchTexts(kind: PluginNameKind | undefined, q: string): string
   return [withQ(prefix), withQ(`keywords:${PLUGIN_KEYWORD}`)];
 }
 
-/** Reads one `objects[]` entry of a registry search response; `null` when it is unusable. */
 export function readSearchObject(value: unknown): Omit<RegistryPackage, 'kind'> | null {
   if (!isRecord(value) || !isRecord(value.package)) return null;
   const p = value.package;
@@ -91,10 +80,6 @@ export function readSearchObject(value: unknown): Omit<RegistryPackage, 'kind'> 
   };
 }
 
-/**
- * Keeps the packages that follow the naming convention (and name `kind` when given), without
- * duplicates, in the registry's order.
- */
 export function filterPluginPackages(
   responses: unknown[],
   kind: PluginNameKind | undefined,
@@ -114,11 +99,7 @@ export function filterPluginPackages(
 
 const defaultFetch: RegistryFetch = (url, init) => fetch(url, init);
 
-/**
- * Runs the prefix and keyword queries against the registry and returns their filtered union.
- * Throws {@link RegistryUnavailableError} when the registry cannot be reached or answers with an
- * error, so the API can say so instead of showing an empty list.
- */
+/** Throws rather than returning an empty list so the API can say the registry is unreachable. */
 export async function searchRegistry(options: SearchRegistryOptions): Promise<RegistryPackage[]> {
   const base = options.registry.replace(/\/+$/, '');
   const size = Math.min(Math.max(options.size ?? 50, 1), 250);

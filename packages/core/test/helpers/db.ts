@@ -7,14 +7,10 @@ import { connect, runMigrations, type Database } from '../../src/db/client.js';
 
 export interface TestDatabase extends Database {
   url: string;
-  /** Drop the per-file database. */
   destroy(): Promise<void>;
 }
 
-/**
- * A fresh, migrated database for one test file. `migrate: false` leaves it empty, for a test that
- * applies migrations itself (e.g. an upgrade from an earlier schema).
- */
+/** `migrate: false` leaves it empty, for a test that applies migrations itself. */
 export async function createTestDatabase(
   options: { migrate?: boolean } = {},
 ): Promise<TestDatabase> {

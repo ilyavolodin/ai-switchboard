@@ -8,11 +8,10 @@ import { TextField } from './TextField.js';
 export interface PathInputProps {
   id?: string;
   describedBy?: string;
-  /** Accessible name of the field (for the suggestion list's label). */
   label: string;
   value: string;
   onChange: (next: string) => void;
-  /** Paths to offer, e.g. `samplePaths(sample)`; empty = a plain text field. */
+  /** Empty = a plain text field. */
   paths: Suggestion[];
   placeholder?: string;
   invalid?: boolean;
@@ -20,10 +19,6 @@ export interface PathInputProps {
   disabled?: boolean;
 }
 
-/**
- * A dotted-path field (`body.issue.id`) that suggests the paths of a sample delivery with their
- * example values as you type: arrows move, Enter accepts, Escape closes.
- */
 export function PathInput({
   id,
   describedBy,

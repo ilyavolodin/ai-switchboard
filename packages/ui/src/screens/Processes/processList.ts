@@ -1,7 +1,3 @@
-/**
- * Pure helpers for the Processes list: status filter, search, sorting and the one-line
- * "Linear, Datadog → Claude Routines" flow summary on each card.
- */
 import type { ProcessSummary } from '@ai-switchboard/core/contract';
 
 import { toMs } from '../../lib/format.js';
@@ -13,7 +9,6 @@ export type ProcessSort = (typeof PROCESS_SORTS)[number];
 export const PROCESS_FILTERS = ['all', 'healthy', 'attention', 'off'] as const;
 export type ProcessFilter = (typeof PROCESS_FILTERS)[number];
 
-/** True when the process belongs in the status filter. */
 export function matchesFilter(p: ProcessSummary, filter: ProcessFilter): boolean {
   switch (filter) {
     case 'all':
@@ -27,7 +22,6 @@ export function matchesFilter(p: ProcessSummary, filter: ProcessFilter): boolean
   }
 }
 
-/** Case-insensitive match on the name, description, trigger sentences, sources and destination. */
 export function matchesQuery(p: ProcessSummary, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -42,14 +36,13 @@ export function matchesQuery(p: ProcessSummary, query: string): boolean {
   return haystack.includes(q);
 }
 
-/** Runs over the last 7 days (the sparkline's total). */
 export function weeklyRuns(p: ProcessSummary): number {
   return p.sparkline.reduce((a, b) => a + b, 0);
 }
 
 /**
- * Sorts a copy: `activity` = most runs in 7 days first (then most recent run), `status` = errors,
- * then attention, healthy, off, `name` = alphabetical.
+ * `activity`: most runs in 7 days first (then most recent run); `status`: errors, attention,
+ * healthy, off.
  */
 export function sortProcesses(list: ProcessSummary[], sort: ProcessSort): ProcessSummary[] {
   const byName = (a: ProcessSummary, b: ProcessSummary) => a.name.localeCompare(b.name);
@@ -69,12 +62,10 @@ export function sortProcesses(list: ProcessSummary[], sort: ProcessSort): Proces
   }
 }
 
-/** "GitHub — acme org" → "GitHub" (the instance's system, for compact lines). */
 export function shortInstanceName(name: string): string {
   return name.split(' — ')[0] ?? name;
 }
 
-/** "Linear, Datadog → Claude Routines", or "schedule only → …" when nothing triggers it. */
 export function flowLine(p: ProcessSummary): string {
   const sources = [...new Set(p.triggers.map((t) => shortInstanceName(t.sourceName)))];
   const from = sources.length > 0 ? sources.join(', ') : 'schedule only';
@@ -82,7 +73,6 @@ export function flowLine(p: ProcessSummary): string {
   return `${from} → ${to}`;
 }
 
-/** Counts per status filter, for the segmented control. */
 export function filterCounts(list: ProcessSummary[]): Record<ProcessFilter, number> {
   return {
     all: list.length,

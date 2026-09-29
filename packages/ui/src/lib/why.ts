@@ -11,7 +11,6 @@ export interface WhyItem {
   basis: 'recorded' | 'now';
 }
 
-/** The processes an event detail says did not take the event. */
 export function whyFromExplanations(list: readonly EventExplanation[]): WhyItem[] {
   return list
     .filter((x) => !x.taken)
@@ -24,12 +23,10 @@ export function whyFromExplanations(list: readonly EventExplanation[]): WhyItem[
     }));
 }
 
-/** A trace entry that explains a process not taking an event (or no process listening). */
 export function isWhyEntry(e: TraceEntry): boolean {
   return e.kind === 'filter' && (e.data?.taken === false || e.title.startsWith('Nothing ran:'));
 }
 
-/** The trace's "did not take it" entries, one per event and process. */
 export function whyFromTrace(entries: readonly TraceEntry[]): WhyItem[] {
   const seen = new Set<string>();
   const out: WhyItem[] = [];

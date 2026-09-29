@@ -1,4 +1,3 @@
-/** Pure helpers for the source screens: chart series from stats, enable-prompt copy. */
 import type {
   EventStage,
   SourceStatsResponse,
@@ -11,7 +10,6 @@ import type { ReasonPromptOptions } from '../../hooks/reason.js';
 import { formatClock, toMs } from '../../lib/format.js';
 import { seriesColor } from '../../lib/instances.js';
 
-/** Per-hour totals and throttled counts for the card's 24-bar histogram. */
 export function hourlyTotals(stats: SourceStatsResponse | undefined): {
   total: number;
   throttled: number;
@@ -22,7 +20,6 @@ export function hourlyTotals(stats: SourceStatsResponse | undefined): {
   }));
 }
 
-/** Stage colours: matched flows (mint), throttled/muted are amber, invalid coral, rest grey. */
 export const STAGE_SERIES: { stage: EventStage; label: string; color: string }[] = [
   { stage: 'matched', label: 'matched', color: 'var(--st-ok)' },
   { stage: 'unmatched', label: 'no process matched', color: 'var(--border-4)' },
@@ -39,7 +36,7 @@ interface Bucket {
   byStage: Partial<Record<EventStage, number>>;
 }
 
-/** Hourly buckets for 24 h; one bucket per day for 7 d and 30 d (hourly bars would be noise). */
+/** One bucket per day for 7 d and 30 d: hourly bars would be noise. */
 export function statBuckets(stats: SourceStatsResponse, window: StatsWindow): Bucket[] {
   if (window === '24h') {
     return stats.buckets.map((b) => ({
@@ -63,7 +60,6 @@ export function statBuckets(stats: SourceStatsResponse, window: StatsWindow): Bu
   return [...days.values()];
 }
 
-/** Bar series by event type, largest first. */
 export function typeSeries(buckets: Bucket[]): BarSeries[] {
   const totals = new Map<string, number>();
   for (const b of buckets) {
@@ -79,7 +75,6 @@ export function typeSeries(buckets: Bucket[]): BarSeries[] {
     }));
 }
 
-/** Bar series by pipeline stage, only the stages that occur. */
 export function stageSeries(buckets: Bucket[]): BarSeries[] {
   return STAGE_SERIES.map((s) => ({
     id: s.stage,
@@ -89,7 +84,6 @@ export function stageSeries(buckets: Bucket[]): BarSeries[] {
   })).filter((s) => s.values.some((v) => v > 0));
 }
 
-/** Total events per type over 24 h for a card, largest first. */
 export function typeSplit(source: Pick<SourceSummary, 'eventsByType24h'>) {
   const total = source.eventsByType24h.reduce((s, t) => s + t.count, 0);
   const parts = [...source.eventsByType24h]
@@ -98,7 +92,6 @@ export function typeSplit(source: Pick<SourceSummary, 'eventsByType24h'>) {
   return { total, parts };
 }
 
-/** The reason prompt for enabling or disabling a source, naming the effect. */
 export function enableSourcePrompt(
   source: Pick<SourceSummary, 'name' | 'processCount'>,
   enabled: boolean,
@@ -118,19 +111,16 @@ export function enableSourcePrompt(
       };
 }
 
-/** "push · webhook", "pull · every 5 min". */
 export function modeLabel(mode: SourceSummary['mode']): string {
   return mode === 'push' ? 'push · webhook' : mode === 'pull' ? 'pull · polls' : 'push and pull';
 }
 
-/** "24 h", "7 d", "30 d". */
 export const WINDOW_LABEL: Record<StatsWindow, string> = {
   '24h': '24 h',
   '7d': '7 d',
   '30d': '30 d',
 };
 
-/** The window picker's options. */
 export const WINDOW_OPTIONS: { value: StatsWindow; label: string }[] = [
   { value: '24h', label: '24 h' },
   { value: '7d', label: '7 d' },

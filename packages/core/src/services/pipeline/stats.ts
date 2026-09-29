@@ -6,9 +6,8 @@ import type { Deps } from '../../deps.js';
 import { countedRun } from './counters.js';
 
 /**
- * Hourly statistics materialised into `stats_hourly (dimension, key, hour, counters)` so the UI
- * renders from one small table. Recomputing an hour replaces its rows (idempotent), so the job
- * re-materialises a trailing window to pick up runs that closed later.
+ * Recomputing an hour replaces its rows, so the job re-materialises a trailing window to pick up
+ * runs that closed later.
  *
  * Dimensions and counter names:
  * - `source` (key: source id): `total`, `stage:<stage>`, `verify_failed`
@@ -73,7 +72,7 @@ const n = (v: unknown): number => (v === null || v === undefined ? Number.NaN : 
 const s = (v: unknown): string => (typeof v === 'string' ? v : String(v));
 const h = (v: unknown): Date => new Date(v as string);
 
-/** Materialise every hour in `[from, to)` (both floored to the hour). Returns rows written. */
+/** `[from, to)`, both floored to the hour. Returns rows written. */
 export async function materialiseStats(
   ctx: Pick<Deps, 'db'>,
   from: Date,

@@ -8,7 +8,6 @@ import { routes } from './routes.js';
 
 const router = createBrowserRouter(routes);
 
-/** The application root: providers + the data router. */
 export function App() {
   const [client] = useState(createQueryClient);
   return (

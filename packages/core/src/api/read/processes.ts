@@ -30,7 +30,6 @@ import { batchArtifacts, runSummaries } from './runs.js';
 
 type ProcessRow = typeof processes.$inferSelect;
 
-/** The next sweep across a process's enabled schedules, or null. */
 export function nextSweepAt(document: ProcessDocument, now: Date): Date | null {
   let best: Date | null = null;
   for (const s of document.schedules) {
@@ -79,7 +78,6 @@ export function dotsFrom(c: HourCounts): PipelineDots {
   };
 }
 
-/** Last-hour pipeline counts per process. */
 async function hourCounts(ctx: ApiContext, ids: string[]): Promise<Map<string, HourCounts>> {
   const since = new Date(ctx.clock.now().getTime() - 3_600_000);
   const out = new Map<string, HourCounts>(
@@ -266,7 +264,6 @@ export async function processDetail(ctx: ApiContext, id: string): Promise<Proces
   };
 }
 
-/** Whether a process row exists. */
 export async function processExists(ctx: ApiContext, id: string): Promise<boolean> {
   const rows = await ctx.db
     .select({ id: processes.id })
@@ -293,7 +290,7 @@ export async function processVersionList(
   return rows.map((r) => ({ ...r, savedAt: r.savedAt.toISOString() }));
 }
 
-/** One saved version with its document. `version` comes from the path: anything else is a 404. */
+/** `version` comes from the path: anything but a positive integer is a 404, not a 500. */
 export async function processVersion(
   ctx: ApiContext,
   processId: string,
@@ -315,7 +312,6 @@ export async function processVersion(
   };
 }
 
-/** A process's latest batches (events, sweeps and manual runs) with their artifacts. */
 export async function recentBatches(
   ctx: ApiContext,
   processId: string,

@@ -1,10 +1,5 @@
 # Datadog triage: a triggered monitor starts a GitHub Actions workflow, one run per service.
-#
-# Alerts from the same service within a two-minute window join one batch (`groupBy` the
-# service tag), so a flapping monitor or a noisy deploy starts one triage run, not twenty.
-#
-# Plugins: @ai-switchboard/source-datadog, destination-github-actions, secrets-env (all baked into
-# the image).
+# Alerts from one service within two minutes join one batch, so a flapping monitor starts one run.
 apiVersion: switchboard/v1
 kind: Configuration
 

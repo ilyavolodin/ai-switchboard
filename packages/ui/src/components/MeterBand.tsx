@@ -8,9 +8,8 @@ import styles from './MeterBand.module.css';
 export interface MeterBandProps {
   meters: MeterHistoryResponse['meters'];
   runs?: MeterHistoryResponse['runs'];
-  /** Highlight one process's run markers (others dim). */
   processId?: string;
-  /** Window start/end (epoch ms); defaults to the data's extent. */
+  /** Epoch ms; defaults to the data's extent. */
   from?: number;
   to?: number;
   ariaLabel?: string;
@@ -26,9 +25,8 @@ const DASH = [undefined, '4 3', '2 3', '6 3'];
 const yFor = (pct: number) => BOTTOM - (Math.min(100, chartValue(pct)) / 100) * (BOTTOM - TOP);
 
 /**
- * The band's points. A reading holds until the next one, so a lone reading is drawn flat to the
- * end of the extent (a one-point polyline would be invisible). Readings without a readable time
- * are skipped.
+ * A reading holds until the next one, so a lone reading is drawn flat to the end of the extent
+ * (a one-point polyline would be invisible).
  */
 function bandPoints(
   readings: MeterBandProps['meters'][number]['readings'],
@@ -45,12 +43,8 @@ function bandPoints(
   return points.map((p) => `${x(p.t).toFixed(1)},${yFor(p.u).toFixed(1)}`).join(' ');
 }
 
-/**
- * Meter history as bands over the window (0–100 %), the lowest event ceiling as a dashed line,
- * and one tick per run along the bottom so a person sees which process pushed a window.
- */
 export function MeterBand({ meters, runs = [], processId, from, to, ariaLabel }: MeterBandProps) {
-  // The extent covers runs too: runs usually land after the latest reading.
+  // Runs usually land after the latest reading, so the extent covers them too.
   const times = [
     ...meters.flatMap((m) => m.readings.map((r) => toMs(r.t))),
     ...runs.map((r) => toMs(r.t)),

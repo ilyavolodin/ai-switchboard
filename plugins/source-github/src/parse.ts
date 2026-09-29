@@ -25,7 +25,7 @@ const ISSUE_ACTIONS: Record<string, string> = {
   unlabeled: 'github.issue.unlabeled',
 };
 
-/** Whether `repo` (full name) passes the instance's allowlist (`api` or `acme/api` entries). */
+/** Allowlist entries are `api` or `acme/api`. */
 export function repoAllowed(repo: string, allowlist: string[]): boolean {
   if (allowlist.length === 0) return true;
   const full = repo.toLowerCase();
@@ -284,10 +284,7 @@ function pushEvent(body: Json, repo: string, sender: string, fallback: string): 
   ];
 }
 
-/**
- * Map one GitHub delivery to events. Pure: reads only the request. Unknown events and actions
- * (and `ping`) yield no events.
- */
+/** Unknown events and actions (and `ping`) yield no events. */
 export function parseDelivery(req: RawRequest, allowlist: string[]): EventDraft[] {
   const event = req.headers['x-github-event'];
   const deliveryId = req.headers['x-github-delivery'];

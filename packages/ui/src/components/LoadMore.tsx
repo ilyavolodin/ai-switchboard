@@ -4,14 +4,9 @@ export interface LoadMoreProps {
   hasMore: boolean;
   loading: boolean;
   onLoadMore: () => void;
-  /** "Load 50 more events". */
   label?: string;
 }
 
-/**
- * The pagination control for cursor lists (`Page<T>`): pair with an infinite query's
- * `hasNextPage` / `isFetchingNextPage` / `fetchNextPage`.
- */
 export function LoadMore({ hasMore, loading, onLoadMore, label = 'Load more' }: LoadMoreProps) {
   if (!hasMore) return null;
   return (

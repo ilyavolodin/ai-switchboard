@@ -11,8 +11,7 @@
 #
 # and watch: docker compose -f deploy/docker-compose.yml logs -f switchboard | grep "log destination"
 #
-# To try failures, edit the process target: outcome error (breaker), rate_limited (soft-hold),
-# held (paused), failed (definitive), or set delayMs to see a run in flight.
+# To try failures, set the target's outcome: error, rate_limited, held or failed (or delayMs).
 apiVersion: switchboard/v1
 kind: Configuration
 
@@ -23,8 +22,7 @@ sources:
     settings:
       # Evaluation only: anyone who knows the URL can send events.
       verification: none
-      # Quick mode: no mapping. Every delivery is one webhook.request.received event whose
-      # attributes are the body's top-level fields (nested objects flattened as parent_child).
+      # Quick mode: the body's top-level fields become attributes (nested ones as parent_child).
       mappingMode: quick
       artifactIdPath: body.id
 
@@ -34,7 +32,6 @@ destinations:
     enabled: true
     settings:
       level: info
-      # Adds an "Hourly runs" meter so ceilings can be tried out.
       hourlyLimit: 20
     caps:
       meterPollSeconds: 60

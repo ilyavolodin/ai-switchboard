@@ -19,11 +19,6 @@ import {
   type Harness,
 } from '../helpers/harness.js';
 
-/**
- * Every plugin call is attributed to its plugin when it throws or returns garbage, and bounded
- * by a time limit, so a broken plugin is counted on the Plugins page and never stalls a worker.
- */
-
 let tdb: TestDatabase;
 let h: Harness;
 
@@ -147,7 +142,6 @@ describe('breaker cooldown', () => {
     h.clock.advanceMinutes(31);
     const reopenedAt = h.clock.now();
     h.runtime.sources.get(src.id)!.source.resolve = async () => {
-      // Meanwhile: reset by hand, then fresh failures re-open it.
       await h.db
         .update(processes)
         .set({ breakerState: 'open', breakerOpenedAt: reopenedAt })

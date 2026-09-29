@@ -20,12 +20,6 @@ import {
   type Harness,
 } from '../helpers/harness.js';
 
-/**
- * The step journal: a phase resumes where the last attempt stopped instead of all-or-nothing,
- * a step in doubt is repeated only when its action is idempotent, and a run's notification is
- * claimed before it is sent so a redelivered job never sends it twice.
- */
-
 let tdb: TestDatabase;
 let h: Harness;
 
@@ -42,10 +36,7 @@ beforeEach(async () => {
 
 type Seeded = Awaited<ReturnType<typeof seedWith>>;
 
-/**
- * A run reserved by a replica that then died: `invoking`, with the given attempt state. With
- * `inFlight`, its attempt was claimed long ago and is past its invoke deadline.
- */
+/** A run reserved by a replica that then died. `inFlight`: its attempt is past its deadline. */
 async function reservedRun(s: Seeded, opts: { inFlight?: boolean } = {}): Promise<string> {
   const batchId = randomUUID();
   const now = h.clock.now();
@@ -144,7 +135,6 @@ describe('before steps resume from the journal', () => {
     const runId = await reservedRun(s);
     await journal(runId, 'before', 0, 'addLabel', 'ok', s.src.id);
     await recover();
-    // The first step is not repeated; the second runs; only then is the destination invoked.
     expect(s.src.state.actions).toEqual([{ action: 'comment', args: { text: 'started' } }]);
     expect(s.ex.state.invocations).toHaveLength(1);
     expect(await stepRows(runId)).toEqual([

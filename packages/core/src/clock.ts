@@ -1,11 +1,9 @@
-/** The core's time source. Every stage takes `now` from here so tests can control time. */
 export interface Clock {
   now(): Date;
 }
 
 export const systemClock: Clock = { now: () => new Date() };
 
-/** A manually advanced clock for tests. */
 export class FakeClock implements Clock {
   private current: number;
 

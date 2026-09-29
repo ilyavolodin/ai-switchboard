@@ -46,9 +46,8 @@ import { meterSnapshots } from './meters.js';
 import { notifyProcess } from './notify.js';
 
 /**
- * Stages 5–7 for one closed batch: gate, input mapping (validated before any budget is spent),
- * budget check and reservation in one transaction (the `invoking` run row is the reservation),
- * before steps, then the first invoke attempt.
+ * Gate, input mapping, then budget check and reservation in one transaction (the `invoking` run
+ * row is the reservation), then the first invoke attempt.
  */
 
 export interface DispatchResult {
@@ -69,11 +68,7 @@ async function existingRun(ctx: Ctx, batchId: string) {
   return run;
 }
 
-/**
- * `pipeline.dispatch` (and run now, approve): in a `switchboard.dispatch` span that links to the
- * ingest span of every event in the batch, with `switchboard.gate`, `switchboard.budget` and
- * `switchboard.invoke` children.
- */
+/** The dispatch span links to the ingest span of every event in the batch. */
 export function dispatchBatch(ctx: Ctx, batchId: string): Promise<DispatchResult> {
   return ctx.telemetry.span('switchboard.dispatch', { batch_id: batchId }, async (span) => {
     const out = await dispatchBatchInSpan(ctx, batchId, span);
@@ -82,7 +77,6 @@ export function dispatchBatch(ctx: Ctx, batchId: string): Promise<DispatchResult
   });
 }
 
-/** The stored ingest traceparents of `events`, for the dispatch span's links. */
 async function eventTraceContexts(ctx: Ctx, eventIds: string[]): Promise<(string | null)[]> {
   if (eventIds.length === 0) return [];
   const rows = await ctx.db
@@ -159,7 +153,6 @@ async function dispatchBatchInSpan(
     'switchboard.gate',
     { batch_id: batchId, process_id: proc.id },
     async (gateSpan) => {
-      // Approval: evaluated only when it can matter.
       const rule = doc.gates.approval;
       let required = rule === 'always';
       let approvalError: string | undefined;
@@ -427,10 +420,6 @@ async function dispatchBatchInSpan(
   return { batchId, runId, outcome: final?.status ?? 'invoking' };
 }
 
-/**
- * The budget stage for a batch inside the reservation transaction: reads the rolling counters
- * and meter snapshots, runs the pure check and returns it with its decision record.
- */
 async function checkBudget(
   tx: Tx,
   input: {
@@ -544,7 +533,6 @@ function emitBudgetGauges(ctx: Ctx, proc: ProcessRow, result: BudgetResult): voi
   }
 }
 
-/** Persist a held batch (and its approval request) and notify. */
 async function hold(
   ctx: Ctx,
   batch: BatchRow,

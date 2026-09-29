@@ -12,14 +12,13 @@ import { deadlineRun, finishRun, pollRun, recoverRuns } from './runs.js';
 import { schedulerTick } from './scheduler.js';
 
 /**
- * Dispatch and invoke jobs may call a plugin's invoke, which can legitimately run up to the
- * longest invoke timeout plus before steps. Expiring them sooner would make the queue redeliver
- * a live job (harmless, since the attempt is claimed, but noisy and misleading).
+ * An invoke can legitimately run up to the longest invoke timeout plus before steps; expiring
+ * sooner makes the queue redeliver a live job (harmless, since the attempt is claimed, but noisy).
  */
 const INVOKE_JOB_EXPIRE_SECONDS = MAX_INVOKE_TIMEOUT_SECONDS + 600;
 import { materialiseStats } from './stats.js';
 
-/** Queue handlers and schedules. Every handler takes ids and is idempotent. */
+/** Every handler takes ids and is idempotent. */
 
 function id(data: Record<string, unknown>, key: string): string | null {
   const v = data[key];

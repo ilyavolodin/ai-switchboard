@@ -54,7 +54,6 @@ describe('budget and meters', () => {
     expect(batches[1]).toMatchObject({ outcome: 'throttled', outcomeReason: 'soft_hold' });
     expect(ex.state.invocations).toHaveLength(1);
 
-    // After the hold expires the next batch runs.
     h.clock.advanceMinutes(11);
     await fireOne(src.id, '3');
     expect((await runsOf(h.db, pid)).map((r) => r.status)).toEqual(['failed', 'ok']);
@@ -190,7 +189,6 @@ describe('budget and meters', () => {
     );
     await h.drain();
     h.clock.advanceSeconds(31);
-    // Fire all five batches concurrently through five replicas.
     const replicas = await Promise.all([1, 2, 3, 4, 5].map(() => h.replica()));
     const open = await batchesOf(h.db, pid);
     await Promise.all(

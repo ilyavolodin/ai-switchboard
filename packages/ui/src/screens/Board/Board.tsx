@@ -35,7 +35,6 @@ import { COLUMNS, layoutBoard } from './layout.js';
 
 type ColumnLabelNode = Node<{ label: string }, 'column'>;
 
-/** A column heading drawn in the canvas so it pans and zooms with the nodes. */
 function ColumnLabel({ data }: NodeProps<ColumnLabelNode>) {
   return <span className={styles.columnLabel}>{data.label}</span>;
 }
@@ -68,12 +67,6 @@ const LEGEND_DOTS = {
   tones: ['ok', 'ok', 'warn', 'off', 'off'],
 } as const satisfies Parameters<typeof PipelineDots>[0]['dots'];
 
-/**
- * The Board: the system's picture. Sources → processes → destinations on a React Flow canvas
- * (edge width = 24 h volume, animated dots = live flow, border = status), a filter row (hide
- * disabled, focus one process), and the "Needs attention" panel with one-click actions.
- * Polls `GET /board` every 10 s.
- */
 export function Board() {
   const board = useBoard();
 

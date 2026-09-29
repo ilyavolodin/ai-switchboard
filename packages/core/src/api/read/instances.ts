@@ -36,7 +36,6 @@ export function secretRefsOf(
   }));
 }
 
-/** What the instance read models need of a process; callers that already hold them pass them in. */
 export interface ProcessRef {
   id: string;
   name: string;

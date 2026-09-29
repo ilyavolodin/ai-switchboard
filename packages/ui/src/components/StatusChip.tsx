@@ -6,20 +6,16 @@ import { toneVars } from '../lib/tone.js';
 import styles from './StatusChip.module.css';
 
 export interface StatusChipProps {
-  /** One of the four tones: ok (mint), warn (amber), error (coral), off (grey). */
   tone: StatusTone;
-  /** The word. Required: colour is never shown without one. */
+  /** Required: colour is never shown without a word. */
   label: string;
-  /** A count shown in mono before the label ("1 breaker open"). */
   count?: number;
-  /** `sm` (20 px) in tables and the top bar; `md` (22 px) in headers. */
   size?: 'sm' | 'md';
   className?: string;
-  /** Hover text; pass the full label when it may be clipped (the chip never outgrows its box). */
+  /** Pass the full label when it may be clipped (the chip never outgrows its box). */
   title?: string;
 }
 
-/** The status vocabulary: a tinted pill with a dot and a word. */
 export function StatusChip({ tone, label, count, size = 'md', className, title }: StatusChipProps) {
   const v = toneVars(tone);
   const style = { '--chip-bg': v.bg, '--chip-fg': v.fg, '--chip-dot': v.fill } as CSSProperties;

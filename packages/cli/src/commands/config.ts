@@ -13,7 +13,6 @@ interface ServerFlags {
   token?: string;
 }
 
-/** `--url` and `--token` on every command that talks to a running server. */
 export function serverFlags(cmd: Command): Command {
   return cmd
     .option('--url <url>', `server base URL (env SWITCHBOARD_URL, default ${DEFAULT_URL})`)
@@ -47,7 +46,6 @@ function isApplyResponse(value: unknown): value is ApplyResponse {
   );
 }
 
-/** `switchboard export [-o file]`. */
 export function exportCommand(deps: CliDeps): Command {
   return serverFlags(
     new Command('export')
@@ -69,10 +67,7 @@ export function exportCommand(deps: CliDeps): Command {
   );
 }
 
-/**
- * `switchboard apply -f file.yaml [--dry-run] [--reason "<text>"]`. The server decides whether a
- * reason is required (`requireReasons`, on by default) and answers 400 when one is missing.
- */
+/** The server decides whether a reason is required (`requireReasons`) and answers 400 without one. */
 export function applyCommand(deps: CliDeps): Command {
   return serverFlags(
     new Command('apply')

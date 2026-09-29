@@ -177,10 +177,6 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
   const operator = { preHandler: requireRole('operator') };
   const admin = { preHandler: requireRole('admin') };
 
-  /**
-   * Enable/disable, reload and delete work the same for every instance kind: check the row,
-   * change it, rebuild the live object, audit, answer with the kind's view.
-   */
   const registerLifecycle = (spec: {
     kind: InstanceKind;
     base: string;
@@ -189,11 +185,9 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     view: (id: string) => Promise<unknown>;
     /** Refuse a delete while processes use the instance; the hint ends the 409 message. */
     inUseHint?: string;
-    /** Runs before the rebuild on reload. */
     beforeReload?: (id: string) => Promise<void>;
-    /** Runs after the instance was rebuilt by an enable/disable or a reload. */
     afterRebuild?: (row: InstanceHead) => Promise<void>;
-    /** Runs before a delete; throws to refuse it (a 409 naming who still uses it). */
+    /** Throws to refuse the delete (a 409 naming who still uses it). */
     beforeDelete?: (row: InstanceHead) => Promise<void>;
   }): void => {
     const { kind, base, label, role } = spec;
@@ -281,15 +275,10 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     );
   };
 
-  // ------------------------------------------------------------------------------------------
-  // Sources
-  // ------------------------------------------------------------------------------------------
-
   /**
    * A push instance must verify deliveries. Only a type that allows it (the generic webhook) may
-   * build an instance without `verify` (its `verification: none`), and that instance is then
-   * unauthenticated: `caps.unauthenticated` is derived from the built instance, whatever the
-   * request said. Returns the caps to store.
+   * build one without `verify`, and `caps.unauthenticated` is derived from the built instance,
+   * whatever the request said.
    */
   const authenticationCaps = (
     id: string,
@@ -484,10 +473,6 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     },
   );
 
-  // ------------------------------------------------------------------------------------------
-  // Destinations
-  // ------------------------------------------------------------------------------------------
-
   registerLifecycle({
     kind: 'destination',
     base: '/api/v1/destinations',
@@ -622,10 +607,6 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
     },
   );
 
-  // ------------------------------------------------------------------------------------------
-  // Notifiers and secret providers
-  // ------------------------------------------------------------------------------------------
-
   for (const kind of ['notifier', 'secret_provider'] as const) {
     const table = kind === 'notifier' ? notifiers : secretProviders;
     const base = kind === 'notifier' ? '/api/v1/notifiers' : '/api/v1/secret-providers';
@@ -657,7 +638,6 @@ export function registerInstanceRoutes(app: FastifyInstance, ctx: ApiContext): v
       if (!row) throw notFound(kind === 'notifier' ? 'Notifier' : 'Secret provider');
       return row;
     };
-    /** The summary, with a secret provider's dependents as they are after any rebuild. */
     const view = async (row: typeof notifiers.$inferSelect): Promise<InstanceSummary> => {
       if (kind !== 'secret_provider') return summarize(row);
       const dependents = await providerDependents(ctx, [row.name]);

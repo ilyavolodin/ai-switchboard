@@ -24,7 +24,6 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
 
 const KEY = 'global';
 
-/** The installation's global settings, merged over defaults. */
 export async function getSettings(db: DbOrTx): Promise<GlobalSettings> {
   const rows = await db.select().from(settings).where(eq(settings.key, KEY));
   const stored = (rows[0]?.value ?? {}) as Partial<GlobalSettings>;

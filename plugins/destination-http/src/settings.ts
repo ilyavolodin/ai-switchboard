@@ -7,19 +7,15 @@ import {
   type UsageDimension,
 } from '@ai-switchboard/sdk';
 
-/** Instance settings of the `http` destination, after `secret://` references are resolved. */
 export interface HttpSettings {
   /** Relative target URLs are appended to it; default headers are pinned to its origin. */
   baseUrl?: string;
   /** Default request headers; `authorization` is a secret. */
   headers: Record<string, string>;
-  /** Shared secret the backend signs callbacks with. */
   callbackSecret?: string;
-  /** The usage dimensions this instance reports. */
   usageDimensions: UsageDimension[];
   /** URL returning `{ used, limit, resetsAt }`; declares the `endpoint` meter when set. */
   meterEndpoint?: string;
-  /** Unit of the `endpoint` meter's `used` and `limit`. */
   meterUnit: string;
 }
 
@@ -155,7 +151,6 @@ export const settingsSchema: JSONSchema = {
   },
 };
 
-/** Validate settings and apply defaults. Throws when they don't match the schema. */
 export function readSettings(settings: Settings): HttpSettings {
   const parsed = parseWith<HttpSettings>(settingsSchema, settings, 'http destination settings');
   const ids = new Set<string>();
@@ -166,7 +161,7 @@ export function readSettings(settings: Settings): HttpSettings {
   return parsed;
 }
 
-/** The usage dimensions an instance declares; falls back to the defaults on invalid settings. */
+/** Falls back to the defaults on invalid settings. */
 export function usageFor(settings: Settings): UsageDimension[] {
   return (
     tryParse<HttpSettings>(settingsSchema, settings)?.usageDimensions ?? DEFAULT_USAGE_DIMENSIONS
@@ -175,7 +170,6 @@ export function usageFor(settings: Settings): UsageDimension[] {
 
 export const ENDPOINT_METER_ID = 'endpoint';
 
-/** One `window` meter when a meter endpoint is configured, none otherwise. */
 export function metersFor(settings: Settings): MeterSpec[] {
   const parsed = tryParse<HttpSettings>(settingsSchema, settings);
   if (parsed?.meterEndpoint === undefined) return [];

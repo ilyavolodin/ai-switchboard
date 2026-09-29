@@ -1,18 +1,6 @@
-// AI Switchboard integration stub. Dependency-free Node (>= 22): run with `node server.js`.
-//
-// One HTTP server that plays every external system the integration and e2e suites need:
-//   (a) an `http` destination target        POST /exec, POST /exec/callback
-//   (b) a webhook sender                 POST /send, POST /burst
-//   (c) a fake Claude Routines API       POST /v1/claude_code/routines/:id/fire,
-//                                        GET /api/oauth/usage, POST /v1/oauth/token
-//   (e) an `http` destination meter         GET /meter ({ used, limit, resetsAt } for `meterEndpoint`)
-//   (d) a request recorder               GET /requests, DELETE /requests
-// plus GET /healthz and POST /stub/config (change the Routines behaviour at runtime).
-//
-// Environment: STUB_PORT (9090), STUB_CALLBACK_SECRET, STUB_ROUTINES_429=1 (always 429),
-// STUB_ROUTINES_429_EVERY=N (every Nth fire is a 429), STUB_RETRY_AFTER (seconds, 60),
-// STUB_FIVE_HOUR / STUB_SEVEN_DAY (utilization %, 42 / 17), STUB_METER_USED / STUB_METER_LIMIT
-// (the /meter reading, 30 of 100, resetting in two hours).
+// Dependency-free integration stub that plays every external system the integration and e2e
+// suites need: an `http` destination target and meter, a webhook sender, a fake Claude Routines
+// API and a request recorder. Must stay dependency-free: the image copies only this file.
 
 import { createHmac, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -20,7 +8,6 @@ import { pathToFileURL } from 'node:url';
 
 const MAX_RECORDED = 5000;
 
-/** `sha256=<hex>` HMAC-SHA256 of `body` with `secret`. */
 export function sign(secret, body) {
   return `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
 }
@@ -60,10 +47,7 @@ function send(res, status, body, headers = {}) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Build the stub. Options override the environment; `fetch` is injectable so tests can observe
- * outbound calls (callbacks, webhook sends) without a second server.
- */
+/** Options override the environment. */
 export function createStubServer(options = {}) {
   const env = options.env ?? process.env;
   const config = {
@@ -78,9 +62,7 @@ export function createStubServer(options = {}) {
   };
   const doFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   const now = options.now ?? (() => new Date());
-  /** Every request received, oldest first. */
   const requests = [];
-  /** Outbound calls the stub made (callbacks, sends), with their HTTP status. */
   const outbound = [];
   let fireCount = 0;
   const pending = new Set();
@@ -330,7 +312,6 @@ export function createStubServer(options = {}) {
     config,
     requests,
     outbound,
-    /** Resolves once every scheduled callback has been sent. */
     settled: () => Promise.all([...pending]),
     listen(port = num(env.STUB_PORT, 9090), host = '0.0.0.0') {
       return new Promise((resolve) => {

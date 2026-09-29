@@ -24,16 +24,11 @@ export interface TriggerEditorProps {
   onToggleExpanded: () => void;
   onChange: (next: Trigger) => void;
   onRemove: () => void;
-  /** Messages keyed by JSON pointer under this trigger (`/sourceId`, `/eventTypes`). */
+  /** Keyed by JSON pointer relative to this trigger (`/sourceId`, `/eventTypes`). */
   errors: Record<string, string>;
   disabled?: boolean;
 }
 
-/**
- * One trigger: pick a source instance, tick event types from its declared list, write the filter
- * with the declared attributes and examples at hand while it is evaluated live against the last
- * 20 real events, and keep the `describe` sentence (generated until the person writes their own).
- */
 export function TriggerEditor({
   trigger,
   index,
@@ -64,7 +59,6 @@ export function TriggerEditor({
   );
 
   const suggestion = defaultDescribe(sourceName, specs, trigger.eventTypes, trigger.filter);
-  /** Applies a change and keeps a generated describe sentence in step with it. */
   const change = (patch: Partial<Trigger>, name = sourceName) => {
     const next = { ...trigger, ...patch };
     const auto = trigger.describe === '' || trigger.describe === suggestion;

@@ -7,12 +7,11 @@ import { Icon, type IconName } from './Icon.js';
 
 export interface ArtifactChipProps {
   artifact: ArtifactRef;
-  /** Link to an in-app route (e.g. the trace) instead of the external URL. */
+  /** An in-app route to link to instead of the external URL. */
   to?: string;
   showIcon?: boolean;
 }
 
-/** The icon for an artifact kind (`github.pr`, `linear.issue`, `datadog.monitor`, ...). */
 function kindIcon(kind: string): IconName {
   if (kind.includes('pr') || kind.includes('pull')) return 'pr';
   if (kind.includes('issue')) return 'issue';
@@ -21,7 +20,6 @@ function kindIcon(kind: string): IconName {
   return 'artifact';
 }
 
-/** A mono artifact id with its kind icon; links out in a new tab (or in-app with `to`). */
 export function ArtifactChip({ artifact, to, showIcon = true }: ArtifactChipProps) {
   const label = artifactLabel(artifact);
   const content = (

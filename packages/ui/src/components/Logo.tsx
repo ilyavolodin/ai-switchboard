@@ -2,19 +2,13 @@ import { useId } from 'react';
 
 export interface LogoProps {
   size?: number;
-  /**
-   * The colour of the gap where the rails cross — the surface the mark sits on
-   * (default `var(--sidebar-bg)`).
-   */
+  /** The gap where the rails cross: match the surface the mark sits on. */
   gapColor?: string;
-  /** Accessible name; `null` hides the mark from assistive tech (when text sits beside it). */
+  /** `null` hides the mark from assistive tech (when text sits beside it). */
   label?: string | null;
 }
 
-/**
- * The AI Switchboard mark ("Cg"): two crossover rails, tangerine → sun over sky → teal, no tile.
- * Geometry copied from the canvas Rail. The gradient stops are the brand's fixed colours.
- */
+/** The gradient stops are the brand's fixed colours, not theme tokens. */
 export function Logo({
   size = 34,
   gapColor = 'var(--sidebar-bg)',

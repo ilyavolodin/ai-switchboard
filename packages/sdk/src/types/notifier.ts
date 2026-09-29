@@ -22,43 +22,29 @@ export interface NotifierType {
   id: string;
   displayName: string;
   description?: string;
-  /**
-   * Optional (since SDK 1.3): the icon the UI shows for this type. Either a built-in icon name
-   * (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB, rendered through
-   * `<img>`. Without one the UI shows the kind's generic icon.
-   */
+  /** A built-in icon name (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB. */
   icon?: string;
   settingsSchema: JSONSchema;
   create(settings: Settings, ctx: PluginContext): Notifier;
 }
 
-/**
- * One secret a provider makes available, as `SecretProvider.list()` reports it. It carries the
- * secret's **name only**: never its value, and nothing derived from the value (no length, prefix,
- * hash or preview). The UI shows these names next to the `secret://<provider>/<name>` reference
- * they form.
- */
+/** Name only: never the value or anything derived from it (length, prefix, hash, preview). */
 export interface SecretListing {
-  /** The `<name>` in `secret://<provider>/<name>`: exactly what `resolve(name)` accepts. */
+  /** The `<name>` in `secret://<provider>/<name>`; exactly what `resolve(name)` accepts. */
   name: string;
-  /** Optional human-readable note from the backend (a label or description). Never a value. */
+  /** Never a value. */
   description?: string;
-  /** ISO-8601 time the secret last changed, when the backend knows it. */
+  /** ISO-8601; when the backend knows it. */
   updatedAt?: string;
 }
 
 export interface SecretProvider {
-  /** Return the secret value for `name`, or throw if it does not exist. */
+  /** Throws if the secret does not exist. */
   resolve(name: string): Promise<string>;
   health(): Promise<Health>;
   /**
-   * Optional (since SDK 1.1): the names of the secrets this provider can resolve, so an admin
-   * can see what is available and which references are broken.
-   *
-   * **Names only, never values.** A listing must not contain a secret value, or any part or
-   * derivative of one, in any field. The conformance kit (`secretProviderConformanceChecks`)
-   * resolves every listed name and fails when a value appears anywhere in the listing.
-   * Return only names `resolve` would accept. Providers that cannot enumerate omit this method.
+   * Names only, never values or any part of one; the conformance kit fails if a resolved value
+   * appears anywhere in the listing. Providers that cannot enumerate omit this method.
    */
   list?(): Promise<SecretListing[]>;
 }
@@ -67,11 +53,7 @@ export interface SecretProviderType {
   id: string;
   displayName: string;
   description?: string;
-  /**
-   * Optional (since SDK 1.3): the icon the UI shows for this type. Either a built-in icon name
-   * (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB, rendered through
-   * `<img>`. Without one the UI shows the kind's generic icon.
-   */
+  /** A built-in icon name (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB. */
   icon?: string;
   settingsSchema: JSONSchema;
   create(settings: Settings, ctx: PluginContext): SecretProvider;

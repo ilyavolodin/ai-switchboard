@@ -59,7 +59,6 @@
   flex-shrink: 0;
 }
 
-/* Buttons inside banners inherit the banner colour (outline in currentColor). */
 .actions :global(button),
 .actions :global(a) {
   color: inherit;

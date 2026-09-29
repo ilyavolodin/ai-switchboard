@@ -2,7 +2,6 @@ import { tryParse, type JSONSchema, type RunStatus, type UsageReport } from '@ai
 
 import { OS_KEYS, osDimension } from './settings.js';
 
-/** The fields of a GitHub workflow run the destination reads. */
 export interface WorkflowRun {
   id: number;
   name?: string | null;
@@ -36,7 +35,7 @@ export const runListSchema: JSONSchema = {
   properties: { workflow_runs: { type: 'array', items: workflowRunSchema } },
 };
 
-/** Where a dispatched run lives. Encoded into `externalId` so `poll` needs no target. */
+/** Encoded into `externalId` so `poll` needs no target. */
 export interface RunRef {
   owner: string;
   repo: string;
@@ -62,7 +61,6 @@ export function matchesRun(run: WorkflowRun, switchboardRunId: string): boolean 
 
 const SUCCESS = new Set(['success', 'neutral', 'skipped']);
 
-/** Map GitHub's status/conclusion to a run state. */
 export function stateOf(run: WorkflowRun): RunStatus['state'] {
   if (run.status !== 'completed') return 'running';
   return run.conclusion !== null && SUCCESS.has(run.conclusion) ? 'ok' : 'error';

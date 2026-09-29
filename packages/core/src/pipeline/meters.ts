@@ -1,10 +1,5 @@
 import type { MeterReading, MeterSpec } from '@ai-switchboard/sdk';
 
-/**
- * Meter arithmetic: freshness, estimated readings from the core's own run counts, and ceiling
- * crossings for the system alert.
- */
-
 export interface StoredReading {
   meterId: string;
   utilization: number;
@@ -21,7 +16,7 @@ export function isFresh(observedAt: Date, now: Date, stalenessMinutes: number): 
 
 export type EstimatePeriod = 'day' | 'hour' | 'week';
 
-/** The UTC calendar period containing `now` (an estimated allowance resets at its end). */
+/** UTC calendar periods; an estimated allowance resets at the period's end. */
 export function periodBounds(period: EstimatePeriod, now: Date): { start: Date; end: Date } {
   const d = new Date(now.getTime());
   if (period === 'hour') {
@@ -36,7 +31,6 @@ export function periodBounds(period: EstimatePeriod, now: Date): { start: Date; 
   return { start, end: new Date(start.getTime() + 7 * 86_400_000) };
 }
 
-/** The limit an estimated meter counts against: typed-in, or the spec's default. */
 export function estimatedLimit(
   spec: MeterSpec,
   typedIn: Record<string, number> | undefined,
@@ -47,7 +41,6 @@ export function estimatedLimit(
   return fallback !== undefined && fallback > 0 ? fallback : undefined;
 }
 
-/** Is this meter estimated by the core (declared `estimate`, or given a typed-in limit)? */
 export function isEstimatedMeter(
   spec: MeterSpec,
   typedIn: Record<string, number> | undefined,
@@ -55,7 +48,6 @@ export function isEstimatedMeter(
   return spec.estimate !== undefined || typedIn?.[spec.id] !== undefined;
 }
 
-/** An estimated reading: runs counted in the period against the limit. */
 export function estimateReading(
   meterId: string,
   limit: number,
@@ -83,9 +75,8 @@ function parseTime(value: unknown): Date | null {
 }
 
 /**
- * One plugin-reported meter reading as stored, or null when it is not a reading of a declared
- * meter with a numeric utilization. A missing, unparseable or future `observedAt` is `now`: a
- * reading from the future would stay the latest one, and fresh, until that time came.
+ * A missing, unparseable or future `observedAt` becomes `now`: a reading from the future would
+ * stay the latest one, and fresh, until that time came.
  */
 export function readingFromReport(
   item: unknown,
@@ -109,13 +100,11 @@ export function readingFromReport(
   };
 }
 
-/** Clamp a plugin-reported utilization into 0–100; non-numbers are rejected. */
 export function normaliseUtilization(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return Math.min(100, Math.max(0, value));
 }
 
-/** True when a new reading crosses `ceiling` from below (or is the first reading above it). */
 export function ceilingCrossed(
   previous: number | undefined,
   next: number,

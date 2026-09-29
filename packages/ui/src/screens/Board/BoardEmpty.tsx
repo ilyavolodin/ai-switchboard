@@ -4,10 +4,6 @@ import { LinkButton } from '../../components/LinkButton.js';
 import { NodeCard } from '../../components/NodeCard.js';
 import styles from './Board.module.css';
 
-/**
- * The Board's first-run state: three steps (add a source, add a destination, draw your first
- * process) over a canvas of ghost nodes. Steps already done are ticked.
- */
 export function BoardEmpty({ sources, destinations }: { sources: number; destinations: number }) {
   const steps = [
     {

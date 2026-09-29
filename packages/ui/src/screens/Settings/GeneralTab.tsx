@@ -17,10 +17,6 @@ import { useReasonedMutation } from '../../hooks/reason.js';
 import styles from './Settings.module.css';
 import { changedFields, generalDraft, parsePositiveInt, timezones } from './settingsForm.js';
 
-/**
- * General: installation timezone, default quiet hours, staleness and silence, system notifier,
- * and whether every change must carry a reason.
- */
 export function GeneralTab() {
   const settings = useSettings();
   if (settings.isPending) return <Skeleton shape="card" height={320} label="Loading settings" />;

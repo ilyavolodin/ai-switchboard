@@ -1,4 +1,3 @@
-# Grafana dashboard provider for the Compose `observability` profile (grafana/otel-lgtm).
 apiVersion: 1
 
 providers:

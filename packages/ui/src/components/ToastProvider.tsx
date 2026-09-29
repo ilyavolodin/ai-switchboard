@@ -16,7 +16,6 @@ const DOT: Record<NonNullable<ToastInput['tone']>, string> = {
   info: 'var(--sky)',
 };
 
-/** Hosts toasts (`useToast()`): bottom-right, auto-dismiss after 5 s, announced politely. */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const nextId = useRef(1);

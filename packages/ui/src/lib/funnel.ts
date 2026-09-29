@@ -1,28 +1,25 @@
 import type { FunnelResponse, StatusTone } from '@ai-switchboard/core/contract';
 
-/** One coloured part of a stage (event runs vs sweeps; ok / error / unknown). */
 export interface FunnelSegment {
   id: string;
   label: string;
   count: number;
-  /** Share of the stage's width, 0–1. */
+  /** 0–1. */
   share: number;
   /** A CSS colour token. */
   color: string;
   tone?: StatusTone;
 }
 
-/** One stage of the pipeline funnel, sized relative to the largest stage. */
 export interface FunnelStage {
   id: 'matched' | 'deduped' | 'batched' | 'invoked' | 'outcome';
   label: string;
   count: number;
-  /** Size relative to the largest stage, 0–1 (bar height in the funnel). */
+  /** Relative to the largest stage, 0–1. */
   size: number;
   segments: FunnelSegment[];
 }
 
-/** The funnel as drawn: stages, plus the held/throttled count shown at the gate. */
 export interface FunnelModel {
   stages: FunnelStage[];
   gate: { held: number; throttled: number };
@@ -36,10 +33,6 @@ function segments(parts: Omit<FunnelSegment, 'share'>[]): FunnelSegment[] {
     .map((p) => ({ ...p, share: total > 0 ? p.count / total : 0 }));
 }
 
-/**
- * Builds the funnel from `/processes/:id/funnel`: matched → after dedupe → batches → invoked
- * (event runs and sweeps as separate streams) → outcomes. Stage sizes are proportional to counts.
- */
 export function funnelModel(f: FunnelResponse): FunnelModel {
   const invoked = f.event.invoked + f.sweep.invoked;
   const ok = f.event.ok + f.sweep.ok;

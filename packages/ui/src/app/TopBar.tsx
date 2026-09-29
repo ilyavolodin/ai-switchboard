@@ -9,10 +9,6 @@ import { isRouteHandle } from './nav.js';
 import { searchTarget } from './search.js';
 import styles from './TopBar.module.css';
 
-/**
- * The top bar: the section title, the artifact search (focused by `/`; any query opens the
- * Activity trace), the capacity strip, and links for open breakers and pending approvals.
- */
 export function TopBar({ searchRef }: { searchRef?: Ref<HTMLInputElement> }) {
   const matches = useMatches();
   const navigate = useNavigate();

@@ -14,27 +14,18 @@ export type { ButtonVariant } from './buttonClass.js';
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'> {
   variant?: ButtonVariant;
   size?: 'sm' | 'md' | 'lg';
-  /** Shows a spinner and blocks clicks. */
   loading?: boolean;
   icon?: IconName;
-  /** Full width. */
   block?: boolean;
-  /**
-   * The role this action needs. Without it the button stays visible but disabled, with a tooltip
-   * naming the role (the viewer-role rule).
-   */
+  /** Without this role the button stays visible but disabled, with a tooltip naming the role. */
   requires?: Role;
-  /** Why the button is disabled (shown as a tooltip). */
+  /** Tooltip shown while `disabled`. */
   disabledReason?: string;
   type?: 'button' | 'submit' | 'reset';
   children?: ReactNode;
 }
 
-/**
- * The button: primary (tangerine gradient + glow), secondary, outline, soft, ghost, danger (coral
- * fill) and danger-outline ("Reset breaker"). Disabled buttons use `aria-disabled` so they stay
- * focusable and can explain themselves in a tooltip.
- */
+/** Disabled buttons use `aria-disabled` so they stay focusable and can explain themselves. */
 export function Button({
   variant = 'secondary',
   size = 'md',

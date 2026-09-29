@@ -18,12 +18,7 @@ import { setupTelemetry, type TelemetryRuntime } from '../../src/telemetry/setup
 import { createTelemetry } from '../../src/telemetry/telemetry.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
-/**
- * End to end over OTLP/HTTP (http/json, for readable assertions): an in-process receiver stands
- * in for the collector, the core runs with the real plugin host and pipeline, and one webhook
- * must arrive as one trace (HTTP → ingest → stages → plugin invoke → outbound client call),
- * log records carrying its trace id, and switchboard.* metrics.
- */
+// Exports http/json, for readable assertions.
 
 interface OtlpSpan {
   traceId: string;
@@ -268,7 +263,6 @@ describe('telemetry over OTLP', () => {
     expect(run?.traceContext).toMatch(new RegExp(`^00-${SENDER_TRACE}-[0-9a-f]{16}-01$`));
     await runtime.flush();
 
-    // --- Traces -------------------------------------------------------------------------------
     const spans = allSpans();
     const one = (name: string, pred: (s: OtlpSpan) => boolean = () => true): OtlpSpan => {
       const found = spans.filter((s) => s.name === name && pred(s));
@@ -277,7 +271,6 @@ describe('telemetry over OTLP', () => {
     };
     const childOf = (parent: OtlpSpan) => (s: OtlpSpan) => s.parentSpanId === parent.spanId;
 
-    // The sender's trace continues into /hooks.
     const http = one('POST /hooks/:sourceId');
     expect(http.traceId).toBe(SENDER_TRACE);
     expect(http.parentSpanId).toBe(SENDER_SPAN);
@@ -295,7 +288,6 @@ describe('telemetry over OTLP', () => {
     const match = one('switchboard.match', childOf(matchJob));
     const dispatchJob = one('process pipeline.dispatch', childOf(match));
     const dispatch = one('switchboard.dispatch', childOf(dispatchJob));
-    // The batch links to the ingest span of each of its events.
     expect(dispatch.links?.map((l) => l.spanId)).toEqual([ingest.spanId]);
     expect(attr(dispatch, 'switchboard.outcome')).toBe('ok');
     expect(run?.traceContext).toContain(dispatch.spanId);
@@ -304,7 +296,6 @@ describe('telemetry over OTLP', () => {
     const invoke = one('switchboard.invoke', childOf(dispatch));
     const pluginInvoke = one('switchboard.plugin.invoke', childOf(invoke));
     expect(attr(pluginInvoke, 'plugin')).toBe('otel-test');
-    // The destination's outbound call is a CLIENT span, and the backend got its traceparent.
     const client = one('POST', childOf(pluginInvoke));
     expect(client.kind).toBe(3); // CLIENT
     expect(backendCalls).toHaveLength(1);
@@ -315,7 +306,6 @@ describe('telemetry over OTLP', () => {
       expect(s.traceId, s.name).toBe(SENDER_TRACE);
     }
 
-    // --- Logs ---------------------------------------------------------------------------------
     const logs = allLogs();
     const decision = logs.find(
       (l) => l.body?.stringValue === 'switchboard.runs' && attr(l, 'status') === 'ok',
@@ -331,7 +321,6 @@ describe('telemetry over OTLP', () => {
     // The exporter's API key never shows up in anything exported.
     expect(JSON.stringify(logs)).not.toContain('fixture-secret-key');
 
-    // --- Metrics ------------------------------------------------------------------------------
     const metricBatches = (received['/v1/metrics'] ?? []) as {
       resourceMetrics: {
         resource: { attributes: { key: string; value: Record<string, unknown> }[] };

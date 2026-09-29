@@ -19,7 +19,7 @@ export interface StubReply {
   json?: unknown;
 }
 
-/** Return a reply, or `undefined` for a 404. Throw an error with `code` to simulate a network failure. */
+/** `undefined` gives a 404. Throw an error with `code` to simulate a network failure. */
 export type StubHandler = (
   req: StubRequest,
 ) => StubReply | undefined | Promise<StubReply | undefined>;
@@ -30,7 +30,7 @@ export interface StubHttp {
   fetch: typeof fetch;
 }
 
-/** An `HttpClient` whose transport is `handler`; records every call. */
+/** Records every call. */
 export function createStubHttp(
   handler: StubHandler = () => undefined,
   allowedHosts?: string[],
@@ -127,7 +127,7 @@ export interface RawRequestInit {
   receivedAt?: string;
 }
 
-/** Build a `RawRequest`; objects are JSON-encoded. Header names are lower-cased. */
+/** Objects are JSON-encoded; header names are lower-cased. */
 export function rawRequest(init: RawRequestInit = {}): RawRequest {
   const body =
     init.body === undefined

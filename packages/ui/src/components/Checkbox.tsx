@@ -5,13 +5,10 @@ import styles from './Checkbox.module.css';
 
 export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
   label: ReactNode;
-  /** `pill` is the bordered chip used for event types; `plain` a bare checkbox + label. */
   variant?: 'plain' | 'pill';
-  /** Mono count after the label (events per type). */
   hint?: ReactNode;
 }
 
-/** A labelled checkbox (native input, tangerine accent). */
 export function Checkbox({
   label,
   variant = 'plain',
