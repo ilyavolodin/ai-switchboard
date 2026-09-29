@@ -1,0 +1,9 @@
+# Grafana dashboard provider for the Compose `observability` profile (grafana/otel-lgtm).
+apiVersion: 1
+
+providers:
+  - name: AI Switchboard
+    type: file
+    options:
+      path: /otel-lgtm/switchboard-dashboard.json
+      foldersFromFilesStructure: false

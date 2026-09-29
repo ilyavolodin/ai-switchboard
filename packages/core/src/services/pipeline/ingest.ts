@@ -155,6 +155,8 @@ export async function storeDrafts(
   const now = ctx.clock.now();
   const checked = drafts.map((d) => checkDraft(d, live, now));
   const caps = row.caps;
+  // The ingest span: each event's match job continues it, and its batch's dispatch links to it.
+  const traceContext = ctx.telemetry.traceparent() ?? null;
 
   const result = await withTx(ctx.db, async (tx) => {
     const eventIds: string[] = [];
@@ -228,6 +230,7 @@ export async function storeDrafts(
           stage,
           stageReason: reason,
           replayOf: options.replayOf ?? null,
+          traceContext,
         })
         // A redelivery with the same delivery id is already stored.
         .onConflictDoNothing()
@@ -257,6 +260,14 @@ export async function storeDrafts(
       ctx.runtime.recordPluginError(live.pluginName, 'invalid_event', e.reason ?? undefined);
     }
   }
+  ctx.telemetry.annotate({
+    plugin: live.pluginName,
+    'switchboard.source.type': live.typeId,
+    'switchboard.events.count': result.all.length,
+    'switchboard.events.received': result.received.length,
+    event_ids: result.all.map((e) => e.id),
+    ...(result.all.length === 1 ? { event_id: result.all[0]?.id } : {}),
+  });
   for (const e of result.received) await ctx.queue.send(JOBS.match, { eventId: e.id });
   return { eventIds: result.eventIds, received: result.received.map((e) => e.id) };
 }
@@ -280,8 +291,25 @@ async function storeRaw(
   return ref;
 }
 
+/** POST /hooks/:sourceId, in a `switchboard.ingest` span (the HTTP span's child). */
+export function ingestPush(
+  ctx: Ctx,
+  sourceId: string,
+  req: RawRequest,
+): Promise<{ status: number }> {
+  return ctx.telemetry.span(
+    'switchboard.ingest',
+    { source_id: sourceId, 'switchboard.ingest.origin': 'push' },
+    async (span) => {
+      const out = await ingestPushInSpan(ctx, sourceId, req);
+      span.setAttributes({ 'http.response.status_code': out.status });
+      return out;
+    },
+  );
+}
+
 /** POST /hooks/:sourceId */
-export async function ingestPush(
+async function ingestPushInSpan(
   ctx: Ctx,
   sourceId: string,
   req: RawRequest,
@@ -370,8 +398,17 @@ export async function ingestPush(
   }
 }
 
+/** Pull sources: one poll, in a `switchboard.ingest` span. */
+export function pollSource(ctx: Ctx, sourceId: string): Promise<void> {
+  return ctx.telemetry.span(
+    'switchboard.ingest',
+    { source_id: sourceId, 'switchboard.ingest.origin': 'poll' },
+    () => pollSourceInSpan(ctx, sourceId),
+  );
+}
+
 /** Pull sources: one poll, events and the new watermark in one transaction. */
-export async function pollSource(ctx: Ctx, sourceId: string): Promise<void> {
+async function pollSourceInSpan(ctx: Ctx, sourceId: string): Promise<void> {
   const [row] = await ctx.db.select().from(sources).where(eq(sources.id, sourceId));
   if (!row?.enabled) return;
   const live = ctx.runtime.source(sourceId);
@@ -426,8 +463,22 @@ class WatermarkMoved extends Error {
   override readonly name = 'WatermarkMoved';
 }
 
+/** Replay, in a `switchboard.ingest` span. */
+export function replayEvent(
+  ctx: Ctx,
+  eventId: string,
+  actor: string,
+  reason: string,
+): Promise<{ eventIds: string[] }> {
+  return ctx.telemetry.span(
+    'switchboard.ingest',
+    { event_id: eventId, 'switchboard.ingest.origin': 'replay' },
+    () => replayEventInSpan(ctx, eventId, actor, reason),
+  );
+}
+
 /** Re-inject a stored raw body through the same parse; new events carry `replayOf`. */
-export async function replayEvent(
+async function replayEventInSpan(
   ctx: Ctx,
   eventId: string,
   actor: string,
@@ -493,8 +544,23 @@ export async function replayEvent(
   return { eventIds: out.eventIds };
 }
 
+/** "Send test event", in a `switchboard.ingest` span. */
+export function injectTestEvent(
+  ctx: Ctx,
+  sourceId: string,
+  type: string | undefined,
+  actor: string,
+  reason: string,
+): Promise<{ eventIds: string[] }> {
+  return ctx.telemetry.span(
+    'switchboard.ingest',
+    { source_id: sourceId, 'switchboard.ingest.origin': 'test' },
+    () => injectTestEventInSpan(ctx, sourceId, type, actor, reason),
+  );
+}
+
 /** "Send test event": the source type's first example for `type` (or its first event type). */
-export async function injectTestEvent(
+async function injectTestEventInSpan(
   ctx: Ctx,
   sourceId: string,
   type: string | undefined,

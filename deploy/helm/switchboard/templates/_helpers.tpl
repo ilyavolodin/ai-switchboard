@@ -44,3 +44,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "switchboard.image" -}}
 {{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) }}
 {{- end }}
+
+{{/* A map as "k1=v1,k2=v2" (OTEL_RESOURCE_ATTRIBUTES), keys sorted. */}}
+{{- define "switchboard.keyValueList" -}}
+{{- $pairs := list }}
+{{- range $k, $v := . }}
+{{- $pairs = append $pairs (printf "%s=%s" $k (toString $v)) }}
+{{- end }}
+{{- join "," $pairs }}
+{{- end }}

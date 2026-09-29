@@ -41,7 +41,22 @@ const SEVERITY: Record<NotifyOn, NotificationMessage['severity']> = {
   throttled: 'warning',
 };
 
-export async function notifyProcess(ctx: Ctx, n: ProcessNotification): Promise<void> {
+/** A process's notifications for one outcome, in a `switchboard.notify` span when any apply. */
+export function notifyProcess(ctx: Ctx, n: ProcessNotification): Promise<void> {
+  if (!n.process.document.notify.some((x) => x.on.includes(n.on))) return Promise.resolve();
+  return ctx.telemetry.span(
+    'switchboard.notify',
+    {
+      process_id: n.process.id,
+      batch_id: n.batchId,
+      run_id: n.runId ?? undefined,
+      'switchboard.notify.on': n.on,
+    },
+    () => notifyProcessInSpan(ctx, n),
+  );
+}
+
+async function notifyProcessInSpan(ctx: Ctx, n: ProcessNotification): Promise<void> {
   const targets = n.process.document.notify.filter((x) => x.on.includes(n.on));
   if (targets.length === 0) return;
   const now = ctx.clock.now();

@@ -23,6 +23,7 @@ import { ROLES, type Role } from '../../domain/status.js';
 import { recordAudit, recordAuditDiff } from '../../services/audit.js';
 import { getSettings, putSettings } from '../../services/settings.js';
 import { removePassword, storePassword } from '../../services/users.js';
+import { telemetryStatus } from '../../telemetry/otel-config.js';
 import type { ApiContext } from '../context.js';
 import type {
   AboutResponse,
@@ -522,6 +523,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: ApiContext): void
       plugins: pluginRows.length,
       evaluation: config.evaluation,
       publicUrl: config.publicUrl,
+      telemetry: telemetryStatus(config.telemetry),
     };
   });
 }

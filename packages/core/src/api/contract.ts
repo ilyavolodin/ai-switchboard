@@ -1230,4 +1230,26 @@ export interface AboutResponse {
   plugins: number;
   evaluation: boolean;
   publicUrl: string;
+  /** Where this replica sends OpenTelemetry signals. Header names and values are never shown. */
+  telemetry: TelemetryStatusDTO;
+}
+
+export interface TelemetryStatusDTO {
+  /** False when `OTEL_SDK_DISABLED` is set. */
+  enabled: boolean;
+  serviceName: string;
+  /** Prometheus exposition served at `GET /metrics`. */
+  prometheus: boolean;
+  signals: {
+    signal: 'traces' | 'metrics' | 'logs';
+    /** Empty when the signal is not exported. */
+    exporters: ('otlp' | 'console')[];
+    protocol: 'http/protobuf' | 'http/json' | 'grpc' | null;
+    /** `scheme://host:port` of the OTLP endpoint (no path, query or credentials). */
+    endpoint: string | null;
+    /** How many export headers are configured (e.g. a vendor API key). */
+    headers: number;
+  }[];
+  /** `OTEL_TRACES_SAMPLER`, with its ratio when it has one. */
+  sampler: string;
 }

@@ -304,6 +304,8 @@ export const events = pgTable(
     replayOf: uuid('replay_of'),
     /** Every trigger filter evaluated for this event (true, false or error), for the trace. */
     matchDecisions: jsonb('match_decisions').$type<MatchDecisionRecord[]>().notNull().default([]),
+    /** W3C `traceparent` of the ingest span that stored it; a batch's span links to it. */
+    traceContext: text('trace_context'),
   },
   (t) => [
     index('events_received').on(t.receivedAt.desc()),
@@ -459,6 +461,8 @@ export const runs = pgTable(
     invokeDeadlineAt: ts('invoke_deadline_at'),
     /** Earliest event occurredAt in the batch, for latency. */
     firstEventAt: ts('first_event_at'),
+    /** W3C `traceparent` of the dispatch span that reserved it; tracking and recovery continue it. */
+    traceContext: text('trace_context'),
     createdAt: createdAt(),
   },
   (t) => [

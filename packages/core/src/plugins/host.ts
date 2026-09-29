@@ -36,6 +36,7 @@ import {
 } from '../db/schema.js';
 import { toPluginLogger, type CoreLogger } from '../logger.js';
 import { parseSecretRef, referencesProvider, resolveSecretRefs } from '../secrets/refs.js';
+import { createTracedFetch } from '../telemetry/http-client.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
 import { discoverPlugins, type DiscoveredPackage } from './discovery.js';
 import {
@@ -197,31 +198,55 @@ export function serializeType(
   return base;
 }
 
+/** Who a plugin call belongs to, for its span. */
+interface CallSpan {
+  telemetry: Telemetry;
+  kind: InstanceKind;
+  plugin: string;
+  instanceId: string;
+}
+
 /**
  * Wrap every method of a plugin object so an unexpected exception is attributed to its plugin
- * before it propagates. Sync methods stay sync.
+ * before it propagates, and each call inside a trace gets a child span
+ * (`switchboard.plugin.<method>`). Sync methods stay sync.
  */
 function attribute<T extends object>(
   target: T,
   onError: (err: unknown, method: string) => void,
+  spans?: CallSpan,
 ): T {
   return new Proxy(target, {
     get(obj, prop, receiver) {
       const value: unknown = Reflect.get(obj, prop, receiver);
       if (typeof value !== 'function') return value;
       const fn = value as (...args: unknown[]) => unknown;
+      const method = String(prop);
+      const call = (args: unknown[]): unknown =>
+        spans
+          ? spans.telemetry.childSpan(
+              `switchboard.plugin.${method}`,
+              {
+                plugin: spans.plugin,
+                'switchboard.plugin.kind': spans.kind,
+                'switchboard.plugin.method': method,
+                instance_id: spans.instanceId,
+              },
+              () => fn.apply(obj, args),
+            )
+          : fn.apply(obj, args);
       return (...args: unknown[]) => {
         try {
-          const out = fn.apply(obj, args);
+          const out = call(args);
           if (out instanceof Promise) {
             return out.catch((err: unknown) => {
-              if (!isExpectedError(err)) onError(err, String(prop));
+              if (!isExpectedError(err)) onError(err, method);
               throw err;
             });
           }
           return out;
         } catch (err) {
-          if (!isExpectedError(err)) onError(err, String(prop));
+          if (!isExpectedError(err)) onError(err, method);
           throw err;
         }
       };
@@ -829,7 +854,7 @@ export class PluginHost implements PluginRuntime {
     pluginName: string,
     network: string[] | undefined,
   ): PluginContext {
-    const { logger, clock, config, telemetry, db } = this.opts;
+    const { logger, clock, config, db } = this.opts;
     const pluginLogger = toPluginLogger(
       logger.child({ plugin: pluginName, instance_id: instanceId }),
     );
@@ -840,7 +865,8 @@ export class PluginHost implements PluginRuntime {
       http: createHttpClient({
         ...(network ? { allowedHosts: network } : {}),
         logger: pluginLogger,
-        injectHeaders: () => telemetry.traceHeaders(),
+        // Client spans and W3C trace context from the active span, at the time of each request.
+        fetch: createTracedFetch(),
       }),
       now: () => clock.now(),
       publicUrl: config.publicUrl,
@@ -898,6 +924,10 @@ export class PluginHost implements PluginRuntime {
         `${method}: ${err instanceof Error ? err.message : String(err)}`,
       );
     };
+  }
+
+  private spansFor(kind: InstanceKind, plugin: string, instanceId: string): CallSpan {
+    return { telemetry: this.opts.telemetry, kind, plugin, instanceId };
   }
 
   private clearInstance(id: string): void {
@@ -993,6 +1023,7 @@ export class PluginHost implements PluginRuntime {
       const provider = attribute(
         entry.type.create(row.settings, ctx),
         this.attributeFor(entry.pluginName, row.id),
+        this.spansFor('secret_provider', entry.pluginName, row.id),
       );
       live = { id: row.id, name: row.name, typeId: row.typeId, type: entry.type, provider };
     } catch (err) {
@@ -1035,6 +1066,7 @@ export class PluginHost implements PluginRuntime {
       const source = attribute(
         entry.type.create(resolved.settings, ctx),
         this.attributeFor(entry.pluginName, row.id),
+        this.spansFor('source', entry.pluginName, row.id),
       );
       const eventTypes =
         entry.type.dynamicEventTypes && entry.type.instanceEventTypes
@@ -1156,6 +1188,7 @@ export class PluginHost implements PluginRuntime {
       const destination = attribute(
         type.create(resolved.settings, ctx),
         this.attributeFor(entry.pluginName, row.id),
+        this.spansFor('destination', entry.pluginName, row.id),
       );
       live = {
         id: row.id,
@@ -1214,6 +1247,7 @@ export class PluginHost implements PluginRuntime {
       const notifier = attribute(
         entry.type.create(settings, ctx),
         this.attributeFor(entry.pluginName, row.id),
+        this.spansFor('notifier', entry.pluginName, row.id),
       );
       live = { id: row.id, name: row.name, typeId: row.typeId, type: entry.type, notifier };
     } catch (err) {

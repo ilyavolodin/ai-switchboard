@@ -22,6 +22,7 @@ import { createPipeline } from './services/pipeline/index.js';
 import { cronPreview, filterPreview, inputPreview } from './services/preview.js';
 import { getSettings } from './services/settings.js';
 import { traceForArtifact, traceForEvent } from './services/trace.js';
+import { exportsSignal } from './telemetry/otel-config.js';
 import { setupTelemetry, type TelemetryRuntime } from './telemetry/setup.js';
 import { createTelemetry, type Telemetry } from './telemetry/telemetry.js';
 
@@ -77,9 +78,14 @@ async function sharedCookieKey(database: Database, now: Date): Promise<string> {
 export async function createSwitchboard(options: CreateOptions): Promise<Switchboard> {
   const { config } = options;
   const logger =
-    options.logger ?? createLogger({ level: config.logLevel, pretty: config.prettyLogs });
+    options.logger ??
+    createLogger({
+      level: config.logLevel,
+      pretty: config.prettyLogs,
+      exportLogs: exportsSignal(config.telemetry, 'logs'),
+    });
   const clock = options.clock ?? systemClock;
-  const telemetryRuntime = options.telemetryRuntime ?? setupTelemetry(config);
+  const telemetryRuntime = options.telemetryRuntime ?? setupTelemetry(config, logger);
   const telemetry = options.telemetry ?? createTelemetry(logger);
   const database = options.database ?? connect(config.databaseUrl);
   await waitForDatabase(database, logger);

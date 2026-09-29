@@ -22,6 +22,7 @@ import { registerReadRoutes } from './api/routes/read.js';
 import { registerSecretRoutes } from './api/routes/secrets.js';
 import { registerSourcePreviewRoutes } from './api/routes/source-preview.js';
 import { getSettings } from './services/settings.js';
+import { registerHttpTelemetry } from './telemetry/http.js';
 import type { TelemetryRuntime } from './telemetry/setup.js';
 
 export interface ServerOptions {
@@ -63,6 +64,8 @@ export async function buildServer(
       },
     },
   }) as unknown as FastifyInstance;
+  // Before any route, so its onRoute hook wraps every handler in the request's span.
+  registerHttpTelemetry(app);
   registerErrorHandler(app);
   await app.register(cookie, options.cookieSecret ? { secret: options.cookieSecret } : {});
   await app.register(rateLimit, { global: false });

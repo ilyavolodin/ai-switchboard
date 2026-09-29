@@ -1,3 +1,6 @@
+import type { AboutResponse } from '@ai-switchboard/core/contract';
+import type { ReactNode } from 'react';
+
 import { errorMessage } from '../../api/client.js';
 import { useAbout } from '../../api/index.js';
 import { Banner } from '../../components/Banner.js';
@@ -8,7 +11,67 @@ import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
 import styles from './Settings.module.css';
 
-/** About: versions, the database, the public URL and every replica with a live dot. */
+type Telemetry = AboutResponse['telemetry'];
+
+/** One signal's destination: "OTLP http/protobuf → http://collector:4318 · 1 header". */
+function signalTarget(s: Telemetry['signals'][number]): string {
+  const parts: string[] = [];
+  if (s.exporters.includes('otlp') && s.endpoint) {
+    parts.push(
+      `OTLP ${s.protocol ?? ''} → ${s.endpoint}${s.headers > 0 ? ` · ${s.headers} header${s.headers === 1 ? '' : 's'}` : ''}`,
+    );
+  }
+  if (s.exporters.includes('console')) parts.push('console');
+  return parts.join(' + ');
+}
+
+function TelemetryCard({ telemetry }: { telemetry: Telemetry }) {
+  const rows: [string, ReactNode][] = telemetry.signals.map((s) => {
+    const on = s.exporters.length > 0;
+    return [
+      s.signal,
+      <span key={s.signal} className={styles.replica}>
+        <StatusChip size="sm" tone={on ? 'ok' : 'off'} label={on ? 'exported' : 'not exported'} />
+        {on && <span className="mono">{signalTarget(s)}</span>}
+      </span>,
+    ];
+  });
+  rows.push([
+    'prometheus',
+    <StatusChip
+      key="prom"
+      size="sm"
+      tone={telemetry.prometheus ? 'ok' : 'off'}
+      label={telemetry.prometheus ? 'served at /metrics' : 'off'}
+    />,
+  ]);
+  rows.push([
+    'service',
+    <span key="svc" className="mono">
+      {telemetry.serviceName}
+    </span>,
+  ]);
+  rows.push([
+    'sampler',
+    <span key="smp" className="mono">
+      {telemetry.sampler}
+    </span>,
+  ]);
+  return (
+    <Card title="Telemetry" subtitle="OpenTelemetry export from this replica (OTEL_* variables)">
+      {telemetry.enabled ? (
+        <KeyValueList label="Telemetry" data={rows} />
+      ) : (
+        <Banner tone="info" title="OpenTelemetry is off">
+          OTEL_SDK_DISABLED is set: no traces, metrics or logs are exported and /metrics is not
+          served.
+        </Banner>
+      )}
+    </Card>
+  );
+}
+
+/** About: versions, the database, the public URL, telemetry and every replica with a live dot. */
 export function AboutTab() {
   const about = useAbout();
   if (about.isPending) return <Skeleton shape="card" height={240} label="Loading about" />;
@@ -48,6 +111,7 @@ export function AboutTab() {
           ]}
         />
       </Card>
+      <TelemetryCard telemetry={a.telemetry} />
       <Card title="Replicas" subtitle="every core process sharing this database">
         <ul className={styles.replicas} aria-label="Replicas">
           {a.replicas.map((r) => (

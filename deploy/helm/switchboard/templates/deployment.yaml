@@ -77,6 +77,13 @@ spec:
                   name: {{ .Values.oidc.clientSecret.existingSecret }}
                   key: {{ .Values.oidc.clientSecret.key }}
             {{- end }}
+            {{- if .Values.otel.headers.existingSecret }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.otel.headers.existingSecret }}
+                  key: {{ .Values.otel.headers.key }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

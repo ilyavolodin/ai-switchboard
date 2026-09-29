@@ -9,6 +9,7 @@ import {
   approvals,
   batches,
   destinations,
+  events as eventsTable,
   processes,
   runs,
   sources,
@@ -25,6 +26,7 @@ import { budget, type BudgetResult } from '../../pipeline/budget.js';
 import { gate } from '../../pipeline/gate.js';
 import { trackingDeadline } from '../../pipeline/tracking.js';
 import type { LiveDestination } from '../../plugins/runtime.js';
+import type { SpanHandle } from '../../telemetry/telemetry.js';
 import { getSettings } from '../settings.js';
 
 import {
@@ -67,7 +69,34 @@ async function existingRun(ctx: Ctx, batchId: string) {
   return run;
 }
 
-export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<DispatchResult> {
+/**
+ * `pipeline.dispatch` (and run now, approve): in a `switchboard.dispatch` span that links to the
+ * ingest span of every event in the batch, with `switchboard.gate`, `switchboard.budget` and
+ * `switchboard.invoke` children.
+ */
+export function dispatchBatch(ctx: Ctx, batchId: string): Promise<DispatchResult> {
+  return ctx.telemetry.span('switchboard.dispatch', { batch_id: batchId }, async (span) => {
+    const out = await dispatchBatchInSpan(ctx, batchId, span);
+    span.setAttributes({ run_id: out.runId ?? undefined, 'switchboard.outcome': out.outcome });
+    return out;
+  });
+}
+
+/** The stored ingest traceparents of `events`, for the dispatch span's links. */
+async function eventTraceContexts(ctx: Ctx, eventIds: string[]): Promise<(string | null)[]> {
+  if (eventIds.length === 0) return [];
+  const rows = await ctx.db
+    .select({ traceContext: eventsTable.traceContext })
+    .from(eventsTable)
+    .where(inArray(eventsTable.id, eventIds));
+  return rows.map((r) => r.traceContext);
+}
+
+async function dispatchBatchInSpan(
+  ctx: Ctx,
+  batchId: string,
+  span: SpanHandle,
+): Promise<DispatchResult> {
   const [batch] = await ctx.db.select().from(batches).where(eq(batches.id, batchId));
   if (!batch) return { batchId, runId: null, outcome: 'missing' };
   if (batch.outcome !== 'closed') {
@@ -84,6 +113,19 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
   const doc = proc.document;
   const settings = await getSettings(ctx.db);
   const events = await batchEvents(ctx.db, batch);
+  span.addLinks(
+    await eventTraceContexts(
+      ctx,
+      events.map((e) => e.id),
+    ),
+  );
+  span.setAttributes({
+    process_id: proc.id,
+    'switchboard.batch.kind': batch.kind,
+    'switchboard.batch.size': events.length,
+  });
+  // The run's trace: tracking, callbacks and recovery continue or link to this span.
+  const runTrace = ctx.telemetry.traceparent() ?? null;
   const mode = modeFor(batch, events);
   const destinationId = doc.destination.instanceId;
   const [exRow] = await ctx.db
@@ -113,54 +155,72 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
   const fns = evalFunctions(ctx, events, now, fallbackSources);
   const mctx = mappingContext({ events, process: processView(proc), run, mode });
 
-  // Approval: evaluated only when it can matter.
-  const rule = doc.gates.approval;
-  let required = rule === 'always';
-  let approvalError: string | undefined;
-  if (rule !== 'none' && rule !== 'always' && !batch.dryRun && batch.approvalState !== 'approved') {
-    const out = await evaluateFilter(
-      ctx.engine,
-      rule,
-      { ...mctx, batch: { id: batch.id, kind: batch.kind, size: events.length } },
-      fns,
-    );
-    // An approval expression that fails asks a person (fail closed).
-    required = out.result || out.error !== undefined;
-    approvalError = out.error;
-  }
+  const g = await ctx.telemetry.span(
+    'switchboard.gate',
+    { batch_id: batchId, process_id: proc.id },
+    async (gateSpan) => {
+      // Approval: evaluated only when it can matter.
+      const rule = doc.gates.approval;
+      let required = rule === 'always';
+      let approvalError: string | undefined;
+      if (
+        rule !== 'none' &&
+        rule !== 'always' &&
+        !batch.dryRun &&
+        batch.approvalState !== 'approved'
+      ) {
+        const out = await evaluateFilter(
+          ctx.engine,
+          rule,
+          { ...mctx, batch: { id: batch.id, kind: batch.kind, size: events.length } },
+          fns,
+        );
+        // An approval expression that fails asks a person (fail closed).
+        required = out.result || out.error !== undefined;
+        approvalError = out.error;
+      }
 
-  const g = gate(
-    {
-      kind: batch.kind,
-      dryRun: batch.dryRun,
-      process: { enabled: proc.enabled },
-      sources: sourceIds.map((id) => ({
-        id,
-        enabled: sourceRows.find((s) => s.id === id)?.enabled ?? false,
-      })),
-      destination: {
-        exists: exRow !== undefined,
-        enabled: exRow?.enabled ?? false,
-        pluginAvailable: exRow ? ctx.runtime.destinationType(exRow.typeId) !== undefined : false,
-        live: live !== undefined,
-        instanceError: ctx.runtime.instanceError(destinationId),
-        health: exRow?.health ?? null,
-      },
-      breaker: {
-        state: proc.breakerState,
-        openedAt: proc.breakerOpenedAt,
-        cooldownMinutes: doc.gates.breaker.cooldownMinutes,
-      },
-      quietHours: doc.gates.quietHours ?? settings.defaultQuietHours,
-      defaultTimezone: settings.timezone,
-      approval: {
-        rule,
-        required,
-        state: batch.approvalState,
-        ...(approvalError !== undefined ? { error: approvalError } : {}),
-      },
+      const result = gate(
+        {
+          kind: batch.kind,
+          dryRun: batch.dryRun,
+          process: { enabled: proc.enabled },
+          sources: sourceIds.map((id) => ({
+            id,
+            enabled: sourceRows.find((s) => s.id === id)?.enabled ?? false,
+          })),
+          destination: {
+            exists: exRow !== undefined,
+            enabled: exRow?.enabled ?? false,
+            pluginAvailable: exRow
+              ? ctx.runtime.destinationType(exRow.typeId) !== undefined
+              : false,
+            live: live !== undefined,
+            instanceError: ctx.runtime.instanceError(destinationId),
+            health: exRow?.health ?? null,
+          },
+          breaker: {
+            state: proc.breakerState,
+            openedAt: proc.breakerOpenedAt,
+            cooldownMinutes: doc.gates.breaker.cooldownMinutes,
+          },
+          quietHours: doc.gates.quietHours ?? settings.defaultQuietHours,
+          defaultTimezone: settings.timezone,
+          approval: {
+            rule,
+            required,
+            state: batch.approvalState,
+            ...(approvalError !== undefined ? { error: approvalError } : {}),
+          },
+        },
+        now,
+      );
+      gateSpan.setAttributes({
+        'switchboard.gate.pass': result.pass,
+        'switchboard.gate.reason': result.pass ? undefined : result.reason,
+      });
+      return result;
     },
-    now,
   );
   if (g.breakerClosed && proc.breakerOpenedAt) {
     // Only the opening this gate saw: a breaker reset and re-opened meanwhile stays open.
@@ -231,6 +291,7 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
         attempts: 0,
         finishedAt: now,
         firstEventAt: firstEventAt(events),
+        traceContext: runTrace,
         createdAt: now,
       });
       await tx
@@ -256,56 +317,69 @@ export async function dispatchBatch(ctx: Ctx, batchId: string): Promise<Dispatch
   }
 
   // Budget check and reservation in one transaction, serialised per destination.
-  const reservation = await withTx(ctx.db, async (tx) => {
-    await lockKey(tx, `destination:${destinationId}`);
-    const [b] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('update');
-    if (b?.outcome !== 'closed') return { outcome: 'gone' as const, result: null };
-    const checked = batch.dryRun
-      ? { result: null, record: dryRunBudgetRecord(at) }
-      : await checkBudget(tx, {
-          kind: batch.kind,
-          budgets: doc.budgets,
-          processId: proc.id,
-          destinationId,
-          live,
-          defaultStalenessMinutes: settings.meterStalenessMinutes,
-          now,
-        });
-    const records = [...gateRecords, checked.record];
-    if (checked.result && !checked.result.ok) {
+  const reserve = () =>
+    withTx(ctx.db, async (tx) => {
+      await lockKey(tx, `destination:${destinationId}`);
+      const [b] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('update');
+      if (b?.outcome !== 'closed') return { outcome: 'gone' as const, result: null };
+      const checked = batch.dryRun
+        ? { result: null, record: dryRunBudgetRecord(at) }
+        : await checkBudget(tx, {
+            kind: batch.kind,
+            budgets: doc.budgets,
+            processId: proc.id,
+            destinationId,
+            live,
+            defaultStalenessMinutes: settings.meterStalenessMinutes,
+            now,
+          });
+      const records = [...gateRecords, checked.record];
+      if (checked.result && !checked.result.ok) {
+        await tx
+          .update(batches)
+          .set({
+            outcome: 'throttled',
+            outcomeReason: checked.result.binding,
+            decisions: appendDecisions(records),
+          })
+          .where(eq(batches.id, batchId));
+        return { outcome: 'throttled' as const, result: checked.result };
+      }
+      await tx.insert(runs).values({
+        id: runId,
+        batchId,
+        processId: proc.id,
+        processVersion: proc.version,
+        destinationId,
+        kind: batch.kind,
+        status: 'invoking',
+        input: mapping.input,
+        dryRun: batch.dryRun,
+        attempts: 0,
+        invokedAt: now,
+        deadlineAt: trackingDeadline(now, doc.trackingDeadlineMinutes),
+        firstEventAt: firstEventAt(events),
+        traceContext: runTrace,
+        createdAt: now,
+      });
       await tx
         .update(batches)
-        .set({
-          outcome: 'throttled',
-          outcomeReason: checked.result.binding,
-          decisions: appendDecisions(records),
-        })
+        .set({ outcome: 'invoked', outcomeReason: null, decisions: appendDecisions(records) })
         .where(eq(batches.id, batchId));
-      return { outcome: 'throttled' as const, result: checked.result };
-    }
-    await tx.insert(runs).values({
-      id: runId,
-      batchId,
-      processId: proc.id,
-      processVersion: proc.version,
-      destinationId,
-      kind: batch.kind,
-      status: 'invoking',
-      input: mapping.input,
-      dryRun: batch.dryRun,
-      attempts: 0,
-      invokedAt: now,
-      deadlineAt: trackingDeadline(now, doc.trackingDeadlineMinutes),
-      firstEventAt: firstEventAt(events),
-      createdAt: now,
+      return { outcome: 'reserved' as const, result: checked.result };
     });
-    await tx
-      .update(batches)
-      .set({ outcome: 'invoked', outcomeReason: null, decisions: appendDecisions(records) })
-      .where(eq(batches.id, batchId));
-    return { outcome: 'reserved' as const, result: checked.result };
-  });
-
+  const reservation = await ctx.telemetry.span(
+    'switchboard.budget',
+    { batch_id: batchId, process_id: proc.id, destination_id: destinationId },
+    async (budgetSpan) => {
+      const out = await reserve();
+      budgetSpan.setAttributes({
+        'switchboard.budget.outcome': out.outcome,
+        'switchboard.budget.binding': out.result?.binding ?? undefined,
+      });
+      return out;
+    },
+  );
   const budgetResult = reservation.result;
   if (budgetResult) emitBudgetGauges(ctx, proc, budgetResult);
   if (reservation.outcome === 'gone') {

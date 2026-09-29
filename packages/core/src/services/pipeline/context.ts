@@ -47,6 +47,22 @@ export const JOBS = {
   prune: 'retention.prune',
 } as const;
 
+/**
+ * Jobs whose handlers run in a span even with no trace to continue (a sweep's dispatch, a poll).
+ * The periodic housekeeping jobs (tick, maintenance, stats, prune) do not start traces.
+ */
+export const TRACED_JOBS: ReadonlySet<string> = new Set([
+  JOBS.match,
+  JOBS.fire,
+  JOBS.dispatch,
+  JOBS.invoke,
+  JOBS.poll,
+  JOBS.deadline,
+  JOBS.finish,
+  JOBS.sourcePoll,
+  JOBS.metersRead,
+]);
+
 const RETRYABLE_PG_CODES = new Set(['23505', '40001', '40P01']);
 
 function pgCode(err: unknown): string | undefined {

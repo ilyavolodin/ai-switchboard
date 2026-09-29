@@ -2,7 +2,9 @@ import type { RawRequest } from '@ai-switchboard/sdk';
 
 import { createExpressionEngine } from '../../expr/index.js';
 
-import type { Ctx, PipelineDeps } from './context.js';
+import { traceQueue } from '../../queue/traced.js';
+
+import { TRACED_JOBS, type Ctx, type PipelineDeps } from './context.js';
 import { ingestPush, injectTestEvent, replayEvent } from './ingest.js';
 import { maintenance } from './maintenance.js';
 import {
@@ -81,6 +83,7 @@ export interface Pipeline {
 export function createPipeline(deps: PipelineDeps): Pipeline {
   const ctx: Ctx = {
     ...deps,
+    queue: traceQueue(deps.queue, deps.telemetry, (name) => TRACED_JOBS.has(name)),
     engine: createExpressionEngine({ env: deps.env ?? process.env }),
     log: deps.logger.child({ component: 'pipeline' }),
   };

@@ -64,6 +64,13 @@
       "when": 1790625493573,
       "tag": "0008_destinations",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790653339580,
+      "tag": "0009_trace_context",
+      "breakpoints": true
     }
   ]
 }

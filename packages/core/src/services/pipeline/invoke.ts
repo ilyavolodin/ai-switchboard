@@ -53,8 +53,15 @@ function isInvokeResult(value: unknown): value is InvokeResult {
   );
 }
 
+/** One invoke attempt, in a `switchboard.invoke` span (the plugin's invoke is its child). */
+export function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
+  return ctx.telemetry.span('switchboard.invoke', { run_id: runId }, () =>
+    attemptInvokeInSpan(ctx, runId),
+  );
+}
+
 /** `pipeline.invoke` and the dispatch stage's first attempt. */
-export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
+async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
   const [pending] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
   if (pending?.status !== 'invoking' || pending.invokeStartedAt !== null) return;
   const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, pending.processId));
@@ -88,6 +95,14 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
     .where(and(eq(runs.id, runId), eq(runs.status, 'invoking'), isNull(runs.invokeStartedAt)))
     .returning();
   if (!run) return;
+  ctx.telemetry.annotate({
+    process_id: run.processId,
+    batch_id: run.batchId,
+    destination_id: run.destinationId,
+    plugin: live?.pluginName,
+    'switchboard.invoke.attempt': run.attempts,
+    'switchboard.run.dry_run': run.dryRun,
+  });
   if (!proc || !exRow || !live) {
     // Nothing was sent: retry later, like a connection refused.
     const reason = `destination ${run.destinationId} has no live instance`;
@@ -180,6 +195,7 @@ export async function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
     },
     'invoke classified',
   );
+  ctx.telemetry.annotate({ 'switchboard.invoke.action': cls.action });
   await apply(ctx, run, cls, tracking);
 }
 

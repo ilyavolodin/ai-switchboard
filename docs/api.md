@@ -323,6 +323,12 @@ stopped provider, or a failed or timed-out (10 s) listing gives `available: fals
 | POST   | `/apply`                               | `ApplyRequest` → `ApplyResponse`                   | admin                |
 | GET    | `/about`                               | → `AboutResponse`                                  | viewer               |
 
+`GET /about` returns versions, the database, the replicas and `telemetry`
+(`TelemetryStatusDTO`): for each signal (`traces`, `metrics`, `logs`) its exporters (`otlp`,
+`console`, or none), OTLP protocol, endpoint as `scheme://host:port` only, and how many export
+headers are configured, plus whether `/metrics` is served, the service name and the sampler. It
+describes the replica that answered. Header names and values are never returned.
+
 `GET /users/directory` lets every role see who has access and with which role (the read-only
 Users tab); sign-in methods, last sign-in and every write stay admin-only.
 

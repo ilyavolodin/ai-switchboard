@@ -2,6 +2,8 @@ import { hostname } from 'node:os';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { parseOtelConfig, type OtelConfig } from './telemetry/otel-config.js';
+
 export interface OidcConfig {
   issuer: string;
   clientId: string;
@@ -24,7 +26,8 @@ export interface CoreConfig {
   oidc: OidcConfig | undefined;
   logLevel: string;
   prettyLogs: boolean;
-  metrics: { prometheus: boolean; otlpEndpoint: string | undefined };
+  /** OpenTelemetry export (`OTEL_*`) and the Prometheus endpoint (`SWITCHBOARD_PROMETHEUS`). */
+  telemetry: OtelConfig;
   replicaId: string;
   version: string;
   /** Directory with the built UI (`packages/core/public`). */
@@ -90,10 +93,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     oidc,
     logLevel: env.LOG_LEVEL ?? 'info',
     prettyLogs: bool(env.SWITCHBOARD_PRETTY_LOGS, false),
-    metrics: {
-      prometheus: bool(env.SWITCHBOARD_PROMETHEUS, true),
-      otlpEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT,
-    },
+    telemetry: parseOtelConfig(env),
     replicaId: env.SWITCHBOARD_REPLICA_ID ?? `${hostname()}-${randomUUID().slice(0, 8)}`,
     version: CORE_VERSION,
     uiDir: resolve(env.SWITCHBOARD_UI_DIR ?? new URL('../public', import.meta.url).pathname),
@@ -111,14 +111,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
   };
 }
 
-/** A config for tests: evaluation mode, no Prometheus, fixed replica id. */
+/** A config for tests: evaluation mode, no telemetry export, no Prometheus, fixed replica id. */
 export function testConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
   return {
     ...loadConfig({}),
     databaseUrl: 'postgres://invalid',
     publicUrl: 'http://switchboard.test',
     evaluation: true,
-    metrics: { prometheus: false, otlpEndpoint: undefined },
+    telemetry: parseOtelConfig({ SWITCHBOARD_PROMETHEUS: 'false' }),
     replicaId: 'test-replica',
     secureCookies: false,
     ...overrides,

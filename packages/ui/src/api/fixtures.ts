@@ -2345,6 +2345,29 @@ export function buildFixtures(now: number) {
     plugins: plugins.length,
     evaluation: true,
     publicUrl: 'https://switchboard.lola.com',
+    telemetry: {
+      enabled: true,
+      serviceName: 'switchboard',
+      prometheus: true,
+      signals: [
+        {
+          signal: 'traces',
+          exporters: ['otlp'],
+          protocol: 'http/protobuf',
+          endpoint: 'http://otel-collector:4318',
+          headers: 1,
+        },
+        {
+          signal: 'metrics',
+          exporters: ['otlp'],
+          protocol: 'http/protobuf',
+          endpoint: 'http://otel-collector:4318',
+          headers: 1,
+        },
+        { signal: 'logs', exporters: [], protocol: null, endpoint: null, headers: 0 },
+      ],
+      sampler: 'parentbased_always_on',
+    },
   };
 
   // ---- Previews -----------------------------------------------------------------------------

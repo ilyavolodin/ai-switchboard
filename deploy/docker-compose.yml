@@ -4,6 +4,13 @@
 #   docker compose -f deploy/docker-compose.yml --profile stub up -d   # plus the test stub
 #   docker compose -f deploy/docker-compose.yml logs switchboard | grep -i password
 #
+# Try the OpenTelemetry signals (metrics, logs and traces in Grafana at http://localhost:3000):
+#
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/observability.env up -d
+#
+# The env file turns on the `observability` profile (grafana/otel-lgtm: collector, Prometheus,
+# Loki, Tempo and Grafana with the Switchboard dashboard) and points Switchboard at it.
+#
 # Open http://localhost:8080 and sign in with the local admin password printed once to the log.
 # Evaluation mode is for trying Switchboard out; production uses OIDC and the Helm chart.
 name: switchboard
@@ -39,14 +46,20 @@ services:
     environment:
       SWITCHBOARD_EVALUATION: 'true'
       DATABASE_URL: postgres://switchboard:switchboard@postgres:5432/switchboard
-      SWITCHBOARD_PUBLIC_URL: http://localhost:8080
+      SWITCHBOARD_PUBLIC_URL: http://localhost:${SWITCHBOARD_PORT:-8080}
       LOG_LEVEL: info
+      # OpenTelemetry export: off unless an endpoint is set (deploy/observability.env sets it).
+      # Any other OTEL_* variable works too (docs/observability.md).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:-15000}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment.name=evaluation}
       # Values the `env` secret provider resolves, referenced from settings as
       # secret://env/<NAME>. Change them before exposing this installation to anything.
       WEBHOOK_SECRET: change-me-webhook-secret
       STUB_CALLBACK_SECRET: change-me-callback-secret
     ports:
-      - '8080:8080'
+      - '${SWITCHBOARD_PORT:-8080}:8080'
     volumes:
       - switchboard-home:/opt/switchboard
 
@@ -62,6 +75,21 @@ services:
     ports:
       - '9090:9090'
 
+  # OpenTelemetry backend for trying the signals out: an OTel Collector (OTLP on 4317/4318) in
+  # front of Prometheus, Loki and Tempo, and Grafana with the Switchboard dashboard provisioned.
+  # Not for production: one container, anonymous admin access to Grafana, data in a volume.
+  lgtm:
+    profiles: [observability]
+    image: grafana/otel-lgtm:0.34.0
+    restart: unless-stopped
+    ports:
+      - '${LGTM_GRAFANA_PORT:-3000}:3000'
+    volumes:
+      - lgtm-data:/data
+      - ./grafana/switchboard-dashboard.json:/otel-lgtm/switchboard-dashboard.json:ro
+      - ./grafana/lgtm-dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/switchboard.yaml:ro
+
 volumes:
   pgdata:
   switchboard-home:
+  lgtm-data:

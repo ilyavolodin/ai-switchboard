@@ -5,6 +5,8 @@ import type { Db, DbOrTx } from '../db/client.js';
 import { users } from '../db/schema.js';
 import type { CoreLogger } from '../logger.js';
 import { recordAudit } from '../services/audit.js';
+import { LOCAL_ONLY } from '../telemetry/log-bridge.js';
+
 import { generatePassword, hashPassword } from './crypto.js';
 
 export const LOCAL_ADMIN_EMAIL = 'admin@switchboard.local';
@@ -97,9 +99,10 @@ export async function bootstrapAdmin(
     at: now,
   });
   if (generated) {
-    // Printed once, on the start that creates it; the first sign-in must replace it.
+    // Printed once, on the start that creates it; the first sign-in must replace it. Stdout only:
+    // never exported to an OpenTelemetry backend.
     logger.warn(
-      { email },
+      { email, [LOCAL_ONLY]: true },
       `Local admin created: ${email} / temporary password: ${password} (shown once; you will be asked to change it at first sign-in)`,
     );
   }

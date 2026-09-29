@@ -18,6 +18,8 @@ import {
 } from '../../pipeline/tracking.js';
 import { mergeUsage, sanitizeUsage } from '../../pipeline/usage.js';
 
+import { TRACEPARENT_KEY } from '../../queue/traced.js';
+
 import { JOBS, callPlugin, withTx, type Ctx } from './context.js';
 import { isUuid } from './errors.js';
 import { batchEvents } from './load.js';
@@ -218,6 +220,14 @@ function notifyOnFor(status: RunStatusValue): NotifyOn | null {
   }
 }
 
+/** A job for a run found by recovery: it continues the run's trace (`queue/traced.ts`). */
+function runJob(run: { id: string; traceContext: string | null }): Record<string, unknown> {
+  return {
+    runId: run.id,
+    ...(run.traceContext !== null ? { [TRACEPARENT_KEY]: run.traceContext } : {}),
+  };
+}
+
 /** `pipeline.finish`: after steps and notifications on the terminal state. */
 export async function finishRun(ctx: Ctx, runId: string): Promise<void> {
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
@@ -375,8 +385,17 @@ async function applyTracking(
   });
 }
 
+/** `pipeline.poll`, in a `switchboard.track` span. */
+export function pollRun(ctx: Ctx, runId: string): Promise<void> {
+  return ctx.telemetry.span(
+    'switchboard.track',
+    { run_id: runId, 'switchboard.track.via': 'poll' },
+    () => pollRunInSpan(ctx, runId),
+  );
+}
+
 /** `pipeline.poll` */
-export async function pollRun(ctx: Ctx, runId: string): Promise<void> {
+async function pollRunInSpan(ctx: Ctx, runId: string): Promise<void> {
   const now = ctx.clock.now();
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
   if (!run || !isOpen(run.status) || run.status === 'invoking') return;
@@ -444,8 +463,17 @@ export async function pollRun(ctx: Ctx, runId: string): Promise<void> {
   );
 }
 
+/** `pipeline.deadline`, in a `switchboard.track` span. */
+export function deadlineRun(ctx: Ctx, runId: string): Promise<void> {
+  return ctx.telemetry.span(
+    'switchboard.track',
+    { run_id: runId, 'switchboard.track.via': 'deadline' },
+    () => deadlineRunInSpan(ctx, runId),
+  );
+}
+
 /** `pipeline.deadline`: an open run past its deadline becomes `unknown`. */
-export async function deadlineRun(ctx: Ctx, runId: string): Promise<void> {
+async function deadlineRunInSpan(ctx: Ctx, runId: string): Promise<void> {
   const now = ctx.clock.now();
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
   if (!run || !isOpen(run.status) || run.status === 'invoking') return;
@@ -510,7 +538,19 @@ export async function handleCallback(
       return { status: 400 };
     }
     if (isTerminalRunStatus(run.status)) return { status: 200 };
-    await applyTracking(ctx, run, status, 'callback');
+    // A child of the callback's HTTP span, linked to the trace that invoked the run.
+    await ctx.telemetry.span(
+      'switchboard.track',
+      {
+        run_id: run.id,
+        process_id: run.processId,
+        batch_id: run.batchId,
+        'switchboard.track.via': 'callback',
+        'switchboard.run.state': status.state,
+      },
+      () => applyTracking(ctx, run, status, 'callback'),
+      { links: [run.traceContext] },
+    );
     return { status: 200 };
   } catch (err) {
     ctx.log.error({ err, destination_id: destinationId }, 'callback handling failed');
@@ -571,9 +611,9 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
           ),
         )
         .returning({ id: runs.id });
-      if (moved.length > 0) await ctx.queue.send(JOBS.invoke, { runId: run.id });
+      if (moved.length > 0) await ctx.queue.send(JOBS.invoke, runJob(run));
     } else if (action === 'resume') {
-      await ctx.queue.send(JOBS.invoke, { runId: run.id });
+      await ctx.queue.send(JOBS.invoke, runJob(run));
     }
   }
   const overdue = await ctx.db
@@ -583,7 +623,7 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
   for (const r of overdue)
     await closeRun(ctx, r.id, { status: 'unknown', source: 'deadline', reason: 'deadline' });
   const lostPolls = await ctx.db
-    .select({ id: runs.id })
+    .select({ id: runs.id, traceContext: runs.traceContext })
     .from(runs)
     .where(
       and(
@@ -591,5 +631,5 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
         lte(runs.nextPollAt, new Date(now.getTime() - 60_000)),
       ),
     );
-  for (const r of lostPolls) await ctx.queue.send(JOBS.poll, { runId: r.id });
+  for (const r of lostPolls) await ctx.queue.send(JOBS.poll, runJob(r));
 }

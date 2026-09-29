@@ -74,6 +74,9 @@ Prefer files to clicking? `switchboard apply -f examples/log-destination.yaml --
 creates the same source, destination and process (see [examples/](examples/README.md)). To try signed
 webhooks and real HTTP calls, the optional `stub` Compose profile provides a fake backend
 ([quick start › going further](docs/quick-start.md#going-further-signed-webhooks-and-a-real-http-call)).
+To see every event as one trace with its logs and metrics in Grafana, start the `observability`
+profile: `docker compose -f deploy/docker-compose.yml --env-file deploy/observability.env up -d`
+and open http://localhost:3000 ([observability](docs/observability.md)).
 
 ## Documentation
 
@@ -87,7 +90,7 @@ webhooks and real HTTP calls, the optional `stub` Compose profile provides a fak
 | [REST API](docs/api.md)                            | Every route, role and body                                                           |
 | [Runbook](docs/runbook.md)                         | Why did this not run, breakers, rotation, replay, CI apply, doctor, backups, scaling |
 | [Security](docs/security.md)                       | Sign-in, roles, secrets, plugin trust, hardening checklist                           |
-| [Observability](docs/observability.md)             | Signals, Prometheus and OTLP, the Grafana dashboard                                  |
+| [Observability](docs/observability.md)             | Traces, metrics and logs over OTLP, Prometheus, the Grafana dashboard                |
 | [Technical Design](docs/technical-design.md)       | The authoritative design                                                             |
 
 ## CLI

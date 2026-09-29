@@ -458,6 +458,17 @@ describe('Settings', () => {
     );
   });
 
+  it('shows where telemetry goes on About, without header values', async () => {
+    open('about', 'viewer');
+    const telemetry = await screen.findByLabelText('Telemetry');
+    expect(within(telemetry).getAllByText('exported')).toHaveLength(2);
+    expect(within(telemetry).getByText('not exported')).toBeVisible();
+    expect(
+      within(telemetry).getAllByText('OTLP http/protobuf → http://otel-collector:4318 · 1 header'),
+    ).toHaveLength(2);
+    expect(within(telemetry).getByText('served at /metrics')).toBeVisible();
+  });
+
   describe('Audit log', () => {
     it('shows each change as before → after with who and why', async () => {
       open('audit', 'viewer');

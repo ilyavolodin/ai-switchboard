@@ -15,8 +15,38 @@ data:
   {{- with .Values.publicUrl }}
   SWITCHBOARD_PUBLIC_URL: {{ . | quote }}
   {{- end }}
-  {{- with .Values.metrics.otlpEndpoint }}
+  {{- with (.Values.otel.endpoint | default .Values.metrics.otlpEndpoint) }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.otel.protocol }}
+  OTEL_EXPORTER_OTLP_PROTOCOL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.otel.serviceName }}
+  OTEL_SERVICE_NAME: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.otel.resourceAttributes }}
+  OTEL_RESOURCE_ATTRIBUTES: {{ include "switchboard.keyValueList" . | quote }}
+  {{- end }}
+  {{- with .Values.otel.exporters.traces }}
+  OTEL_TRACES_EXPORTER: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.otel.exporters.metrics }}
+  OTEL_METRICS_EXPORTER: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.otel.exporters.logs }}
+  OTEL_LOGS_EXPORTER: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.otel.sampler }}
+  OTEL_TRACES_SAMPLER: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.otel.samplerArg }}
+  OTEL_TRACES_SAMPLER_ARG: {{ . | toString | quote }}
+  {{- end }}
+  {{- with .Values.otel.metricExportIntervalMs }}
+  OTEL_METRIC_EXPORT_INTERVAL: {{ . | toString | quote }}
+  {{- end }}
+  {{- with .Values.otel.compression }}
+  OTEL_EXPORTER_OTLP_COMPRESSION: {{ . | quote }}
   {{- end }}
   {{- with .Values.bootstrapAdmin }}
   SWITCHBOARD_BOOTSTRAP_ADMIN: {{ . | quote }}

@@ -47,8 +47,40 @@ trustProxy: true
 metrics:
   # Serve /metrics in Prometheus exposition format.
   prometheus: true
-  # OTLP/HTTP collector endpoint, e.g. http://otel-collector:4318
+  # Deprecated: use otel.endpoint (still honoured when otel.endpoint is empty).
   otlpEndpoint: ''
+
+# OpenTelemetry export of traces, metrics and logs (the standard OTEL_* variables; see
+# docs/observability.md). Nothing is exported until an endpoint is set.
+otel:
+  # OTLP base URL; the SDK appends /v1/traces, /v1/metrics and /v1/logs (HTTP), e.g.
+  # http://otel-collector.observability:4318, or :4317 with protocol grpc.
+  endpoint: ''
+  # http/protobuf (default), http/json or grpc.
+  protocol: http/protobuf
+  serviceName: switchboard
+  # Extra resource attributes, e.g. { deployment.environment.name: production }. service.version
+  # and service.instance.id (the pod name) are set by Switchboard.
+  resourceAttributes: {}
+  # Per signal: '' (otlp when an endpoint is set), otlp, console, none, or a list (otlp,console).
+  exporters:
+    traces: ''
+    metrics: ''
+    logs: ''
+  # always_on, always_off, traceidratio, parentbased_always_on (default),
+  # parentbased_always_off, parentbased_traceidratio; samplerArg is the ratio.
+  sampler: ''
+  samplerArg: ''
+  # How often metrics are pushed, in milliseconds (default 30000).
+  metricExportIntervalMs: ''
+  # gzip or none.
+  compression: ''
+  # Export headers (vendor API keys), as an existing Secret key holding the whole
+  # OTEL_EXPORTER_OTLP_HEADERS value, e.g. "x-honeycomb-team=abc123" or
+  # "Authorization=Basic%20base64(instance:token)". Never put keys in values.
+  headers:
+    existingSecret: ''
+    key: OTEL_EXPORTER_OTLP_HEADERS
 
 # Extra plain environment variables (rendered into the ConfigMap), e.g. SWITCHBOARD_WORKERS: "true".
 env: {}

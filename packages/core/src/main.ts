@@ -2,9 +2,14 @@
 import { createSwitchboard } from './app.js';
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
+import { exportsSignal } from './telemetry/otel-config.js';
 
 const config = loadConfig();
-const logger = createLogger({ level: config.logLevel, pretty: config.prettyLogs });
+const logger = createLogger({
+  level: config.logLevel,
+  pretty: config.prettyLogs,
+  exportLogs: exportsSignal(config.telemetry, 'logs'),
+});
 
 try {
   const switchboard = await createSwitchboard({

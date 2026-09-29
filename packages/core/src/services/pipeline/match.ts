@@ -48,7 +48,14 @@ export function batchingOf(row: ProcessRow): BatchingConfig {
   return { debounceSeconds: b.debounceSeconds, maxSize: b.maxSize, maxAgeSeconds: b.maxAgeSeconds };
 }
 
-export async function matchEvent(ctx: Ctx, eventId: string): Promise<void> {
+/** `pipeline.match`: stages 2–4 for one event, in a `switchboard.match` span. */
+export function matchEvent(ctx: Ctx, eventId: string): Promise<void> {
+  return ctx.telemetry.span('switchboard.match', { event_id: eventId }, () =>
+    matchEventInSpan(ctx, eventId),
+  );
+}
+
+async function matchEventInSpan(ctx: Ctx, eventId: string): Promise<void> {
   const [row] = await ctx.db.select().from(events).where(eq(events.id, eventId));
   if (row?.stage !== 'received') return;
   const event = toEvent(row);
@@ -306,8 +313,15 @@ async function joinOrOpen(
   return created.id;
 }
 
+/** `pipeline.fire`, in a `switchboard.batch` span. */
+export function fireBatch(ctx: Ctx, batchId: string): Promise<void> {
+  return ctx.telemetry.span('switchboard.batch', { batch_id: batchId }, () =>
+    fireBatchInSpan(ctx, batchId),
+  );
+}
+
 /** `pipeline.fire`: close a batch whose debounce or age elapsed and hand it to the gate. */
-export async function fireBatch(ctx: Ctx, batchId: string): Promise<void> {
+async function fireBatchInSpan(ctx: Ctx, batchId: string): Promise<void> {
   const now = ctx.clock.now();
   const out = await withTx(ctx.db, async (tx) => {
     const [b] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('update');

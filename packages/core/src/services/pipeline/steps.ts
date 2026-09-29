@@ -48,6 +48,29 @@ function actionIdempotent(ctx: Ctx, provider: string, action: string): boolean {
   return actions?.find((a) => a.id === action)?.idempotent === true;
 }
 
+/** A run's `before` or `after` steps, in a `switchboard.steps` span when there are any. */
+export function runSteps(
+  ctx: Ctx,
+  phase: StepPhase,
+  run: RunRow,
+  process: ProcessRow,
+  events: readonly Event[],
+  result?: unknown,
+): Promise<StepsOutcome> {
+  const count = process.document[phase].length;
+  if (count === 0) return Promise.resolve({ ok: true });
+  return ctx.telemetry.span(
+    'switchboard.steps',
+    {
+      run_id: run.id,
+      process_id: run.processId,
+      'switchboard.steps.phase': phase,
+      'switchboard.steps.count': count,
+    },
+    () => runStepsInSpan(ctx, phase, run, process, events, result),
+  );
+}
+
 /**
  * Run the process's steps for `phase` against the step journal. Each step's row is written
  * `started` before its action runs and settled (`ok`/`error`) after, so a resumed or redelivered
@@ -60,7 +83,7 @@ function actionIdempotent(ctx: Ctx, provider: string, action: string): boolean {
  *   `step_in_doubt:before[<index>] <action>` (so nothing is invoked) and an `after` step is
  *   recorded `uncertain` and the phase continues.
  */
-export async function runSteps(
+async function runStepsInSpan(
   ctx: Ctx,
   phase: StepPhase,
   run: RunRow,

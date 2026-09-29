@@ -1,14 +1,43 @@
 import type { Logger, LogFields } from '@ai-switchboard/sdk';
-import { pino, type Logger as PinoLogger } from 'pino';
+import { context, trace } from '@opentelemetry/api';
+import {
+  destination,
+  multistream,
+  pino,
+  transport,
+  type DestinationStream,
+  type Logger as PinoLogger,
+} from 'pino';
+
+import { createOtelLogStream } from './telemetry/log-bridge.js';
 
 export type CoreLogger = PinoLogger;
 
-export function createLogger(options: { level?: string; pretty?: boolean } = {}): CoreLogger {
-  return pino({
+export interface LoggerOptions {
+  level?: string;
+  pretty?: boolean;
+  /** Also emit every line as an OpenTelemetry log record (OTLP logs export is configured). */
+  exportLogs?: boolean;
+  /** Write here instead of stdout (tests). */
+  destination?: DestinationStream;
+}
+
+/** `trace_id` / `span_id` of the active span on every line logged inside one. */
+function traceMixin(): Record<string, string> {
+  const span = trace.getSpan(context.active());
+  if (!span) return {};
+  const sc = span.spanContext();
+  if (!trace.isSpanContextValid(sc)) return {};
+  return { trace_id: sc.traceId, span_id: sc.spanId };
+}
+
+export function createLogger(options: LoggerOptions = {}): CoreLogger {
+  const config = {
     level: options.level ?? process.env.LOG_LEVEL ?? 'info',
     base: { service: 'switchboard' },
     timestamp: pino.stdTimeFunctions.isoTime,
-    formatters: { level: (label) => ({ level: label }) },
+    formatters: { level: (label: string) => ({ level: label }) },
+    mixin: traceMixin,
     redact: {
       paths: [
         'req.headers.authorization',
@@ -19,10 +48,29 @@ export function createLogger(options: { level?: string; pretty?: boolean } = {})
       ],
       remove: true,
     },
-    ...(options.pretty
-      ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
-      : {}),
-  });
+  };
+  if (!options.exportLogs) {
+    if (options.destination) return pino(config, options.destination);
+    return pino({
+      ...config,
+      ...(options.pretty
+        ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
+        : {}),
+    });
+  }
+  // stdout keeps the same JSON (or pretty) lines; the OTel stream gets the same redacted lines.
+  const stdout: DestinationStream =
+    options.destination ??
+    (options.pretty
+      ? transport({ target: 'pino-pretty', options: { colorize: true } })
+      : destination(1));
+  return pino(
+    config,
+    multistream([
+      { level: 'trace', stream: stdout },
+      { level: 'trace', stream: createOtelLogStream() },
+    ]),
+  );
 }
 
 /** Adapt the core's pino logger to the SDK's `Logger` handed to plugins. */

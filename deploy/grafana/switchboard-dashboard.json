@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "description": "AI Switchboard: events, dispatch, batches, runs, meters, budgets, breakers and plugin health from the /metrics endpoint or an OTLP → Prometheus pipeline.",
+  "description": "AI Switchboard: events, dispatch, batches, runs, meters, budgets, breakers and plugin health from the /metrics endpoint or an OTLP → Prometheus pipeline, plus its OTLP logs (Loki) and traces (Tempo).",
   "editable": true,
   "graphTooltip": 1,
   "links": [
@@ -11,6 +11,13 @@
       "type": "link",
       "url": "https://github.com/ai-switchboard/switchboard/blob/main/docs/runbook.md",
       "targetBlank": true
+    },
+    {
+      "title": "Traces (Tempo)",
+      "type": "link",
+      "targetBlank": true,
+      "url": "/explore?schemaVersion=1&panes=%7B%22t%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22%7Bresource.service.name%3D%5C%22switchboard%5C%22%20%26%26%20name%3D%5C%22switchboard.ingest%5C%22%7D%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D",
+      "tooltip": "Every ingested delivery as one trace, in Explore"
     }
   ],
   "panels": [
@@ -1488,6 +1495,195 @@
           "range": true
         }
       ]
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "HTTP, logs and traces",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 78
+      },
+      "panels": []
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "HTTP p95 by route",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 79
+      },
+      "description": "http.server.request.duration for the API, /hooks and /callbacks (OTLP, or /metrics).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, http_request_method, http_route) (rate(http_server_request_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{http_request_method}} {{http_route}}"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "HTTP requests by status",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 79
+      },
+      "description": "Rate of requests per route and response status.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 30,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (http_route, http_response_status_code) (rate(http_server_request_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "{{http_route}} {{http_response_status_code}}"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "logs",
+      "title": "Logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "${logs}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 86
+      },
+      "description": "Switchboard log records over OTLP. Lines logged inside a span carry trace_id: open one to jump to its trace.",
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${logs}"
+          },
+          "expr": "{service_name=\"$service\"}",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "table",
+      "title": "Recent ingest traces",
+      "datasource": {
+        "type": "tempo",
+        "uid": "${traces}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 96
+      },
+      "description": "One trace per delivery: HTTP → switchboard.ingest → match → dispatch (gate, budget, invoke) → the destination call → finish. Click a trace id to open it.",
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "${traces}"
+          },
+          "queryType": "traceql",
+          "query": "{resource.service.name=\"$service\" && name=\"switchboard.ingest\"}",
+          "limit": 50,
+          "tableType": "traces"
+        }
+      ]
     }
   ],
   "refresh": "30s",
@@ -1500,6 +1696,24 @@
         "label": "Data source",
         "type": "datasource",
         "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1
+      },
+      {
+        "name": "logs",
+        "label": "Logs data source",
+        "type": "datasource",
+        "query": "loki",
+        "current": {},
+        "hide": 0,
+        "refresh": 1
+      },
+      {
+        "name": "traces",
+        "label": "Traces data source",
+        "type": "datasource",
+        "query": "tempo",
         "current": {},
         "hide": 0,
         "refresh": 1
@@ -1575,6 +1789,18 @@
         },
         "refresh": 2,
         "sort": 1
+      },
+      {
+        "name": "service",
+        "label": "Service name",
+        "type": "textbox",
+        "query": "switchboard",
+        "current": {
+          "text": "switchboard",
+          "value": "switchboard"
+        },
+        "hide": 0,
+        "description": "OTEL_SERVICE_NAME of the installation (logs and traces)."
       }
     ]
   },
