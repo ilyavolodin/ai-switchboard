@@ -8,35 +8,50 @@
   --font-body: var(--font-sans);
   --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
 
-  --type-page-title-size: 28px;
+  /* Type scale: components take sizes from here or from the roles below. */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 15px;
+  --text-xl: 17px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+
+  --type-page-title-size: var(--text-3xl);
   --type-page-title-line: 36px;
   --type-page-title-weight: 600;
   --type-page-title-tracking: -0.01em;
-  --type-card-title-size: 17px;
+  --type-card-title-size: var(--text-xl);
   --type-card-title-line: 24px;
   --type-card-title-weight: 600;
   --type-figure-xl-size: 32px;
   --type-figure-xl-line: 40px;
   --type-figure-lg-size: 24px;
   --type-figure-lg-line: 32px;
-  --type-figure-sm-size: 14px;
+  --type-figure-sm-size: var(--text-base);
   --type-figure-sm-line: 20px;
-  --type-body-size: 14px;
+  --type-body-size: var(--text-base);
   --type-body-line: 22px;
-  --type-label-size: 14px;
+  --type-label-size: var(--text-base);
   --type-label-line: 20px;
-  --type-caption-size: 12px;
+  --type-caption-size: var(--text-sm);
   --type-caption-line: 16px;
-  --type-overline-size: 11px;
+  --type-overline-size: var(--text-xs);
   --type-overline-line: 16px;
   --type-overline-tracking: 0.1em;
   /* The console's dense body text. */
-  --type-ui-size: 13px;
+  --type-ui-size: var(--text-md);
   --type-ui-line: 1.45;
 
+  --space-0-5: 2px;
   --space-1: 4px;
+  --space-1-5: 6px;
   --space-2: 8px;
+  --space-2-5: 10px;
   --space-3: 12px;
+  --space-3-5: 14px;
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;

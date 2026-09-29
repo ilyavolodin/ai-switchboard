@@ -2,7 +2,7 @@ import type { MeterHistoryResponse } from '@ai-switchboard/core/contract';
 
 import { chartValue } from '../lib/chart.js';
 import { toMs } from '../lib/format.js';
-import { runStatusTone, toneVars } from '../lib/tone.js';
+import { toneVars } from '../lib/tone.js';
 import styles from './MeterBand.module.css';
 
 export interface MeterBandProps {
@@ -96,7 +96,7 @@ export function MeterBand({ meters, runs = [], processId, from, to, ariaLabel }:
         {runs.map((r) => {
           const t = toMs(r.t);
           if (t == null || t < start || t > end) return null;
-          const tone = runStatusTone(r.status);
+          const tone = r.statusLabel.tone;
           const dim = processId != null && r.processId !== processId;
           return (
             <line

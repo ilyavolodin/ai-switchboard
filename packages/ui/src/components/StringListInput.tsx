@@ -1,17 +1,13 @@
 import { Button } from './Button.js';
+import type { ControlProps } from './controlProps.js';
 import { IconButton } from './IconButton.js';
 import styles from './StringListInput.module.css';
 import { TextField } from './TextField.js';
 
-export interface StringListInputProps {
-  value: string[];
-  onChange: (next: string[]) => void;
+export interface StringListInputProps extends ControlProps<string[]> {
   /** Prefix of each item's accessible name ("Labels to watch 1"). */
   label: string;
-  id?: string;
-  describedBy?: string;
   placeholder?: string;
-  disabled?: boolean;
   mono?: boolean;
 }
 
@@ -21,6 +17,7 @@ export function StringListInput({
   label,
   id,
   describedBy,
+  invalid,
   placeholder,
   disabled,
   mono,
@@ -40,6 +37,7 @@ export function StringListInput({
             size="sm"
             mono={mono}
             aria-label={`${label} ${i + 1}`}
+            invalid={invalid}
             value={item}
             placeholder={placeholder}
             disabled={disabled}

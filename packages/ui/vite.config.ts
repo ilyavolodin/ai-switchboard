@@ -20,7 +20,5 @@ export default defineConfig({
     outDir: '../core/public',
     emptyOutDir: true,
     sourcemap: true,
-    // React Flow and React are most of the bundle; the app is one screen-set behind a login.
-    chunkSizeWarningLimit: 900,
   },
 });

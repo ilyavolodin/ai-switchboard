@@ -10,18 +10,14 @@ import { Icon } from './Icon.js';
 import { Select } from './Select.js';
 import styles from './SecretRefInput.module.css';
 import { TextField } from './TextField.js';
+import type { ControlProps } from './controlProps.js';
 
-export interface SecretRefInputProps {
-  /** `secret://<provider>/<name>`. Anything else is never displayed. */
+export interface SecretRefInputProps extends Omit<ControlProps<string | undefined>, 'value'> {
+  /** `secret://<provider>/<name>`. Anything else (a stored plain value) is never displayed. */
   value: unknown;
-  onChange: (next: string | undefined) => void;
   /** `undefined` while loading; an empty list shows a hint pointing to Settings. */
   providers?: string[];
   status?: SecretRefDTO;
-  id?: string;
-  describedBy?: string;
-  disabled?: boolean;
-  invalid?: boolean;
   label?: string;
 }
 

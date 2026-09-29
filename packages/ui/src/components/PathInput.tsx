@@ -4,19 +4,14 @@ import { useSuggestions } from '../hooks/useSuggestions.js';
 import styles from './PathInput.module.css';
 import { SuggestionList } from './SuggestionList.js';
 import { TextField } from './TextField.js';
+import type { ControlProps } from './controlProps.js';
 
-export interface PathInputProps {
-  id?: string;
-  describedBy?: string;
+export interface PathInputProps extends ControlProps<string> {
   label: string;
-  value: string;
-  onChange: (next: string) => void;
   /** Empty = a plain text field. */
   paths: Suggestion[];
   placeholder?: string;
-  invalid?: boolean;
   changed?: boolean;
-  disabled?: boolean;
 }
 
 export function PathInput({

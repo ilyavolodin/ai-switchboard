@@ -1,11 +1,11 @@
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   height: 22px;
-  padding: 0 8px 0 7px;
+  padding: 0 var(--space-2) 0 7px;
   border-radius: var(--radius-full);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
@@ -19,7 +19,7 @@
 
 .sm {
   height: 20px;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .dot {

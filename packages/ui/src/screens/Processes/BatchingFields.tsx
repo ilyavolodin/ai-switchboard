@@ -37,7 +37,7 @@ export function BatchingFields({ doc, baseline, set, errors, disabled }: Section
               id={id}
               describedBy={describedBy}
               ariaLabel="Batch events"
-              checked={on}
+              value={on}
               disabled={disabled}
               onChange={(next) => {
                 const back = restore(next);
@@ -104,7 +104,7 @@ export function BatchingFields({ doc, baseline, set, errors, disabled }: Section
                   label="Group-by expression"
                   textareaRows={1}
                   completions={{
-                    variables: ['event', 'attributes', 'artifact', 'type', 'process', 'now'],
+                    context: 'batchKey',
                   }}
                   value={b.groupBy ?? ''}
                   disabled={disabled}

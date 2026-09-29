@@ -133,7 +133,10 @@ describe('DestinationDetail', () => {
     });
     expect(api.callsTo('PUT /destinations/ex-routines')[0]?.body).toMatchObject({
       reason: 'tighter budget',
-      settings: { orgId: 'org_lola', apiKey: 'secret://env/CLAUDE_API_KEY' },
+      settings: {
+        token: 'secret://env/CLAUDE_API_KEY',
+        callbackSecret: 'secret://env/ROUTINE_CALLBACK_SECRET',
+      },
       caps: {
         runsPerDay: 22,
         usagePerDay: { input_tokens: 500000 },

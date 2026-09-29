@@ -1,0 +1,10 @@
+.meters {
+  display: flex;
+  gap: var(--space-2-5);
+  align-items: center;
+  min-height: 52px;
+}
+
+.empty {
+  font-size: var(--text-sm);
+}

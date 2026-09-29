@@ -1,5 +1,5 @@
 import { fireEvent, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { renderApp } from '../test/render.js';
 
@@ -41,13 +41,19 @@ describe('app shell', () => {
     await screen.findByRole('navigation', { name: 'Sections' });
     fireEvent.keyDown(document, { key: 'g' });
     fireEvent.keyDown(document, { key: 'p' });
-    expect(router.state.location.pathname).toBe('/processes');
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe('/processes');
+    });
     fireEvent.keyDown(document, { key: 'g' });
     fireEvent.keyDown(document, { key: 'a' });
-    expect(router.state.location.pathname).toBe('/activity');
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe('/activity');
+    });
     fireEvent.keyDown(document, { key: 'g' });
     fireEvent.keyDown(document, { key: 'b' });
-    expect(router.state.location.pathname).toBe('/');
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe('/');
+    });
     fireEvent.keyDown(document, { key: '/' });
     expect(screen.getByRole('searchbox', { name: 'Search by artifact id' })).toHaveFocus();
   });
@@ -77,7 +83,9 @@ describe('app shell', () => {
     const { router, user } = renderApp('/');
     const search = await screen.findByRole('searchbox', { name: 'Search by artifact id' });
     await user.type(search, 'LOL-1712{Enter}');
-    expect(router.state.location.pathname).toBe('/activity/trace/LOL-1712');
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe('/activity/trace/LOL-1712');
+    });
   });
 
   it('links the capacity strip, open breakers and pending approvals', async () => {
@@ -123,6 +131,7 @@ describe('app shell', () => {
           evaluation: false,
           mustChangePassword: false,
           evaluationAdminEmail: null,
+          requireReasons: true,
         }),
       },
     });
@@ -134,7 +143,7 @@ describe('app shell', () => {
   it('routes detail tabs as URL segments', async () => {
     renderApp('/sources/src-linear/settings');
     expect(await screen.findByRole('heading', { name: 'Linear — lola', level: 1 })).toBeVisible();
-    expect(await screen.findByLabelText(/Team key/)).toHaveValue('LOL');
+    expect(await screen.findByRole('textbox', { name: 'Teams 1' })).toHaveValue('LOL');
   });
 
   it.each([
@@ -142,8 +151,9 @@ describe('app shell', () => {
     ['/executors/ex-routines/settings', '/destinations/ex-routines/settings', '?x=1'],
   ])('redirects the old path %s to %s', async (from, to, search) => {
     const { router } = renderApp(`${from}${search}`);
-    await screen.findByRole('navigation', { name: 'Sections' });
-    expect(router.state.location.pathname).toBe(to);
+    await vi.waitFor(() => {
+      expect(router.state.location.pathname).toBe(to);
+    });
     expect(router.state.location.search).toBe(search);
   });
 });

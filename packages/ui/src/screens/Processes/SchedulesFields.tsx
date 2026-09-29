@@ -47,7 +47,7 @@ export function SchedulesFields({
               <Toggle
                 size="sm"
                 ariaLabel={`Schedule ${i + 1} enabled`}
-                checked={s.enabled}
+                value={s.enabled}
                 disabled={disabled}
                 onChange={(enabled) => {
                   put(i, { enabled });

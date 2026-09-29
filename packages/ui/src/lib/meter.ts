@@ -39,14 +39,6 @@ export function lowestEventCeiling(m: Pick<MeterGaugeDTO, 'ceilings'>): number |
   return Math.min(...m.ceilings.map((c) => c.events));
 }
 
-export function isAboveCeiling(
-  m: Pick<MeterGaugeDTO, 'ceilings' | 'utilization' | 'used' | 'limit'>,
-): boolean {
-  const c = lowestEventCeiling(m);
-  const f = meterFraction(m);
-  return c != null && f != null && f * 100 >= c;
-}
-
 /** One per destination; falls back to each destination's first meter. */
 export function primaryMeters(meters: MeterGaugeDTO[]): MeterGaugeDTO[] {
   const byDestination = new Map<string, MeterGaugeDTO[]>();

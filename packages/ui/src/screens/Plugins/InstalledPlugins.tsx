@@ -18,11 +18,11 @@ function instanceCount(p: PluginSummary): number {
 export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
   const remove = useReasonedMutation(
     useRemovePlugin(),
-    (v: { pluginName: string }) => {
-      const p = plugins.find((x) => x.name === v.pluginName);
+    (v: { name: string }) => {
+      const p = plugins.find((x) => x.name === v.name);
       const n = p ? instanceCount(p) : 0;
       return {
-        title: `Remove ${v.pluginName}?`,
+        title: `Remove ${v.name}?`,
         consequence: `It is unloaded now, and every replica removes its copy within a minute.${
           n > 0
             ? ` Its ${n} instance${n === 1 ? '' : 's'} stay configured but are held until it is back.`
@@ -116,7 +116,7 @@ export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
             variant="danger-outline"
             requires="admin"
             aria-label={`Remove ${p.name}`}
-            onClick={() => void remove.run({ pluginName: p.name })}
+            onClick={() => void remove.run({ name: p.name })}
           >
             Remove
           </Button>

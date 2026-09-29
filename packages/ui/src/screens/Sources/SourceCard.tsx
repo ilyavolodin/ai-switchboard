@@ -41,7 +41,7 @@ export function SourceCard({ source }: { source: SourceSummary }) {
           <Toggle
             size="sm"
             ariaLabel={`${source.name} enabled`}
-            checked={source.enabled}
+            value={source.enabled}
             requires="operator"
             onChange={(next) => void enable.run({ id: source.id, enabled: next })}
           />

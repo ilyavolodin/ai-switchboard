@@ -93,7 +93,7 @@ export function BudgetsFields({
             id={id}
             describedBy={describedBy}
             ariaLabel="Limit runs"
-            checked={on}
+            value={on}
             disabled={disabled}
             onChange={(next) => {
               setKeepOpen(next);

@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { usePreviewCron } from '../api/hooks/processes.js';
 import { useDebounced } from '../hooks/useDebounced.js';
 import { describeCron, formatInZone, timezones } from '../lib/cron.js';
+import type { ControlProps } from './controlProps.js';
 import styles from './CronField.module.css';
 import { Select } from './Select.js';
 import { TextField } from './TextField.js';
@@ -12,14 +13,9 @@ export interface CronValue {
   timezone: string;
 }
 
-export interface CronFieldProps {
-  value: CronValue;
-  onChange: (next: CronValue) => void;
-  id?: string;
-  describedBy?: string;
+export interface CronFieldProps extends ControlProps<CronValue> {
   /** For a schema field that stores only the cron string. */
   hideTimezone?: boolean;
-  disabled?: boolean;
 }
 
 export function CronField({
@@ -27,22 +23,28 @@ export function CronField({
   onChange,
   id,
   describedBy,
+  invalid: invalidProp,
   hideTimezone,
   disabled,
 }: CronFieldProps) {
-  const described = describeCron(value.cron);
   // Debounce the strings, not `value`: callers often pass a fresh object every render, which
   // would restart the timer on each one.
   const cron = useDebounced(value.cron, 400);
   const timezone = useDebounced(value.timezone, 400);
-  const preview = usePreviewCron(describeCron(cron).ok ? { cron: cron.trim(), timezone } : null);
+  const preview = usePreviewCron(cron.trim() ? { cron: cron.trim(), timezone } : null);
+  const empty = value.cron.trim() === '';
+  // A preview answers the debounced text; while it catches up, nothing is flagged.
+  const answer =
+    !empty && cron === value.cron && !preview.isPlaceholderData ? preview.data : undefined;
+  const invalid = answer?.valid === false || invalidProp === true;
+  const description = describeCron(value.cron) ?? (answer?.valid ? answer.description : null);
   const zones = useMemo(() => timezones(), []);
   const zoneOptions = useMemo(() => {
     const list =
       zones.includes(value.timezone) || !value.timezone ? zones : [value.timezone, ...zones];
     return list.map((z) => ({ value: z, label: z }));
   }, [zones, value.timezone]);
-  const next = described.ok && preview.data?.valid ? preview.data.next.slice(0, 3) : [];
+  const next = answer?.valid ? answer.next.slice(0, 3) : [];
 
   return (
     <div className={styles.wrap}>
@@ -56,7 +58,7 @@ export function CronField({
           className={styles.cron}
           value={value.cron}
           placeholder="0 7 * * *"
-          invalid={!described.ok && value.cron.trim() !== ''}
+          invalid={invalid}
           disabled={disabled}
           onChange={(e) => {
             onChange({ ...value, cron: e.target.value });
@@ -77,13 +79,12 @@ export function CronField({
         )}
       </div>
       <div className={styles.preview} aria-live="polite">
-        {described.ok ? (
-          <span className={styles.description}>{described.text}</span>
+        {empty ? (
+          <span className={styles.error}>Enter a cron expression, e.g. 0 7 * * *</span>
+        ) : invalid ? (
+          <span className={styles.error}>{answer?.error ?? 'Invalid cron expression'}</span>
         ) : (
-          <span className={styles.error}>{described.error}</span>
-        )}
-        {preview.data && !preview.data.valid && preview.data.error && (
-          <span className={styles.error}>{preview.data.error}</span>
+          description && <span className={styles.description}>{description}</span>
         )}
         {next.length > 0 && (
           <ul className={styles.next} aria-label="Next three runs">

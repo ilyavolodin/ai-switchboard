@@ -90,7 +90,7 @@ export function TriggerEditor({
         <Toggle
           size="sm"
           ariaLabel={`Trigger ${n} enabled`}
-          checked={trigger.enabled}
+          value={trigger.enabled}
           disabled={disabled}
           onChange={(enabled) => {
             onChange({ ...trigger, enabled });
@@ -216,7 +216,7 @@ export function TriggerEditor({
                       value={trigger.filter ?? ''}
                       disabled={disabled}
                       completions={{
-                        variables: ['event', 'attributes', 'artifact', 'type', 'process', 'now'],
+                        context: 'filter',
                         attributes: [...attributes, ...seenAttributes],
                       }}
                       onChange={(filter) => {

@@ -183,6 +183,51 @@ describe('ProcessDetail', () => {
     expect(within(list).getAllByRole('img', { name: /reached/ }).length).toBe(links.length);
   });
 
+  it('settles an uncertain run from its drawer with a reason', async () => {
+    const f = buildFixtures(TEST_NOW);
+    const uncertain = {
+      ...f.runDetail,
+      status: 'uncertain' as const,
+      statusLabel: { tone: 'warn' as const, label: 'uncertain' },
+    };
+    const { user, api } = renderWithProviders(<ProcessDetail />, {
+      ...at('runs'),
+      fixtures: f,
+      overrides: { 'GET /runs/:id': () => uncertain },
+    });
+    const table = await screen.findByRole('table', { name: 'Runs of this process' });
+    await user.click(within(table).getByRole('button', { name: 'Details for run run_01J8KQ4C3' }));
+    const drawer = await screen.findByRole('dialog', { name: /Run run_01J8KQ4C3/ });
+    const settle = await within(drawer).findByRole('region', { name: 'Settle this run' });
+    await user.click(within(settle).getByRole('button', { name: 'Mark error' }));
+    const prompt = await screen.findByRole('dialog', { name: 'Settle the run as error?' });
+    await user.type(within(prompt).getByRole('textbox', { name: /Reason/ }), 'routine crashed');
+    await user.click(within(prompt).getByRole('button', { name: 'Mark error' }));
+    await vi.waitFor(() => {
+      expect(api.callsTo(`POST /runs/${uncertain.id}/close`)[0]?.body).toEqual({
+        status: 'error',
+        reason: 'routine crashed',
+      });
+    });
+  });
+
+  it('offers settling only for uncertain runs, and not to viewers', async () => {
+    const f = buildFixtures(TEST_NOW);
+    const uncertain = { ...f.runDetail, status: 'uncertain' as const };
+    const { user } = renderWithProviders(<ProcessDetail />, {
+      ...at('runs'),
+      role: 'viewer',
+      overrides: { 'GET /runs/:id': () => uncertain },
+    });
+    const table = await screen.findByRole('table', { name: 'Runs of this process' });
+    await user.click(within(table).getByRole('button', { name: 'Details for run run_01J8KQ4C3' }));
+    const drawer = await screen.findByRole('dialog', { name: /Run run_01J8KQ4C3/ });
+    const settle = await within(drawer).findByRole('region', { name: 'Settle this run' });
+    for (const name of ['Mark ok', 'Mark error', 'Mark unknown']) {
+      expect(within(settle).getByRole('button', { name })).toHaveAttribute('aria-disabled', 'true');
+    }
+  });
+
   it('shows runs in a table and opens one in a drawer', async () => {
     const { user } = renderWithProviders(<ProcessDetail />, at('runs'));
     const table = await screen.findByRole('table', { name: 'Runs of this process' });
@@ -201,6 +246,7 @@ describe('ProcessDetail', () => {
     expect(steps).toHaveTextContent('src-linear.comment');
     expect(within(steps).getByText('in doubt')).toBeInTheDocument();
     expect(within(drawer).getByLabelText('Run input')).toHaveTextContent('LOL-1712');
+    expect(within(drawer).queryByRole('region', { name: 'Settle this run' })).toBeNull();
   });
 
   it('renders the definition read-only with an Edit link', async () => {

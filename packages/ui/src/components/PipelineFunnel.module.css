@@ -3,13 +3,13 @@
   align-items: flex-end;
   gap: 0;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: var(--space-0-5);
 }
 
 .stage {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
   flex: 1 1 140px;
   min-width: 96px;
 }
@@ -17,7 +17,7 @@
 .barArea {
   display: flex;
   align-items: flex-end;
-  gap: 2px;
+  gap: var(--space-0-5);
   height: 72px;
 }
 
@@ -37,7 +37,7 @@
 .count {
   font-family: var(--font-heading);
   font-weight: 700;
-  font-size: 22px;
+  font-size: var(--text-2xl);
   line-height: 1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -47,15 +47,15 @@
 .label {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
-  font-size: 12px;
+  gap: var(--space-1) var(--space-2-5);
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
 }
 
 .key {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .swatch {
@@ -69,7 +69,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--space-1-5);
   flex: 0 0 48px;
   padding-bottom: 38px;
 }

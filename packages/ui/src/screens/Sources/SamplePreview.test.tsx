@@ -56,7 +56,11 @@ describe('Try it with a sample delivery', () => {
     expect(within(panel).getByText(/No rule matched/)).toBeVisible();
 
     const before = api.callsTo('POST /sources/preview').length;
-    await user.selectOptions(within(form).getByLabelText(/^Verification/), 'none');
+    await user.click(
+      within(form).getByRole('radio', {
+        name: 'None — accept unauthenticated deliveries (evaluation only)',
+      }),
+    );
     await vi.waitFor(() => {
       expect(api.callsTo('POST /sources/preview').length).toBeGreaterThan(before);
     });

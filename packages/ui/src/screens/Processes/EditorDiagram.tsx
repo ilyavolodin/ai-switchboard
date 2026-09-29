@@ -139,7 +139,7 @@ export function EditorDiagram({
           {sweep && (
             <span
               className={styles.badge}
-              title={`sweep ${sweepText?.ok ? sweepText.text : sweep.cron} ${sweep.timezone}`}
+              title={`sweep ${sweepText ?? sweep.cron} ${sweep.timezone}`}
             >
               <Icon name="refresh" size={12} />
               {sweep.cron}

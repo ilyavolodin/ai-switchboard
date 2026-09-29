@@ -31,13 +31,7 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
-/** `utilization` is 0–100; allowances without one fall back to used / limit. */
-export function meterFraction(m: {
-  utilization: number | null;
-  used: number | null;
-  limit: number | null;
-}): number | null {
-  if (m.utilization != null) return clampFraction(m.utilization / 100);
-  if (m.used != null && m.limit != null && m.limit > 0) return clampFraction(m.used / m.limit);
-  return null;
+/** `utilization` is 0–100, as the core reports it; `null` before the first read. */
+export function meterFraction(m: { utilization: number | null }): number | null {
+  return m.utilization == null ? null : clampFraction(m.utilization / 100);
 }

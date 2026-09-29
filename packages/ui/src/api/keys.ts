@@ -13,7 +13,6 @@ import type {
 /** The first element is the area, so invalidating `['sources']` refreshes every sources query. */
 export const qk = {
   me: ['me'] as const,
-  whoami: ['me', 'whoami'] as const,
   status: ['status'] as const,
   board: ['board'] as const,
   /** Installing a plugin invalidates this prefix to refresh every `pluginTypes(kind)`. */
@@ -51,7 +50,7 @@ export const qk = {
 
   preview: {
     filter: (req: FilterPreviewRequest) => ['preview', 'filter', req] as const,
-    input: (req: InputPreviewRequest) => ['preview', 'input', req] as const,
+    input: (req: InputPreviewRequest | null) => ['preview', 'input', req] as const,
     cron: (req: CronPreviewRequest) => ['preview', 'cron', req] as const,
     source: (req: SourcePreviewRequest) => ['preview', 'source', req] as const,
   },
@@ -60,7 +59,6 @@ export const qk = {
     all: ['events'] as const,
     list: (q: ActivityQuery) => ['events', 'list', q] as const,
     detail: (id: string) => ['events', 'detail', id] as const,
-    trace: (id: string) => ['events', 'trace', id] as const,
   },
   trace: (artifact: string) => ['trace', artifact] as const,
 
@@ -80,7 +78,6 @@ export const qk = {
   plugins: {
     all: ['plugins'] as const,
     installed: () => ['plugins', 'installed'] as const,
-    catalogue: () => ['plugins', 'catalogue'] as const,
     search: (kind: string, q: string) => ['plugins', 'search', kind, q] as const,
   },
 

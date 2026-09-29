@@ -1,14 +1,14 @@
 .header {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--space-6);
   flex-wrap: wrap;
 }
 
 .main {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
   flex-grow: 1;
   min-width: 0;
 }
@@ -17,7 +17,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -42,7 +42,7 @@
 .title {
   font-family: var(--font-heading);
   font-weight: 600;
-  font-size: 22px;
+  font-size: var(--text-2xl);
   line-height: 1.1;
   color: var(--foreground-strong);
   min-width: 0;
@@ -58,20 +58,20 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  font-size: 12px;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
 }
 
 .description {
-  font-size: 13px;
+  font-size: var(--text-md);
   color: var(--muted-foreground);
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   flex-shrink: 0;
   flex-wrap: wrap;
 }

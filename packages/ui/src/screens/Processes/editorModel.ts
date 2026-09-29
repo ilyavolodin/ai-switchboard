@@ -262,8 +262,7 @@ export function schedulesSummary(s: Schedule[]): string {
   if (s.length === 0) return 'no sweeps';
   return s
     .map((x) => {
-      const d = describeCron(x.cron);
-      return `${d.ok ? d.text : x.cron} ${x.timezone}${x.enabled ? '' : ' (off)'} · catch-up ${x.catchUp}`;
+      return `${describeCron(x.cron) ?? x.cron} ${x.timezone}${x.enabled ? '' : ' (off)'} · catch-up ${x.catchUp}`;
     })
     .join(' · ');
 }
@@ -368,7 +367,7 @@ export function checkDocument(doc: ProcessDocument): Record<string, string> {
   });
   if (!doc.destination.instanceId) out['/destination/instanceId'] = 'Pick a destination';
   doc.schedules.forEach((s, i) => {
-    if (!describeCron(s.cron).ok) out[`/schedules/${i}/cron`] = 'Fix the cron expression';
+    if (!s.cron.trim()) out[`/schedules/${i}/cron`] = 'Enter a cron expression';
   });
   return out;
 }

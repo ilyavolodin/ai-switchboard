@@ -1,9 +1,7 @@
-import { useNavigate } from 'react-router';
-
 import { useProcesses } from '../../api/index.js';
-import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
+import { LinkButton } from '../../components/LinkButton.js';
 import { QueryBoundary } from '../../components/QueryBoundary.js';
 import { SearchInput } from '../../components/SearchInput.js';
 import { SegmentedControl } from '../../components/SegmentedControl.js';
@@ -33,7 +31,6 @@ const FILTER_LABELS: Record<ProcessFilter, string> = {
 
 export function Processes() {
   const processes = useProcesses();
-  const navigate = useNavigate();
   const [query, setQuery] = useSearchParamState('q');
   const [sortParam, setSort] = useSearchParamState('sort', 'activity');
   const [filterParam, setFilter] = useSearchParamState('filter', 'all');
@@ -44,16 +41,9 @@ export function Processes() {
   const counts = filterCounts(all);
 
   const newButton = (
-    <Button
-      variant="primary"
-      icon="plus"
-      requires="operator"
-      onClick={() => {
-        void navigate('/processes/new');
-      }}
-    >
+    <LinkButton to="/processes/new" variant="primary" icon="plus" requires="operator">
       New process
-    </Button>
+    </LinkButton>
   );
 
   return (

@@ -64,28 +64,40 @@ describe('rankSuggestions and wordAt', () => {
 });
 
 describe('expressionCompletions', () => {
-  it('offers declared attributes, the context variables and the functions', () => {
+  it('offers declared attributes, the context’s fields and the functions', () => {
     const values = expressionCompletions({
-      variables: ['event', 'attributes'],
+      context: 'filter',
       attributes: [{ name: 'label', type: 'string' }],
     }).map((s) => s.value);
-    expect(values.slice(0, 4)).toEqual([
-      'attributes.label',
-      'event.attributes.label',
-      'event',
-      'attributes',
-    ]);
+    expect(values.slice(0, 2)).toEqual(['attributes.label', 'event.attributes.label']);
+    expect(values).toEqual(
+      expect.arrayContaining(['event', 'event.artifact.kind', 'process.name', 'now']),
+    );
     expect(values).toContain('$resolve(artifact)');
     expect(values).toContain('$count()');
     expect(values).not.toContain('run');
+    expect(values).not.toContain('events.attributes.label');
   });
 
-  it('leaves out Switchboard’s own functions for plugin expressions', () => {
-    const values = expressionCompletions({ variables: [], switchboardFunctions: false }).map(
+  it('follows the core’s run context in an input mapping', () => {
+    const values = expressionCompletions({ context: 'mapping' }).map((s) => s.value);
+    expect(values).toEqual(expect.arrayContaining(['run.dryRun', 'run.processId', 'mode']));
+    expect(values).not.toContain('run.status');
+  });
+
+  it('leaves out names that do not apply', () => {
+    const before = expressionCompletions({ context: 'step', without: ['result'] });
+    expect(before.map((s) => s.value)).not.toContain('result');
+    expect(expressionCompletions({ context: 'step' }).map((s) => s.value)).toContain('result');
+  });
+
+  it('offers only JSONata’s functions to plugin expressions', () => {
+    const values = expressionCompletions({ context: null, switchboardFunctions: false }).map(
       (s) => s.value,
     );
     expect(values).not.toContain('$resolve(artifact)');
-    expect(values).not.toContain('$secretRef("provider/NAME")');
+    expect(values).not.toContain("$secretRef('provider/name')");
+    expect(values).not.toContain('$secret(name)');
     expect(values).toContain('$join()');
   });
 });

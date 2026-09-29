@@ -99,7 +99,7 @@ describe('ExpressionEditor', () => {
             value={value}
             onChange={setValue}
             completions={{
-              variables: ['event', 'attributes', 'process', 'now'],
+              context: 'filter',
               attributes: [{ name: 'priority', type: 'string', description: 'The priority' }],
             }}
           />

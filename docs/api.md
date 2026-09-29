@@ -312,7 +312,10 @@ out the credentials a deployment holds, so viewers and operators get 403). It re
 provider's optional `description` and `updatedAt`, and `usedBy` (every source, destination,
 notifier, secret provider and process whose settings or document reference it, with the field
 path). `missing` holds references to this provider whose names the provider does not list
-(broken references). The core keeps only `name`, `description` and `updatedAt` from what the
+(broken references). A name the host stored for an instance's rotated credentials
+(`switchboard-<instanceId>-<key>`) carries `storedBy` (`SecretOwnerDTO`: the instance's `kind`, `id`
+and `name`); the UI shows it as "stored by <instance>", read-only, and never offers it as a
+settings reference. The core keeps only `name`, `description` and `updatedAt` from what the
 plugin's `SecretProvider.list()` returns. A provider type without `list()`, a disabled or
 stopped provider, or a failed or timed-out (10 s) listing gives `available: false` with an
 `error`, and empty `secrets` and `missing`.

@@ -8,6 +8,7 @@ import {
   xSecret,
   xWarnings,
   xWidget,
+  type XWidget,
 } from '@ai-switchboard/sdk/schema';
 import type { Ajv2020, ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 
@@ -15,6 +16,35 @@ export type ValuePath = (string | number)[];
 
 export type FieldKind =
   'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'unknown';
+
+/** How a field is edited: an `x-widget`, or what its type implies. */
+export type Widget = XWidget | 'secret' | 'toggle' | 'number' | 'list' | 'text';
+
+const TEXT_WIDGETS: readonly XWidget[] = [
+  'cron',
+  'expression',
+  'path',
+  'textarea',
+  'code',
+  'json',
+  'password',
+];
+
+/**
+ * A secret is always a reference picker; an enum is a select unless it asks for radios; `select`
+ * also turns `examples` into choices. A text widget on a non-string field is ignored.
+ */
+export function pickWidget(s: JSONSchema, kind: FieldKind = fieldKind(s)): Widget {
+  const widget = xWidget(s);
+  if (isSecretField(s)) return 'secret';
+  if (kind === 'enum') return widget === 'radio' ? 'radio' : 'select';
+  if (widget === 'select' && Array.isArray(s.examples)) return 'select';
+  if (kind === 'boolean') return 'toggle';
+  if (kind === 'number' || kind === 'integer') return 'number';
+  if (kind === 'array') return 'list';
+  if (widget && TEXT_WIDGETS.includes(widget)) return widget;
+  return 'text';
+}
 
 export function asSchema(v: unknown): JSONSchema | null {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as JSONSchema) : null;

@@ -1,7 +1,7 @@
 .timeline {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .toolbar {
@@ -15,7 +15,7 @@
   padding: 0;
   display: grid;
   grid-template-columns: 72px 16px minmax(0, 1fr);
-  column-gap: 10px;
+  column-gap: var(--space-2-5);
 }
 
 .item {
@@ -24,9 +24,9 @@
 
 .time {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
-  padding-top: 2px;
+  padding-top: var(--space-0-5);
   white-space: nowrap;
 }
 
@@ -51,8 +51,8 @@
 }
 
 .body {
-  padding-bottom: 12px;
-  font-size: 12px;
+  padding-bottom: var(--space-3);
+  font-size: var(--text-sm);
   color: var(--foreground-strong);
   min-width: 0;
 }
@@ -62,7 +62,7 @@
 }
 
 .detail {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
   word-break: break-word;
 }
@@ -70,10 +70,10 @@
 .meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1-5);
   align-items: center;
-  padding-top: 4px;
-  font-size: 11px;
+  padding-top: var(--space-1);
+  font-size: var(--text-xs);
 }
 
 .toggle {
@@ -81,13 +81,13 @@
   border: 0;
   background: transparent;
   color: var(--brand-text);
-  font-size: 11px;
+  font-size: var(--text-xs);
   cursor: pointer;
 }
 
 .data {
-  margin-top: 6px;
-  padding: 8px 10px;
+  margin-top: var(--space-1-5);
+  padding: var(--space-2) var(--space-2-5);
   border-radius: var(--radius-control);
   background: var(--accent-0);
   border: 1px solid var(--border-1);
@@ -97,13 +97,13 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-decoration: none;
 }
 
 .kind {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--foreground-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.04em;

@@ -9,7 +9,7 @@ import { Logo } from '../components/Logo.js';
 import { Skeleton } from '../components/Skeleton.js';
 import styles from './AppShell.module.css';
 import { Rail } from './Rail.js';
-import { type Session, SessionContext } from './session.js';
+import { SessionContext, sessionFromMe } from './session.js';
 import { useGlobalShortcuts } from './shortcuts.js';
 import { TopBar } from './TopBar.js';
 
@@ -73,13 +73,7 @@ export function AppShell() {
     );
   }
 
-  const session: Session = {
-    user: me.data.user,
-    authMode: me.data.authMode,
-    oidcConfigured: me.data.oidcConfigured,
-    evaluation: me.data.evaluation,
-    requireReasons: me.data.requireReasons,
-  };
+  const session = sessionFromMe(me.data);
   // Local accounts are first-class, so a missing issuer alone is no warning: only an evaluation
   // install (the Compose quick start) without OIDC shows the banner.
   const evaluation = session.evaluation && !session.oidcConfigured;

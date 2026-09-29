@@ -69,7 +69,7 @@ export function BasicsFields({
           <Toggle
             id={id}
             ariaLabel={isNew ? 'Enabled after saving' : 'Enabled'}
-            checked={doc.enabled}
+            value={doc.enabled}
             requires="operator"
             disabled={disabled}
             onChange={(enabled) => {

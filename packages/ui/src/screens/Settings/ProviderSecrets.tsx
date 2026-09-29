@@ -1,6 +1,7 @@
 import type {
   InstanceSummary,
   ProviderSecretDTO,
+  SecretOwnerDTO,
   SecretUserDTO,
 } from '@ai-switchboard/core/contract';
 import { Link } from 'react-router';
@@ -64,9 +65,22 @@ function Ref({ value }: { value: string }) {
   );
 }
 
+/** A rotated credential the host keeps for an instance: read-only, never a settings reference. */
+function StoredBy({ owner }: { owner: SecretOwnerDTO }) {
+  return (
+    <span className="t-caption">
+      stored by <Link to={hrefFor({ ...owner, field: '' })}>{owner.name}</Link> · read-only
+    </span>
+  );
+}
+
 const columns: TableColumn<ProviderSecretDTO>[] = [
   { key: 'name', header: 'Name', mono: true, cell: (s) => s.name },
-  { key: 'ref', header: 'Reference', cell: (s) => <Ref value={s.ref} /> },
+  {
+    key: 'ref',
+    header: 'Reference',
+    cell: (s) => (s.storedBy ? <StoredBy owner={s.storedBy} /> : <Ref value={s.ref} />),
+  },
   { key: 'used', header: 'Used by', cell: (s) => <UsedBy users={s.usedBy} /> },
   { key: 'updated', header: 'Updated', cell: (s) => <Time value={s.updatedAt} /> },
 ];

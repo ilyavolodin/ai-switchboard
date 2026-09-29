@@ -4,14 +4,138 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { linearSettingsSchema, webhookSettingsSchema } from '../api/fixtures.js';
 import { resolveConditionals, validateAgainstSchema, warningFor } from '../lib/schema.js';
 import { SchemaForm } from './SchemaForm.js';
+
+/** Verification branches in `allOf`, like a webhook source. */
+const conditionalSchema: JSONSchema = {
+  type: 'object',
+  required: ['mapping'],
+  properties: {
+    verification: {
+      type: 'string',
+      enum: ['hmac', 'shared_secret', 'none'],
+      default: 'hmac',
+      title: 'Verification',
+      description: 'How deliveries are authenticated.',
+      'x-group': 'Verification',
+      'x-warning': {
+        when: { const: 'none' },
+        message: 'Anyone who knows the URL can send events — evaluation only.',
+      },
+    },
+    secret: {
+      type: 'string',
+      title: 'Secret',
+      description: 'The HMAC key or the shared secret.',
+      'x-secret': true,
+      'x-group': 'Verification',
+    },
+    signatureHeader: {
+      type: 'string',
+      default: 'x-signature-256',
+      title: 'Signature header',
+      description: 'Header that carries the HMAC signature.',
+      'x-group': 'Verification',
+    },
+    sharedSecretHeader: {
+      type: 'string',
+      default: 'x-webhook-secret',
+      title: 'Shared-secret header',
+      description: 'Header that carries the shared secret.',
+      'x-group': 'Verification',
+    },
+    mapping: {
+      type: 'string',
+      minLength: 1,
+      title: 'Mapping',
+      description: 'JSONata over `{ body, headers, query }`.',
+      'x-group': 'Mapping',
+    },
+  },
+  allOf: [
+    {
+      if: { properties: { verification: { const: 'hmac' } } },
+      then: {
+        required: ['secret'],
+        properties: { secret: { minLength: 1 }, signatureHeader: true },
+      },
+    },
+    {
+      if: { properties: { verification: { const: 'shared_secret' } } },
+      then: {
+        required: ['secret'],
+        properties: { secret: { minLength: 1 }, sharedSecretHeader: true },
+      },
+    },
+  ],
+};
+
+/** Groups, `x-order`, secrets and defaults, like an issue-tracker source. */
+const groupedSchema: JSONSchema = {
+  type: 'object',
+  required: ['team', 'apiKey', 'webhookSecret'],
+  'x-order': [
+    'team',
+    'apiKey',
+    'webhookSecret',
+    'labels',
+    'includeArchived',
+    'pollIntervalSeconds',
+  ],
+  properties: {
+    team: {
+      type: 'string',
+      title: 'Team key',
+      description: 'The Linear team whose issues this source watches, e.g. LOL.',
+      minLength: 2,
+      'x-group': 'Workspace',
+    },
+    labels: {
+      type: 'array',
+      title: 'Labels to watch',
+      description: 'Only label changes for these labels become events. Empty means every label.',
+      items: { type: 'string' },
+      default: ['autofix', 'bug'],
+      'x-group': 'Workspace',
+    },
+    includeArchived: {
+      type: 'boolean',
+      title: 'Include archived issues',
+      default: false,
+      'x-group': 'Workspace',
+    },
+    apiKey: {
+      type: 'string',
+      title: 'API key',
+      description: 'A personal or workspace API key with read access.',
+      'x-secret': true,
+      'x-group': 'Credentials',
+    },
+    webhookSecret: {
+      type: 'string',
+      title: 'Webhook signing secret',
+      description:
+        'Linear signs every delivery with this secret. Deliveries that fail verification are rejected with an empty 401 and counted on the Overview tab.',
+      'x-secret': true,
+      'x-group': 'Credentials',
+    },
+    pollIntervalSeconds: {
+      type: 'integer',
+      title: 'Backfill poll interval',
+      description: 'How often to poll for changes missed while the webhook was down.',
+      minimum: 60,
+      maximum: 86400,
+      default: 900,
+      'x-group': 'Advanced',
+    },
+  },
+};
 
 let latest: Record<string, unknown> = {};
 
 function Harness({
-  schema = linearSettingsSchema,
+  schema = groupedSchema,
   initial = {},
   showAllErrors = false,
 }: {
@@ -142,7 +266,7 @@ describe('SchemaForm', () => {
 
   it('honours if/then: fields of branches that do not apply are hidden and not required', async () => {
     const user = userEvent.setup();
-    render(<Harness schema={webhookSettingsSchema} initial={{ verification: 'hmac' }} />);
+    render(<Harness schema={conditionalSchema} initial={{ verification: 'hmac' }} />);
     expect(screen.getByText('Secret').closest('label')).toHaveTextContent('(required)');
     expect(screen.getByLabelText(/Signature header/)).toBeInTheDocument();
     expect(screen.queryByLabelText(/Shared-secret header/)).toBeNull();
@@ -152,7 +276,7 @@ describe('SchemaForm', () => {
     expect(screen.queryByLabelText(/Signature header/)).toBeNull();
     expect(screen.queryByLabelText(/Shared-secret header/)).toBeNull();
     expect(screen.getByLabelText(/^Mapping/)).toBeInTheDocument();
-    expect(validateAgainstSchema(webhookSettingsSchema, { ...latest, mapping: 'x' })).toEqual({});
+    expect(validateAgainstSchema(conditionalSchema, { ...latest, mapping: 'x' })).toEqual({});
   });
 
   it('honours if/then/else and dependentRequired for required-ness', () => {
@@ -186,7 +310,7 @@ describe('SchemaForm', () => {
 
   it('shows an x-warning under the field while its value matches', async () => {
     const user = userEvent.setup();
-    render(<Harness schema={webhookSettingsSchema} initial={{ verification: 'hmac' }} />);
+    render(<Harness schema={conditionalSchema} initial={{ verification: 'hmac' }} />);
     expect(screen.queryByRole('note')).toBeNull();
     await user.selectOptions(screen.getByLabelText(/^Verification/), 'none');
     expect(screen.getByRole('note')).toHaveTextContent(
@@ -195,17 +319,17 @@ describe('SchemaForm', () => {
     expect(screen.getByLabelText(/^Verification/)).toHaveAccessibleDescription(
       /Anyone who knows the URL/,
     );
-    const verification = webhookSettingsSchema.properties as Record<string, JSONSchema>;
+    const verification = conditionalSchema.properties as Record<string, JSONSchema>;
     expect(warningFor(verification.verification ?? {}, 'hmac')).toBeNull();
   });
 
   it('exposes the same validation for gating a save', () => {
-    expect(validateAgainstSchema(linearSettingsSchema, {})).toMatchObject({
+    expect(validateAgainstSchema(groupedSchema, {})).toMatchObject({
       '/team': ['Required'],
       '/apiKey': ['Required'],
     });
     expect(
-      validateAgainstSchema(linearSettingsSchema, {
+      validateAgainstSchema(groupedSchema, {
         team: 'LOL',
         apiKey: 'secret://env/A',
         webhookSecret: 'secret://env/B',

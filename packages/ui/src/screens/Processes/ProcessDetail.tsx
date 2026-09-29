@@ -190,7 +190,7 @@ function Detail({
             <Toggle
               boxed
               label="Enabled"
-              checked={p.enabled}
+              value={p.enabled}
               requires="operator"
               onChange={(next) => void enable.run({ id: p.id, enabled: next })}
             />

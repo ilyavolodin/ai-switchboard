@@ -12,7 +12,6 @@ import { Time } from '../../components/Time.js';
 import { QueryError } from '../../components/QueryError.js';
 import { useFlatPages } from '../../hooks/useFlatPages.js';
 import { artifactLabel, traceHref } from '../../lib/artifact.js';
-import { runStatusTone } from '../../lib/tone.js';
 import styles from './ProcessDetail.module.css';
 
 export function ActivityTab({ processId }: { processId: string }) {
@@ -48,10 +47,10 @@ export function ActivityTab({ processId }: { processId: string }) {
               <ArtifactChip artifact={r.artifact} to={traceHref(r.artifact.id)} />
               <StageIndicator indicator={r.indicator} />
               <span className={styles.traceOutcome}>
-                {mine?.runStatus ? (
+                {mine?.statusLabel ? (
                   <StatusChip
-                    tone={runStatusTone(mine.runStatus)}
-                    label={`run ${mine.runStatus}`}
+                    tone={mine.statusLabel.tone}
+                    label={`run ${mine.statusLabel.label}`}
                     size="sm"
                   />
                 ) : mine ? (

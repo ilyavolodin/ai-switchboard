@@ -1,4 +1,8 @@
-import { useRun } from '../../api/index.js';
+import type { RunDetail } from '@ai-switchboard/core/contract';
+import { SETTLED_RUN_STATUSES } from '@ai-switchboard/core/domain';
+
+import { useCloseRun, useRun } from '../../api/index.js';
+import { Button } from '../../components/Button.js';
 import { ArtifactChip } from '../../components/ArtifactChip.js';
 import { Banner } from '../../components/Banner.js';
 import { CodeBlock } from '../../components/CodeBlock.js';
@@ -10,6 +14,8 @@ import { Time } from '../../components/Time.js';
 import { traceHref } from '../../lib/artifact.js';
 import { formatSeconds } from '../../lib/format.js';
 import { runStatusTone, stepStatusTone } from '../../lib/tone.js';
+import { useReasonedMutation } from '../../hooks/reason.js';
+import { closeRunPrompt } from './actionPrompts.js';
 import { RunExternalLink } from './RunExternalLink.js';
 import styles from './RunsTable.module.css';
 
@@ -27,6 +33,7 @@ export function RunDrawerBody({ runId }: { runId: string }) {
         {r.dryRun && <StatusChip tone="off" label="dry run" size="sm" />}
         {r.statusReason && <span className="t-caption">{r.statusReason}</span>}
       </div>
+      {r.status === 'uncertain' && <SettleRun run={r} />}
       <KeyValueList
         label="Run facts"
         data={[
@@ -125,5 +132,34 @@ export function RunDrawerBody({ runId }: { runId: string }) {
         </section>
       )}
     </div>
+  );
+}
+
+/** An uncertain run waits for tracking; a person who knows the outcome can settle it. */
+function SettleRun({ run }: { run: RunDetail }) {
+  const close = useReasonedMutation(useCloseRun(), (v) => closeRunPrompt(v.status), {
+    successMessage: (d) => `Run settled as ${d.status}`,
+  });
+  return (
+    <section aria-label="Settle this run" className={styles.settle}>
+      <p className="t-caption">
+        Switchboard can’t tell whether this run happened: it was never retried, so it won’t run
+        twice. If you know the outcome, settle it.
+      </p>
+      <div className={styles.row}>
+        {SETTLED_RUN_STATUSES.map((status) => (
+          <Button
+            key={status}
+            size="sm"
+            variant="outline"
+            requires="operator"
+            loading={close.pending && close.mutation.variables?.status === status}
+            onClick={() => void close.run({ id: run.id, status })}
+          >
+            Mark {status}
+          </Button>
+        ))}
+      </div>
+    </section>
   );
 }

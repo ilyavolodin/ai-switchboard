@@ -1,3 +1,10 @@
+import {
+  EXPRESSION_CONTEXTS,
+  SWITCHBOARD_FUNCTIONS,
+  type ContextField,
+  type ExpressionContextKind,
+} from '@ai-switchboard/core/expr-contexts';
+
 export interface Suggestion {
   value: string;
   hint?: string;
@@ -100,29 +107,8 @@ export function wordAt(text: string, cursor: number): { start: number; word: str
   return { start: cursor - m[0].length, word: m[0] };
 }
 
-export const EXPRESSION_VARIABLES: Record<string, string> = {
-  event: 'the event being filtered: type, artifact, attributes, occurredAt',
-  type: 'the event’s type (filters)',
-  events: 'the batch’s events, oldest first',
-  attributes: 'the event’s attributes (filters)',
-  artifact: 'the event’s artifact: kind, id, url, version (filters)',
-  process: 'the process: id, name',
-  run: 'the run: id, status, externalUrl',
-  mode: '"event" or "sweep"',
-  now: 'the evaluation time, ISO-8601',
-  result: 'what the destination returned (after-steps)',
-};
-
-export const EXPRESSION_FUNCTIONS: Suggestion[] = [
-  { value: '$resolve(artifact)', hint: 'live', detail: 'The artifact as its system has it now' },
-  { value: '$linked(artifact)', hint: 'live', detail: 'Artifacts linked to this one' },
-  { value: '$now()', hint: 'time', detail: 'The evaluation time, ISO-8601' },
-  { value: '$env("NAME")', hint: 'text', detail: 'An allowed environment variable' },
-  {
-    value: '$secretRef("provider/NAME")',
-    hint: 'reference',
-    detail: 'A reference the destination resolves after evaluation; never the value',
-  },
+/** JSONata's own functions; Switchboard's come from `SWITCHBOARD_FUNCTIONS`. */
+const JSONATA_FUNCTIONS: Suggestion[] = [
   { value: '$count()', hint: 'number', detail: '$count(array): number of items' },
   { value: '$exists()', hint: 'boolean', detail: '$exists(value): true when it has a value' },
   { value: '$contains()', hint: 'boolean', detail: '$contains(text, part)' },
@@ -147,9 +133,28 @@ export const EXPRESSION_FUNCTIONS: Suggestion[] = [
   { value: '$match()', hint: 'array', detail: '$match(text, /regex/)' },
 ];
 
+const OWN_FUNCTIONS: Suggestion[] = SWITCHBOARD_FUNCTIONS.filter((f) => f.available).map((f) => ({
+  value: f.signature,
+  hint: 'switchboard',
+  detail: f.description,
+}));
+
+/** Every field of a context as a dotted path, parents before their fields. */
+export function contextPaths(fields: readonly ContextField[], prefix = ''): Suggestion[] {
+  return fields.flatMap((f) => {
+    const path = `${prefix}${f.name}`;
+    return [
+      { value: path, hint: f.type, detail: f.description },
+      ...(f.fields ? contextPaths(f.fields, `${path}.`) : []),
+    ];
+  });
+}
+
 export interface CompletionSources {
-  /** Default: every one. */
-  variables?: string[];
+  /** What the expression can read; `null` for none (a plugin's own expression). */
+  context: ExpressionContextKind | null;
+  /** Top-level names of the context that do not apply here (`result` in a `before` step). */
+  without?: string[];
   /** Declared attribute names, offered as `attributes.<name>` (and under `event.`). */
   attributes?: { name: string; type?: string; description?: string }[];
   extra?: Suggestion[];
@@ -157,10 +162,11 @@ export interface CompletionSources {
   switchboardFunctions?: boolean;
 }
 
-const SWITCHBOARD_FUNCTIONS = new Set(['$resolve', '$linked', '$env', '$secretRef']);
-
-export function expressionCompletions(sources: CompletionSources = {}): Suggestion[] {
-  const vars = sources.variables ?? Object.keys(EXPRESSION_VARIABLES);
+export function expressionCompletions(sources: CompletionSources): Suggestion[] {
+  const fields = (sources.context ? EXPRESSION_CONTEXTS[sources.context] : []).filter(
+    (f) => !sources.without?.includes(f.name),
+  );
+  const top = new Set(fields.map((f) => f.name));
   const out: Suggestion[] = [];
   const seen = new Set<string>();
   const add = (s: Suggestion) => {
@@ -171,18 +177,14 @@ export function expressionCompletions(sources: CompletionSources = {}): Suggesti
   for (const a of sources.attributes ?? []) {
     const hint = a.type ?? 'attribute';
     const detail = a.description;
-    add({ value: `attributes.${a.name}`, hint, ...(detail ? { detail } : {}) });
-    if (vars.includes('event'))
-      add({ value: `event.attributes.${a.name}`, hint, ...(detail ? { detail } : {}) });
-    if (vars.includes('events'))
-      add({ value: `events.attributes.${a.name}`, hint, ...(detail ? { detail } : {}) });
+    for (const parent of ['', 'event.', 'events.']) {
+      if (top.has(parent === '' ? 'attributes' : parent.slice(0, -1)))
+        add({ value: `${parent}attributes.${a.name}`, hint, ...(detail ? { detail } : {}) });
+    }
   }
   for (const s of sources.extra ?? []) add(s);
-  for (const v of vars) add({ value: v, hint: 'variable', detail: EXPRESSION_VARIABLES[v] ?? '' });
-  const own = sources.switchboardFunctions ?? true;
-  for (const f of EXPRESSION_FUNCTIONS) {
-    if (!own && SWITCHBOARD_FUNCTIONS.has(f.value.replace(/\(.*$/, ''))) continue;
-    add(f);
-  }
+  for (const s of contextPaths(fields)) add(s);
+  if (sources.switchboardFunctions ?? true) for (const f of OWN_FUNCTIONS) add(f);
+  for (const f of JSONATA_FUNCTIONS) add(f);
   return out;
 }

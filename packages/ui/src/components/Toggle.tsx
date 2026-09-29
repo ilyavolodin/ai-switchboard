@@ -4,24 +4,20 @@ import { roleRequiredMessage, useCan, useSession } from '../app/session.js';
 import { cx } from '../lib/cx.js';
 import styles from './Toggle.module.css';
 import { Tooltip } from './Tooltip.js';
+import type { ControlProps } from './controlProps.js';
 
-export interface ToggleProps {
-  checked: boolean;
-  onChange: (next: boolean) => void;
+export interface ToggleProps extends ControlProps<boolean> {
   /** When omitted, `ariaLabel` is required. */
   label?: string;
   ariaLabel?: string;
   size?: 'sm' | 'md';
   boxed?: boolean;
-  disabled?: boolean;
   requires?: Role;
-  id?: string;
-  describedBy?: string;
 }
 
 /** Enabling or disabling a process, source or destination goes through a reason prompt. */
 export function Toggle({
-  checked,
+  value,
   onChange,
   label,
   ariaLabel,
@@ -31,6 +27,7 @@ export function Toggle({
   requires,
   id,
   describedBy,
+  invalid,
 }: ToggleProps) {
   const session = useSession();
   const allowed = useCan(requires ?? 'viewer');
@@ -42,12 +39,13 @@ export function Toggle({
       id={id}
       aria-describedby={describedBy}
       role="switch"
-      aria-checked={checked}
+      aria-checked={value}
+      aria-invalid={invalid === true || undefined}
       aria-label={label ?? ariaLabel}
       aria-disabled={blocked || undefined}
       className={cx(styles.track, size === 'sm' && styles.sm)}
       onClick={() => {
-        if (!blocked) onChange(!checked);
+        if (!blocked) onChange(!value);
       }}
     >
       <span className={styles.knob} />

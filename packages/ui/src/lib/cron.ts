@@ -1,23 +1,19 @@
 import cronstrue from 'cronstrue';
 
-export function describeCron(
-  cron: string,
-): { ok: true; text: string } | { ok: false; error: string } {
+/**
+ * Plain-language text for a cron, or `null` when the describer can't read it. Whether a cron is
+ * valid is the server's call (`POST /processes/preview/cron`), not this.
+ */
+export function describeCron(cron: string): string | null {
   const trimmed = cron.trim();
-  if (!trimmed) return { ok: false, error: 'Enter a cron expression, e.g. 0 7 * * *' };
+  if (!trimmed) return null;
   try {
-    return {
-      ok: true,
-      text: cronstrue.toString(trimmed, {
-        use24HourTimeFormat: true,
-        throwExceptionOnParseError: true,
-      }),
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      error: typeof e === 'string' ? e : e instanceof Error ? e.message : 'Invalid cron expression',
-    };
+    return cronstrue.toString(trimmed, {
+      use24HourTimeFormat: true,
+      throwExceptionOnParseError: true,
+    });
+  } catch {
+    return null;
   }
 }
 

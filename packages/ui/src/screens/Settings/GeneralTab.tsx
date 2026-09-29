@@ -194,7 +194,7 @@ function GeneralForm({ saved }: { saved: GlobalSettings }) {
             <Toggle
               id={id}
               describedBy={describedBy}
-              checked={requireReasons}
+              value={requireReasons}
               requires="admin"
               onChange={(next) => {
                 form.set({ requireReasons: next });

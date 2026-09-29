@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { INSTANCE_TABLES } from '../../db/instance-tables.js';
 import { secretProviders } from '../../db/schema.js';
 import { instanceStatus } from '../../domain/labels.js';
+import { instanceSecretPrefix } from '../../plugins/instance-secrets.js';
 import { collectSecretRefs, formatSecretRef, parseSecretRef } from '../../secrets/refs.js';
 import { secretUsersByName } from '../../services/secret-users.js';
 import { errorText } from '../../util/errors.js';
@@ -13,6 +14,7 @@ import type {
   MissingSecretDTO,
   ProviderSecretDTO,
   ProviderSecretsResponse,
+  SecretOwnerDTO,
   SecretProviderDependentDTO,
 } from '../contract.js';
 import { notFound } from '../errors.js';
@@ -91,6 +93,34 @@ function sanitize(listing: unknown): SecretListing[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+const HOST_NAME_START = instanceSecretPrefix('').slice(0, -1);
+
+/** The instance whose rotated credential this name holds; the longest id prefix wins. */
+export function storedByOf(
+  name: string,
+  owners: readonly SecretOwnerDTO[],
+): SecretOwnerDTO | undefined {
+  if (!name.startsWith(HOST_NAME_START)) return undefined;
+  let best: SecretOwnerDTO | undefined;
+  for (const owner of owners) {
+    const prefix = instanceSecretPrefix(owner.id);
+    if (name.length > prefix.length && name.startsWith(prefix)) {
+      if (!best || owner.id.length > best.id.length) best = owner;
+    }
+  }
+  return best;
+}
+
+async function instanceOwners(ctx: ApiContext): Promise<SecretOwnerDTO[]> {
+  const out: SecretOwnerDTO[] = [];
+  for (const kind of ['source', 'destination', 'notifier', 'secret_provider'] as const) {
+    const table = INSTANCE_TABLES[kind];
+    const rows = await ctx.db.select({ id: table.id, name: table.name }).from(table);
+    for (const row of rows) out.push({ kind, ...row });
+  }
+  return out;
+}
+
 /**
  * The secrets a provider instance makes available (names only), who uses each, and the
  * references to this provider whose names it does not list.
@@ -140,11 +170,18 @@ export async function providerSecrets(
   const users = await secretUsersByName(ctx.db, row.name);
   const ref = (name: string): string => formatSecretRef({ provider: row.name, name });
   const listed = new Set(listing.map((s) => s.name));
-  const secrets: ProviderSecretDTO[] = listing.map((s) => ({
-    ...s,
-    ref: ref(s.name),
-    usedBy: users.get(s.name) ?? [],
-  }));
+  const owners = listing.some((s) => s.name.startsWith(HOST_NAME_START))
+    ? await instanceOwners(ctx)
+    : [];
+  const secrets: ProviderSecretDTO[] = listing.map((s) => {
+    const storedBy = storedByOf(s.name, owners);
+    return {
+      ...s,
+      ref: ref(s.name),
+      usedBy: users.get(s.name) ?? [],
+      ...(storedBy ? { storedBy } : {}),
+    };
+  });
   const missing: MissingSecretDTO[] = [...users.entries()]
     .filter(([name]) => !listed.has(name))
     .sort(([a], [b]) => a.localeCompare(b))

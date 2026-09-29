@@ -5,20 +5,20 @@
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   max-width: min(380px, calc(100vw - 32px));
 }
 
 .toast {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: var(--space-2-5);
+  padding: var(--space-2-5) var(--space-3);
   border-radius: var(--radius-md);
   background: var(--inverse-surface);
   color: var(--inverse-foreground);
   box-shadow: var(--shadow-float);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.45;
 }
 
@@ -26,7 +26,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   flex-shrink: 0;
 }
 

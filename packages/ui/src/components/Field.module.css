@@ -1,7 +1,7 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
   min-width: 0;
   border: 0;
   padding: 0;
@@ -11,23 +11,23 @@
 .row {
   display: grid;
   grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--space-3);
   align-items: start;
 }
 
 .row > .labelWrap {
-  padding-top: 8px;
+  padding-top: var(--space-2);
 }
 
 .labelWrap {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   min-width: 0;
 }
 
 .label {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--foreground-strong);
 }
@@ -47,33 +47,33 @@
 .control {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
   min-width: 0;
 }
 
 .help {
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.45;
   color: var(--muted-foreground);
 }
 
 .error {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--st-err-fg);
   display: flex;
-  gap: 6px;
+  gap: var(--space-1-5);
   align-items: flex-start;
 }
 
 .warning {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--st-err-fg);
   background: var(--st-err-bg);
   border-radius: var(--radius-control);
-  padding: 6px 10px;
+  padding: var(--space-1-5) var(--space-2-5);
   display: flex;
-  gap: 6px;
+  gap: var(--space-1-5);
   align-items: flex-start;
 }
 

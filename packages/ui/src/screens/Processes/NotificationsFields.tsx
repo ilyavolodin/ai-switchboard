@@ -92,7 +92,7 @@ export function NotificationsFields({
                 label="Notification template"
                 value={n.template}
                 disabled={disabled}
-                completions={{ variables: ['process', 'run', 'events'] }}
+                completions={{ context: 'template' }}
                 insertions={[
                   { label: 'process.name' },
                   { label: 'run.status' },

@@ -1,10 +1,7 @@
 import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type {
-  SourceDetail as SourceDetailDTO,
-  UpdateSourceRequest,
-} from '@ai-switchboard/core/contract';
+import type { SourceDetail as SourceDetailDTO, StatsWindow } from '@ai-switchboard/core/contract';
 
 import { buildFixtures } from '../../api/fixtures.js';
 import { mockStatus } from '../../api/mockApi.js';
@@ -93,7 +90,7 @@ describe('SourceDetail', () => {
       overrides: {
         'GET /events/:id': ({ params }) => ({
           ...f.eventDetail,
-          eventId: params.id,
+          eventId: params.id ?? '',
           stage: 'unmatched',
           indicator: { reached: 1, tone: 'off', label: 'no process wants it' },
           processes: [],
@@ -133,7 +130,7 @@ describe('SourceDetail', () => {
       overrides: {
         'GET /sources/:id/stats': (r) => {
           windows.push(r.query.get('window'));
-          return { ...api.fixtures.sourceStats, window: r.query.get('window') };
+          return { ...api.fixtures.sourceStats, window: r.query.get('window') as StatsWindow };
         },
       },
     });
@@ -177,7 +174,7 @@ describe('SourceDetail', () => {
 
   it('saves settings, caps and the mute list with a reason', async () => {
     const { user, api } = renderSource('/sources/src-linear/settings');
-    const team = await screen.findByLabelText(/Team key/);
+    const team = await screen.findByRole('textbox', { name: 'Teams 1' });
     expect(screen.getByRole('region', { name: 'Save settings' })).toHaveTextContent(
       'No unsaved changes',
     );
@@ -198,7 +195,7 @@ describe('SourceDetail', () => {
     expect(api.callsTo('PUT /sources/src-linear')[0]?.body).toMatchObject({
       reason: 'moved team',
       name: 'Linear — lola',
-      settings: { team: 'PLAT', apiKey: 'secret://env/LINEAR_API_KEY' },
+      settings: { teamKeys: ['PLAT'], apiKey: 'secret://env/LINEAR_API_KEY' },
       caps: {
         eventCapPerHour: 120,
         eventCapPerDay: 5000,
@@ -222,7 +219,7 @@ describe('SourceDetail', () => {
         // Like the real PUT: Ajv fills schema defaults, jsonb reorders keys and the core derives
         // `caps.unauthenticated` from the built instance.
         'PUT /sources/:id': (r) => {
-          const body = r.body as UpdateSourceRequest;
+          const body = r.body!;
           const settings = { ...(body.settings ?? {}) };
           const reordered = Object.fromEntries(
             Object.entries({ filledDefault: 'on', ...settings }).reverse(),
@@ -237,7 +234,7 @@ describe('SourceDetail', () => {
         },
       },
     });
-    const team = await screen.findByLabelText(/Team key/);
+    const team = await screen.findByRole('textbox', { name: 'Teams 1' });
     await user.clear(team);
     await user.type(team, 'PLAT');
     const region = screen.getByRole('region', { name: 'Save settings' });
@@ -250,7 +247,7 @@ describe('SourceDetail', () => {
     await vi.waitFor(() => {
       expect(region).toHaveTextContent('No unsaved changes');
     });
-    expect(screen.getByLabelText(/Team key/)).toHaveValue('PLAT');
+    expect(screen.getByRole('textbox', { name: 'Teams 1' })).toHaveValue('PLAT');
     await act(() => router.navigate(`/sources/${current.id}`));
     expect(screen.queryByRole('dialog', { name: 'Leave without saving?' })).toBeNull();
     expect(router.state.location.pathname).toBe(`/sources/${current.id}`);
@@ -269,7 +266,7 @@ describe('SourceDetail', () => {
 
   it('shows the settings form disabled for viewers', async () => {
     renderSource('/sources/src-linear/settings', { role: 'viewer' });
-    expect(await screen.findByLabelText(/Team key/)).toBeDisabled();
+    expect(await screen.findByRole('textbox', { name: 'Teams 1' })).toBeDisabled();
     expect(screen.getByRole('textbox', { name: /^Name/ })).toBeDisabled();
     expect(screen.getByLabelText('Events per hour')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Delete source' })).toHaveAttribute(
@@ -280,12 +277,12 @@ describe('SourceDetail', () => {
 
   it('asks before leaving the settings tab with unsaved changes', async () => {
     const { user, router } = renderSource('/sources/src-linear/settings');
-    await user.type(await screen.findByLabelText(/Team key/), 'X');
+    await user.type(await screen.findByRole('textbox', { name: 'Teams 1' }), 'X');
     await act(() => router.navigate('/sources/src-linear'));
     const dialog = await screen.findByRole('dialog', { name: 'Leave without saving?' });
     await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
     expect(router.state.location.pathname).toBe('/sources/src-linear/settings');
-    expect(screen.getByLabelText(/Team key/)).toHaveValue('LOLX');
+    expect(screen.getByRole('textbox', { name: 'Teams 1' })).toHaveValue('LOLX');
   });
 
   it('names the processes that still use it instead of asking to delete', async () => {

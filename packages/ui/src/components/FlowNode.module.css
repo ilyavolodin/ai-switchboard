@@ -22,12 +22,12 @@
   gap: 3px;
   width: max-content;
   max-width: 260px;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-2-5);
   border-radius: var(--radius-control);
   background: var(--inverse-surface);
   color: var(--inverse-foreground);
   box-shadow: var(--shadow-float);
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1.4;
   pointer-events: none;
   display: none;
@@ -39,5 +39,5 @@
 
 .cardTitle {
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }

@@ -8,6 +8,16 @@ async function card(name: string) {
   return screen.findByRole('article', { name });
 }
 
+async function addTeam(
+  user: ReturnType<typeof renderWithProviders>['user'],
+  form: HTMLElement,
+  team: string,
+) {
+  const teams = within(form).getByRole('group', { name: 'Teams' });
+  await user.click(within(teams).getByRole('button', { name: 'Add' }));
+  await user.type(within(teams).getByRole('textbox', { name: 'Teams 1' }), team);
+}
+
 describe('Sources', () => {
   it('draws one card per source with status, last event and events by type', async () => {
     renderWithProviders(<Sources />);
@@ -67,7 +77,7 @@ describe('Sources', () => {
     const name = within(form).getByLabelText(/^Name/);
     await user.clear(name);
     await user.type(name, 'Linear — platform');
-    await user.type(within(form).getByLabelText(/Team key/), 'PLT');
+    await addTeam(user, form, 'PLT');
     await user.type(within(form).getByRole('textbox', { name: /^API key/ }), 'LINEAR_API_KEY');
     await user.type(
       within(form).getByRole('textbox', { name: /^Webhook signing secret/ }),
@@ -90,7 +100,7 @@ describe('Sources', () => {
       reason: 'platform team',
       enabled: true,
       settings: {
-        team: 'PLT',
+        teamKeys: ['PLT'],
         apiKey: 'secret://env/LINEAR_API_KEY',
         webhookSecret: 'secret://env/LINEAR_WEBHOOK_SECRET',
       },
@@ -102,7 +112,7 @@ describe('Sources', () => {
     const settings = body.settings as Record<string, unknown>;
     expect(settings.apiKey).toMatch(/^secret:\/\//);
     await vi.waitFor(() => {
-      expect(router.state.location.pathname).toBe('/sources/src-linear');
+      expect(router.state.location.pathname).toBe('/sources/src-new-1');
     });
   });
 
@@ -119,14 +129,14 @@ describe('Sources', () => {
     expect(within(form).getByText('Some fields need attention')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Reason/ })).toBeNull();
 
-    await user.type(within(form).getByLabelText(/Team key/), 'LOL');
+    await addTeam(user, form, 'LOL');
     await user.type(within(form).getByRole('textbox', { name: /^API key/ }), 'K');
     await user.type(within(form).getByRole('textbox', { name: /^Webhook signing secret/ }), 'S');
     await user.click(within(form).getByRole('button', { name: 'Create source' }));
     await screen.findByRole('textbox', { name: /Reason/ });
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     const again = await screen.findByRole('dialog', { name: 'New Linear source' });
-    expect(within(again).getByLabelText(/Team key/)).toHaveValue('LOL');
+    expect(within(again).getByRole('textbox', { name: 'Teams 1' })).toHaveValue('LOL');
     expect(api.callsTo('POST /sources')).toHaveLength(0);
   });
 
@@ -143,13 +153,16 @@ describe('Sources', () => {
     expect(within(form).getByRole('textbox', { name: /^Secret/ })).toBeInTheDocument();
     expect(within(form).queryByText(/Anyone who knows the URL/)).toBeNull();
 
-    await user.selectOptions(within(form).getByLabelText(/^Verification/), 'none');
+    await user.click(
+      within(form).getByRole('radio', {
+        name: 'None — accept unauthenticated deliveries (evaluation only)',
+      }),
+    );
     expect(within(form).queryByRole('textbox', { name: /^Secret/ })).toBeNull();
     expect(within(form).queryByLabelText(/Signature header/)).toBeNull();
-    const verification = within(form).getByLabelText(/^Verification/);
+    const verification = within(form).getByRole('radiogroup', { name: 'Verification' });
     expect(verification).toHaveAccessibleDescription(/Anyone who knows the URL can send events/);
 
-    await user.type(within(form).getByLabelText(/^Mapping/), 'body');
     await user.click(within(form).getByRole('button', { name: 'Create source' }));
     await user.type(await screen.findByRole('textbox', { name: /Reason/ }), 'trying it out');
     await user.click(screen.getByRole('button', { name: 'Create source' }));
@@ -174,15 +187,14 @@ describe('Sources', () => {
       }),
     );
     const form = await screen.findByRole('dialog', { name: 'New Webhook source' });
-    expect(within(form).getByLabelText(/^Verification/)).toHaveValue('0');
+    expect(within(form).getByRole('radio', { name: 'HMAC signature over the body' })).toBeChecked();
     expect(within(form).getByText('Secret').closest('label')).toHaveTextContent('(required)');
-    await user.type(within(form).getByLabelText(/^Mapping/), 'body');
     await user.click(within(form).getByRole('button', { name: 'Create source' }));
     expect(within(form).getByText('Some fields need attention')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Reason/ })).toBeNull();
 
-    await user.selectOptions(within(form).getByLabelText(/^Verification/), 'shared_secret');
-    expect(within(form).getByLabelText(/Shared-secret header/)).toBeInTheDocument();
+    await user.click(within(form).getByRole('radio', { name: 'Shared-secret header' }));
+    expect(within(form).getByRole('textbox', { name: /Shared-secret header/ })).toBeInTheDocument();
     expect(within(form).queryByLabelText(/Signature header/)).toBeNull();
     expect(api.callsTo('POST /sources')).toHaveLength(0);
   });

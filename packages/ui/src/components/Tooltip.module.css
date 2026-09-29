@@ -12,11 +12,11 @@
   z-index: var(--z-tooltip);
   width: max-content;
   max-width: 260px;
-  padding: 6px 10px;
+  padding: var(--space-1-5) var(--space-2-5);
   border-radius: var(--radius-control);
   background: var(--inverse-surface);
   color: var(--inverse-foreground);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 400;
   line-height: 1.45;
   text-align: left;

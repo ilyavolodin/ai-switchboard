@@ -1,22 +1,40 @@
 import { type QueryKey, useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { apiFetch } from './client.js';
+import {
+  apiFetch,
+  type MutationRoute,
+  type RouteBody,
+  type RouteParams,
+  type RouteRes,
+  routeParamNames,
+} from './client.js';
 
-/** `body` defaults to the variables minus the path params. */
-export function useApiMutation<TVars, TData>(config: {
-  method: 'POST' | 'PUT' | 'DELETE';
-  path: (vars: TVars) => string;
-  body?: (vars: TVars) => unknown;
-  invalidate: QueryKey[] | ((vars: TVars, data: TData) => QueryKey[]);
-  onSuccess?: (data: TData, vars: TVars) => void;
-}) {
+/** What `mutate` takes: the route's body plus its path parameters (`id`, `batchId`, …). */
+export type MutationVars<R extends MutationRoute> = (RouteBody<R> extends undefined
+  ? unknown
+  : RouteBody<R>) &
+  RouteParams<R>;
+
+/** The route's `:params` are taken out of the variables; the rest is the body. */
+export function useApiMutation<R extends MutationRoute>(
+  route: R,
+  config: {
+    invalidate: QueryKey[] | ((vars: MutationVars<R>, data: RouteRes<R>) => QueryKey[]);
+    onSuccess?: (data: RouteRes<R>, vars: MutationVars<R>) => void;
+  },
+) {
   const qc = useQueryClient();
-  return useMutation<TData, Error, TVars>({
-    mutationFn: (vars) =>
-      apiFetch<TData>(config.path(vars), {
-        method: config.method,
-        body: config.body ? config.body(vars) : stripPathParams(vars),
-      }),
+  const names = routeParamNames(route);
+  return useMutation<RouteRes<R>, Error, MutationVars<R>>({
+    mutationFn: (vars) => {
+      const params: Record<string, string | number> = {};
+      const body: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(vars as Record<string, unknown>)) {
+        if (names.includes(k)) params[k] = v as string | number;
+        else body[k] = v;
+      }
+      return (apiFetch as (r: R, o: object) => Promise<RouteRes<R>>)(route, { params, body });
+    },
     onSuccess: async (data, vars) => {
       config.onSuccess?.(data, vars);
       const keys =
@@ -25,14 +43,3 @@ export function useApiMutation<TVars, TData>(config: {
     },
   });
 }
-
-const PATH_PARAMS = new Set(['id', 'batchId', 'version', 'pluginName']);
-
-export function stripPathParams(vars: unknown): unknown {
-  if (typeof vars !== 'object' || vars === null) return vars;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(vars)) if (!PATH_PARAMS.has(k)) out[k] = v;
-  return out;
-}
-
-export const seg = (s: string | number): string => encodeURIComponent(String(s));

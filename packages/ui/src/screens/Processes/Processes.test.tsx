@@ -89,20 +89,20 @@ describe('Processes', () => {
   it('teaches the next step when there are no processes', async () => {
     renderWithProviders(<Processes />, { overrides: { 'GET /processes': () => [] } });
     expect(await screen.findByText('No processes yet')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'New process' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: 'New process' }).length).toBeGreaterThan(0);
   });
 
   it('opens the editor from New process', async () => {
     const { user, router } = renderWithProviders(<Processes />);
     await screen.findByRole('list', { name: 'Processes' });
-    await user.click(screen.getByRole('button', { name: 'New process' }));
+    await user.click(screen.getByRole('link', { name: 'New process' }));
     expect(router.state.location.pathname).toBe('/processes/new');
   });
 
   it('keeps New process visible but disabled for viewers', async () => {
     renderWithProviders(<Processes />, { role: 'viewer' });
     await screen.findByRole('list', { name: 'Processes' });
-    expect(screen.getByRole('button', { name: 'New process' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'New process' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );

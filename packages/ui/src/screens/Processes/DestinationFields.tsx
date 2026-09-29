@@ -141,7 +141,7 @@ export function DestinationFields({
               textareaRows={7}
               value={doc.input}
               disabled={disabled}
-              completions={{ variables: ['events', 'process', 'run', 'mode'] }}
+              completions={{ context: 'mapping' }}
               insertions={[
                 { label: 'events' },
                 { label: 'events.artifact' },

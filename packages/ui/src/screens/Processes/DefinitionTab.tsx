@@ -90,7 +90,7 @@ export function DefinitionTab({ processId, doc }: { processId: string; doc: Proc
                 return (
                   <li key={s.id} className={styles.defItem}>
                     <span>
-                      <span className="mono">{s.cron}</span> · {d.ok ? d.text : 'invalid'} ·{' '}
+                      <span className="mono">{s.cron}</span> · {d ? `${d} · ` : ''}
                       {s.timezone}
                     </span>
                     <span className="t-caption">

@@ -1,5 +1,6 @@
 import type { BoardDestinationNode } from '@ai-switchboard/core/contract';
 
+import styles from './DestinationNode.module.css';
 import { MeterGauge } from './MeterGauge.js';
 import { NodeCard } from './NodeCard.js';
 
@@ -39,9 +40,9 @@ export function DestinationNode({
       describedBy={describedBy}
     >
       <span className="visually-hidden">{destination.status.label}</span>
-      <span style={{ display: 'flex', gap: 10, alignItems: 'center', minHeight: 52 }}>
+      <span className={styles.meters}>
         {destination.meters.length === 0 ? (
-          <span style={{ fontSize: 12 }}>no meters</span>
+          <span className={styles.empty}>no meters</span>
         ) : (
           destination.meters
             .slice(0, 4)

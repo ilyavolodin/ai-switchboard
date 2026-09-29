@@ -1,4 +1,5 @@
 import type {
+  ApplyResponse,
   InstanceSummary,
   Role,
   SecretProviderDependentDTO,
@@ -252,14 +253,16 @@ describe('Settings', () => {
       const drawer = screen.getByRole('dialog', { name: 'Add a secret provider' });
       await user.selectOptions(within(drawer).getByRole('combobox', { name: /Type/ }), 'file');
       await user.type(within(drawer).getByRole('textbox', { name: /^Name/ }), 'mounted');
-      await user.type(within(drawer).getByRole('textbox', { name: /Directory/ }), '/run/secrets');
+      const directory = within(drawer).getByRole('textbox', { name: /Directory/ });
+      await user.clear(directory);
+      await user.type(directory, '/run/secrets');
       await user.click(within(drawer).getByRole('button', { name: 'Add secret provider' }));
       await giveReason(user, 'kubernetes secrets', 'Add secret provider');
       await vi.waitFor(() => {
         expect(api.callsTo('POST /secret-providers')[0]?.body).toEqual({
           typeId: 'file',
           name: 'mounted',
-          settings: { directory: '/run/secrets' },
+          settings: { directory: '/run/secrets', writable: false },
           enabled: true,
           reason: 'kubernetes secrets',
         });
@@ -389,7 +392,7 @@ describe('Settings', () => {
   });
 
   it('previews an apply as a dry run, then applies with a reason', async () => {
-    const changes = [
+    const changes: ApplyResponse['changes'] = [
       { kind: 'process', name: 'Autofix', action: 'update' },
       { kind: 'source', name: 'Sentry', action: 'create' },
       { kind: 'destination', name: 'HTTP', action: 'unchanged' },

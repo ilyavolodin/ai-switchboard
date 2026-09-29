@@ -3,12 +3,12 @@
   align-items: center;
   gap: 5px;
   max-width: 100%;
-  padding: 2px 7px;
+  padding: var(--space-0-5) 7px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-1);
   background: var(--accent-0);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.4;
   color: var(--brand-text);
   text-decoration: none;

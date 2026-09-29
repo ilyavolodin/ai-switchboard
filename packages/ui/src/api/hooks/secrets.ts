@@ -1,4 +1,3 @@
-import type { ProviderSecretsResponse } from '@ai-switchboard/core/contract';
 import { QueryClient, QueryClientContext, queryOptions, useQuery } from '@tanstack/react-query';
 import { useContext } from 'react';
 
@@ -6,14 +5,13 @@ import { useCan } from '../../app/session.js';
 import { instanceForProvider } from '../../lib/instances.js';
 import { apiFetch } from '../client.js';
 import { qk } from '../keys.js';
-import { seg } from '../mutation.js';
 import { instancesQuery } from './instances.js';
 
 const providerSecretsQuery = (id: string) =>
   queryOptions({
     queryKey: qk.providerSecrets(id),
     queryFn: ({ signal }) =>
-      apiFetch<ProviderSecretsResponse>(`/secret-providers/${seg(id)}/secrets`, { signal }),
+      apiFetch('GET /secret-providers/:id/secrets', { params: { id }, signal }),
     staleTime: 30_000,
   });
 
@@ -47,5 +45,8 @@ export function useSecretSuggestions(provider: string): SecretSuggestions {
     client ?? inertClient,
   );
   const data = listing.data;
-  return { names: data?.available ? data.secrets.map((s) => s.name) : null };
+  // Names the host stored for an instance are its own; a settings field never points at one.
+  return {
+    names: data?.available ? data.secrets.filter((s) => !s.storedBy).map((s) => s.name) : null,
+  };
 }

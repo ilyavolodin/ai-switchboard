@@ -1,31 +1,35 @@
 // An in-memory `fetch` for the core's REST API, for tests and `VITE_MOCK_API=1 pnpm dev:ui`.
 import type {
   ApiError,
+  InstanceSummary,
+  PluginKind,
   SourcePreviewRequest,
   SourcePreviewResponse,
 } from '@ai-switchboard/core/contract';
 
 import { at } from '../lib/at.js';
-import { API_BASE } from './client.js';
+import { API_BASE, type Route, type RouteBody, type RouteRes } from './client.js';
 import { buildFixtures, type Fixtures } from './fixtures.js';
 
-export interface MockRequest {
+export interface MockRequest<R extends Route = Route> {
   method: string;
   path: string;
   params: Record<string, string>;
   query: URLSearchParams;
-  body: unknown;
+  body: RouteBody<R> | undefined;
 }
 
-/** Returns a JSON body, a string (sent as YAML), or `mockStatus()` for errors and 204s. */
-export type MockHandler = (req: MockRequest) => unknown;
-export type MockHandlers = Record<string, MockHandler>;
+/** Returns the route's response (a string for YAML), or `mockStatus()` for errors and 204s. */
+export type MockHandler<R extends Route = Route> = (
+  req: MockRequest<R>,
+) => RouteRes<R> | MockStatusResult | Promise<RouteRes<R> | MockStatusResult>;
+export type MockHandlers = { [R in Route]?: MockHandler<R> };
 
 export function mockStatus(status: number, body?: unknown): MockStatusResult {
   return { __mockStatus: status, body };
 }
 
-interface MockStatusResult {
+export interface MockStatusResult {
   __mockStatus: number;
   body: unknown;
 }
@@ -49,6 +53,53 @@ export interface MockApi {
 }
 
 const page = <T>(items: T[]) => ({ items, nextCursor: null });
+
+/** The body minus what the server never stores. */
+function patchOf(body: unknown): Record<string, unknown> {
+  if (typeof body !== 'object' || body === null) return {};
+  const { reason: _reason, expectedVersion: _version, ...rest } = body as Record<string, unknown>;
+  return rest;
+}
+
+/**
+ * Detail rows keyed by id: a PUT or POST merges its body into the row and echoes it, and the
+ * summary list picks up the fields it shares with the detail.
+ */
+function entityStore<S extends { id: string }, D extends { id: string }>(
+  list: S[],
+  detail: (s: S) => D,
+) {
+  const saved = new Map<string, D>();
+  let created = 0;
+  const get = (id: string | undefined): D | undefined => {
+    const s = list.find((x) => x.id === id);
+    return s ? (saved.get(s.id) ?? detail(s)) : undefined;
+  };
+  const write = (next: D): D => {
+    saved.set(next.id, next);
+    const i = list.findIndex((x) => x.id === next.id);
+    const current = list[i];
+    const fields = next as unknown as Record<string, unknown>;
+    if (current) {
+      const shared = Object.keys(current).filter((k) => k in fields);
+      list[i] = { ...current, ...Object.fromEntries(shared.map((k) => [k, fields[k]])) };
+    } else {
+      list.push(next as unknown as S);
+    }
+    return next;
+  };
+  return {
+    get,
+    patch(id: string | undefined, patch: Partial<D>): D | undefined {
+      const current = get(id);
+      return current ? write({ ...current, ...patch }) : undefined;
+    },
+    create(prefix: string, template: D, patch: Partial<D>): D {
+      created += 1;
+      return write({ ...template, ...patch, id: `${prefix}-new-${String(created)}` });
+    },
+  };
+}
 
 /** Like the webhook's quick mode: a JSON object body becomes one event, its scalars as attributes. */
 function samplePreview(body: unknown): SourcePreviewResponse {
@@ -101,8 +152,6 @@ function samplePreview(body: unknown): SourcePreviewResponse {
 }
 
 export function defaultHandlers(f: Fixtures): MockHandlers {
-  const byId = <T extends { id: string }>(list: T[], id: string | undefined) =>
-    list.find((x) => x.id === id);
   const notFound = (what: string) =>
     mockStatus(404, { error: 'not_found', message: `${what} not found` } satisfies ApiError);
   const requireReason = (req: MockRequest) => {
@@ -113,10 +162,17 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
       : mockStatus(400, { error: 'reason_required', message: 'A reason is required' });
   };
   const reasoned =
-    (fn: MockHandler): MockHandler =>
+    <R extends Route>(fn: MockHandler<R>): MockHandler<R> =>
     (req) =>
       requireReason(req) ?? fn(req);
+  const orNotFound = <T>(what: string, value: T | undefined) => value ?? notFound(what);
 
+  const sources = entityStore(f.sources, f.sourceDetail);
+  const destinations = entityStore(f.destinations, f.destinationDetail);
+  const processes = entityStore(f.processes, f.processDetail);
+  const notifiers = entityStore(f.notifiers, (x: InstanceSummary) => x);
+  const providers = entityStore(f.secretProviders, (x: InstanceSummary) => x);
+  const users = entityStore(f.users, (x) => x);
   return {
     'GET /auth/me': () => f.me,
     'POST /auth/login': () => f.me,
@@ -132,102 +188,112 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     },
 
     'GET /sources': () => f.sources,
-    'POST /sources': reasoned(() => f.sourceDetail(at(f.sources, 1))),
-    'GET /sources/:id': (r) => {
-      const s = byId(f.sources, r.params.id);
-      return s ? f.sourceDetail(s) : notFound('source');
-    },
-    'PUT /sources/:id': reasoned((r) => {
-      const s = byId(f.sources, r.params.id);
-      return s ? f.sourceDetail(s) : notFound('source');
-    }),
+    'POST /sources': reasoned((r) =>
+      sources.create('src', f.sourceDetail(at(f.sources, 0)), patchOf(r.body)),
+    ),
+    'GET /sources/:id': (r) => orNotFound('source', sources.get(r.params.id)),
+    'PUT /sources/:id': reasoned((r) =>
+      orNotFound('source', sources.patch(r.params.id, patchOf(r.body))),
+    ),
     'DELETE /sources/:id': reasoned(() => mockStatus(204)),
-    'POST /sources/:id/enable': reasoned((r) => {
-      const s = byId(f.sources, r.params.id);
-      return s ? f.sourceDetail(s) : notFound('source');
-    }),
+    'POST /sources/:id/enable': reasoned((r) =>
+      orNotFound('source', sources.patch(r.params.id, patchOf(r.body))),
+    ),
     'POST /sources/:id/provision': reasoned(() => ({ ok: true, message: 'Webhook registered' })),
     'POST /sources/:id/test-event': reasoned(() => ({ eventIds: ['ev-test-1'] })),
-    'POST /sources/:id/reload': reasoned((r) => {
-      const s = byId(f.sources, r.params.id);
-      return s ? f.sourceDetail(s) : notFound('source');
-    }),
+    'POST /sources/:id/reload': reasoned((r) => orNotFound('source', sources.get(r.params.id))),
     'GET /sources/:id/stats': (r) => ({
       ...f.sourceStats,
-      window: r.query.get('window') ?? f.sourceStats.window,
+      window: (r.query.get('window') as typeof f.sourceStats.window | null) ?? f.sourceStats.window,
     }),
     'GET /sources/:id/events': (r) => page(f.activity.filter((a) => a.sourceId === r.params.id)),
     'POST /sources/preview': (r) => samplePreview(r.body),
     'GET /sources/:id/last-delivery': (r) =>
-      byId(f.sources, r.params.id) ? f.lastDelivery : notFound('source'),
+      sources.get(r.params.id) ? f.lastDelivery : notFound('source'),
 
     'GET /destinations': () => f.destinations,
-    'POST /destinations': reasoned(() => f.destinationDetail(at(f.destinations, 0))),
-    'GET /destinations/:id': (r) => {
-      const x = byId(f.destinations, r.params.id);
-      return x ? f.destinationDetail(x) : notFound('destination');
-    },
-    'PUT /destinations/:id': reasoned((r) => {
-      const x = byId(f.destinations, r.params.id);
-      return x ? f.destinationDetail(x) : notFound('destination');
-    }),
-    'DELETE /destinations/:id': reasoned(() => mockStatus(204)),
-    'POST /destinations/:id/enable': reasoned((r) => {
-      const x = byId(f.destinations, r.params.id);
-      return x ? f.destinationDetail(x) : notFound('destination');
-    }),
-    'POST /destinations/:id/reload': reasoned((r) => {
-      const x = byId(f.destinations, r.params.id);
-      return x ? f.destinationDetail(x) : notFound('destination');
-    }),
-    'POST /destinations/:id/meters/read': reasoned(
-      (r) => byId(f.destinations, r.params.id)?.meters ?? [],
+    'POST /destinations': reasoned((r) =>
+      destinations.create('ex', f.destinationDetail(at(f.destinations, 0)), patchOf(r.body)),
     ),
-    'POST /destinations/:id/soft-hold/clear': reasoned((r) => {
-      const x = byId(f.destinations, r.params.id);
-      return x ? f.destinationDetail(x) : notFound('destination');
-    }),
+    'GET /destinations/:id': (r) => orNotFound('destination', destinations.get(r.params.id)),
+    'PUT /destinations/:id': reasoned((r) =>
+      orNotFound('destination', destinations.patch(r.params.id, patchOf(r.body))),
+    ),
+    'DELETE /destinations/:id': reasoned(() => mockStatus(204)),
+    'POST /destinations/:id/enable': reasoned((r) =>
+      orNotFound('destination', destinations.patch(r.params.id, patchOf(r.body))),
+    ),
+    'POST /destinations/:id/reload': reasoned((r) =>
+      orNotFound('destination', destinations.get(r.params.id)),
+    ),
+    'POST /destinations/:id/meters/read': reasoned(
+      (r) => destinations.get(r.params.id)?.meters ?? [],
+    ),
+    'POST /destinations/:id/soft-hold/clear': reasoned((r) =>
+      orNotFound('destination', destinations.get(r.params.id)),
+    ),
     'GET /destinations/:id/meters': (r) => ({
       ...f.meterHistory,
-      window: r.query.get('window') ?? f.meterHistory.window,
+      window:
+        (r.query.get('window') as typeof f.meterHistory.window | null) ?? f.meterHistory.window,
     }),
     'GET /destinations/:id/usage': (r) => ({
       ...f.usageHistory,
-      window: r.query.get('window') ?? f.usageHistory.window,
+      window:
+        (r.query.get('window') as typeof f.usageHistory.window | null) ?? f.usageHistory.window,
     }),
 
     'GET /processes': () => f.processes,
-    'POST /processes': reasoned(() => f.processDetail(at(f.processes, 2))),
+    'POST /processes': reasoned((r) => {
+      const document = r.body?.document ?? f.autofixDocument;
+      return processes.create('p', f.processDetail(at(f.processes, 0)), {
+        document,
+        name: document.name,
+        enabled: document.enabled,
+        version: 1,
+      });
+    }),
     'POST /processes/preview/filter': () => f.filterPreview,
     'POST /processes/preview/input': () => f.inputPreview,
     'POST /processes/preview/cron': (r) => {
-      const cron = (r.body as { cron?: string } | undefined)?.cron ?? '';
+      const cron = r.body?.cron ?? '';
       return cron.trim().split(/\s+/).length === 5
         ? f.cronPreview
         : { valid: false, description: '', next: [], error: 'expected 5 fields' };
     },
-    'GET /processes/:id': (r) => {
-      const p = byId(f.processes, r.params.id);
-      return p ? f.processDetail(p) : notFound('process');
-    },
+    'GET /processes/:id': (r) => orNotFound('process', processes.get(r.params.id)),
     'PUT /processes/:id': reasoned((r) => {
-      const p = byId(f.processes, r.params.id);
-      return p ? f.processDetail(p) : notFound('process');
+      const current = processes.get(r.params.id);
+      if (!current) return notFound('process');
+      const document = r.body?.document ?? current.document;
+      return orNotFound(
+        'process',
+        processes.patch(r.params.id, {
+          document,
+          name: document.name,
+          enabled: document.enabled,
+          version: current.version + 1,
+        }),
+      );
     }),
     'DELETE /processes/:id': reasoned(() => mockStatus(204)),
     'POST /processes/:id/enable': reasoned((r) => {
-      const p = byId(f.processes, r.params.id);
-      return p ? f.processDetail(p) : notFound('process');
+      const current = processes.get(r.params.id);
+      if (!current) return notFound('process');
+      const enabled = r.body?.enabled ?? current.enabled;
+      return orNotFound(
+        'process',
+        processes.patch(r.params.id, { enabled, document: { ...current.document, enabled } }),
+      );
     }),
     'POST /processes/:id/run': reasoned(() => ({
       batchId: 'b-manual-1',
       runId: 'run_manual_1',
       outcome: 'invoked',
     })),
-    'POST /processes/:id/breaker/reset': reasoned((r) => {
-      const p = byId(f.processes, r.params.id);
-      return p ? { ...f.processDetail(p), breakerState: 'closed' } : notFound('process');
-    }),
+    'POST /processes/:id/breaker/reset': reasoned((r) =>
+      orNotFound('process', processes.patch(r.params.id, { breakerState: 'closed' })),
+    ),
     'GET /processes/:id/funnel': () => f.funnel,
     'GET /processes/:id/stats': () => f.processStats,
     'GET /processes/:id/versions': () => f.versions,
@@ -235,10 +301,9 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
       const v = f.versions.find((x) => String(x.version) === r.params.version);
       return v ? { ...v, document: f.versionDocument(v.version) } : notFound('version');
     },
-    'POST /processes/:id/versions/:version/restore': reasoned((r) => {
-      const p = byId(f.processes, r.params.id);
-      return p ? f.processDetail(p) : notFound('process');
-    }),
+    'POST /processes/:id/versions/:version/restore': reasoned((r) =>
+      orNotFound('process', processes.get(r.params.id)),
+    ),
     'GET /processes/:id/batches': () => f.batches,
     'GET /processes/:id/activity': (r) =>
       page(f.activity.filter((a) => a.processes.some((p) => p.id === r.params.id))),
@@ -251,7 +316,11 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
 
     'GET /runs': () => page(f.runs),
     'GET /runs/:id': () => f.runDetail,
-    'POST /runs/:id/close': reasoned(() => f.runDetail),
+    'POST /runs/:id/close': reasoned((r) => {
+      const status = r.body?.status ?? f.runDetail.status;
+      f.runDetail = { ...f.runDetail, status };
+      return f.runDetail;
+    }),
 
     'GET /approvals': () => f.approvals,
     'GET /approvals/history': () => page(f.approvalHistory),
@@ -278,7 +347,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
       };
     },
     'POST /plugins/inspect': (r) => ({
-      package: (r.body as { package?: string } | undefined)?.package ?? '',
+      package: r.body?.package ?? '',
       version: '1.2.0',
       sdkRange: '^2.0.0',
       compatible: true,
@@ -288,14 +357,14 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     }),
     'POST /plugins': reasoned((r) => {
       // Installed and loaded at once: its type (named after the package) becomes available.
-      const pkg = (r.body as { package?: string } | undefined)?.package ?? 'plugin';
+      const pkg = r.body?.package ?? 'plugin';
       const m = /(source|destination|notifier|secrets)-([a-z0-9-]+)$/.exec(pkg);
-      const kind = m?.[1] === 'secrets' ? 'secret_provider' : (m?.[1] ?? 'source');
+      const kind = (m?.[1] === 'secrets' ? 'secret_provider' : (m?.[1] ?? 'source')) as PluginKind;
       const typeId = m?.[2] ?? pkg;
       const displayName = typeId.charAt(0).toUpperCase() + typeId.slice(1);
       if (!f.pluginTypes.some((t) => t.typeId === typeId && t.kind === kind)) {
         f.pluginTypes.push({
-          kind: kind as 'source',
+          kind: kind,
           typeId,
           displayName,
           plugin: pkg,
@@ -309,7 +378,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
         });
       }
       return {
-        ...f.plugins[0],
+        ...at(f.plugins, 0),
         name: pkg,
         pluginId: typeId,
         displayName,
@@ -321,50 +390,82 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'DELETE /plugins/:name': reasoned(() => mockStatus(204)),
 
     'GET /notifiers': () => f.notifiers,
-    'POST /notifiers': reasoned(() => f.notifiers[0]),
-    'PUT /notifiers/:id': reasoned(() => f.notifiers[0]),
-    'POST /notifiers/:id/enable': reasoned(() => f.notifiers[0]),
-    'POST /notifiers/:id/reload': reasoned(() => f.notifiers[0]),
-    'POST /notifiers/:id/test': reasoned(() => ({ ok: true })),
+    'POST /notifiers': reasoned((r) =>
+      notifiers.create('nt', at(f.notifiers, 0), { ...patchOf(r.body), kind: 'notifier' }),
+    ),
+    'PUT /notifiers/:id': reasoned((r) =>
+      orNotFound('notifier', notifiers.patch(r.params.id, patchOf(r.body))),
+    ),
+    'POST /notifiers/:id/enable': reasoned((r) =>
+      orNotFound('notifier', notifiers.patch(r.params.id, patchOf(r.body))),
+    ),
+    'POST /notifiers/:id/reload': reasoned((r) =>
+      orNotFound('notifier', notifiers.get(r.params.id)),
+    ),
+    'POST /notifiers/:id/test': reasoned(() => ({ ok: true, message: 'Test notification sent' })),
     'DELETE /notifiers/:id': reasoned(() => mockStatus(204)),
     'GET /secret-providers': () => f.secretProviders,
-    'POST /secret-providers': reasoned(() => f.secretProviders[0]),
-    'PUT /secret-providers/:id': reasoned(() => f.secretProviders[0]),
-    'POST /secret-providers/:id/enable': reasoned(() => f.secretProviders[0]),
-    'POST /secret-providers/:id/reload': reasoned(() => f.secretProviders[0]),
+    'POST /secret-providers': reasoned((r) =>
+      providers.create('sp', at(f.secretProviders, 0), {
+        ...patchOf(r.body),
+        kind: 'secret_provider',
+      }),
+    ),
+    'PUT /secret-providers/:id': reasoned((r) =>
+      orNotFound('secret provider', providers.patch(r.params.id, patchOf(r.body))),
+    ),
+    'POST /secret-providers/:id/enable': reasoned((r) =>
+      orNotFound('secret provider', providers.patch(r.params.id, patchOf(r.body))),
+    ),
+    'POST /secret-providers/:id/reload': reasoned((r) =>
+      orNotFound('secret provider', providers.get(r.params.id)),
+    ),
     'DELETE /secret-providers/:id': reasoned(() => mockStatus(204)),
     'GET /secret-providers/:id/secrets': (req) =>
       f.providerSecrets[req.params.id ?? ''] ?? notFound('Secret provider'),
 
     'GET /settings': () => f.settings,
-    'PUT /settings': reasoned(() => f.settings),
+    'PUT /settings': reasoned((r) => {
+      f.settings = { ...f.settings, ...r.body?.settings };
+      return f.settings;
+    }),
     'GET /users': () => f.users,
     'GET /users/directory': () => f.users.map(({ id, email, role }) => ({ id, email, role })),
-    'POST /users': reasoned(() => f.users[1]),
-    'PUT /users/:id': reasoned(() => f.users[1]),
+    'POST /users': reasoned((r) =>
+      users.create('u', at(f.users, 1), {
+        email: r.body?.email ?? '',
+        role: r.body?.role ?? 'viewer',
+      }),
+    ),
+    'PUT /users/:id': reasoned((r) =>
+      orNotFound('User', users.patch(r.params.id, r.body ? { role: r.body.role } : {})),
+    ),
     'DELETE /users/:id': reasoned(() => mockStatus(204)),
     'POST /users/:id/sessions/revoke': reasoned(() => mockStatus(204)),
-    'PUT /users/:id/password': reasoned((req) => {
-      const u = byId(f.users, req.params.id);
-      return u ? { ...u, hasPassword: true, mustChangePassword: true } : notFound('User');
-    }),
-    'DELETE /users/:id/password': reasoned((req) => {
-      const u = byId(f.users, req.params.id);
-      return u ? { ...u, hasPassword: false, mustChangePassword: false } : notFound('User');
-    }),
+    'PUT /users/:id/password': reasoned((r) =>
+      orNotFound('User', users.patch(r.params.id, { hasPassword: true, mustChangePassword: true })),
+    ),
+    'DELETE /users/:id/password': reasoned((r) =>
+      orNotFound(
+        'User',
+        users.patch(r.params.id, { hasPassword: false, mustChangePassword: false }),
+      ),
+    ),
     'GET /tokens': () => f.tokens,
-    'POST /tokens': reasoned((r) => {
-      const body = r.body as { name?: string; role?: string } | undefined;
-      return {
-        token: { ...at(f.tokens, 0), id: 'tok-new', name: body?.name, role: body?.role },
-        secret: 'sb_fixture-secret',
-      };
-    }),
+    'POST /tokens': reasoned((r) => ({
+      token: {
+        ...at(f.tokens, 0),
+        id: 'tok-new',
+        name: r.body?.name ?? '',
+        role: r.body?.role ?? 'viewer',
+      },
+      secret: 'sb_fixture-secret',
+    })),
     'DELETE /tokens/:id': reasoned(() => mockStatus(204)),
     'GET /audit': () => page(f.audit),
     'GET /export': () => 'processes: []\n',
     'POST /apply': (r) => ({
-      dryRun: Boolean((r.body as { dryRun?: boolean } | undefined)?.dryRun),
+      dryRun: Boolean(r.body?.dryRun),
       changes: [],
       errors: [],
     }),
@@ -372,15 +473,17 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
   };
 }
 
+type AnyHandler = (req: Omit<MockRequest, 'body'> & { body: unknown }) => unknown;
+
 interface CompiledRoute {
   method: string;
   pattern: RegExp;
   names: string[];
-  handler: MockHandler;
+  handler: AnyHandler;
   specificity: number;
 }
 
-function compile(key: string, handler: MockHandler): CompiledRoute {
+function compile(key: string, handler: AnyHandler): CompiledRoute {
   const [method = 'GET', path = '/'] = key.split(' ');
   const names: string[] = [];
   const source = path
@@ -402,12 +505,16 @@ function compile(key: string, handler: MockHandler): CompiledRoute {
   };
 }
 
+function compileAll(handlers: MockHandlers): CompiledRoute[] {
+  return Object.entries(handlers).map(([k, h]) => compile(k, h as unknown as AnyHandler));
+}
+
 export function createMockApi(
   options: { fixtures?: Fixtures; overrides?: MockHandlers; delayMs?: number } = {},
 ): MockApi {
   const fixtures = options.fixtures ?? buildFixtures(Date.now());
   let handlers: MockHandlers = { ...defaultHandlers(fixtures), ...options.overrides };
-  let routes = Object.entries(handlers).map(([k, h]) => compile(k, h));
+  let routes = compileAll(handlers);
   const calls: MockCall[] = [];
 
   const mockFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -452,7 +559,7 @@ export function createMockApi(
     fixtures,
     use(more) {
       handlers = { ...handlers, ...more };
-      routes = Object.entries(handlers).map(([k, h]) => compile(k, h));
+      routes = compileAll(handlers);
     },
     callsTo(route) {
       const [method, path] = route.split(' ');

@@ -24,6 +24,7 @@ describe('Login', () => {
           evaluation: false,
           mustChangePassword: false,
           evaluationAdminEmail: null,
+          requireReasons: true,
         }),
       },
     });

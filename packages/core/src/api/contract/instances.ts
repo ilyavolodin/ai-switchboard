@@ -88,6 +88,18 @@ export interface ProviderSecretDTO {
   description?: string;
   updatedAt?: Iso;
   usedBy: SecretUserDTO[];
+  /**
+   * Set when the host stored this name for an instance's rotated credentials
+   * (`switchboard-<instanceId>-<key>`). The host owns it: it is not a settings reference.
+   */
+  storedBy?: SecretOwnerDTO;
+}
+
+/** The instance a host-stored secret belongs to. */
+export interface SecretOwnerDTO {
+  kind: InstanceKind;
+  id: string;
+  name: string;
 }
 
 /** A reference to this provider whose name the provider does not list (a broken reference). */

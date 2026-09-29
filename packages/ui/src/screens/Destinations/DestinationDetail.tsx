@@ -123,7 +123,7 @@ function DestinationView({
             <Toggle
               boxed
               label="Enabled"
-              checked={destination.enabled}
+              value={destination.enabled}
               requires="operator"
               onChange={(next) => void enable.run({ id: destination.id, enabled: next })}
             />

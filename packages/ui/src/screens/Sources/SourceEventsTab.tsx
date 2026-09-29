@@ -22,7 +22,6 @@ import { useReasonedMutation } from '../../hooks/reason.js';
 import { useFlatPages } from '../../hooks/useFlatPages.js';
 import { traceHref } from '../../lib/artifact.js';
 import { cx } from '../../lib/cx.js';
-import { runStatusTone } from '../../lib/tone.js';
 import { whyFromExplanations } from '../../lib/why.js';
 import styles from '../shared/detail.module.css';
 
@@ -130,8 +129,8 @@ function EventItem({
               <StatusChip
                 key={p.id}
                 size="sm"
-                tone={p.runStatus ? runStatusTone(p.runStatus) : 'off'}
-                label={`${p.name} · ${p.runStatus ? `run ${p.runStatus}` : p.outcome}`}
+                tone={p.statusLabel?.tone ?? 'off'}
+                label={`${p.name} · ${p.statusLabel ? `run ${p.statusLabel.label}` : p.outcome}`}
               />
             ))
           )}
@@ -212,11 +211,11 @@ function EventPanel({ id, row }: { id: string; row: ActivityRow }) {
                   {p.name}
                 </Link>
                 <span className="t-caption">{p.outcome}</span>
-                {p.runStatus && (
+                {p.statusLabel && (
                   <StatusChip
                     size="sm"
-                    tone={runStatusTone(p.runStatus)}
-                    label={`run ${p.runStatus}`}
+                    tone={p.statusLabel.tone}
+                    label={`run ${p.statusLabel.label}`}
                   />
                 )}
               </li>

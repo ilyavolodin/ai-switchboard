@@ -1,27 +1,27 @@
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .insert {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1-5);
   align-items: center;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
 }
 
 .insertButton {
   height: 24px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-1);
   background: var(--surface-sunken);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--foreground);
   cursor: pointer;
 }
@@ -31,7 +31,7 @@
 }
 
 .note {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
 }
 
@@ -41,15 +41,15 @@
   border-radius: var(--radius-md);
   background: var(--card);
   border: 1px solid var(--border-1);
-  padding: 4px 12px 8px;
+  padding: var(--space-1) var(--space-3) var(--space-2);
 }
 
 .summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 26px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
 }
 
@@ -70,10 +70,10 @@
 .row {
   display: grid;
   grid-template-columns: 48px minmax(80px, max-content) minmax(0, 1fr) 72px;
-  gap: 10px;
+  gap: var(--space-2-5);
   align-items: center;
   min-height: 28px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   border-top: 1px solid var(--border-0);
 }
 
@@ -107,17 +107,17 @@
 
 .rowError {
   grid-column: 3 / 4;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--st-err-fg);
 }
 
 .more {
   align-self: flex-start;
-  margin-top: 6px;
+  margin-top: var(--space-1-5);
   padding: 0;
   border: 0;
   background: transparent;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--brand-text);
   cursor: pointer;
 }

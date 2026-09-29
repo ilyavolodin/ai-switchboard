@@ -19,6 +19,16 @@ export const SessionContext = createContext<Session>({
   requireReasons: true,
 });
 
+export function sessionFromMe(me: MeResponse): Session {
+  return {
+    user: me.user,
+    authMode: me.authMode,
+    oidcConfigured: me.oidcConfigured,
+    evaluation: me.evaluation,
+    requireReasons: me.requireReasons,
+  };
+}
+
 export function roleLabel(role: Role): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }

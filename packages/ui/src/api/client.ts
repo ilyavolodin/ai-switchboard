@@ -1,6 +1,29 @@
-import type { ApiError } from '@ai-switchboard/core/contract';
+import type { ApiError, ApiRoute, ApiRoutes } from '@ai-switchboard/core/contract';
 
 export const API_BASE = '/api/v1';
+
+type Strip<K> = K extends `${infer M} /api/v1${infer P}` ? `${M} ${P}` : never;
+
+/** `ApiRoutes` keyed without the `/api/v1` prefix: `'GET /processes/:id'`. */
+export type Routes = { [K in ApiRoute as Strip<K>]: ApiRoutes[K] };
+export type Route = keyof Routes;
+
+type Method<R> = R extends `${infer M} ${string}` ? M : never;
+type PathOf<R> = R extends `${string} ${infer P}` ? P : never;
+type ParamsIn<P> = P extends `${string}:${infer N}/${infer Rest}`
+  ? N | ParamsIn<`/${Rest}`>
+  : P extends `${string}:${infer N}`
+    ? N
+    : never;
+
+export type PathParam<R extends Route> = ParamsIn<PathOf<R>>;
+export type RouteParams<R extends Route> = {
+  [N in PathParam<R>]: N extends 'version' ? number : string;
+};
+export type RouteBody<R extends Route> = Routes[R] extends { body: infer B } ? B : undefined;
+export type RouteQuery<R extends Route> = Routes[R] extends { query: infer Q } ? Q : undefined;
+export type RouteRes<R extends Route> = Routes[R]['res'];
+export type MutationRoute = { [R in Route]: Method<R> extends 'GET' ? never : R }[Route];
 
 /** `body` is synthesised when the response was not JSON. */
 export class ApiRequestError extends Error {
@@ -27,18 +50,22 @@ export function isApiRequestError(e: unknown): e is ApiRequestError {
 
 export type QueryValue = string | number | boolean | null | undefined;
 
-export interface ApiFetchOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  body?: unknown;
-  query?: Record<string, QueryValue>;
+export type ApiFetchOptions<R extends Route> = ([PathParam<R>] extends [never]
+  ? { params?: undefined }
+  : { params: RouteParams<R> }) & {
+  body?: RouteBody<R>;
+  query?: RouteQuery<R>;
   signal?: AbortSignal;
-  as?: 'json' | 'text';
-}
+};
 
-export function buildQuery(query: Record<string, QueryValue> | undefined): string {
+type FetchArgs<R extends Route> = [PathParam<R>] extends [never]
+  ? [options?: ApiFetchOptions<R>]
+  : [options: ApiFetchOptions<R>];
+
+function buildQuery(query: object | undefined): string {
   if (!query) return '';
   const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(query)) {
+  for (const [k, v] of Object.entries(query) as [string, QueryValue][]) {
     if (v === undefined || v === null || v === '') continue;
     params.set(k, String(v));
   }
@@ -46,10 +73,32 @@ export function buildQuery(query: Record<string, QueryValue> | undefined): strin
   return s ? `?${s}` : '';
 }
 
+/** Path parameter names in route order: `'POST /processes/:id/run'` → `['id']`. */
+export function routeParamNames(route: Route): string[] {
+  return [...route.matchAll(/:([A-Za-z]+)/g)].map((m) => m[1] ?? '');
+}
+
+export function routePath(route: Route, params: Record<string, string | number> = {}): string {
+  const path = route.slice(route.indexOf(' ') + 1);
+  return path.replace(/:([A-Za-z]+)/g, (_, name: string) =>
+    encodeURIComponent(String(params[name] ?? '')),
+  );
+}
+
 /** Throws `ApiRequestError` for any non-2xx response; a 204 resolves to `undefined`. */
-export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  const { method = 'GET', body, query, signal, as = 'json' } = options;
-  const url = `${API_BASE}${path}${buildQuery(query)}`;
+export async function apiFetch<R extends Route>(
+  route: R,
+  ...[options]: FetchArgs<R>
+): Promise<RouteRes<R>> {
+  const { params, body, query, signal } = (options ?? {}) as {
+    params?: Record<string, string | number>;
+    body?: unknown;
+    query?: object;
+    signal?: AbortSignal;
+  };
+  const method = route.slice(0, route.indexOf(' '));
+  const as = route === 'GET /export' ? 'text' : 'json';
+  const url = `${API_BASE}${routePath(route, params)}${buildQuery(query)}`;
   const headers: Record<string, string> = {
     accept: as === 'text' ? 'text/yaml, */*' : 'application/json',
   };
@@ -61,10 +110,10 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   }
   const res = await fetch(url, init);
   if (!res.ok) throw new ApiRequestError(res.status, await readError(res));
-  if (res.status === 204) return undefined as T;
-  if (as === 'text') return (await res.text()) as T;
+  if (res.status === 204) return undefined;
+  if (as === 'text') return await res.text();
   const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+  return (text ? JSON.parse(text) : undefined) as RouteRes<R>;
 }
 
 async function readError(res: Response): Promise<ApiError> {

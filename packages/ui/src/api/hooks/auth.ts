@@ -11,7 +11,7 @@ import { qk } from '../keys.js';
 export function useMe() {
   return useQuery({
     queryKey: qk.me,
-    queryFn: ({ signal }) => apiFetch<MeResponse>('/auth/me', { signal }),
+    queryFn: ({ signal }) => apiFetch('GET /auth/me', { signal }),
     staleTime: 60_000,
     retry: 1,
   });
@@ -20,7 +20,7 @@ export function useMe() {
 export function useLogin() {
   const qc = useQueryClient();
   return useMutation<MeResponse, Error, LocalLoginRequest>({
-    mutationFn: (body) => apiFetch<MeResponse>('/auth/login', { method: 'POST', body }),
+    mutationFn: (body) => apiFetch('POST /auth/login', { body }),
     onSuccess: (me) => {
       qc.setQueryData(qk.me, me);
     },
@@ -30,7 +30,7 @@ export function useLogin() {
 export function useChangePassword() {
   const qc = useQueryClient();
   return useMutation<MeResponse, Error, ChangePasswordRequest>({
-    mutationFn: (body) => apiFetch<MeResponse>('/auth/password', { method: 'POST', body }),
+    mutationFn: (body) => apiFetch('POST /auth/password', { body }),
     onSuccess: async (me) => {
       qc.setQueryData(qk.me, me);
       // Queries that failed with password_change_required refetch now.
@@ -44,19 +44,11 @@ export function useChangePassword() {
 export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => apiFetch<undefined>('/auth/logout', { method: 'POST', body: {} }),
+    mutationFn: () => apiFetch('POST /auth/logout'),
     onSuccess: async () => {
       qc.clear();
       await qc.invalidateQueries({ queryKey: qk.me });
     },
-  });
-}
-
-export function useWhoami() {
-  return useQuery({
-    queryKey: qk.whoami,
-    queryFn: ({ signal }) => apiFetch<{ actor: string }>('/auth/whoami', { signal }),
-    staleTime: 5 * 60_000,
   });
 }
 

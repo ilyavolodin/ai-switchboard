@@ -10,7 +10,7 @@ import {
   ceilingMark,
   meterFraction,
 } from '../lib/gauge.js';
-import { isAboveCeiling, meterTimes, meterValueText, shortMeterLabel } from '../lib/meter.js';
+import { meterTimes, meterValueText, shortMeterLabel } from '../lib/meter.js';
 import styles from './MeterGauge.module.css';
 
 export type GaugeMeter = Pick<
@@ -26,6 +26,7 @@ export type GaugeMeter = Pick<
   | 'estimated'
   | 'stale'
   | 'ceilings'
+  | 'ceilingState'
 >;
 
 export interface MeterGaugeProps {
@@ -62,7 +63,7 @@ export function MeterGauge({
   const sweepMarks = showSweepCeilings
     ? [...new Set(ceilings.map((c) => c.sweeps))].filter((s) => !eventMarks.includes(s))
     : [];
-  const above = isAboveCeiling({ ...meter, ceilings });
+  const above = meter.ceilingState === 'throttling';
   const color = meter.stale ? 'var(--line-strong)' : above ? 'var(--st-err)' : 'var(--primary)';
   const { lastRead, resets: resetText } = meterTimes(meter, nowMs);
 

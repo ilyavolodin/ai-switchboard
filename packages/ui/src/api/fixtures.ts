@@ -50,6 +50,29 @@ import type {
   UserDTO,
 } from '@ai-switchboard/core/contract';
 
+import {
+  inputSchema as routinesInputSchema,
+  settingsSchema as routinesSettingsSchema,
+  targetSchema as routinesTargetSchema,
+} from '@ai-switchboard/destination-claude-routines/schemas';
+import {
+  inputSchema as actionsInputSchema,
+  settingsSchema as actionsSettingsSchema,
+  targetSchema as actionsTargetSchema,
+} from '@ai-switchboard/destination-github-actions/schemas';
+import {
+  inputSchema as httpInputSchema,
+  settingsSchema as httpSettingsSchema,
+  targetSchema as httpTargetSchema,
+} from '@ai-switchboard/destination-http/schemas';
+import { settingsSchema as slackSettingsSchema } from '@ai-switchboard/notifier-slack/schemas';
+import { settingsSchema as envSettingsSchema } from '@ai-switchboard/secrets-env/schemas';
+import { settingsSchema as fileSettingsSchema } from '@ai-switchboard/secrets-file/schemas';
+import { settingsSchema as datadogSettingsSchema } from '@ai-switchboard/source-datadog/schemas';
+import { settingsSchema as githubSettingsSchema } from '@ai-switchboard/source-github/schemas';
+import { settingsSchema as linearSettingsSchema } from '@ai-switchboard/source-linear/schemas';
+import { settingsSchema as webhookSettingsSchema } from '@ai-switchboard/source-webhook/schemas';
+
 import { at } from '../lib/at.js';
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -108,239 +131,36 @@ const OFF5: [StatusTone, StatusTone, StatusTone, StatusTone, StatusTone] = [
   'off',
 ];
 
-/** As `@ai-switchboard/source-webhook` declares it. */
-export const webhookSettingsSchema: JSONSchema = {
-  type: 'object',
-  required: ['mapping'],
-  properties: {
-    verification: {
-      type: 'string',
-      enum: ['hmac', 'shared_secret', 'none'],
-      default: 'hmac',
-      title: 'Verification',
-      description: 'How deliveries are authenticated.',
-      'x-group': 'Verification',
-      'x-warning': {
-        when: { const: 'none' },
-        message: 'Anyone who knows the URL can send events — evaluation only.',
-      },
-    },
-    secret: {
-      type: 'string',
-      title: 'Secret',
-      description: 'The HMAC key or the shared secret.',
-      'x-secret': true,
-      'x-group': 'Verification',
-    },
-    signatureHeader: {
-      type: 'string',
-      default: 'x-signature-256',
-      title: 'Signature header',
-      description: 'Header that carries the HMAC signature.',
-      'x-group': 'Verification',
-    },
-    sharedSecretHeader: {
-      type: 'string',
-      default: 'x-webhook-secret',
-      title: 'Shared-secret header',
-      description: 'Header that carries the shared secret.',
-      'x-group': 'Verification',
-    },
-    mapping: {
-      type: 'string',
-      minLength: 1,
-      title: 'Mapping',
-      description: 'JSONata over `{ body, headers, query }`.',
-      'x-group': 'Mapping',
-    },
-  },
-  allOf: [
-    {
-      if: { properties: { verification: { const: 'hmac' } } },
-      then: {
-        required: ['secret'],
-        properties: { secret: { minLength: 1 }, signatureHeader: true },
-      },
-    },
-    {
-      if: { properties: { verification: { const: 'shared_secret' } } },
-      then: {
-        required: ['secret'],
-        properties: { secret: { minLength: 1 }, sharedSecretHeader: true },
-      },
-    },
-  ],
+const SOURCE_SCHEMAS: Record<string, JSONSchema> = {
+  linear: linearSettingsSchema,
+  github: githubSettingsSchema,
+  webhook: webhookSettingsSchema,
+  datadog: datadogSettingsSchema,
 };
 
-export const linearSettingsSchema: JSONSchema = {
-  type: 'object',
-  required: ['team', 'apiKey', 'webhookSecret'],
-  'x-order': [
-    'team',
-    'apiKey',
-    'webhookSecret',
-    'labels',
-    'includeArchived',
-    'pollIntervalSeconds',
-  ],
-  properties: {
-    team: {
-      type: 'string',
-      title: 'Team key',
-      description: 'The Linear team whose issues this source watches, e.g. LOL.',
-      minLength: 2,
-      'x-group': 'Workspace',
-    },
-    labels: {
-      type: 'array',
-      title: 'Labels to watch',
-      description: 'Only label changes for these labels become events. Empty means every label.',
-      items: { type: 'string' },
-      default: ['autofix', 'bug'],
-      'x-group': 'Workspace',
-    },
-    includeArchived: {
-      type: 'boolean',
-      title: 'Include archived issues',
-      default: false,
-      'x-group': 'Workspace',
-    },
-    apiKey: {
-      type: 'string',
-      title: 'API key',
-      description: 'A personal or workspace API key with read access.',
-      'x-secret': true,
-      'x-group': 'Credentials',
-    },
-    webhookSecret: {
-      type: 'string',
-      title: 'Webhook signing secret',
-      description:
-        'Linear signs every delivery with this secret. Deliveries that fail verification are rejected with an empty 401 and counted on the Overview tab.',
-      'x-secret': true,
-      'x-group': 'Credentials',
-    },
-    pollIntervalSeconds: {
-      type: 'integer',
-      title: 'Backfill poll interval',
-      description: 'How often to poll for changes missed while the webhook was down.',
-      minimum: 60,
-      maximum: 86400,
-      default: 900,
-      'x-group': 'Advanced',
-    },
-  },
+type DestinationSchemas = Pick<
+  DestinationDetail,
+  'settingsSchema' | 'targetSchema' | 'inputSchema'
+>;
+
+const HTTP_SCHEMAS: DestinationSchemas = {
+  settingsSchema: httpSettingsSchema,
+  targetSchema: httpTargetSchema,
+  inputSchema: httpInputSchema,
 };
 
-export const routinesTargetSchema: JSONSchema = {
-  type: 'object',
-  required: ['routineId', 'token'],
-  properties: {
-    routineId: { type: 'string', title: 'Routine', description: 'The routine id on claude.ai.' },
-    token: {
-      type: 'string',
-      title: 'Bearer token',
-      'x-secret': true,
-      description: 'The routine trigger token.',
-    },
-    mode: { enum: ['fire', 'fire-and-wait'], title: 'Mode', default: 'fire' },
-    notes: { type: 'string', title: 'Notes', 'x-widget': 'textarea' },
+const DESTINATION_SCHEMAS: Record<string, DestinationSchemas> = {
+  'claude-routines': {
+    settingsSchema: routinesSettingsSchema,
+    targetSchema: routinesTargetSchema,
+    inputSchema: routinesInputSchema,
   },
-};
-
-const routinesSettingsSchema: JSONSchema = {
-  type: 'object',
-  required: ['orgId', 'apiKey'],
-  properties: {
-    orgId: { type: 'string', title: 'Organisation id', 'x-group': 'Account' },
-    apiKey: { type: 'string', title: 'API key', 'x-secret': true, 'x-group': 'Account' },
-    baseUrl: {
-      type: 'string',
-      title: 'Base URL',
-      format: 'uri',
-      default: 'https://api.anthropic.com',
-      'x-group': 'Advanced',
-    },
+  'github-actions': {
+    settingsSchema: actionsSettingsSchema,
+    targetSchema: actionsTargetSchema,
+    inputSchema: actionsInputSchema,
   },
-};
-
-const routinesInputSchema: JSONSchema = {
-  type: 'object',
-  required: ['text'],
-  properties: { text: { type: 'string', maxLength: 4000 } },
-};
-
-const githubSettingsSchema: JSONSchema = {
-  type: 'object',
-  required: ['org', 'appId', 'privateKey', 'webhookSecret'],
-  properties: {
-    org: { type: 'string', title: 'Organisation', 'x-group': 'GitHub App' },
-    appId: { type: 'integer', title: 'App id', 'x-group': 'GitHub App' },
-    privateKey: { type: 'string', title: 'Private key', 'x-secret': true, 'x-group': 'GitHub App' },
-    webhookSecret: {
-      type: 'string',
-      title: 'Webhook secret',
-      'x-secret': true,
-      'x-group': 'GitHub App',
-    },
-    repositories: {
-      type: 'array',
-      title: 'Repositories',
-      items: {
-        type: 'object',
-        required: ['name'],
-        properties: {
-          name: { type: 'string', title: 'Name' },
-          branch: { type: 'string', title: 'Default branch', default: 'main' },
-        },
-      },
-    },
-  },
-};
-
-const datadogSettingsSchema: JSONSchema = {
-  type: 'object',
-  required: ['site', 'apiKey', 'appKey'],
-  properties: {
-    site: {
-      title: 'Site',
-      enum: ['datadoghq.com', 'datadoghq.eu', 'us3.datadoghq.com', 'us5.datadoghq.com'],
-      default: 'datadoghq.com',
-    },
-    apiKey: { type: 'string', title: 'API key', 'x-secret': true },
-    appKey: { type: 'string', title: 'Application key', 'x-secret': true },
-    query: {
-      type: 'string',
-      title: 'Error tracking query',
-      'x-widget': 'expression',
-      default: 'service:checkout env:prod',
-    },
-    schedule: {
-      type: 'string',
-      title: 'Poll schedule',
-      'x-widget': 'cron',
-      default: '*/5 * * * *',
-    },
-  },
-};
-
-const httpTargetSchema: JSONSchema = {
-  type: 'object',
-  required: ['url', 'method'],
-  properties: {
-    url: { type: 'string', title: 'URL', format: 'uri' },
-    method: { enum: ['POST', 'PUT'], title: 'Method', default: 'POST' },
-    headers: { type: 'object', title: 'Headers', properties: {} },
-  },
-};
-
-const slackSettingsSchema: JSONSchema = {
-  type: 'object',
-  required: ['webhookUrl'],
-  properties: {
-    webhookUrl: { type: 'string', title: 'Incoming webhook URL', 'x-secret': true },
-    channel: { type: 'string', title: 'Channel', default: '#loops' },
-  },
+  http: HTTP_SCHEMAS,
 };
 
 /** `now` is epoch ms. */
@@ -554,11 +374,9 @@ export function buildFixtures(now: number) {
     settings:
       s.typeId === 'linear'
         ? {
-            team: 'LOL',
-            labels: ['autofix', 'bug'],
             apiKey: 'secret://env/LINEAR_API_KEY',
             webhookSecret: 'secret://env/LINEAR_WEBHOOK_SECRET',
-            pollIntervalSeconds: 900,
+            teamKeys: ['LOL'],
           }
         : {},
     caps: { eventCapPerHour: 600, eventCapPerDay: 5000 },
@@ -628,8 +446,7 @@ export function buildFixtures(now: number) {
             },
           ]
         : [],
-    settingsSchema:
-      s.typeId === 'linear' ? linearSettingsSchema : { type: 'object', properties: {} },
+    settingsSchema: SOURCE_SCHEMAS[s.typeId] ?? { type: 'object', properties: {} },
     lastVerifyFailureAt: s.id === S.github ? iso(-50 * MIN) : null,
     instanceError:
       s.id === S.github ? 'installation token refresh failed: 401 Bad credentials' : null,
@@ -693,13 +510,14 @@ export function buildFixtures(now: number) {
     ...x,
     settings:
       x.typeId === 'claude-routines'
-        ? { orgId: 'org_lola', apiKey: 'secret://env/CLAUDE_API_KEY' }
+        ? {
+            token: 'secret://env/CLAUDE_API_KEY',
+            callbackSecret: 'secret://env/ROUTINE_CALLBACK_SECRET',
+          }
         : {},
     targetDefaults: {},
     caps: { runsPerHour: 6, runsPerDay: 22, meterPollSeconds: 60, meterStalenessMinutes: 15 },
-    settingsSchema: x.typeId === 'claude-routines' ? routinesSettingsSchema : { type: 'object' },
-    targetSchema: x.typeId === 'claude-routines' ? routinesTargetSchema : httpTargetSchema,
-    inputSchema: routinesInputSchema,
+    ...(DESTINATION_SCHEMAS[x.typeId] ?? HTTP_SCHEMAS),
     tracking: x.typeId === 'claude-routines' ? 'callback' : x.typeId === 'http' ? 'sync' : 'poll',
     idempotentInvoke: x.typeId !== 'claude-routines',
     usage: [
@@ -1884,9 +1702,9 @@ export function buildFixtures(now: number) {
       icon: 'link',
       plugin: '@ai-switchboard/destination-http',
       available: true,
-      settingsSchema: { type: 'object', properties: {} },
+      settingsSchema: httpSettingsSchema,
       targetSchema: httpTargetSchema,
-      inputSchema: {},
+      inputSchema: httpInputSchema,
       tracking: 'sync',
       idempotentInvoke: true,
     },
@@ -1904,22 +1722,18 @@ export function buildFixtures(now: number) {
       typeId: 'env',
       displayName: 'Environment',
       icon: 'key',
-      plugin: '@ai-switchboard/core',
+      plugin: '@ai-switchboard/secrets-env',
       available: true,
-      settingsSchema: { type: 'object', properties: {} },
+      settingsSchema: envSettingsSchema,
     },
     {
       kind: 'secret_provider',
       typeId: 'file',
       displayName: 'File',
       icon: 'lock',
-      plugin: '@ai-switchboard/core',
+      plugin: '@ai-switchboard/secrets-file',
       available: true,
-      settingsSchema: {
-        type: 'object',
-        required: ['directory'],
-        properties: { directory: { type: 'string', title: 'Directory' } },
-      },
+      settingsSchema: fileSettingsSchema,
     },
   ];
 
@@ -2112,7 +1926,7 @@ export function buildFixtures(now: number) {
       status: st('ok', 'ok'),
       health: health('healthy'),
       settings: {},
-      settingsSchema: { type: 'object', properties: {} },
+      settingsSchema: envSettingsSchema,
       instanceError: null,
       dependents: [
         {
@@ -2135,7 +1949,7 @@ export function buildFixtures(now: number) {
       status: st('ok', 'ok'),
       health: health('healthy'),
       settings: { directory: '/var/run/secrets' },
-      settingsSchema: { type: 'object', properties: { directory: { type: 'string' } } },
+      settingsSchema: fileSettingsSchema,
       instanceError: null,
       dependents: [],
     },
@@ -2155,7 +1969,7 @@ export function buildFixtures(now: number) {
               kind: 'destination',
               id: E.routines,
               name: 'Claude Routines — automation seat',
-              field: 'apiKey',
+              field: 'token',
             },
           ],
         },
@@ -2198,6 +2012,17 @@ export function buildFixtures(now: number) {
           ref: 'secret://file/github-app-key',
           updatedAt: iso(-3 * DAY),
           usedBy: [],
+        },
+        {
+          name: `switchboard-${E.routines}-oauthRefreshToken`,
+          ref: `secret://file/switchboard-${E.routines}-oauthRefreshToken`,
+          updatedAt: iso(-2 * HOUR),
+          usedBy: [],
+          storedBy: {
+            kind: 'destination',
+            id: E.routines,
+            name: 'Claude Routines — automation seat',
+          },
         },
       ],
       missing: [],

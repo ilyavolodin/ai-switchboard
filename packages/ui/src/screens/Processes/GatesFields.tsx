@@ -70,7 +70,7 @@ export function GatesFields({ doc, baseline, set, errors, disabled }: SectionPro
                 label="Approval expression"
                 value={g.approval}
                 disabled={disabled}
-                completions={{ variables: ['events', 'process', 'run', 'mode'] }}
+                completions={{ context: 'approval' }}
                 insertions={[
                   { label: '$count(events)' },
                   { label: 'mode' },

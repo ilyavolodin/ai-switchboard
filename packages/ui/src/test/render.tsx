@@ -12,7 +12,7 @@ import { buildFixtures, type Fixtures } from '../api/fixtures.js';
 import { createMockApi, type MockApi, type MockHandlers } from '../api/mockApi.js';
 import { AppProviders } from '../app/AppProviders.js';
 import { routes } from '../app/routes.js';
-import { type Session, SessionContext } from '../app/session.js';
+import { SessionContext, sessionFromMe } from '../app/session.js';
 
 import { TEST_NOW } from './constants.js';
 
@@ -43,27 +43,28 @@ function testClient(): QueryClient {
   });
 }
 
-function installApi(options: RenderOptions): MockApi {
+/** `role` and `requireReasons` are written into `fixtures.me`, the one source of the session. */
+function installApi(options: RenderOptions, defaultRole: Role | null | undefined): MockApi {
   const fixtures = options.fixtures ?? buildFixtures(TEST_NOW);
+  const role = options.role === undefined ? defaultRole : options.role;
   if (options.requireReasons === false) {
     fixtures.settings = { ...fixtures.settings, requireReasons: false };
-    fixtures.me = { ...fixtures.me, requireReasons: false };
   }
+  fixtures.me = {
+    ...fixtures.me,
+    requireReasons: options.requireReasons ?? fixtures.me.requireReasons,
+    ...(role !== undefined
+      ? { user: role && fixtures.me.user ? { ...fixtures.me.user, role } : null }
+      : {}),
+  };
   const api = createMockApi({ fixtures, overrides: options.overrides });
   vi.stubGlobal('fetch', api.fetch);
   return api;
 }
 
 export function renderWithProviders(ui: ReactElement, options: RenderOptions = {}): Rendered {
-  const api = installApi(options);
-  const role = options.role === undefined ? 'operator' : options.role;
-  const session: Session = {
-    user: role ? { ...api.fixtures.user, role } : null,
-    authMode: 'local',
-    oidcConfigured: false,
-    evaluation: true,
-    requireReasons: options.requireReasons ?? true,
-  };
+  const api = installApi(options, 'operator');
+  const session = sessionFromMe(api.fixtures.me);
   const router = createMemoryRouter(
     [
       {
@@ -83,16 +84,7 @@ export function renderWithProviders(ui: ReactElement, options: RenderOptions = {
 }
 
 export function renderApp(path: string, options: RenderOptions = {}): Rendered {
-  const api = installApi(options);
-  if (options.role !== undefined && !options.overrides?.['GET /auth/me']) {
-    const me = api.fixtures.me;
-    api.use({
-      'GET /auth/me': () => ({
-        ...me,
-        user: options.role ? { ...me.user, role: options.role } : null,
-      }),
-    });
-  }
+  const api = installApi(options, undefined);
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   const user = userEvent.setup();
   const result = render(

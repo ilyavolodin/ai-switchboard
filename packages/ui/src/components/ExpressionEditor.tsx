@@ -13,6 +13,7 @@ import {
   type Suggestion,
 } from '../lib/suggest.js';
 import { ArtifactChip } from './ArtifactChip.js';
+import type { ControlProps } from './controlProps.js';
 import styles from './ExpressionEditor.module.css';
 import { Skeleton } from './Skeleton.js';
 import { SuggestionList } from './SuggestionList.js';
@@ -27,12 +28,8 @@ export interface ExpressionInsertion {
   title?: string;
 }
 
-export interface ExpressionEditorProps {
-  value: string;
-  onChange: (next: string) => void;
+export interface ExpressionEditorProps extends ControlProps<string> {
   label: string;
-  id?: string;
-  describedBy?: string;
   /** Omit to hide the evaluation panel. */
   rows?: EvaluationRow[];
   evaluating?: boolean;
@@ -43,7 +40,6 @@ export interface ExpressionEditorProps {
   visibleRows?: number;
   textareaRows?: number;
   scope?: string;
-  disabled?: boolean;
   completions?: CompletionSources;
 }
 
@@ -75,10 +71,12 @@ export function ExpressionEditor({
   textareaRows = 2,
   scope = 'last 20 real events of these types',
   disabled,
+  invalid,
   completions,
 }: ExpressionEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const candidates = expressionCompletions({
+    context: null,
     ...completions,
     extra: [...(completions?.extra ?? []), ...chipCompletions(insertions)],
   });
@@ -130,6 +128,7 @@ export function ExpressionEditor({
           aria-describedby={describedBy}
           {...suggest.inputProps}
           mono
+          invalid={invalid}
           rows={textareaRows}
           spellCheck={false}
           value={value}

@@ -1,3 +1,5 @@
+import type { SettledRunStatus } from '@ai-switchboard/core/domain';
+
 import type { ReasonPromptOptions } from '../../hooks/reason.js';
 
 export type InstanceNoun = 'source' | 'destination' | 'notifier' | 'secret provider';
@@ -81,5 +83,21 @@ export function enableProcessPrompt(
         ? 'Enable'
         : 'Disable',
     danger: !enabled,
+  };
+}
+
+const SETTLE_CONSEQUENCE: Record<SettledRunStatus, string> = {
+  ok: 'The run counts as a success: it stops being tracked and the breaker sees no failure.',
+  error:
+    'The run counts as a failure: it stops being tracked and adds to the breaker’s failure count.',
+  unknown:
+    'The run stops being tracked without an outcome; like a failure, it adds to the breaker’s count.',
+};
+
+export function closeRunPrompt(status: SettledRunStatus): ReasonPromptOptions {
+  return {
+    title: `Settle the run as ${status}?`,
+    consequence: `${SETTLE_CONSEQUENCE[status]} Nothing is sent to the destination.`,
+    confirmLabel: `Mark ${status}`,
   };
 }

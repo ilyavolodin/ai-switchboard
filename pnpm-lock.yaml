@@ -274,9 +274,6 @@ importers:
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
-      ajv-formats:
-        specifier: ^3.0.1
-        version: 3.0.1(ajv@8.20.0)
       cronstrue:
         specifier: ^3.27.0
         version: 3.27.0
@@ -293,9 +290,39 @@ importers:
       '@ai-switchboard/core':
         specifier: workspace:*
         version: link:../core
+      '@ai-switchboard/destination-claude-routines':
+        specifier: workspace:*
+        version: link:../../plugins/destination-claude-routines
+      '@ai-switchboard/destination-github-actions':
+        specifier: workspace:*
+        version: link:../../plugins/destination-github-actions
+      '@ai-switchboard/destination-http':
+        specifier: workspace:*
+        version: link:../../plugins/destination-http
+      '@ai-switchboard/notifier-slack':
+        specifier: workspace:*
+        version: link:../../plugins/notifier-slack
       '@ai-switchboard/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@ai-switchboard/secrets-env':
+        specifier: workspace:*
+        version: link:../../plugins/secrets-env
+      '@ai-switchboard/secrets-file':
+        specifier: workspace:*
+        version: link:../../plugins/secrets-file
+      '@ai-switchboard/source-datadog':
+        specifier: workspace:*
+        version: link:../../plugins/source-datadog
+      '@ai-switchboard/source-github':
+        specifier: workspace:*
+        version: link:../../plugins/source-github
+      '@ai-switchboard/source-linear':
+        specifier: workspace:*
+        version: link:../../plugins/source-linear
+      '@ai-switchboard/source-webhook':
+        specifier: workspace:*
+        version: link:../../plugins/source-webhook
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0

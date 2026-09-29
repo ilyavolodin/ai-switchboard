@@ -52,7 +52,7 @@ export function InstanceRow({
         <Toggle
           size="sm"
           label="Enabled"
-          checked={inst.enabled}
+          value={inst.enabled}
           requires="admin"
           onChange={onEnable}
         />

@@ -43,6 +43,23 @@ describe('Settings › Secret providers › Secrets', () => {
     );
   });
 
+  it('labels names the host stored for an instance and offers no reference to copy', async () => {
+    const r = open();
+    const panel = await showSecrets(r, 'file — /var/run/secrets');
+    const table = await within(panel).findByRole('table', {
+      name: 'Secrets in file — /var/run/secrets',
+    });
+    const row = within(table).getByRole('row', { name: /oauthRefreshToken/ });
+    expect(row).toHaveTextContent('stored by Claude Routines — automation seat');
+    expect(
+      within(row).getByRole('link', { name: 'Claude Routines — automation seat' }),
+    ).toHaveAttribute('href', '/destinations/ex-routines');
+    expect(within(row).queryByRole('button', { name: /^Copy/ })).toBeNull();
+    expect(within(table).getByRole('row', { name: /github-app-key/ })).toHaveTextContent(
+      'secret://file/github-app-key',
+    );
+  });
+
   it('flags references whose names the provider does not list', async () => {
     const r = open();
     const panel = await showSecrets(r);

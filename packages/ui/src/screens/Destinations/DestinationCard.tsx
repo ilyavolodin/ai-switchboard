@@ -36,7 +36,7 @@ export function DestinationCard({ destination }: { destination: DestinationSumma
           <Toggle
             size="sm"
             ariaLabel={`${destination.name} enabled`}
-            checked={destination.enabled}
+            value={destination.enabled}
             requires="operator"
             onChange={(next) => void enable.run({ id: destination.id, enabled: next })}
           />

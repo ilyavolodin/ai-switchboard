@@ -30,9 +30,8 @@ describe('gauge arithmetic', () => {
   });
 
   it('reads utilization as a percentage and allowances as used/limit', () => {
-    expect(meterFraction({ utilization: 62, used: null, limit: null })).toBeCloseTo(0.62);
-    expect(meterFraction({ utilization: null, used: 14, limit: 22 })).toBeCloseTo(0.636, 3);
-    expect(meterFraction({ utilization: null, used: null, limit: null })).toBeNull();
+    expect(meterFraction({ utilization: 62 })).toBeCloseTo(0.62);
+    expect(meterFraction({ utilization: null })).toBeNull();
   });
 });
 
@@ -60,12 +59,20 @@ describe('MeterGauge', () => {
     expect(screen.getByRole('img')).toHaveAccessibleName(expect.stringContaining('stale'));
   });
 
-  it('turns coral above the lowest event ceiling', () => {
-    const hot = { ...fiveHour, utilization: 91 };
+  it('turns coral when the core says the meter is throttling', () => {
+    const hot = { ...fiveHour, utilization: 91, ceilingState: 'throttling' as const };
     const { container } = render(<MeterGauge meter={hot} />);
     expect(container.querySelector('[data-part="arc"]')).toHaveAttribute('stroke', 'var(--st-err)');
     expect(screen.getByRole('img')).toHaveAccessibleName(
       expect.stringContaining('above ceiling, throttled'),
+    );
+  });
+
+  it('stays below while the core says so, even past a ceiling mark', () => {
+    const { container } = render(<MeterGauge meter={{ ...fiveHour, utilization: 91 }} />);
+    expect(container.querySelector('[data-part="arc"]')).toHaveAttribute(
+      'stroke',
+      'var(--primary)',
     );
   });
 

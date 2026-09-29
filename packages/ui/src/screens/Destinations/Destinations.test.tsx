@@ -57,8 +57,11 @@ describe('Destinations', () => {
     const picker = await screen.findByRole('dialog', { name: 'Add a destination' });
     await user.click(within(picker).getByRole('button', { name: /Claude Routines/ }));
     const form = await screen.findByRole('dialog', { name: 'New Claude Routines destination' });
-    await user.type(within(form).getByLabelText(/Organisation id/), 'org_lola');
-    await user.type(within(form).getByRole('textbox', { name: /^API key/ }), 'CLAUDE_API_KEY');
+    await user.type(within(form).getByRole('textbox', { name: /^Trigger token/ }), 'ROUTINE_TOKEN');
+    await user.type(
+      within(form).getByRole('textbox', { name: /^Callback secret/ }),
+      'ROUTINE_CALLBACK_SECRET',
+    );
     await user.type(within(form).getByLabelText('Runs per day'), '20');
     await user.type(within(form).getByLabelText('Meter staleness'), '15');
     await user.click(within(form).getByRole('button', { name: 'Create destination' }));
@@ -73,14 +76,14 @@ describe('Destinations', () => {
       name: 'Claude Routines',
       reason: 'new seat',
       settings: {
-        orgId: 'org_lola',
-        apiKey: 'secret://env/CLAUDE_API_KEY',
-        baseUrl: 'https://api.anthropic.com',
+        token: 'secret://env/ROUTINE_TOKEN',
+        callbackSecret: 'secret://env/ROUTINE_CALLBACK_SECRET',
+        apiBaseUrl: 'https://api.anthropic.com',
       },
       caps: { runsPerDay: 20, meterStalenessMinutes: 15 },
     });
     await vi.waitFor(() => {
-      expect(router.state.location.pathname).toBe('/destinations/ex-routines');
+      expect(router.state.location.pathname).toBe('/destinations/ex-new-1');
     });
   });
 

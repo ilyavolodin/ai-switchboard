@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { settingsSchema } from '../../../../plugins/source-webhook/src/settings.js';
+import { settingsSchema } from '@ai-switchboard/source-webhook/schemas';
+
 import type { DeliverySample } from '../lib/suggest.js';
 import { SchemaForm } from './SchemaForm.js';
 
