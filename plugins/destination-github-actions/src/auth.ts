@@ -1,12 +1,17 @@
 import { sign } from 'node:crypto';
 
-import { tryJson, type PluginContext } from '@ai-switchboard/sdk';
+import { asObject, asString, tryJson, type PluginContext } from '@ai-switchboard/sdk';
 
 import { GITHUB_API, type GithubActionsSettings } from './settings.js';
 
 /** Installation tokens live an hour; refresh this long before they expire. */
 const TOKEN_MARGIN_MS = 5 * 60_000;
+/** A token minted this recently is used even when GitHub gave it a shorter life than the margin. */
 const FRESH_MS = 30_000;
+const FALLBACK_LIFETIME_MS = 30 * 60_000;
+/** GitHub accepts App JWTs of at most 10 minutes; backdate `iat` a minute for clock drift. */
+const JWT_BACKDATE_S = 60;
+const JWT_LIFETIME_S = 600;
 
 export class GithubAuthError extends Error {
   override readonly name = 'GithubAuthError';
@@ -26,16 +31,21 @@ export const GITHUB_HEADERS = {
 
 /** Keys pasted into a single-line field often carry literal `\n`. */
 function normalizePem(key: string): string {
-  return key.includes('\\n') ? key.replace(/\\n/g, '\n') : key;
+  return (key.includes('\\n') ? key.replace(/\\n/g, '\n') : key).trim();
 }
 
-/** A GitHub App JWT (RS256), valid ten minutes with a minute of clock-skew backdating. */
+/** A numeric App ID goes in `iss` as a number; a Client ID as the string it is. */
+export function jwtIssuer(appId: string | number): string | number {
+  return typeof appId === 'string' && /^\d+$/.test(appId) ? Number(appId) : appId;
+}
+
+/** A GitHub App JWT (RS256). */
 export function appJwt(appId: string | number, privateKey: string, now: Date): string {
-  const iat = Math.floor(now.getTime() / 1000) - 60;
-  const iss = typeof appId === 'string' && /^\d+$/.test(appId) ? Number(appId) : appId;
+  const iat = Math.floor(now.getTime() / 1000) - JWT_BACKDATE_S;
   const encode = (value: unknown): string =>
     Buffer.from(JSON.stringify(value)).toString('base64url');
-  const data = `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode({ iat, exp: iat + 600, iss })}`;
+  const claims = { iat, exp: iat + JWT_LIFETIME_S, iss: jwtIssuer(appId) };
+  const data = `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode(claims)}`;
   const signature = sign('RSA-SHA256', Buffer.from(data), normalizePem(privateKey));
   return `${data}.${signature.toString('base64url')}`;
 }
@@ -46,6 +56,7 @@ export interface GithubAuth {
   invalidate(): void;
 }
 
+/** App installation tokens are cached in memory (never in `ctx.state`). */
 export function createAuth(settings: GithubActionsSettings, ctx: PluginContext): GithubAuth {
   if (settings.auth === 'token') {
     const token = settings.token ?? '';
@@ -74,22 +85,24 @@ export function createAuth(settings: GithubActionsSettings, ctx: PluginContext):
     if (!res.ok) {
       throw new GithubAuthError(`GitHub refused an installation token (${res.status})`, res.status);
     }
-    const body = tryJson(res);
-    const token = (body as { token?: unknown } | undefined)?.token;
-    const expiresAt = (body as { expires_at?: unknown } | undefined)?.expires_at;
-    if (typeof token !== 'string' || token === '') {
+    const body = asObject(tryJson(res));
+    const token = asString(body?.token);
+    if (token === undefined || token === '') {
       throw new GithubAuthError('GitHub returned no installation token');
     }
-    const expiry = typeof expiresAt === 'string' ? Date.parse(expiresAt) : Number.NaN;
+    const expiry = Date.parse(asString(body?.expires_at) ?? '');
     const now = ctx.now().getTime();
-    cached = { token, expiresAt: Number.isNaN(expiry) ? now + 30 * 60_000 : expiry, mintedAt: now };
+    cached = {
+      token,
+      expiresAt: Number.isNaN(expiry) ? now + FALLBACK_LIFETIME_MS : expiry,
+      mintedAt: now,
+    };
     return token;
   }
 
   return {
     token: () => {
       const now = ctx.now().getTime();
-      // A token minted a moment ago is used even when GitHub gave it a short life.
       if (
         cached &&
         (cached.expiresAt - TOKEN_MARGIN_MS > now || now - cached.mintedAt < FRESH_MS) &&

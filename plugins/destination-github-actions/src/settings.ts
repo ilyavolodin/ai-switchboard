@@ -1,5 +1,4 @@
-import type { JSONSchema, MeterSpec, Settings, UsageDimension } from '@ai-switchboard/sdk';
-import { parseWith } from '@ai-switchboard/sdk/schema';
+import type { JSONSchema, MeterSpec, UsageDimension } from '@ai-switchboard/sdk';
 
 export interface GithubActionsSettings {
   /** `app`: a GitHub App installation token (recommended). `token`: a fine-grained PAT. */
@@ -68,10 +67,6 @@ export const settingsSchema: JSONSchema = {
     },
   ],
 };
-
-export function readSettings(settings: Settings): GithubActionsSettings {
-  return parseWith<GithubActionsSettings>(settingsSchema, settings, 'github-actions settings');
-}
 
 export const OS_KEYS = ['UBUNTU', 'MACOS', 'WINDOWS'] as const;
 export type RunnerOs = (typeof OS_KEYS)[number];
