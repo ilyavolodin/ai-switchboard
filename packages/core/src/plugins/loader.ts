@@ -11,6 +11,7 @@ import { errorText } from '../util/errors.js';
 
 import type { DiscoveredPackage } from './discovery.js';
 import { isSdkCompatible, pluginEntry } from './package-manifest.js';
+import { installedModulesDir } from './plugin-paths.js';
 import type { TypeRegistry } from './type-registry.js';
 
 export interface LoadedPlugin {
@@ -76,7 +77,7 @@ export function checkDefinition(
 export function defaultScanDirs(config: Pick<CoreConfig, 'home' | 'pluginDirs'>): ScanDir[] {
   const coreNodeModules = fileURLToPath(new URL('../../node_modules', import.meta.url));
   return [
-    { path: join(config.home, 'plugins', 'node_modules'), origin: 'installed' },
+    { path: installedModulesDir(config.home), origin: 'installed' },
     ...config.pluginDirs.map((path) => ({ path, origin: 'installed' as const })),
     { path: coreNodeModules, origin: 'baked' },
     { path: join(process.cwd(), 'node_modules'), origin: 'baked' },

@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-
 import { isWritableSecretProvider, type Settings } from '@ai-switchboard/sdk';
 
 import type { Clock } from '../clock.js';
@@ -23,7 +21,7 @@ import {
 import { discoverPlugins } from './discovery.js';
 import { PluginErrorCounter, type PluginErrorKind } from './error-counter.js';
 import { checkAllHealth } from './health.js';
-import { pluginsDir, PluginInstallError, type InstallResult, type RunNpm } from './install.js';
+import { PluginInstallError, type InstallResult, type RunNpm } from './install.js';
 import { InstallSync, type HotLoadResult } from './install-sync.js';
 import { instanceSecretPrefix } from './instance-secrets.js';
 import { InstanceBuilder } from './instances/builder.js';
@@ -44,6 +42,7 @@ import {
   type ScanDir,
 } from './loader.js';
 import { createPluginContext } from './plugin-context.js';
+import { installedModulesDir } from './plugin-paths.js';
 import type {
   LiveDestination,
   LiveNotifier,
@@ -195,7 +194,7 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
   /** Without a restart; a package whose other version is loaded waits for the next start. */
   async loadInstalled(name: string): Promise<HotLoadResult> {
     const { clock, logger, config } = this.opts;
-    const dir = join(pluginsDir(config.home), 'node_modules');
+    const dir = installedModulesDir(config.home);
     const pkg = (await discoverPlugins([{ path: dir, origin: 'installed' }])).find(
       (p) => p.name === name,
     );
