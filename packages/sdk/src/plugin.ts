@@ -1,4 +1,9 @@
-import { SOURCE_MODES, TRACKING_MODES, type PLUGIN_KINDS } from './constants.js';
+import {
+  MAX_INVOKE_TIMEOUT_SECONDS,
+  SOURCE_MODES,
+  TRACKING_MODES,
+  type PLUGIN_KINDS,
+} from './constants.js';
 import { iconProblem } from './icons.js';
 import { isValidSchema, secretPaths, validateAgainst } from './schema/index.js';
 import type { Capabilities, JSONSchema } from './types/common.js';
@@ -74,7 +79,7 @@ export function isPluginDefinition(value: unknown): value is PluginDefinition {
   );
 }
 
-export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;
+export { MAX_INVOKE_TIMEOUT_SECONDS };
 
 const KEBAB = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 const EVENT_TYPE = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9_-]*)+$/;

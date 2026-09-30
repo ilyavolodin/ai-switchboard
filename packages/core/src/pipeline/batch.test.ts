@@ -2,7 +2,61 @@ import { describe, expect, it } from 'vitest';
 
 import { FakeClock } from '../clock.js';
 
-import { closeCheck, joinBatch, type BatchingConfig, type OpenBatchState } from './batch.js';
+import {
+  closeCheck,
+  coalesceArrivals,
+  joinBatch,
+  type BatchingConfig,
+  type OpenBatchState,
+} from './batch.js';
+
+describe('coalesceArrivals', () => {
+  const arrivals = [0, 25, 50, 70, 190, 205, 400, 430, 450, 470];
+
+  it.each([
+    [
+      'debounce closes each burst',
+      { debounceSeconds: 30, maxSize: 20, maxAgeSeconds: 600 },
+      [
+        { events: [0, 1, 2, 3], closesAt: 100, reason: 'debounce' },
+        { events: [4, 5], closesAt: 235, reason: 'debounce' },
+        // 430 lands exactly on the first batch's fireAfter: the close comes first.
+        { events: [6], closesAt: 430, reason: 'debounce' },
+        { events: [7, 8, 9], closesAt: 500, reason: 'debounce' },
+      ],
+    ],
+    [
+      'maxSize closes on the event that fills it',
+      { debounceSeconds: 30, maxSize: 2, maxAgeSeconds: 600 },
+      [
+        { events: [0, 1], closesAt: 25, reason: 'size' },
+        { events: [2, 3], closesAt: 70, reason: 'size' },
+        { events: [4, 5], closesAt: 205, reason: 'size' },
+        { events: [6], closesAt: 430, reason: 'debounce' },
+        { events: [7, 8], closesAt: 450, reason: 'size' },
+        { events: [9], closesAt: 500, reason: 'debounce' },
+      ],
+    ],
+    [
+      'maxAge caps a batch the debounce keeps open',
+      { debounceSeconds: 30, maxSize: 20, maxAgeSeconds: 60 },
+      [
+        { events: [0, 1, 2], closesAt: 60, reason: 'age' },
+        { events: [3], closesAt: 100, reason: 'debounce' },
+        { events: [4, 5], closesAt: 235, reason: 'debounce' },
+        { events: [6], closesAt: 430, reason: 'debounce' },
+        { events: [7, 8, 9], closesAt: 490, reason: 'age' },
+      ],
+    ],
+    [
+      'batching off closes every event on its own',
+      { debounceSeconds: 0, maxSize: 1, maxAgeSeconds: 0 },
+      arrivals.map((t, i) => ({ events: [i], closesAt: t, reason: 'size' })),
+    ],
+  ])('%s', (_name, batching, expected) => {
+    expect(coalesceArrivals(arrivals, batching)).toEqual(expected);
+  });
+});
 
 const config: BatchingConfig = { debounceSeconds: 30, maxSize: 3, maxAgeSeconds: 120 };
 

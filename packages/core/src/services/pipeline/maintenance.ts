@@ -3,6 +3,7 @@ import { hostname } from 'node:os';
 import { and, eq, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 
 import { batches, events, destinations, replicas, sources } from '../../db/schema.js';
+import { DEFAULT_METER_POLL_SECONDS, MIN_METER_POLL_SECONDS } from '../../domain/defaults.js';
 import { MINUTE_MS, SECOND_MS } from '../../util/time.js';
 import { getSettings } from '../settings.js';
 
@@ -14,7 +15,6 @@ import { recoverRuns } from './runs.js';
 /** Every step is safe to run on several replicas at once: claims are conditional updates. */
 
 const DEFAULT_POLL_SECONDS = 300;
-const DEFAULT_METER_POLL_SECONDS = 300;
 /** A `received` event not matched by then lost its match job. */
 const STUCK_EVENT_SECONDS = 60;
 /** An open batch this far past `fire_after` lost its fire job. */
@@ -109,7 +109,10 @@ async function claimMeterReads(ctx: Ctx, now: Date): Promise<void> {
   for (const row of rows) {
     const live = ctx.runtime.destination(row.id);
     if (!live || live.meters.length === 0) continue;
-    const interval = Math.max(30, row.caps.meterPollSeconds ?? DEFAULT_METER_POLL_SECONDS);
+    const interval = Math.max(
+      MIN_METER_POLL_SECONDS,
+      row.caps.meterPollSeconds ?? DEFAULT_METER_POLL_SECONDS,
+    );
     const due = await claimIfDue(
       (when) =>
         ctx.db

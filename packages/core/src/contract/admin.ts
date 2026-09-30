@@ -1,3 +1,4 @@
+import { HHMM_PATTERN } from '../domain/defaults.js';
 import type { GlobalSettings, RetentionSettings } from '../domain/settings.js';
 import type { Iso, Reasoned } from './common.js';
 import { bodySchema } from './schema.js';
@@ -6,7 +7,7 @@ export interface UpdateSettingsRequest extends Reasoned {
   settings: Partial<GlobalSettings>;
 }
 
-const hhmm = { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' } as const;
+const hhmm = { type: 'string', pattern: HHMM_PATTERN } as const;
 const nullableString = { anyOf: [{ type: 'null' }, { type: 'string' }] } as const;
 
 export const retentionSchema = bodySchema<Partial<RetentionSettings>>()({

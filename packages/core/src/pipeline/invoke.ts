@@ -1,11 +1,13 @@
 import {
+  MAX_INVOKE_TIMEOUT_SECONDS,
+  errorText,
   isInvokeError,
   isTransportError,
   type InvokeResult,
   type TrackingMode,
 } from '@ai-switchboard/sdk';
 
-import { errorText } from '../util/errors.js';
+import { DEFAULT_INVOKE_TIMEOUT_SECONDS, MIN_INVOKE_TIMEOUT_SECONDS } from '../domain/defaults.js';
 
 /**
  * The idempotency rule: a non-idempotent invoke is retried only when the request never left
@@ -22,11 +24,6 @@ export const RETRY_DELAYS_SECONDS = [5, 10, 20, 40] as const;
 export function retryDelaySeconds(attempt: number): number {
   return RETRY_DELAYS_SECONDS[Math.min(attempt, RETRY_DELAYS_SECONDS.length) - 1] ?? 40;
 }
-
-export const DEFAULT_INVOKE_TIMEOUT_SECONDS = 300;
-export const MIN_INVOKE_TIMEOUT_SECONDS = 1;
-/** Matches the SDK's `MAX_INVOKE_TIMEOUT_SECONDS`. */
-export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;
 
 function positive(n: unknown): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;

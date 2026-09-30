@@ -1,4 +1,5 @@
 import type { ProcessDocument } from '../domain/process.js';
+import { SECOND_MS } from '../util/time.js';
 
 /**
  * Each join pushes `fireAfter` to `now + debounceSeconds`. A batch closes at `maxSize`, at
@@ -80,6 +81,61 @@ export function joinBatch(
 }
 
 export type CloseCheck = { close: true; reason: CloseReason } | { close: false; checkAt: Date };
+
+export interface CoalescedBatch {
+  /** Indexes into the arrivals. */
+  events: number[];
+  /** Seconds, on the arrivals' scale. */
+  closesAt: number;
+  reason: CloseReason;
+}
+
+/**
+ * The batches a run of arrivals (seconds, ascending) forms under `config`, by the same rules as
+ * `joinBatch` and `closeCheck`. Browser-safe, for the editor's preview.
+ */
+export function coalesceArrivals(
+  arrivals: readonly number[],
+  config: BatchingConfig,
+): CoalescedBatch[] {
+  const at = (seconds: number) => new Date(seconds * SECOND_MS);
+  const seconds = (d: Date) => d.getTime() / SECOND_MS;
+  const out: CoalescedBatch[] = [];
+  type Forming = OpenBatchState & { events: number[] };
+  let open = null as Forming | null;
+  const closeOnTime = (b: Forming) => {
+    const check = closeCheck(b, config, b.fireAfter);
+    out.push({
+      events: b.events,
+      closesAt: seconds(b.fireAfter),
+      reason: check.close ? check.reason : 'debounce',
+    });
+  };
+  for (const [i, t] of arrivals.entries()) {
+    const now = at(t);
+    if (open && now.getTime() >= open.fireAfter.getTime()) {
+      closeOnTime(open);
+      open = null;
+    }
+    const joined = joinBatch(open, config, now);
+    if (joined.action === 'open') {
+      open = { id: String(i), openedAt: now, fireAfter: joined.fireAfter, size: 1, events: [i] };
+    } else if (open) {
+      open = {
+        ...open,
+        fireAfter: joined.fireAfter,
+        size: joined.size,
+        events: [...open.events, i],
+      };
+    }
+    if (open && joined.closeNow !== null) {
+      out.push({ events: open.events, closesAt: t, reason: joined.closeNow });
+      open = null;
+    }
+  }
+  if (open) closeOnTime(open);
+  return out;
+}
 
 /** When the batch stays open, `checkAt` is when to look again. */
 export function closeCheck(batch: OpenBatchState, config: BatchingConfig, now: Date): CloseCheck {

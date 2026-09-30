@@ -1,5 +1,6 @@
 import type { Expr, JSONSchema } from '@ai-switchboard/sdk';
 
+import { HHMM_PATTERN } from './defaults.js';
 import { NOTIFY_ON, type NotifyOn } from './status.js';
 
 /** `HH:MM` 24-hour clock times. */
@@ -82,6 +83,13 @@ export interface Process extends ProcessDocument {
   id: string;
 }
 
+export type ApprovalMode = 'none' | 'always' | 'expression';
+
+/** How `gates.approval` reads: a fixed rule, or a JSONata expression over the batch. */
+export function approvalMode(rule: string): ApprovalMode {
+  return rule === 'none' || rule === 'always' ? rule : 'expression';
+}
+
 export function defaultProcessDocument(
   name: string,
   destinationInstanceId: string,
@@ -105,7 +113,7 @@ export function defaultProcessDocument(
 }
 
 const expr: JSONSchema = { type: 'string' };
-const hhmm: JSONSchema = { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' };
+const hhmm: JSONSchema = { type: 'string', pattern: HHMM_PATTERN };
 const step: JSONSchema = {
   type: 'object',
   required: ['provider', 'action', 'args'],

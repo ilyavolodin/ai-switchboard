@@ -7,6 +7,11 @@ import type {
   UsageDimension,
 } from '@ai-switchboard/sdk';
 
+import {
+  MAX_INVOKE_TIMEOUT_SECONDS,
+  MIN_INVOKE_TIMEOUT_SECONDS,
+  MIN_METER_POLL_SECONDS,
+} from '../domain/defaults.js';
 import type { RunStatusValue } from '../domain/status.js';
 import type { Iso, Reasoned, SecretRefDTO, StatsWindow, StatusLabel } from './common.js';
 import { bodySchema } from './schema.js';
@@ -33,10 +38,14 @@ export const destinationCapsSchema = bodySchema<DestinationCapsDTO>()({
     runsPerHour: { type: 'integer', minimum: 0 },
     runsPerDay: { type: 'integer', minimum: 0 },
     usagePerDay: { type: 'object', additionalProperties: { type: 'number', minimum: 0 } },
-    meterPollSeconds: { type: 'integer', minimum: 30, maximum: 86_400 },
+    meterPollSeconds: { type: 'integer', minimum: MIN_METER_POLL_SECONDS, maximum: 86_400 },
     meterStalenessMinutes: { type: 'integer', minimum: 1, maximum: 10_080 },
     estimatedLimits: { type: 'object', additionalProperties: { type: 'number', minimum: 0 } },
-    invokeTimeoutSeconds: { type: 'integer', minimum: 1, maximum: 3600 },
+    invokeTimeoutSeconds: {
+      type: 'integer',
+      minimum: MIN_INVOKE_TIMEOUT_SECONDS,
+      maximum: MAX_INVOKE_TIMEOUT_SECONDS,
+    },
   },
 });
 

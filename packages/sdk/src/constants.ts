@@ -5,3 +5,6 @@ export const HEALTH_STATUSES = ['healthy', 'unhealthy', 'unknown'] as const;
 export const TRACKING_MODES = ['sync', 'poll', 'callback', 'none'] as const;
 export const INVOKE_STATUSES = ['started', 'completed', 'failed', 'held'] as const;
 export const RUN_STATES = ['running', 'ok', 'error', 'unknown'] as const;
+
+/** The longest `invokeTimeoutSeconds` a destination type or instance may set. */
+export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;

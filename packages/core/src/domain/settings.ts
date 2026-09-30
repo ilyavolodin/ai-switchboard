@@ -1,3 +1,5 @@
+import type { QuietWindow } from './process.js';
+
 export interface RetentionSettings {
   eventsDays: number;
   rawBodiesDays: number;
@@ -8,7 +10,8 @@ export interface RetentionSettings {
 
 export interface GlobalSettings {
   timezone: string;
-  defaultQuietHours: { start: string; end: string; days?: number[] } | null;
+  /** In the installation timezone. */
+  defaultQuietHours: Omit<QuietWindow, 'timezone'> | null;
   meterStalenessMinutes: number;
   retention: RetentionSettings;
   oidc: { issuer: string; clientId: string; allowedDomains: string[] } | null;

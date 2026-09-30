@@ -1,11 +1,14 @@
 import { DateTime } from 'luxon';
 
+import { HHMM_PATTERN } from '../domain/defaults.js';
 import type { QuietWindow } from '../domain/process.js';
 
+const HHMM = new RegExp(HHMM_PATTERN);
+
 function minutes(hhmm: string): number | null {
-  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
+  if (!HHMM.test(hhmm)) return null;
+  const [h, m] = hhmm.split(':');
+  return Number(h) * 60 + Number(m);
 }
 
 /**

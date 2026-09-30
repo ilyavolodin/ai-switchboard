@@ -1105,8 +1105,9 @@ with a real token.
   declares `^2.2.0`.
 - SDK 2.3.0 is additive: the canonical lists `PLUGIN_KINDS`, `SOURCE_MODES`, `HEALTH_STATUSES`,
   `TRACKING_MODES`, `INVOKE_STATUSES` and `RUN_STATES` (also on the browser-safe `/constants`
-  subpath) with the unions `SourceMode`, `InvokeStatus` and `RunState` derived from them, and
-  `isOneOf` and `errorText` on the root and `/json`.
+  subpath, which also carries `MAX_INVOKE_TIMEOUT_SECONDS`) with the unions `SourceMode`,
+  `InvokeStatus` and `RunState` derived from them, and `isOneOf` and `errorText` on the root and
+  `/json`.
 - Your plugin's own version is yours, but treat event type ids, attribute names and action ids as
   public API: people's filters and processes depend on them. Removing or renaming one is a major.
 - SDK majors are announced through the `switchboard-plugin` topic on the repository.
