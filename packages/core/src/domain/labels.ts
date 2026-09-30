@@ -4,6 +4,7 @@ import { isOneOf } from '@ai-switchboard/sdk/json';
 import type { InstanceError } from './instance-error.js';
 import {
   FAILED_RUN_STATUSES,
+  type EventStage,
   type PluginStatus,
   type RunStatusValue,
   type StatusTone,
@@ -28,6 +29,16 @@ export const RUN_STATUS_LABELS: Record<RunStatusValue, StatusLabel> = {
 export function runStatusLabel(status: RunStatusValue): StatusLabel {
   return RUN_STATUS_LABELS[status];
 }
+
+export const EVENT_STAGE_LABELS: Record<EventStage, StatusLabel> = {
+  received: { tone: 'ok', label: 'received' },
+  matched: { tone: 'ok', label: 'matched' },
+  unmatched: { tone: 'off', label: 'unmatched' },
+  source_disabled: { tone: 'off', label: 'source disabled' },
+  type_muted: { tone: 'off', label: 'type muted' },
+  source_throttled: { tone: 'warn', label: 'source throttled' },
+  event_invalid: { tone: 'error', label: 'invalid event' },
+};
 
 export function instanceStatus(input: {
   enabled: boolean;

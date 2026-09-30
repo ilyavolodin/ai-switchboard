@@ -17,6 +17,7 @@ import {
   type GateDecisionRecord,
 } from '../db/schema.js';
 import type { Deps } from '../deps.js';
+import { EVENT_STAGE_LABELS } from '../domain/labels.js';
 import {
   isTerminalRunStatus,
   stepTone,
@@ -65,19 +66,7 @@ const KIND_ORDER: TraceEntryKind[] = [
 ];
 
 function stageTone(stage: EventStage): StatusTone {
-  switch (stage) {
-    case 'received':
-    case 'matched':
-      return 'ok';
-    case 'unmatched':
-    case 'source_disabled':
-    case 'type_muted':
-      return 'off';
-    case 'source_throttled':
-      return 'warn';
-    case 'event_invalid':
-      return 'error';
-  }
+  return EVENT_STAGE_LABELS[stage].tone;
 }
 
 function runTone(status: RunStatusValue): StatusTone {
