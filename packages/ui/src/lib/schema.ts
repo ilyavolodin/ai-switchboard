@@ -36,7 +36,7 @@ const TEXT_WIDGETS: readonly XWidget[] = [
  */
 export function pickWidget(s: JSONSchema, kind: FieldKind = fieldKind(s)): Widget {
   const widget = xWidget(s);
-  if (isSecretField(s)) return 'secret';
+  if (xSecret(s)) return 'secret';
   if (kind === 'enum') return widget === 'radio' ? 'radio' : 'select';
   if (widget === 'select' && Array.isArray(s.examples)) return 'select';
   if (kind === 'boolean') return 'toggle';
@@ -150,11 +150,6 @@ export function groupProperties(
 
 export function requiredOf(s: JSONSchema): string[] {
   return Array.isArray(s.required) ? (s.required as unknown[]).map(String) : [];
-}
-
-/** Stored as `secret://<provider>/<name>`, never shown. */
-export function isSecretField(s: JSONSchema): boolean {
-  return xSecret(s);
 }
 
 export function humanize(key: string): string {

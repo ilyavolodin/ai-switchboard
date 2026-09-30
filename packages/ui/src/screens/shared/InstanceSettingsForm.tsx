@@ -2,7 +2,7 @@ import type { JSONSchema, SecretRefDTO } from '@ai-switchboard/core/contract';
 import { type ReactNode, useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { useSecretProviders } from '../../api/index.js';
+import { useSecretFieldProps } from '../../api/index.js';
 import { useCan } from '../../app/session.js';
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
@@ -10,8 +10,7 @@ import { Card } from '../../components/Card.js';
 import { Field } from '../../components/Field.js';
 import { SchemaForm } from '../../components/SchemaForm.js';
 import { TextField } from '../../components/TextField.js';
-import { secretProviderIds } from '../../lib/instances.js';
-import { validateAgainstSchema } from '../../lib/schema.js';
+import { useSchemaErrors } from '../../hooks/useSchemaErrors.js';
 import type { DeliverySample } from '../../lib/suggest.js';
 import styles from './forms.module.css';
 import {
@@ -65,7 +64,7 @@ export function InstanceSettingsForm<C extends object>({
 }: InstanceSettingsFormProps<C>) {
   const navigate = useNavigate();
   const canEdit = useCan('operator');
-  const secretProviders = useSecretProviders();
+  const secretFields = useSecretFieldProps(entity.settingsSchema);
   const [name, setName] = useState(entity.name);
   const [settings, setSettings] = useState(entity.settings);
   const [caps, setCaps] = useState<C>(entity.caps);
@@ -90,7 +89,7 @@ export function InstanceSettingsForm<C extends object>({
     if (changes === 0) adopt(entity);
   }
   const leaveGuard = useLeaveGuard(changes > 0);
-  const errors = validateAgainstSchema(entity.settingsSchema, settings);
+  const errors = useSchemaErrors(entity.settingsSchema, settings);
   const nameMissing = name.trim() === '';
   const invalid = Object.keys(errors).length > 0 || nameMissing;
   const disabled = !canEdit;
@@ -142,7 +141,8 @@ export function InstanceSettingsForm<C extends object>({
           onChange={setSettings}
           baseline={saved.settings}
           secretStatus={entity.secretRefs}
-          secretProviders={secretProviderIds(secretProviders.data)}
+          {...secretFields}
+          errors={errors}
           showAllErrors={attempted}
           disabled={disabled}
           layout="row"

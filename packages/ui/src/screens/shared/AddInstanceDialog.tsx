@@ -1,11 +1,12 @@
-import type { PluginSearchResult, PluginTypeDTO } from '@ai-switchboard/core/contract';
+import type { JSONSchema, PluginSearchResult, PluginTypeDTO } from '@ai-switchboard/core/contract';
 import { type ReactNode, useState } from 'react';
 
 import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
-import { asRecord } from '../../lib/instances.js';
+import { useSchemaErrors } from '../../hooks/useSchemaErrors.js';
 import { deliverySample, EMPTY_SAMPLE, type SampleDraft } from '../../lib/sampleDelivery.js';
-import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
+import { schemaDefaults } from '../../lib/schema.js';
+import { asRecord } from '../../lib/values.js';
 import styles from './forms.module.css';
 import { InstanceConfigureStep } from './InstanceConfigureStep.js';
 import { installOutcome } from './pluginModel.js';
@@ -51,6 +52,8 @@ interface Configuring<C> {
   sample: SampleDraft;
   attempted: boolean;
 }
+
+const NO_SCHEMA: JSONSchema = {};
 
 function startConfiguring<C>(type: PluginTypeDTO, caps: C): Configuring<C> {
   return {
@@ -116,7 +119,7 @@ export function AddInstanceDialog<C>({
     else setAwaiting(outcome.typeIds);
   };
 
-  const errors = config ? validateAgainstSchema(config.type.settingsSchema, config.settings) : {};
+  const errors = useSchemaErrors(config?.type.settingsSchema ?? NO_SCHEMA, config?.settings ?? {});
   const invalid = Object.keys(errors).length > 0 || (config?.name.trim() ?? '') === '';
   const withSample = config != null && sample?.applies(config.type) === true;
 
@@ -225,6 +228,7 @@ export function AddInstanceDialog<C>({
           }}
           attempted={config.attempted}
           invalid={invalid}
+          errors={errors}
           sample={withSample ? deliverySample(config.sample) : null}
           afterSettings={
             withSample

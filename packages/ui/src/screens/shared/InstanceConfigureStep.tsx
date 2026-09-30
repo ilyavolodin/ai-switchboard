@@ -1,12 +1,11 @@
 import type { PluginTypeDTO } from '@ai-switchboard/core/contract';
 import type { ReactNode } from 'react';
 
-import { useSecretProviders } from '../../api/index.js';
+import { useSecretFieldProps } from '../../api/index.js';
 import { Banner } from '../../components/Banner.js';
 import { Field } from '../../components/Field.js';
 import { SchemaForm } from '../../components/SchemaForm.js';
 import { TextField } from '../../components/TextField.js';
-import { secretProviderIds } from '../../lib/instances.js';
 import type { DeliverySample } from '../../lib/suggest.js';
 import styles from './forms.module.css';
 
@@ -19,6 +18,7 @@ export interface InstanceConfigureStepProps {
   onSettingsChange: (settings: Record<string, unknown>) => void;
   attempted: boolean;
   invalid: boolean;
+  errors: Record<string, string[]>;
   sample?: DeliverySample | null;
   /** Rendered under the settings, e.g. a sample preview. */
   afterSettings?: ReactNode;
@@ -34,11 +34,12 @@ export function InstanceConfigureStep({
   onSettingsChange,
   attempted,
   invalid,
+  errors,
   sample,
   afterSettings,
   caps,
 }: InstanceConfigureStepProps) {
-  const secretProviders = useSecretProviders();
+  const secretFields = useSecretFieldProps(type.settingsSchema);
   return (
     <div className={styles.stack}>
       {type.description && <p className={styles.note}>{type.description}</p>}
@@ -65,7 +66,8 @@ export function InstanceConfigureStep({
         value={settings}
         onChange={onSettingsChange}
         showAllErrors={attempted}
-        secretProviders={secretProviderIds(secretProviders.data)}
+        {...secretFields}
+        errors={errors}
         sample={sample ?? null}
       />
       {afterSettings}

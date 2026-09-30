@@ -3,7 +3,6 @@ import { formatSecretRef, parseSecretRef } from '@ai-switchboard/sdk/schema';
 import { useId, useState } from 'react';
 import { Link } from 'react-router';
 
-import { useSecretSuggestions } from '../api/hooks/secrets.js';
 import { useNow } from '../hooks/useNow.js';
 import { formatRelative, toMs } from '../lib/format.js';
 import { Icon } from './Icon.js';
@@ -19,7 +18,11 @@ export interface SecretRefInputProps extends Omit<ControlProps<string | undefine
   providers?: string[];
   status?: SecretRefDTO;
   label?: string;
+  /** Names a provider lists (`useSecretNames`); `null` when unknown. */
+  secretNames?: (provider: string) => string[] | null;
 }
+
+const noNames = () => null;
 
 /** Secret values never touch the UI: a stored plain value is not shown, only flagged. */
 export function SecretRefInput({
@@ -32,6 +35,7 @@ export function SecretRefInput({
   disabled,
   invalid,
   label = 'Secret',
+  secretNames = noNames,
 }: SecretRefInputProps) {
   const nowMs = useNow(60_000);
   const parsed = parseSecretRef(value);
@@ -41,9 +45,9 @@ export function SecretRefInput({
   const noProviders = providers?.length === 0 && provider === '';
   const name = parsed?.name ?? '';
   const hasPlainValue = value != null && value !== '' && parsed == null;
-  const suggestions = useSecretSuggestions(provider);
+  const names = secretNames(provider);
   const listId = useId();
-  const notListed = suggestions.names != null && name !== '' && !suggestions.names.includes(name);
+  const notListed = names != null && name !== '' && !names.includes(name);
   const options = (known.includes(provider) || provider === '' ? known : [provider, ...known]).map(
     (p) => ({
       value: p,
@@ -92,14 +96,14 @@ export function SecretRefInput({
           spellCheck={false}
           value={name}
           disabled={disabled === true || noProviders}
-          list={suggestions.names?.length ? listId : undefined}
+          list={names?.length ? listId : undefined}
           onChange={(e) => {
             emit(provider, e.target.value);
           }}
         />
-        {suggestions.names && suggestions.names.length > 0 && (
+        {names && names.length > 0 && (
           <datalist id={listId}>
-            {suggestions.names.map((n) => (
+            {names.map((n) => (
               <option key={n} value={n} />
             ))}
           </datalist>

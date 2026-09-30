@@ -3,18 +3,20 @@ import { render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { type SecretNames, useSecretNames } from '../api/index.js';
 import { renderWithProviders } from '../test/render.js';
 import { SecretRefInput } from './SecretRefInput.js';
 
 let latest: string | undefined;
 
-function Harness({ initial }: { initial?: string }) {
+function Harness({ initial, secretNames }: { initial?: string; secretNames?: SecretNames }) {
   const [value, setValue] = useState<string | undefined>(initial);
   return (
     <SecretRefInput
       label="API key"
       value={value}
       providers={['env', 'file']}
+      secretNames={secretNames}
       onChange={(next) => {
         latest = next;
         setValue(next);
@@ -23,11 +25,15 @@ function Harness({ initial }: { initial?: string }) {
   );
 }
 
+function ConnectedHarness({ initial }: { initial?: string }) {
+  return <Harness initial={initial} secretNames={useSecretNames()} />;
+}
+
 const suggestions = (input: HTMLElement): string[] =>
   [...((input as HTMLInputElement).list?.options ?? [])].map((o) => o.value);
 
 const renderAs = (role: Role, initial?: string) =>
-  renderWithProviders(<Harness initial={initial} />, { role });
+  renderWithProviders(<ConnectedHarness initial={initial} />, { role });
 
 describe('SecretRefInput suggestions', () => {
   it('offers the names the chosen provider lists, and still takes free typing', async () => {
@@ -73,7 +79,7 @@ describe('SecretRefInput suggestions', () => {
     expect(api.callsTo('GET /secret-providers/sp-env/secrets')).toHaveLength(0);
   });
 
-  it('works outside a query client (plain text input, no suggestions)', () => {
+  it('works without suggestions (plain text input, no query client)', () => {
     render(<Harness initial="secret://env/X" />);
     expect(screen.getByRole('textbox', { name: 'API key name' })).toHaveValue('X');
   });
