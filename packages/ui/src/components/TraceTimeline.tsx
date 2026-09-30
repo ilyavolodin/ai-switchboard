@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 
 import { useToast } from '../hooks/toast.js';
 import { formatAbsolute, formatClock, toMs } from '../lib/format.js';
+import { processHref } from '../lib/hrefs.js';
 import { toneVars } from '../lib/tone.js';
 import { Button } from './Button.js';
 import { Icon } from './Icon.js';
@@ -92,9 +93,7 @@ export function TraceTimeline({ entries, text, hideCopy, expandKinds }: TraceTim
                 {e.processName && e.processId && (
                   <>
                     {' · '}
-                    <Link to={`/processes/${encodeURIComponent(e.processId)}`}>
-                      {e.processName}
-                    </Link>
+                    <Link to={processHref(e.processId)}>{e.processName}</Link>
                   </>
                 )}
                 {e.detail && <div className={styles.detail}>{e.detail}</div>}

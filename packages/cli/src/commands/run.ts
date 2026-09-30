@@ -1,5 +1,6 @@
+import { errorText, isRecord } from '@ai-switchboard/sdk/json';
+
 import type { CliDeps } from '../deps.js';
-import { errorMessage } from '../output.js';
 
 /** An exception prints `error: <message>` and sets exit code 1 instead of a stack trace. */
 export function run<A extends unknown[]>(
@@ -10,8 +11,8 @@ export function run<A extends unknown[]>(
     try {
       await action(...args);
     } catch (err) {
-      deps.io.err(`error: ${errorMessage(err)}`);
-      const details = (err as { details?: unknown }).details;
+      deps.io.err(`error: ${errorText(err)}`);
+      const details = isRecord(err) ? err.details : undefined;
       if (Array.isArray(details)) for (const d of details) deps.io.err(`  - ${String(d)}`);
       deps.io.setExitCode(1);
     }

@@ -1,7 +1,5 @@
 import { desc, inArray, isNotNull, isNull } from 'drizzle-orm';
 
-import { approvals, batches, processes } from '../../db/schema.js';
-import type { ApiContext } from '../context.js';
 import type {
   ApprovalHistoryItem,
   ApprovalHistoryQuery,
@@ -9,31 +7,33 @@ import type {
   ApprovalRulesResponse,
   Page,
 } from '../../contract/index.js';
+import { approvals, batches, processes } from '../../db/schema.js';
+import type { ReadDeps } from './deps.js';
+import { namesById } from './names.js';
 import { keysetPage } from './paging.js';
 import { batchArtifacts } from './runs.js';
 
 type ApprovalRow = typeof approvals.$inferSelect;
 
-async function approvalItems(ctx: ApiContext, rows: ApprovalRow[]): Promise<ApprovalItem[]> {
+async function approvalItems(ctx: ReadDeps, rows: ApprovalRow[]): Promise<ApprovalItem[]> {
   if (rows.length === 0) return [];
   const batchIds = rows.map((r) => r.batchId);
-  const processIds = [...new Set(rows.map((r) => r.processId))];
-  const [arts, procs, kinds] = await Promise.all([
+  const [arts, names, kinds] = await Promise.all([
     batchArtifacts(ctx, batchIds),
-    ctx.db
-      .select({ id: processes.id, name: processes.name })
-      .from(processes)
-      .where(inArray(processes.id, processIds)),
+    namesById(
+      ctx.db,
+      'process',
+      rows.map((r) => r.processId),
+    ),
     ctx.db
       .select({ id: batches.id, kind: batches.kind })
       .from(batches)
       .where(inArray(batches.id, batchIds)),
   ]);
-  const names = new Map(procs.map((p) => [p.id, p.name]));
   const kindOf = new Map(kinds.map((k) => [k.id, k.kind]));
   return rows.map((r) => ({
     batchId: r.batchId,
-    process: { id: r.processId, name: names.get(r.processId) ?? '(deleted process)' },
+    process: { id: r.processId, name: names.of(r.processId) },
     rule: r.rule,
     requestedAt: r.requestedAt.toISOString(),
     artifacts: arts.get(r.batchId)?.artifacts ?? [],
@@ -44,7 +44,7 @@ async function approvalItems(ctx: ApiContext, rows: ApprovalRow[]): Promise<Appr
 }
 
 /** The approval queue, oldest request first. */
-export async function pendingApprovals(ctx: ApiContext): Promise<ApprovalItem[]> {
+export async function pendingApprovals(ctx: ReadDeps): Promise<ApprovalItem[]> {
   const rows = await ctx.db
     .select()
     .from(approvals)
@@ -55,7 +55,7 @@ export async function pendingApprovals(ctx: ApiContext): Promise<ApprovalItem[]>
 
 /** Decided approvals, newest decision first, paged by `(decidedAt, batchId)`. */
 export async function approvalHistory(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   q: ApprovalHistoryQuery,
 ): Promise<Page<ApprovalHistoryItem>> {
   return keysetPage(
@@ -90,7 +90,7 @@ export async function approvalHistory(
 }
 
 /** Processes whose approval gate is not `none`, with their rule. */
-export async function approvalRules(ctx: ApiContext): Promise<ApprovalRulesResponse> {
+export async function approvalRules(ctx: ReadDeps): Promise<ApprovalRulesResponse> {
   const procs = await ctx.db
     .select({ id: processes.id, name: processes.name, document: processes.document })
     .from(processes);

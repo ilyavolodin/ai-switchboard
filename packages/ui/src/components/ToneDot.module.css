@@ -1,0 +1,33 @@
+.dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st-off);
+}
+
+.large {
+  width: 8px;
+  height: 8px;
+}
+
+.dot[data-tone='ok'] {
+  background: var(--st-ok);
+}
+
+.dot[data-tone='warn'] {
+  background: var(--st-warn);
+}
+
+.dot[data-tone='error'] {
+  background: var(--st-err);
+}
+
+.dot[data-tone='off'] {
+  background: var(--st-off);
+}
+
+.dot[data-tone='info'] {
+  background: var(--sky);
+}

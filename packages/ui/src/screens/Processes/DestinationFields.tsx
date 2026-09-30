@@ -16,16 +16,12 @@ import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { useDebounced } from '../../hooks/useDebounced.js';
+import { asRecord } from '../../lib/instances.js';
 import { batchOptions } from './batches.js';
+import { withDestination } from './editorModel.js';
 import type { SectionProps } from './sectionProps.js';
 import { NumberField } from './NumberField.js';
 import styles from './ProcessEditor.module.css';
-
-function asRecord(v: unknown): Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : {};
-}
 
 export function DestinationFields({
   doc,
@@ -90,14 +86,7 @@ export function DestinationFields({
             }))}
             onChange={(e) => {
               const instanceId = e.target.value;
-              set((d) => {
-                const { usagePerDay: _drop, ...budgets } = d.budgets;
-                return {
-                  ...d,
-                  destination: { instanceId, target: {} },
-                  budgets: { ...budgets, meterCeilings: {} },
-                };
-              });
+              set((d) => withDestination(d, instanceId));
             }}
           />
         )}

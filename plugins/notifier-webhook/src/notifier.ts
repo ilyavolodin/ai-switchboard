@@ -1,4 +1,7 @@
 import {
+  checkHealth,
+  lowerCaseHeaders,
+  responseSnippet,
   signSwitchboardBody,
   SWITCHBOARD_SIGNATURE_HEADER,
   withSettings,
@@ -21,9 +24,7 @@ function createWebhookNotifier(settings: WebhookNotifierSettings, ctx: PluginCon
       // Sign exactly the bytes sent.
       const body = JSON.stringify(message);
       const headers: Record<string, string> = {
-        ...Object.fromEntries(
-          Object.entries(settings.headers).map(([k, v]) => [k.toLowerCase(), v]),
-        ),
+        ...lowerCaseHeaders(settings.headers),
         'content-type': 'application/json',
         'user-agent': 'ai-switchboard',
         ...(settings.secret !== undefined
@@ -32,18 +33,20 @@ function createWebhookNotifier(settings: WebhookNotifierSettings, ctx: PluginCon
       };
       const res = await ctx.http.post(settings.url, { headers, body });
       if (!res.ok) {
+        const snippet = responseSnippet(res);
         throw new WebhookNotifyError(
-          `Webhook answered ${res.status}${res.text() === '' ? '' : `: ${res.text().slice(0, 200)}`}`,
+          `Webhook answered ${res.status}${snippet === '' ? '' : `: ${snippet}`}`,
         );
       }
     },
 
     health: (): Promise<Health> =>
-      Promise.resolve({
-        status: 'unknown',
-        message: 'A webhook cannot be checked without sending a notification.',
-        checkedAt: ctx.now().toISOString(),
-      }),
+      checkHealth(ctx, () =>
+        Promise.resolve({
+          status: 'unknown',
+          message: 'A webhook cannot be checked without sending a notification.',
+        }),
+      ),
   };
 }
 

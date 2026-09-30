@@ -18,14 +18,19 @@ export const COLUMNS = {
 
 export type BoardNodeKind = keyof typeof COLUMNS;
 
-export interface LaidOutNode {
+interface Placed {
   id: string;
-  kind: BoardNodeKind;
   x: number;
   y: number;
   width: number;
-  node: BoardSourceNode | BoardProcessNode | BoardDestinationNode;
 }
+
+export type LaidOutNode = Placed &
+  (
+    | { kind: 'source'; node: BoardSourceNode }
+    | { kind: 'process'; node: BoardProcessNode }
+    | { kind: 'destination'; node: BoardDestinationNode }
+  );
 
 export interface LaidOutEdge {
   id: string;

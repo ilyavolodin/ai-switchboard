@@ -7,9 +7,11 @@ import {
   batchingSummary,
   budgetsOn,
   budgetsSummary,
+  checkDocument,
   collectErrors,
   errorsUnder,
   newProcessDocument,
+  newTrigger,
   placeErrors,
   saveConsequence,
   withBatching,
@@ -31,6 +33,31 @@ describe('collectErrors', () => {
     expect(out.bySection.budgets).toEqual(['/budgets/runsPerHour must be >= 0']);
     expect(out.bySection.basics).toEqual(['A process needs a name', '/name must not be blank']);
     expect(out.general.map((e) => e.message)).toEqual(['document is too large']);
+  });
+});
+
+describe('checkDocument', () => {
+  it('checks the core schema and words the common problems for the editor', () => {
+    const doc = {
+      ...newProcessDocument(''),
+      name: '  ',
+      triggers: [
+        { ...newTrigger([]), id: 't1' },
+        { ...newTrigger([]), id: 't2', sourceId: 'src-linear' },
+      ],
+      batching: { debounceSeconds: 90_000, maxSize: 20, maxAgeSeconds: 600 },
+    };
+    expect(checkDocument(doc)).toEqual({
+      '/name': 'A process needs a name',
+      '/triggers/0/sourceId': 'Pick a source',
+      '/triggers/1/eventTypes': 'Tick at least one event type',
+      '/destination/instanceId': 'Pick a destination',
+      '/batching/debounceSeconds': expect.any(String),
+    });
+  });
+
+  it('passes a complete document', () => {
+    expect(checkDocument({ ...newProcessDocument('ex-http'), name: 'Triage' })).toEqual({});
   });
 });
 

@@ -12,6 +12,8 @@ import {
 } from '@ai-switchboard/sdk/schema';
 import type { Ajv2020, ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 
+import { plural } from './format.js';
+
 export type ValuePath = (string | number)[];
 
 export type FieldKind =
@@ -36,7 +38,7 @@ const TEXT_WIDGETS: readonly XWidget[] = [
  */
 export function pickWidget(s: JSONSchema, kind: FieldKind = fieldKind(s)): Widget {
   const widget = xWidget(s);
-  if (isSecretField(s)) return 'secret';
+  if (xSecret(s)) return 'secret';
   if (kind === 'enum') return widget === 'radio' ? 'radio' : 'select';
   if (widget === 'select' && Array.isArray(s.examples)) return 'select';
   if (kind === 'boolean') return 'toggle';
@@ -152,11 +154,6 @@ export function requiredOf(s: JSONSchema): string[] {
   return Array.isArray(s.required) ? (s.required as unknown[]).map(String) : [];
 }
 
-/** Stored as `secret://<provider>/<name>`, never shown. */
-export function isSecretField(s: JSONSchema): boolean {
-  return xSecret(s);
-}
-
 export function humanize(key: string): string {
   const spaced = key
     .replace(/[_-]+/g, ' ')
@@ -241,7 +238,7 @@ function friendly(e: ErrorObject): string {
     case 'required':
       return 'Required';
     case 'minLength':
-      return `Use at least ${String(p.limit)} character${p.limit === 1 ? '' : 's'}`;
+      return `Use at least ${plural(Number(p.limit), 'character')}`;
     case 'maxLength':
       return `Use at most ${String(p.limit)} characters`;
     case 'minimum':

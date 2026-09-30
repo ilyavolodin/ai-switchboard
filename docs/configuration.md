@@ -47,6 +47,11 @@ references, and a secret provider resolves them when an instance is built.
 
 Booleans accept `1`, `true`, `yes` and `on` (any case). Anything else is false.
 
+`SWITCHBOARD_OIDC_TRUST_UNVERIFIED_EMAIL` (default `false`) accepts an ID token whose
+`email_verified` claim is missing or false, for an issuer that never sends it. Such a sign-in is
+still refused for an account that has a password and no OIDC identity yet
+([Security](security.md#sign-in-and-roles)).
+
 ### Telemetry
 
 The standard OpenTelemetry SDK variables. Nothing is exported until an OTLP endpoint (generic

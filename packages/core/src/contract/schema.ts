@@ -52,3 +52,24 @@ type Complete<T, S> = [Missing<T, S>] extends [never]
 export function bodySchema<T>() {
   return <const S extends BodySchema<T>>(schema: S & Complete<T, S>): S => schema;
 }
+
+/** A query string's JSON Schema: every parameter optional, unknown parameters ignored. */
+export interface QuerySchema<T> {
+  readonly type: 'object';
+  readonly properties: { readonly [K in keyof T]-?: PropertySchema<Exclude<T[K], undefined>> };
+}
+
+type CompleteQuery<T, S> = [Unknown<T, S>] extends [never]
+  ? unknown
+  : { unknownProperties: Unknown<T, S> };
+
+/** Like `bodySchema`, for a query string: one property per parameter of `T`, nothing else. */
+export function querySchema<T>() {
+  return <const S extends QuerySchema<T>>(schema: S & CompleteQuery<T, S>): S => schema;
+}
+
+/** A comma-separated list of values from `values`, e.g. `ok,error`. */
+export function csvPattern(values: readonly string[]): string {
+  const one = `(${values.join('|')})`;
+  return `^${one}(,${one})*$`;
+}

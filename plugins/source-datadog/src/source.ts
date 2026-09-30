@@ -17,14 +17,7 @@ import {
 import { createApi, DatadogApiError, errorText } from './api.js';
 import { eventTypes } from './events.js';
 import { parseDelivery } from './parse.js';
-import {
-  apiHost,
-  appHost,
-  DatadogSettingsError,
-  settingsSchema,
-  SITES,
-  type DatadogSettings,
-} from './settings.js';
+import { appHost, DatadogSettingsError, settingsSchema, type DatadogSettings } from './settings.js';
 
 export { DatadogApiError } from './api.js';
 
@@ -91,5 +84,3 @@ export const datadogSource: SourceType = {
     error: DatadogSettingsError,
   }),
 };
-
-export const API_HOSTS = SITES.map(apiHost);

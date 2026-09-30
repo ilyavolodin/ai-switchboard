@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 
 import { useRuns } from '../../api/index.js';
-import { ArtifactChip } from '../../components/ArtifactChip.js';
+import { ArtifactChips } from '../../components/ArtifactChips.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { Drawer } from '../../components/Drawer.js';
@@ -15,6 +15,7 @@ import { Table, type TableColumn } from '../../components/Table.js';
 import { Time } from '../../components/Time.js';
 import { useFlatPages } from '../../hooks/useFlatPages.js';
 import { formatSeconds } from '../../lib/format.js';
+import { processHref } from '../../lib/hrefs.js';
 import { RunDrawerBody } from './RunDrawerBody.js';
 import { RunExternalLink } from './RunExternalLink.js';
 import { runKindText, usageText } from './runsModel.js';
@@ -54,9 +55,7 @@ function columns(
           {
             key: 'process',
             header: 'Process',
-            cell: (r: RunSummary) => (
-              <Link to={`/processes/${encodeURIComponent(r.processId)}`}>{r.processName}</Link>
-            ),
+            cell: (r: RunSummary) => <Link to={processHref(r.processId)}>{r.processName}</Link>,
           },
         ]
       : []),
@@ -85,9 +84,7 @@ function columns(
             header: 'Artifacts',
             cell: (r: RunSummary) => (
               <span className={styles.row}>
-                {r.artifacts.slice(0, 3).map((a) => (
-                  <ArtifactChip key={`${a.kind}:${a.id}`} artifact={a} showIcon={false} />
-                ))}
+                <ArtifactChips artifacts={r.artifacts} limit={3} showIcon={false} />
               </span>
             ),
           },

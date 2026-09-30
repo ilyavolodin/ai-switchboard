@@ -1,4 +1,9 @@
-import type { Capabilities, PluginKind, PluginSummary } from '@ai-switchboard/core/contract';
+import type {
+  Capabilities,
+  PluginKind,
+  PluginSearchKind,
+  PluginSummary,
+} from '@ai-switchboard/core/contract';
 
 import type { ReasonPromptOptions } from '../../hooks/reason.js';
 
@@ -18,6 +23,11 @@ export function isPackageName(name: string): boolean {
 
 export function kindLabel(kind: PluginKind): string {
   return kind === 'secret_provider' ? 'secret provider' : kind;
+}
+
+/** npm search names secret providers `secrets`, after their package prefix. */
+export function pluginKindOf(kind: PluginSearchKind): PluginKind {
+  return kind === 'secrets' ? 'secret_provider' : kind;
 }
 
 export function networkText(c: Capabilities): string {

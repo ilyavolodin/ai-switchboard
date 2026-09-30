@@ -12,8 +12,8 @@ import type {
   UsageReport,
 } from '@ai-switchboard/sdk';
 
-import type { StatusTone } from '../domain/status.js';
-import { bodySchema } from './schema.js';
+import { STATS_WINDOWS, type StatsWindow, type StatusTone } from '../domain/status.js';
+import { bodySchema, querySchema } from './schema.js';
 
 export type { ProcessDocument } from '../domain/process.js';
 export type {
@@ -112,8 +112,16 @@ export interface SecretRefDTO {
 }
 
 export type { StatsWindow } from '../domain/status.js';
-import type { StatsWindow } from '../domain/status.js';
+
+export const uuidParam = { type: 'string', format: 'uuid' } as const;
+export const limitParam = { type: 'integer', minimum: 1 } as const;
+export const cursorParam = { type: 'string' } as const;
 
 export interface WindowQuery {
   window?: StatsWindow;
 }
+
+export const windowQuery = querySchema<WindowQuery>()({
+  type: 'object',
+  properties: { window: { type: 'string', enum: STATS_WINDOWS } },
+});

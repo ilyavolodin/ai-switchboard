@@ -1,34 +1,29 @@
 import {
   checkHealth,
-  InvokeError,
-  isTransportError,
-  parseRetryAfter,
-  parseWith,
-  refusalFor,
-  SchemaMismatchError,
+  errorText,
+  parseDefinitive,
   tryJson,
+  tryParse,
   withSettings,
   type Destination,
   type DestinationType,
   type Health,
-  type HttpRequest,
-  type HttpResponse,
   type InvokeResult,
   type MeterReading,
   type PluginContext,
   type RunHandle,
   type RunStatus,
   type UsageReport,
-  tryParse,
 } from '@ai-switchboard/sdk';
 
-import { GITHUB_HEADERS, GithubAuthError, createAuth } from './auth.js';
+import { createApi, messageOf, refusal, repoPath } from './api.js';
+import { createCorrelator } from './correlation.js';
 import {
-  decodeRef,
+  dispatchedRun,
   durationFromRun,
   encodeRef,
-  matchesRun,
-  runListSchema,
+  jobCount,
+  rateLimitReading,
   stateOf,
   usageFromTiming,
   workflowRunSchema,
@@ -36,9 +31,7 @@ import {
   type WorkflowRun,
 } from './runs.js';
 import {
-  GITHUB_API,
   METERS,
-  RATE_LIMIT_METER,
   USAGE_DIMENSIONS,
   settingsSchema,
   type GithubActionsSettings,
@@ -51,278 +44,99 @@ import {
   type WorkflowTarget,
 } from './target.js';
 
-/** Look this far back from the dispatch when listing runs, for clock skew between us and GitHub. */
-const CORRELATION_SKEW_MS = 2 * 60_000;
-const CORRELATION_PAGE_SIZE = 50;
-const CORRELATION_MAX_PAGES = 5;
-
-/** Kept in instance state when a dispatch could not be correlated yet, so `poll` can find it. */
-export interface PendingDispatch {
-  owner: string;
-  repo: string;
-  workflow: string;
-  dispatchedAt: string;
-  runId?: number;
+/** Thrown when GitHub answers `poll` or `readMeters` unexpectedly. */
+export class GithubActionsError extends Error {
+  override readonly name = 'GithubActionsError';
 }
 
-export const pendingKey = (runId: string): string => `dispatch:${runId}`;
-
-function definitive<T>(fn: () => T): T {
-  try {
-    return fn();
-  } catch (err) {
-    if (err instanceof SchemaMismatchError) {
-      throw new InvokeError(err.message, { definitive: true });
-    }
-    throw err;
-  }
-}
-
-export function readTarget(target: unknown): WorkflowTarget {
-  return definitive(() => parseWith<WorkflowTarget>(targetSchema, target, 'workflow target'));
-}
-
-export function readInputs(input: unknown): WorkflowInputs {
-  return definitive(() => parseWith<WorkflowInputs>(inputSchema, input ?? {}, 'workflow inputs'));
-}
-
-function messageOf(res: HttpResponse): string {
-  const body = tryJson(res);
-  if (body !== null && typeof body === 'object' && 'message' in body) {
-    const message = body.message;
-    if (typeof message === 'string') return message;
-  }
-  return res.text().slice(0, 200);
-}
-
-/** GitHub signals rate limits with 429, or 403 and `x-ratelimit-remaining: 0`. */
-function isRateLimited(res: HttpResponse): boolean {
-  return (
-    res.status === 429 ||
-    (res.status === 403 &&
-      (res.headers['x-ratelimit-remaining'] === '0' || /rate limit/i.test(messageOf(res))))
-  );
-}
-
-function retryAfterSeconds(res: HttpResponse, now: Date): number | undefined {
-  const retryAfter = parseRetryAfter(res.headers['retry-after'], now);
-  if (retryAfter !== undefined) return retryAfter;
-  const reset = Number(res.headers['x-ratelimit-reset']);
-  if (Number.isFinite(reset) && reset > 0) {
-    return Math.max(0, Math.ceil(reset - now.getTime() / 1000));
-  }
-  return undefined;
-}
-
-/**
- * Rate limits are returned; everything else throws. 404 (no such workflow or no access), 422 (no
- * workflow_dispatch trigger, unknown input, bad ref) and the other 4xx repeat on retry, so they
- * are definitive.
- */
-export function refusal(res: HttpResponse, now: Date): InvokeResult {
-  return refusalFor(res, now, {
-    message: (r) => `GitHub answered ${r.status} to the dispatch: ${messageOf(r)}`,
-    isRateLimited,
-    retryAfterSeconds,
-  });
+function started(ref: RunRef, htmlUrl: string | undefined): InvokeResult {
+  return {
+    status: 'started',
+    externalId: encodeRef(ref),
+    ...(htmlUrl !== undefined ? { externalUrl: htmlUrl } : {}),
+  };
 }
 
 function createGithubActionsDestination(
   settings: GithubActionsSettings,
   ctx: PluginContext,
 ): Destination {
-  const auth = createAuth(settings, ctx);
-
-  async function api(req: HttpRequest): Promise<HttpResponse> {
-    const token = await auth.token();
-    const res = await ctx.http.request({
-      ...req,
-      url: `${GITHUB_API}${req.url}`,
-      headers: { ...GITHUB_HEADERS, authorization: `Bearer ${token}`, ...req.headers },
-    });
-    if (res.status === 401) auth.invalidate();
-    return res;
-  }
-
-  const repoPath = (owner: string, repo: string): string =>
-    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-
-  /** A token failure happens before the dispatch is sent, so it is always safe to retry. */
-  async function tokenOrThrow(): Promise<void> {
-    try {
-      await auth.token();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (err instanceof GithubAuthError && err.status !== undefined && err.status < 500) {
-        throw new InvokeError(message, { status: err.status, definitive: true, cause: err });
-      }
-      if (err instanceof GithubAuthError && err.status === undefined) {
-        throw new InvokeError(message, { definitive: true, cause: err });
-      }
-      if (isTransportError(err) || err instanceof GithubAuthError) {
-        throw new InvokeError(`Could not get a GitHub token: ${message}`, {
-          sent: false,
-          cause: err,
-        });
-      }
-      throw err;
-    }
-  }
-
-  /** Never throws. */
-  async function correlate(
-    owner: string,
-    repo: string,
-    workflow: string,
-    runId: string,
-    dispatchedAt: Date,
-  ): Promise<WorkflowRun | undefined> {
-    try {
-      const since = new Date(dispatchedAt.getTime() - CORRELATION_SKEW_MS);
-      // Newest first: a busy workflow can push our run past the first page before we look.
-      for (let page = 1; page <= CORRELATION_MAX_PAGES; page++) {
-        const res = await api({
-          method: 'GET',
-          url: `${repoPath(owner, repo)}/actions/workflows/${encodeURIComponent(workflow)}/runs`,
-          query: {
-            event: 'workflow_dispatch',
-            created: `>=${since.toISOString().replace(/\.\d{3}Z$/, 'Z')}`,
-            per_page: CORRELATION_PAGE_SIZE,
-            ...(page > 1 ? { page } : {}),
-          },
-        });
-        if (!res.ok) return undefined;
-        const list = tryParse<{ workflow_runs: WorkflowRun[] }>(runListSchema, tryJson(res));
-        const found = list?.workflow_runs.find((r) => matchesRun(r, runId));
-        if (found || !list || list.workflow_runs.length < CORRELATION_PAGE_SIZE) return found;
-      }
-      return undefined;
-    } catch (err) {
-      ctx.logger.warn('workflow run correlation failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return undefined;
-    }
-  }
-
-  function started(ref: RunRef, htmlUrl: string | undefined): InvokeResult {
-    return {
-      status: 'started',
-      externalId: encodeRef(ref),
-      ...(htmlUrl !== undefined ? { externalUrl: htmlUrl } : {}),
-    };
-  }
+  const api = createApi(settings, ctx);
+  const correlator = createCorrelator(api, ctx);
 
   async function invoke(rawTarget: unknown, input: unknown, run: RunHandle): Promise<InvokeResult> {
-    const target: WorkflowTarget = readTarget(rawTarget);
-    const inputs = { ...readInputs(input), [RUN_ID_INPUT]: run.id };
+    const target = parseDefinitive<WorkflowTarget>(targetSchema, rawTarget, 'workflow target');
+    const inputs = {
+      ...parseDefinitive<WorkflowInputs>(inputSchema, input ?? {}, 'workflow inputs'),
+      [RUN_ID_INPUT]: run.id,
+    };
     const workflow = String(target.workflow);
-    await tokenOrThrow();
-    const dispatchedAt = ctx.now();
-    const res = await api({
+    await api.tokenOrThrow();
+    const dispatchedAt = ctx.now().toISOString();
+    const res = await api.request({
       method: 'POST',
       url: `${repoPath(target.owner, target.repo)}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,
       json: { ref: target.ref, inputs, return_run_details: true },
     });
     if (!res.ok) return refusal(res, ctx.now());
 
-    // Newer GitHub answers 200 with the run; older answers 204 and we find the run by name.
-    const details = tryJson(res) as
-      { workflow_run_id?: unknown; html_url?: unknown; run_url?: unknown } | undefined;
-    if (typeof details?.workflow_run_id === 'number') {
-      return started(
-        { owner: target.owner, repo: target.repo, runId: details.workflow_run_id },
-        typeof details.html_url === 'string' ? details.html_url : undefined,
-      );
-    }
-    const found = await correlate(target.owner, target.repo, workflow, run.id, dispatchedAt);
-    if (found) {
-      return started({ owner: target.owner, repo: target.repo, runId: found.id }, found.html_url);
-    }
+    const { owner, repo } = target;
+    const details = dispatchedRun(tryJson(res));
+    if (details) return started({ owner, repo, runId: details.runId }, details.htmlUrl);
+    // An older GitHub answers 204: find the run by its name.
+    const pending = { owner, repo, workflow, dispatchedAt };
+    const found = await correlator.find(pending, run.id);
+    if (found) return started({ owner, repo, runId: found.id }, found.html_url);
     // Not listed yet: remember where to look so poll can correlate later.
-    try {
-      const pending: PendingDispatch = {
-        owner: target.owner,
-        repo: target.repo,
-        workflow,
-        dispatchedAt: dispatchedAt.toISOString(),
-      };
-      await ctx.state.set(pendingKey(run.id), pending);
-    } catch (err) {
-      ctx.logger.warn('could not record the pending dispatch', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    await correlator.remember(pending, run.id);
     return { status: 'started' };
-  }
-
-  async function locate(run: RunHandle): Promise<RunRef | 'missing' | undefined> {
-    const ref = decodeRef(run.externalId);
-    if (ref) return ref;
-    const pending = await ctx.state.get<PendingDispatch>(pendingKey(run.id));
-    if (!pending) return 'missing';
-    if (pending.runId !== undefined) {
-      return { owner: pending.owner, repo: pending.repo, runId: pending.runId };
-    }
-    const found = await correlate(
-      pending.owner,
-      pending.repo,
-      pending.workflow,
-      run.id,
-      new Date(pending.dispatchedAt),
-    );
-    if (!found) return undefined;
-    await ctx.state.set(pendingKey(run.id), { ...pending, runId: found.id });
-    return { owner: pending.owner, repo: pending.repo, runId: found.id };
   }
 
   async function usageOf(ref: RunRef, run: WorkflowRun): Promise<UsageReport> {
     const base = `${repoPath(ref.owner, ref.repo)}/actions/runs/${ref.runId}`;
     const usage: UsageReport = {};
     try {
-      const timing = await api({ method: 'GET', url: `${base}/timing` });
+      const timing = await api.request({ method: 'GET', url: `${base}/timing` });
       if (timing.ok) Object.assign(usage, usageFromTiming(tryJson(timing)));
     } catch (err) {
-      ctx.logger.warn('workflow run timing unavailable', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      ctx.logger.warn('workflow run timing unavailable', { error: errorText(err) });
     }
     if (usage.duration_seconds === undefined) {
       const duration = durationFromRun(run);
       if (duration !== undefined) usage.duration_seconds = duration;
     }
     try {
-      const jobs = await api({
+      const jobs = await api.request({
         method: 'GET',
         url: `${base}/jobs`,
         query: { filter: 'latest', per_page: 1 },
       });
-      const total = (tryJson(jobs) as { total_count?: unknown } | undefined)?.total_count;
-      if (jobs.ok && typeof total === 'number') usage.jobs = total;
+      const total = jobs.ok ? jobCount(tryJson(jobs)) : undefined;
+      if (total !== undefined) usage.jobs = total;
     } catch (err) {
-      ctx.logger.warn('workflow run jobs unavailable', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      ctx.logger.warn('workflow run jobs unavailable', { error: errorText(err) });
     }
     return usage;
   }
 
   async function poll(run: RunHandle): Promise<RunStatus> {
-    const ref = await locate(run);
+    const ref = await correlator.locate(run);
     if (ref === 'missing') {
       return { state: 'unknown', errors: ['No workflow run is known for this run'] };
     }
     if (!ref) return { state: 'running' };
-    const res = await api({
+    const res = await api.request({
       method: 'GET',
       url: `${repoPath(ref.owner, ref.repo)}/actions/runs/${ref.runId}`,
     });
     if (res.status === 404) {
       return { state: 'unknown', errors: [`Workflow run ${ref.runId} no longer exists`] };
     }
-    if (!res.ok) throw new Error(`GitHub answered ${res.status} for workflow run ${ref.runId}`);
+    if (!res.ok) {
+      throw new GithubActionsError(`GitHub answered ${res.status} for workflow run ${ref.runId}`);
+    }
     const wf = tryParse<WorkflowRun>(workflowRunSchema, tryJson(res));
-    if (!wf) throw new Error(`Unexpected workflow run shape for ${ref.runId}`);
+    if (!wf) throw new GithubActionsError(`Unexpected workflow run shape for ${ref.runId}`);
     const state = stateOf(wf);
     const externalUrl = wf.html_url !== undefined ? { externalUrl: wf.html_url } : {};
     if (state === 'running') return { state, ...externalUrl };
@@ -339,32 +153,16 @@ function createGithubActionsDestination(
   }
 
   async function readMeters(): Promise<MeterReading[]> {
-    const res = await api({ method: 'GET', url: '/rate_limit' });
-    if (!res.ok) throw new Error(`GitHub answered ${res.status} to /rate_limit`);
-    const core = (
-      tryJson(res) as
-        { resources?: { core?: { limit?: unknown; used?: unknown; reset?: unknown } } } | undefined
-    )?.resources?.core;
-    if (typeof core?.limit !== 'number' || typeof core.used !== 'number' || core.limit <= 0) {
-      throw new Error('Unexpected /rate_limit shape');
-    }
-    return [
-      {
-        id: RATE_LIMIT_METER,
-        used: core.used,
-        limit: core.limit,
-        utilization: Math.min(100, Math.max(0, (core.used / core.limit) * 100)),
-        ...(typeof core.reset === 'number'
-          ? { resetsAt: new Date(core.reset * 1000).toISOString() }
-          : {}),
-        observedAt: ctx.now().toISOString(),
-      },
-    ];
+    const res = await api.request({ method: 'GET', url: '/rate_limit' });
+    if (!res.ok) throw new GithubActionsError(`GitHub answered ${res.status} to /rate_limit`);
+    const reading = rateLimitReading(tryJson(res), ctx.now().toISOString());
+    if (!reading) throw new GithubActionsError('Unexpected /rate_limit shape');
+    return [reading];
   }
 
   const health = (): Promise<Health> =>
     checkHealth(ctx, async () => {
-      const res = await api({ method: 'GET', url: '/rate_limit' });
+      const res = await api.request({ method: 'GET', url: '/rate_limit' });
       if (res.ok) return { status: 'healthy' };
       return { status: 'unhealthy', message: `GitHub answered ${res.status}: ${messageOf(res)}` };
     });

@@ -51,18 +51,10 @@ export function toFlowNodes(layout: BoardLayout, state: FlowNodeState): FlowNode
     };
     const data =
       n.kind === 'source'
-        ? { kind: 'source' as const, source: n.node as BoardResponse['sources'][number], ...common }
+        ? { kind: n.kind, source: n.node, ...common }
         : n.kind === 'process'
-          ? {
-              kind: 'process' as const,
-              process: n.node as BoardResponse['processes'][number],
-              ...common,
-            }
-          : {
-              kind: 'destination' as const,
-              destination: n.node as BoardResponse['destinations'][number],
-              ...common,
-            };
+          ? { kind: n.kind, process: n.node, nowMs: state.nowMs, ...common }
+          : { kind: n.kind, destination: n.node, ...common };
     const measured = state.measured[n.id];
     return {
       id: n.id,

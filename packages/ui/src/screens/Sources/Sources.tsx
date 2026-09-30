@@ -1,16 +1,15 @@
 import type { SourceCapsDTO } from '@ai-switchboard/core/contract';
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
 
 import { useCreateSource, usePluginTypes, useSources } from '../../api/index.js';
 import { Button } from '../../components/Button.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { PageHeader } from '../../components/PageHeader.js';
-import { useReasonedMutation } from '../../hooks/reason.js';
-import { withoutUndefined } from '../../lib/instances.js';
-import { InstanceGrid } from '../shared/InstanceGrid.js';
+import { plural } from '../../lib/format.js';
+import { sourceHref } from '../../lib/hrefs.js';
 import { AddInstanceDialog } from '../shared/AddInstanceDialog.js';
+import { InstanceGrid } from '../shared/InstanceGrid.js';
 import styles from '../shared/instanceCard.module.css';
+import { useAddInstance } from '../shared/useAddInstance.js';
 import { SamplePreview } from './SamplePreview.js';
 import { SourceCapsFields } from './SourceCapsFields.js';
 import { SourceCard } from './SourceCard.js';
@@ -19,30 +18,18 @@ import { describeSourceType } from './sourceModel.js';
 export function Sources() {
   const sources = useSources();
   const types = usePluginTypes('source');
-  const navigate = useNavigate();
-  const [adding, setAdding] = useState(false);
-  const create = useReasonedMutation(
-    useCreateSource(),
-    (v: { name: string }) => ({
-      title: `Create ${v.name}?`,
-      consequence:
-        'The source starts receiving events as soon as it is created. No process uses it until a trigger names it.',
-      confirmLabel: 'Create source',
-    }),
-    { successMessage: (d) => `${d.name} created` },
-  );
+  const add = useAddInstance({
+    noun: 'source',
+    mutation: useCreateSource(),
+    consequence:
+      'The source starts receiving events as soon as it is created. No process uses it until a trigger names it.',
+    href: (id) => sourceHref(id),
+  });
 
   const list = sources.data ?? [];
   const enabled = list.filter((s) => s.enabled).length;
   const addButton = (
-    <Button
-      variant="primary"
-      icon="plus"
-      requires="operator"
-      onClick={() => {
-        setAdding(true);
-      }}
-    >
+    <Button variant="primary" icon="plus" requires="operator" onClick={add.open}>
       Add source
     </Button>
   );
@@ -54,7 +41,7 @@ export function Sources() {
         meta={
           sources.data ? (
             <span className="t-caption">
-              {list.length} source{list.length === 1 ? '' : 's'} · {enabled} enabled
+              {plural(list.length, 'source')} · {enabled} enabled
             </span>
           ) : null
         }
@@ -62,11 +49,11 @@ export function Sources() {
           <>
             <span className={styles.legendKeys} aria-hidden="true">
               <span className={styles.legendKey}>
-                <span className={styles.legendSwatch} style={{ background: 'var(--primary)' }} />
+                <span className={`${styles.legendSwatch} ${styles.swatchReceived}`} />
                 events received
               </span>
               <span className={styles.legendKey}>
-                <span className={styles.legendSwatch} style={{ background: 'var(--st-warn)' }} />
+                <span className={`${styles.legendSwatch} ${styles.swatchThrottled}`} />
                 source-throttled
               </span>
             </span>
@@ -89,10 +76,8 @@ export function Sources() {
       />
 
       <AddInstanceDialog<SourceCapsDTO>
-        open={adding}
-        onClose={() => {
-          setAdding(false);
-        }}
+        open={add.adding}
+        onClose={add.close}
         kind="source"
         types={types.data}
         loading={types.isPending}
@@ -119,19 +104,7 @@ export function Sources() {
             />
           ),
         }}
-        onSubmit={async ({ type, name, settings, caps }) => {
-          const created = await create.run({
-            typeId: type.typeId,
-            name,
-            settings,
-            caps: withoutUndefined(caps),
-            enabled: true,
-          });
-          if (!created) return false;
-          setAdding(false);
-          void navigate(`/sources/${created.id}`);
-          return true;
-        }}
+        onSubmit={add.submit}
       />
     </>
   );

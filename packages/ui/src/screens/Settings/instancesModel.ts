@@ -53,6 +53,26 @@ export function enableInstancePrompt(
   };
 }
 
+export function addInstancePrompt(route: InstanceRoute, name: string): ReasonPromptOptions {
+  const { one } = INSTANCE_ROUTES[route];
+  return { title: `Add the ${one} “${name}”?`, confirmLabel: `Add ${one}` };
+}
+
+export function saveInstancePrompt(
+  route: InstanceRoute,
+  name: string | undefined,
+): ReasonPromptOptions {
+  return {
+    title: `Save ${name ?? INSTANCE_ROUTES[route].one}?`,
+    consequence: 'The instance reloads with the new settings.',
+    confirmLabel: 'Save',
+  };
+}
+
+export function testNotifierPrompt(name: string): ReasonPromptOptions {
+  return { title: `Send a test notification to ${name}?`, confirmLabel: 'Send test' };
+}
+
 export function deleteInstancePrompt(route: InstanceRoute, name: string): ReasonPromptOptions {
   return {
     title: `Delete ${name}?`,

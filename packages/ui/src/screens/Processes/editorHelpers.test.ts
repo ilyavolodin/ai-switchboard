@@ -5,6 +5,7 @@ import {
   approvalLabel,
   approvalMode,
   classifySaveError,
+  draftMeterCeilings,
   newProcessDocument,
   newTrigger,
   problemSections,
@@ -13,6 +14,9 @@ import {
   setOptionalKey,
   stepProviders,
   updateAt,
+  withCeiling,
+  withDestination,
+  withUsageCap,
 } from './editorModel.js';
 import { draftReducer, initialDraft } from './processDraft.js';
 
@@ -81,6 +85,52 @@ describe('list and key helpers', () => {
     expect(problemSections({ '/name': 'x', '/triggers/0/sourceId': 'y' })).toEqual([
       'basics',
       'triggers',
+    ]);
+  });
+});
+
+describe('budget and destination transforms', () => {
+  const doc = {
+    ...newProcessDocument('ex-routines'),
+    destination: { instanceId: 'ex-routines', target: { routineId: 'r1' } },
+    budgets: {
+      runsPerDay: 4,
+      usagePerDay: { input_tokens: 400_000 },
+      meterCeilings: { weekly: { events: 80, sweeps: 95 } },
+    },
+  };
+
+  it('sets a ceiling, and drops the meter when both are back to none', () => {
+    const one = withCeiling(doc, 'five_hour', 'events', 70);
+    expect(one.budgets.meterCeilings.five_hour).toEqual({ events: 70, sweeps: 100 });
+    expect(withCeiling(one, 'five_hour', 'events', undefined).budgets.meterCeilings).toEqual(
+      doc.budgets.meterCeilings,
+    );
+  });
+
+  it('sets a usage cap, and drops usagePerDay when the last one is cleared', () => {
+    expect(withUsageCap(doc, 'output_tokens', 5).budgets.usagePerDay).toEqual({
+      input_tokens: 400_000,
+      output_tokens: 5,
+    });
+    expect('usagePerDay' in withUsageCap(doc, 'input_tokens', undefined).budgets).toBe(false);
+  });
+
+  it('resets the target, usage caps and ceilings on another destination', () => {
+    const next = withDestination(doc, 'ex-http');
+    expect(next.destination).toEqual({ instanceId: 'ex-http', target: {} });
+    expect(next.budgets).toEqual({ runsPerDay: 4, meterCeilings: {} });
+  });
+
+  it('marks the draft’s own ceiling on each meter', () => {
+    expect(
+      draftMeterCeilings([{ meterId: 'weekly' }, { meterId: 'five_hour' }], doc, 'p1'),
+    ).toEqual([
+      {
+        meterId: 'weekly',
+        ceilings: [{ processId: 'p1', processName: doc.name, events: 80, sweeps: 95 }],
+      },
+      { meterId: 'five_hour', ceilings: [] },
     ]);
   });
 });

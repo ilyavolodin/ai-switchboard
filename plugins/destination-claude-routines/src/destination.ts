@@ -1,18 +1,19 @@
 import {
-  InvokeError,
-  parseWith,
-  refusalFor,
-  SchemaMismatchError,
+  asObject,
+  asString,
+  checkHealth,
+  parseDefinitive,
   tryJson,
   withSettings,
   type Destination,
   type DestinationType,
-  type HttpResponse,
   type InvokeResult,
+  type JsonObject,
   type PluginContext,
   type RunHandle,
 } from '@ai-switchboard/sdk';
 
+import { createApi, refusal } from './api.js';
 import { verifyRoutineCallback } from './callback.js';
 import { createSeatMeters } from './meters.js';
 import {
@@ -30,46 +31,30 @@ import {
   type RoutineTarget,
 } from './target.js';
 
-export const ANTHROPIC_VERSION = '2023-06-01';
-
-function definitive<T>(fn: () => T): T {
-  try {
-    return fn();
-  } catch (err) {
-    if (err instanceof SchemaMismatchError)
-      throw new InvokeError(err.message, { definitive: true });
-    throw err;
-  }
+function readTarget(target: unknown): RoutineTarget {
+  return parseDefinitive<RoutineTarget>(targetSchema, target, 'routine target');
 }
 
-export function readTarget(target: unknown): RoutineTarget {
-  return definitive(() => parseWith<RoutineTarget>(targetSchema, target, 'routine target'));
+function readInput(input: unknown): RoutineInput {
+  return parseDefinitive<RoutineInput>(inputSchema, input, 'routine input');
 }
 
-export function readInput(input: unknown): RoutineInput {
-  return definitive(() => parseWith<RoutineInput>(inputSchema, input, 'routine input'));
-}
-
-function firstString(record: Record<string, unknown>, keys: string[]): string | undefined {
+function firstString(record: JsonObject, keys: string[]): string | undefined {
   for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'string' && value !== '') return value;
+    const value = asString(record[key]);
+    if (value !== undefined && value !== '') return value;
   }
   return undefined;
 }
 
 /** Tolerates `{ id, session_url }` as well as `claude_code_session_*` and nested `session` shapes. */
-export function sessionOf(body: unknown): { externalId?: string; externalUrl?: string } {
-  if (body === null || typeof body !== 'object' || Array.isArray(body)) return {};
-  const record = body as Record<string, unknown>;
-  const nested = record.session;
-  const sources =
-    nested !== null && typeof nested === 'object' && !Array.isArray(nested)
-      ? [record, nested as Record<string, unknown>]
-      : [record];
+function sessionOf(body: unknown): { externalId?: string; externalUrl?: string } {
+  const record = asObject(body);
+  if (!record) return {};
+  const nested = asObject(record.session);
   let externalId: string | undefined;
   let externalUrl: string | undefined;
-  for (const source of sources) {
+  for (const source of nested ? [record, nested] : [record]) {
     externalId ??= firstString(source, ['claude_code_session_id', 'session_id', 'id']);
     const url = firstString(source, ['claude_code_session_url', 'session_url', 'url']);
     if (url?.startsWith('https://')) externalUrl ??= url;
@@ -80,56 +65,15 @@ export function sessionOf(body: unknown): { externalId?: string; externalUrl?: s
   };
 }
 
-/** Anthropic errors look like `{ type: 'error', error: { type, message } }`. */
-export function errorMessage(res: HttpResponse): string {
-  const body = tryJson(res);
-  if (body !== null && typeof body === 'object' && 'error' in body) {
-    const err = body.error;
-    if (err !== null && typeof err === 'object' && 'message' in err) {
-      const message = err.message;
-      if (typeof message === 'string') return message;
-    }
-    if (typeof err === 'string') return err;
-  }
-  return res.text().slice(0, 200);
-}
-
-/** Returns a result for 429 and held states; throws for the rest. */
-export function refusal(res: HttpResponse, now: Date): InvokeResult {
-  return refusalFor(res, now, {
-    message: (r) => `Routines API answered ${r.status}: ${errorMessage(r)}`,
-    rateLimitMessage: (r) => `Routines API rate limit: ${errorMessage(r)}`,
-    held: (r) => {
-      if (r.status !== 400 && r.status !== 409) return undefined;
-      const message = errorMessage(r);
-      if (/\bpaused\b/i.test(message)) return 'paused';
-      return /\bdisabled\b/i.test(message) ? 'disabled' : undefined;
-    },
-    // 529 is Anthropic's "overloaded": the request was not processed, so it is as safe to retry as a 503.
-    retryableStatuses: [529],
-  });
-}
-
 function createRoutinesDestination(settings: RoutinesSettings, ctx: PluginContext): Destination {
-  const seat = createSeatMeters(settings.usage, ctx);
-  const base = settings.apiBaseUrl.replace(/\/+$/, '');
+  const api = createApi(ctx.http, settings);
+  const seat = createSeatMeters(settings.usage, api, ctx);
 
   return {
     async invoke(rawTarget: unknown, rawInput: unknown, run: RunHandle): Promise<InvokeResult> {
       const target = readTarget(rawTarget);
       const input = readInput(rawInput);
-      const res = await ctx.http.post(
-        `${base}/v1/claude_code/routines/${encodeURIComponent(target.routineId)}/fire`,
-        {
-          headers: {
-            accept: 'application/json',
-            authorization: `Bearer ${settings.token}`,
-            'anthropic-version': ANTHROPIC_VERSION,
-            'anthropic-beta': settings.betaHeader,
-          },
-          json: { text: withTrailer(input.text, run) },
-        },
-      );
+      const res = await api.fire(target.routineId, withTrailer(input.text, run));
       if (!res.ok) return refusal(res, ctx.now());
       return { status: 'started', ...sessionOf(tryJson(res)) };
     },
@@ -138,17 +82,17 @@ function createRoutinesDestination(settings: RoutinesSettings, ctx: PluginContex
 
     readMeters: () => seat.read(),
 
-    health: async () => {
-      const problem = await seat.problem();
-      return problem !== undefined
-        ? { status: 'unhealthy', message: problem, checkedAt: ctx.now().toISOString() }
-        : {
-            status: 'unknown',
-            message:
-              'The Routines API has no read-only call to check a trigger token; the first run will tell.',
-            checkedAt: ctx.now().toISOString(),
-          };
-    },
+    health: () =>
+      checkHealth(ctx, async () => {
+        const problem = await seat.problem();
+        return problem !== undefined
+          ? { status: 'unhealthy', message: problem }
+          : {
+              status: 'unknown',
+              message:
+                'The Routines API has no read-only call to check a trigger token; the first run will tell.',
+            };
+      }),
   };
 }
 

@@ -1,11 +1,12 @@
 import {
-  dedupeKey,
+  draftFromMapped,
+  parseJsonObject,
+  toIsoTime,
   type ArtifactRef,
   type Attributes,
   type EventDraft,
-  type RawRequest,
-  parseJsonObject,
   type JsonObject,
+  type RawRequest,
 } from '@ai-switchboard/sdk';
 
 export type MonitorVerb = 'triggered' | 'recovered' | 'warn' | 'no_data' | 'renotify';
@@ -53,17 +54,6 @@ export function splitTags(tags: string | undefined): string[] {
     .filter((t) => t !== '');
 }
 
-/** `$DATE` / `$LAST_UPDATED` are epoch milliseconds (seconds tolerated); ISO strings pass through. */
-function toIso(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  if (/^\d+$/.test(value)) {
-    const n = Number(value);
-    return new Date(n < 1e11 ? n * 1000 : n).toISOString();
-  }
-  const ms = Date.parse(value);
-  return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
-}
-
 const OPTIONAL: [attribute: string, key: string][] = [
   ['alertType', 'alertType'],
   ['priority', 'priority'],
@@ -98,14 +88,12 @@ export function parseDelivery(req: RawRequest): EventDraft[] {
     const value = field(body, key);
     if (value !== undefined) attributes[attribute] = value;
   }
+  // `$DATE` / `$LAST_UPDATED` are epoch milliseconds (seconds tolerated) or ISO strings.
+  const occurredAt = toIsoTime(field(body, 'date')) ?? toIsoTime(field(body, 'lastUpdated'));
   return [
-    {
-      type,
-      occurredAt: toIso(field(body, 'date')) ?? toIso(field(body, 'lastUpdated')) ?? req.receivedAt,
-      artifact,
-      attributes,
-      dedupeKey: dedupeKey(type, artifact, deliveryId),
-      ...(deliveryId !== undefined ? { deliveryId } : {}),
-    },
+    draftFromMapped(
+      { type, artifact, attributes, occurredAt, deliveryId },
+      { occurredAt: req.receivedAt },
+    ),
   ];
 }

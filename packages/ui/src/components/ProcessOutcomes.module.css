@@ -1,0 +1,16 @@
+.outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.outcome a {
+  font-weight: 500;
+  color: var(--foreground-strong);
+  text-decoration: none;
+}
+
+.outcome a:hover {
+  text-decoration: underline;
+}

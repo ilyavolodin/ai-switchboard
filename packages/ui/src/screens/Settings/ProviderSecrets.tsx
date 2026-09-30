@@ -15,29 +15,18 @@ import { Table, type TableColumn } from '../../components/Table.js';
 import { Time } from '../../components/Time.js';
 import { CopyButton } from '../../components/CopyButton.js';
 import { QueryError } from '../../components/QueryError.js';
+import { INSTANCE_KIND_LABEL, instanceHref } from '../../lib/instanceNames.js';
 import styles from './ProviderSecrets.module.css';
 
 const KIND_LABEL: Record<SecretUserDTO['kind'], string> = {
-  source: 'source',
-  destination: 'destination',
-  notifier: 'notifier',
-  secret_provider: 'secret provider',
+  ...INSTANCE_KIND_LABEL,
   process: 'process',
 };
 
-function hrefFor(user: SecretUserDTO): string {
-  switch (user.kind) {
-    case 'source':
-      return `/sources/${encodeURIComponent(user.id)}`;
-    case 'destination':
-      return `/destinations/${encodeURIComponent(user.id)}`;
-    case 'process':
-      return `/processes/${encodeURIComponent(user.id)}`;
-    case 'notifier':
-      return '/settings/notifiers';
-    case 'secret_provider':
-      return '/settings/secret-providers';
-  }
+function hrefFor(user: Pick<SecretUserDTO, 'kind' | 'id'>): string {
+  return user.kind === 'process'
+    ? `/processes/${encodeURIComponent(user.id)}`
+    : instanceHref(user.kind, user.id);
 }
 
 function UsedBy({ users }: { users: SecretUserDTO[] }) {
@@ -69,7 +58,7 @@ function Ref({ value }: { value: string }) {
 function StoredBy({ owner }: { owner: SecretOwnerDTO }) {
   return (
     <span className="t-caption">
-      stored by <Link to={hrefFor({ ...owner, field: '' })}>{owner.name}</Link> · read-only
+      stored by <Link to={hrefFor(owner)}>{owner.name}</Link> · read-only
     </span>
   );
 }

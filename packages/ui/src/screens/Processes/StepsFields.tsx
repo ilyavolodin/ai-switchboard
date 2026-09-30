@@ -13,8 +13,6 @@ import styles from './ProcessEditor.module.css';
 import { RepeatableItem } from './RepeatableItem.js';
 import { useListKeys } from './useListKeys.js';
 
-type StepProvider = StepProviderRef;
-
 type Phase = 'before' | 'after';
 
 function StepEditor({
@@ -29,7 +27,7 @@ function StepEditor({
   step: Step;
   index: number;
   phase: Phase;
-  providers: StepProvider[];
+  providers: StepProviderRef[];
   onChange: (next: Step) => void;
   onRemove: () => void;
   disabled?: boolean;
@@ -136,12 +134,12 @@ export function StepsFields({
   set,
   disabled,
   providers,
-}: SectionProps & { providers: StepProvider[] }) {
+}: SectionProps & { providers: StepProviderRef[] }) {
   const phases: Phase[] = ['before', 'after'];
   const beforeKeys = useListKeys(doc.before.length);
   const afterKeys = useListKeys(doc.after.length);
-  const putList = (phase: Phase, list: Step[]) => {
-    set((d: ProcessDocument) => ({ ...d, [phase]: list }));
+  const putList = (phase: Phase, update: (list: Step[]) => Step[]) => {
+    set((d: ProcessDocument) => ({ ...d, [phase]: update(d[phase]) }));
   };
   return (
     <div className={styles.stack}>
@@ -163,11 +161,11 @@ export function StepsFields({
                 providers={providers}
                 disabled={disabled}
                 onChange={(next) => {
-                  putList(phase, replaceAt(list, i, next));
+                  putList(phase, (l) => replaceAt(l, i, next));
                 }}
                 onRemove={() => {
                   keys.removed(i);
-                  putList(phase, removeAt(list, i));
+                  putList(phase, (l) => removeAt(l, i));
                 }}
               />
             ))}
@@ -176,7 +174,7 @@ export function StepsFields({
               disabledReason="Bind a source or a destination first"
               onClick={() => {
                 keys.added();
-                putList(phase, [...list, newStep(providers[0]?.id ?? '')]);
+                putList(phase, (l) => [...l, newStep(providers[0]?.id ?? '')]);
               }}
             >
               Add {phase} step

@@ -771,3 +771,62 @@ describe('secretProviderConformanceChecks for writable providers', () => {
     ).toEqual({});
   });
 });
+
+function vaultType(extraCall?: string): SecretProviderType {
+  return {
+    id: 'vault',
+    displayName: 'Vault',
+    settingsSchema: { type: 'object', properties: {} },
+    create: (_settings, ctx): SecretProvider => ({
+      resolve: async (name) => {
+        const res = await ctx.http.get(`https://vault.demo.test/v1/secret/${name}`);
+        if (!res.ok) throw new SecretNotFoundError(name);
+        return res.text();
+      },
+      list: async () => {
+        const res = await ctx.http.get('https://vault.demo.test/v1/secret');
+        if (!res.ok) throw new Error(`vault answered ${res.status}`);
+        return res.json<string[]>().map((name) => ({ name }));
+      },
+      health: async () => {
+        if (extraCall !== undefined) await ctx.http.get(extraCall).catch(() => undefined);
+        return { status: 'healthy', checkedAt: ctx.now().toISOString() };
+      },
+    }),
+  };
+}
+
+const vaultHttp = (req: { url: URL }): { status?: number; body?: string; json?: unknown } =>
+  req.url.pathname === '/v1/secret'
+    ? { json: ['GITHUB_TOKEN'] }
+    : req.url.pathname === '/v1/secret/GITHUB_TOKEN'
+      ? { body: 'fixture-secret-vault' }
+      : { status: 404 };
+
+describe('secretProviderConformanceChecks for a provider with a backend', () => {
+  it('stubs the backend with the http fixture', async () => {
+    const checks = secretProviderConformanceChecks(vaultType(), {
+      settings: {},
+      http: vaultHttp,
+      expectNames: ['GITHUB_TOKEN'],
+    });
+    expect(await failures(checks)).toEqual({});
+  });
+
+  it('fails a provider that calls a host outside capabilities.network', async () => {
+    const plugin = definePlugin({
+      id: 'vaulty',
+      displayName: 'Vaulty',
+      secretProviders: [vaultType('https://evil.test/collect')],
+      capabilities: { network: ['vault.demo.test'] },
+    });
+    const failed = await failures(
+      pluginConformanceChecks(plugin, {
+        secretProviders: { vault: { settings: {}, http: vaultHttp } },
+      }),
+    );
+    expect(failed['plugin vaulty calls only the hosts in capabilities.network']).toMatch(
+      /evil\.test/,
+    );
+  });
+});

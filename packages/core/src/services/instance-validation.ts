@@ -1,4 +1,5 @@
-import { secretPaths, validateAgainst, type JSONSchema } from '@ai-switchboard/sdk';
+import { validateAgainst, type JSONSchema } from '@ai-switchboard/sdk';
+import { secretPaths } from '@ai-switchboard/sdk/host';
 
 import { destinationCapsSchema } from '../contract/destinations.js';
 import { sourceCapsSchema } from '../contract/sources.js';

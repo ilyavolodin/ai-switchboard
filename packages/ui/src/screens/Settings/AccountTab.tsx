@@ -3,6 +3,8 @@ import { roleLabel, useSession } from '../../app/session.js';
 import { Banner } from '../../components/Banner.js';
 import { Card } from '../../components/Card.js';
 import { KeyValueList } from '../../components/KeyValueList.js';
+import { QueryError } from '../../components/QueryError.js';
+import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { useToast } from '../../hooks/toast.js';
 import { ChangePasswordForm } from '../ChangePassword/ChangePasswordForm.js';
@@ -13,7 +15,13 @@ export function AccountTab() {
   const me = useMe();
   const toast = useToast();
   const user = me.data?.user ?? session.user;
-  if (!user) return null;
+  if (!user) {
+    return me.isError ? (
+      <QueryError query={me} title="Your account could not load" />
+    ) : (
+      <Skeleton shape="card" height={200} label="Loading your account" />
+    );
+  }
   return (
     <div className={styles.stack}>
       <Card title="Account">

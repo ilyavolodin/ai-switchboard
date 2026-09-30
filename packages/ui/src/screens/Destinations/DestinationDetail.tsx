@@ -1,53 +1,35 @@
 import type { DestinationDetail as DestinationDetailDTO } from '@ai-switchboard/core/contract';
 import { useParams } from 'react-router';
 
-import {
-  useClearSoftHold,
-  useEnableDestination,
-  useDestination,
-  useReadMeters,
-  useReloadDestination,
-} from '../../api/index.js';
+import { useClearSoftHold, useDestination, useReadMeters } from '../../api/index.js';
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Countdown } from '../../components/Countdown.js';
-import { Icon } from '../../components/Icon.js';
 import { PageHeader } from '../../components/PageHeader.js';
-import { RoutedTabs } from '../../components/RoutedTabs.js';
-import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Toggle } from '../../components/Toggle.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
-import { readMetersPrompt, reloadedMessage, reloadPrompt } from '../shared/actionPrompts.js';
-import { InstanceStateBanners } from '../shared/InstanceStateBanners.js';
-import { LoadFailure } from '../shared/LoadFailure.js';
-import { UnknownTab } from '../shared/UnknownTab.js';
-import { CopyButton } from '../../components/CopyButton.js';
+import { plural } from '../../lib/format.js';
+import { destinationHref } from '../../lib/hrefs.js';
+import { readMetersPrompt } from '../shared/actionPrompts.js';
 import styles from '../shared/detail.module.css';
+import { DetailTabs } from '../shared/DetailTabs.js';
+import { InstanceDetailShell } from '../shared/InstanceDetailShell.js';
+import { InstanceStateBanners } from '../shared/InstanceStateBanners.js';
 import { SecretRefsFact } from '../shared/SecretRefsFact.js';
-import { enableDestinationPrompt } from './destinationModel.js';
+import { UrlFact } from '../shared/UrlFact.js';
 import { DestinationOverview } from './DestinationOverview.js';
 import { DestinationRuns } from './DestinationRuns.js';
 import { DestinationSettings } from './DestinationSettings.js';
+import { useDestinationActions } from './useDestinationActions.js';
 
 export function DestinationDetail() {
   const { id, tab } = useParams();
-  const destination = useDestination(id);
-
-  if (destination.isPending) {
-    return <Skeleton shape="card" height={320} label="Loading the destination" />;
-  }
-  if (destination.isError) {
-    return (
-      <LoadFailure
-        error={destination.error}
-        noun="destination"
-        listTo="/destinations"
-        listLabel="All destinations"
-      />
-    );
-  }
-  return <DestinationView destination={destination.data} tab={tab} />;
+  return (
+    <InstanceDetailShell query={useDestination(id)} noun="destination" listTo="/destinations">
+      {(destination) => <DestinationView destination={destination} tab={tab} />}
+    </InstanceDetailShell>
+  );
 }
 
 function DestinationView({
@@ -57,10 +39,11 @@ function DestinationView({
   destination: DestinationDetailDTO;
   tab: string | undefined;
 }) {
-  const base = `/destinations/${destination.id}`;
+  const base = destinationHref(destination.id);
   const vars = { id: destination.id };
+  const actions = useDestinationActions(destination);
   const readMeters = useReasonedMutation(useReadMeters(), readMetersPrompt(destination.name), {
-    successMessage: (d) => `Read ${d.length} meter${d.length === 1 ? '' : 's'}`,
+    successMessage: (d) => `Read ${plural(d.length, 'meter')}`,
   });
   const clearHold = useReasonedMutation(
     useClearSoftHold(),
@@ -72,15 +55,6 @@ function DestinationView({
       danger: true,
     },
     { successMessage: 'Soft hold cleared' },
-  );
-  const reload = useReasonedMutation(
-    useReloadDestination(),
-    reloadPrompt('destination', destination.name),
-    { successMessage: reloadedMessage('destination') },
-  );
-  const enable = useReasonedMutation(
-    useEnableDestination(),
-    (v: { id: string; enabled: boolean }) => enableDestinationPrompt(destination, v.enabled),
   );
 
   return (
@@ -115,8 +89,8 @@ function DestinationView({
               variant="outline"
               icon="refresh"
               requires="operator"
-              loading={reload.pending}
-              onClick={() => void reload.run(vars)}
+              loading={actions.reloading}
+              onClick={actions.reload}
             >
               Reload
             </Button>
@@ -125,7 +99,7 @@ function DestinationView({
               label="Enabled"
               value={destination.enabled}
               requires="operator"
-              onChange={(next) => void enable.run({ id: destination.id, enabled: next })}
+              onChange={actions.setEnabled}
             />
           </>
         }
@@ -133,14 +107,7 @@ function DestinationView({
 
       <div className={styles.facts}>
         {destination.tracking === 'callback' && (
-          <span className={styles.fact}>
-            <Icon name="link" size={13} />
-            callback
-            <span className={`${styles.url} mono`} title={destination.callbackUrl}>
-              {destination.callbackUrl}
-            </span>
-            <CopyButton value={destination.callbackUrl} label="Copy callback URL" />
-          </span>
+          <UrlFact icon="link" label="callback" url={destination.callbackUrl} />
         )}
         <SecretRefsFact refs={destination.secretRefs} />
       </div>
@@ -171,27 +138,28 @@ function DestinationView({
         pluginAvailable={destination.pluginAvailable}
         instanceError={destination.instanceError}
         heldProcesses="the processes bound to it are held"
-        onReload={() => void reload.run(vars)}
+        onReload={actions.reload}
       />
 
-      <RoutedTabs
+      <DetailTabs
         label="Destination sections"
-        items={[
-          { to: base, label: 'Overview', end: true },
-          { to: `${base}/settings`, label: 'Settings' },
-          { to: `${base}/runs`, label: 'Runs', count: destination.runs24h },
+        base={base}
+        tab={tab}
+        tabs={[
+          { label: 'Overview', render: () => <DestinationOverview destination={destination} /> },
+          {
+            segment: 'settings',
+            label: 'Settings',
+            render: () => <DestinationSettings key={destination.id} destination={destination} />,
+          },
+          {
+            segment: 'runs',
+            label: 'Runs',
+            count: destination.runs24h,
+            render: () => <DestinationRuns destination={destination} />,
+          },
         ]}
       />
-
-      {tab === undefined ? (
-        <DestinationOverview destination={destination} />
-      ) : tab === 'settings' ? (
-        <DestinationSettings key={destination.id} destination={destination} />
-      ) : tab === 'runs' ? (
-        <DestinationRuns destination={destination} />
-      ) : (
-        <UnknownTab to={base} />
-      )}
     </>
   );
 }

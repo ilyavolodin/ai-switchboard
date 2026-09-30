@@ -9,23 +9,29 @@ paths:
   `package.json` has `"keywords": ["switchboard-plugin"]` and a `switchboard` field
   (`entry`, `source`, `sdk`), and the SDK is a peer dependency.
 - `src/plugin.ts` default-exports `definePlugin({...})`. Every plugin uses the same layout:
-  - `settings.ts`: the settings type and `settingsSchema` (plus `readSettings` if something
-    besides `create` needs parsed settings).
+  - `settings.ts`: the settings type and `settingsSchema`.
   - `schemas.ts`: re-exports `settingsSchema` (and `targetSchema` / `inputSchema` for a
     destination). It's published as `<package>/schemas` for the UI, so it and everything it
     imports must be browser-safe: no `node:` imports, no jsonata, and no value imports from the SDK
     root. Use `@ai-switchboard/sdk/schema` or `/json` for values, and `import type` from the root.
-  - `api.ts`: the backend client (base URL, auth headers, requests, its error class).
+  - `api.ts`: the backend client (base URL, auth headers, requests, GraphQL documents, its error
+    class). Token handling that outgrows it goes in `auth.ts` / `oauth.ts`.
   - Sources: `events.ts` (event type specs), `parse.ts` (pure `parseDelivery`), `actions.ts`
     (action specs and pure helpers) and `source.ts` (`create`: verify, resolve, act, health).
   - Destinations: `target.ts` (`targetSchema`, `inputSchema` and their types), `callback.ts` and
-    `destination.ts`.
+    `destination.ts`. Pure mapping of backend responses (run status, usage, meter readings) goes
+    in its own module (`runs.ts`, `usage.ts`, `meters.ts`), separate from the HTTP calls.
   - Notifiers and secret providers: `notifier.ts` or `provider.ts`.
 - Use the SDK helpers instead of writing your own: `withSettings` for `create`, the JSON
-  narrowing helpers and `tryJson`, `verifyHmacHeader` / `verifySharedSecretHeader`, `checkHealth`,
-  `refusalFor`, the Switchboard protocol helpers (`readSignedJson`, `signSwitchboardBody`,
-  `pickDeclaredUsage`), and `draftFromMapped` / `describeMappedDrop`. Backend quirks (a 529, a
-  403 rate limit) stay in the plugin as `refusalFor` hooks.
+  narrowing helpers and `tryJson`, `errorText`, `verifyHmacHeader` / `verifySharedSecretHeader`,
+  `headerValue`, `responseSnippet`, `checkHealth` (every `health`), `refusalFor`,
+  `parseDefinitive` (targets and inputs), `dispatchAction` (for `act`), `meterReading`, the
+  Switchboard protocol helpers (`readSignedJson`, `signSwitchboardBody`, `pickDeclaredUsage`,
+  `verifySwitchboardCallback`, `callbackBodySchema`), `draftFromMapped` / `describeMappedDrop` /
+  `toIsoTime`, `attr` / `flatAttributesSchema` for event attributes, and
+  `@ai-switchboard/sdk/jsonata` for any JSONata evaluation (it enforces the expression limits).
+  Backend quirks (a 529, a 403 rate limit) stay in the plugin as `refusalFor` hooks.
+- Validate backend JSON with `tryParse` / `parseWith` or the narrowing helpers; never cast it.
 - Declare `capabilities.network` with the exact hosts you call. Use `ctx.http` (the SDK's
   `HttpClient`), never raw `fetch`, so the capability check and tracing apply.
 - Don't list `capabilities.secrets`: `definePlugin` derives it from the `x-secret` fields.

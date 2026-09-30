@@ -8,6 +8,7 @@ import {
   createDestinationBody,
   reasonedBody,
   updateDestinationBody,
+  windowQuery,
   type CreateDestinationRequest,
   type Reasoned,
   type UpdateDestinationRequest,
@@ -16,7 +17,7 @@ import {
 import { requireReason } from '../errors.js';
 import { destinationDetail, destinationSummaries } from '../read/instances.js';
 import { meterGauges } from '../read/meters.js';
-import { meterHistory, parseWindow, usageHistory } from '../read/stats.js';
+import { meterHistory, usageHistory } from '../read/stats.js';
 import { registerInstanceLifecycle } from './instance-lifecycle.js';
 import { allow, instanceDeps } from './options.js';
 
@@ -97,12 +98,12 @@ export function registerDestinationRoutes(app: FastifyInstance, ctx: ApiContext)
 
   app.get<{ Params: { id: string }; Querystring: WindowQuery }>(
     '/api/v1/destinations/:id/meters',
-    allow('viewer'),
-    async (req) => meterHistory(ctx, req.params.id, parseWindow(req.query.window, '7d')),
+    allow('viewer', { querystring: windowQuery }),
+    async (req) => meterHistory(ctx, req.params.id, req.query.window),
   );
   app.get<{ Params: { id: string }; Querystring: WindowQuery }>(
     '/api/v1/destinations/:id/usage',
-    allow('viewer'),
-    async (req) => usageHistory(ctx, req.params.id, parseWindow(req.query.window, '7d')),
+    allow('viewer', { querystring: windowQuery }),
+    async (req) => usageHistory(ctx, req.params.id, req.query.window),
   );
 }

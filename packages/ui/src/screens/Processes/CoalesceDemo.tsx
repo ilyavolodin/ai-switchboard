@@ -1,8 +1,8 @@
 import type { ProcessDocument } from '@ai-switchboard/core/contract';
+import { coalesceArrivals } from '@ai-switchboard/core/domain';
 
 import { useReducedMotion } from '../../hooks/useReducedMotion.js';
 import { cx } from '../../lib/cx.js';
-import { coalesce } from './editorModel.js';
 import styles from './ProcessEditor.module.css';
 
 /** Seconds after the first event, the same for every setting. */
@@ -13,7 +13,7 @@ const H = 64;
 
 export function CoalesceDemo({ batching }: { batching: ProcessDocument['batching'] }) {
   const reduced = useReducedMotion();
-  const batches = coalesce(ARRIVALS, batching);
+  const batches = coalesceArrivals(ARRIVALS, batching);
   const end =
     Math.max(ARRIVALS[ARRIVALS.length - 1] ?? 0, ...batches.map((b) => b.closesAt)) * 1.04 + 10;
   const x = (t: number) => 12 + (t / end) * (W - 24);

@@ -2,19 +2,8 @@ import type { SecretProviderDependentDTO } from '@ai-switchboard/core/contract';
 import { Link } from 'react-router';
 
 import { StatusChip } from '../../components/StatusChip.js';
+import { INSTANCE_KIND_LABEL, instanceHref } from '../../lib/instanceNames.js';
 import styles from './Settings.module.css';
-
-const KIND_LABEL: Record<SecretProviderDependentDTO['kind'], string> = {
-  source: 'source',
-  destination: 'destination',
-  notifier: 'notifier',
-};
-
-function hrefOf(d: SecretProviderDependentDTO): string {
-  if (d.kind === 'source') return `/sources/${encodeURIComponent(d.id)}`;
-  if (d.kind === 'destination') return `/destinations/${encodeURIComponent(d.id)}`;
-  return '/settings/notifiers';
-}
 
 /**
  * The provider's create, enable, edit and reload rebuild these instances, so their status is the
@@ -43,8 +32,8 @@ export function ProviderDependents({
         {dependents.map((d) => (
           <li key={`${d.kind}:${d.id}`} className={styles.dependent}>
             <StatusChip size="sm" tone={d.status.tone} label={d.status.label} />
-            <span className="t-caption">{KIND_LABEL[d.kind]}</span>
-            <Link to={hrefOf(d)}>{d.name}</Link>
+            <span className="t-caption">{INSTANCE_KIND_LABEL[d.kind]}</span>
+            <Link to={instanceHref(d.kind, d.id)}>{d.name}</Link>
             {d.instanceError && (
               <span className={`t-caption ${styles.muted}`}>{d.instanceError}</span>
             )}

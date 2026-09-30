@@ -256,6 +256,10 @@ importers:
       ajv-formats:
         specifier: ^3.0.1
         version: 3.0.1(ajv@8.20.0)
+    devDependencies:
+      jsonata:
+        specifier: ^2.2.2
+        version: 2.2.2
 
   packages/ui:
     dependencies:

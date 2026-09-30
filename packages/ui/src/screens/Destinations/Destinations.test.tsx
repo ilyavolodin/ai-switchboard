@@ -83,7 +83,7 @@ describe('Destinations', () => {
       caps: { runsPerDay: 20, meterStalenessMinutes: 15 },
     });
     await vi.waitFor(() => {
-      expect(router.state.location.pathname).toBe('/destinations/ex-new-1');
+      expect(router.state.location.pathname).toBe('/destinations/dst-new-1');
     });
   });
 

@@ -8,6 +8,16 @@ export function toMs(iso: string | null | undefined): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
+/** `plural(3, 'process', 'processes')` → "3 processes". */
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** The noun alone, for copy that shows the count elsewhere. */
+export function pluralWord(n: number, one: string, many = `${one}s`): string {
+  return n === 1 ? one : many;
+}
+
 /** "just now", "4 min ago", "3 h ago", "2 d ago", or "in 5 min" for future times. */
 export function formatRelative(targetMs: number, nowMs: number): string {
   const diff = targetMs - nowMs;

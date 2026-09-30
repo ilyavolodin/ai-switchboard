@@ -1,7 +1,7 @@
 import { HHMM_PATTERN } from '../domain/defaults.js';
 import type { GlobalSettings, RetentionSettings } from '../domain/settings.js';
-import type { Iso, Reasoned } from './common.js';
-import { bodySchema } from './schema.js';
+import { cursorParam, limitParam, type Iso, type Reasoned } from './common.js';
+import { bodySchema, querySchema } from './schema.js';
 
 export interface UpdateSettingsRequest extends Reasoned {
   settings: Partial<GlobalSettings>;
@@ -108,6 +108,17 @@ export interface AuditQuery {
   cursor?: string;
   limit?: number;
 }
+
+export const auditQuery = querySchema<AuditQuery>()({
+  type: 'object',
+  properties: {
+    scope: { type: 'string' },
+    target: { type: 'string' },
+    actor: { type: 'string' },
+    cursor: cursorParam,
+    limit: limitParam,
+  },
+});
 
 export interface ApplyRequest extends Reasoned {
   yaml: string;

@@ -3,7 +3,7 @@ import { SETTLED_RUN_STATUSES } from '@ai-switchboard/core/domain';
 
 import { useCloseRun, useRun } from '../../api/index.js';
 import { Button } from '../../components/Button.js';
-import { ArtifactChip } from '../../components/ArtifactChip.js';
+import { ArtifactChips } from '../../components/ArtifactChips.js';
 import { Banner } from '../../components/Banner.js';
 import { CodeBlock } from '../../components/CodeBlock.js';
 import { KeyValueList } from '../../components/KeyValueList.js';
@@ -11,7 +11,6 @@ import { QueryError } from '../../components/QueryError.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
-import { traceHref } from '../../lib/artifact.js';
 import { formatSeconds } from '../../lib/format.js';
 import { runStatusTone, stepStatusTone } from '../../lib/tone.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
@@ -62,9 +61,7 @@ export function RunDrawerBody({ runId }: { runId: string }) {
       />
       {r.artifacts.length > 0 && (
         <div className={styles.row}>
-          {r.artifacts.map((a) => (
-            <ArtifactChip key={`${a.kind}:${a.id}`} artifact={a} to={traceHref(a.id)} />
-          ))}
+          <ArtifactChips artifacts={r.artifacts} trace />
         </div>
       )}
       {r.errors.length > 0 && (

@@ -5,6 +5,8 @@ import { Countdown } from '../components/Countdown.js';
 import { MeterGauge } from '../components/MeterGauge.js';
 import { useNow } from '../hooks/useNow.js';
 import { cx } from '../lib/cx.js';
+import { destinationHref } from '../lib/hrefs.js';
+import { shortInstanceName } from '../lib/instanceNames.js';
 import {
   lowestEventCeiling,
   meterTimes,
@@ -14,8 +16,9 @@ import {
 } from '../lib/meter.js';
 import styles from './CapacityStrip.module.css';
 
+/** "Claude Routines — eng" → "Routines". */
 function destinationShortName(name: string): string {
-  const base = name.split(' — ')[0] ?? name;
+  const base = shortInstanceName(name);
   const words = base.split(/\s+/);
   return words[words.length - 1] ?? base;
 }
@@ -47,7 +50,7 @@ export function CapacityStrip({ meters }: { meters: MeterGaugeDTO[] }) {
             {i > 0 && <span className={styles.divider} aria-hidden="true" />}
             <span className={styles.groupLabel}>{destinationShortName(m.destinationName)}</span>
             <Link
-              to={`/destinations/${encodeURIComponent(m.destinationId)}`}
+              to={destinationHref(m.destinationId)}
               className={cx(styles.meter, m.stale && styles.stale)}
               title={tooltip(m, nowMs)}
               aria-label={tooltip(m, nowMs)}

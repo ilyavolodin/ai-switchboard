@@ -6,12 +6,14 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 layer-neutral: routes, services and the UI import it. `ApiRoutes` maps every route
 (`'POST /api/v1/sources'`) to its body, query and response types; a core test fails when it and
 the registered routes differ. Each request body's JSON Schema sits next to its type
-(`createSourceBody` next to `CreateSourceRequest`) and is checked against it at compile time.
+(`createSourceBody` next to `CreateSourceRequest`) and is checked against it at compile time, and
+so does each query string's (`runsQuery` next to `RunsQuery`).
 
 - Auth: a session cookie (`sb_session`) from sign-in, or `Authorization: Bearer <api token>`.
 - Roles: `viewer` reads; `operator` also changes sources, destinations, processes, approvals, manual runs and replays; `admin` also manages plugins, users, secret providers, notifiers and settings.
 - Every state-changing body carries `reason` (non-empty). Every change writes `audit_log` rows. An admin can make reasons optional (`GlobalSettings.requireReasons: false`, Settings › General): then a missing or blank `reason` is accepted (a `DELETE` may omit the body) and audited as `(no reason given)`. `MeResponse.requireReasons` tells a client whether to ask. Each replica caches the setting for 5 s; the replica that saves it applies it at once, the others within the cache window.
-- Errors: `{ error, message, details?, usedBy? }` with 400 (validation: a body that does not match its schema answers `The request did not validate.` with one `details` line per problem; also a malformed time, or a cursor this API did not issue), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, a name already taken, or deleting a source, destination or notifier that processes still use: `usedBy` lists them as `{ id, name }`), 422 (semantic), 429 (too many sign-in attempts), 503.
+- Errors: `{ error, message, details?, usedBy? }` with 400 (validation: a body or query string that does not match its schema answers `The request did not validate.` with one `details` line per problem, for example a filter id that is not a UUID, a `stage` or `status` list with an unknown value, a `window` other than `24h`, `7d` or `30d`, or a `limit` that is not a positive integer; unknown query parameters are ignored; also a malformed time, or a cursor this API did not issue), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, a name already taken, or deleting a source, destination or notifier that processes still use: `usedBy` lists them as `{ id, name }`), 422 (semantic), 429 (too many sign-in attempts), 503.
+- Stats: `?window=` is `24h`, `7d` or `30d` (source stats and the funnel default to `24h`, the others to `7d`). The views with one bucket per day (`/destinations/:id/usage`, `/processes/:id/stats`) cover at least `7d`, and every stats response's `window` is the window it covers. Held batches are the ones a gate stopped or a person rejected (`held`, `awaiting_approval`, `rejected`); throttled ones are counted apart.
 - Lists: `?cursor=&limit=` → `Page<T>` (`{ items, nextCursor }`). Filters apply before paging, and a cursor is keyed by time and id, so rows that share a timestamp are neither skipped nor repeated. A cursor that is not one this API returned is a 400, not a restart at the first page.
 
 ## Unauthenticated surfaces
@@ -64,7 +66,9 @@ new password, clears `mustChangePassword` and signs out the user's other session
 **Sign-in throttle.** Failed attempts are counted in Postgres across replicas: 10 failures per
 client address or 5 per account (normalised email) within 5 minutes answer 429
 `too_many_attempts` with `Retry-After: <seconds>` until the oldest counted failure leaves the
-window. `POST /auth/password` allows 5 failed confirmations per user in the same window.
+window. `POST /auth/password` allows 5 failed confirmations per user in the same window. Each
+attempt is counted as a failure before the password is checked (and withdrawn when it matches),
+so guesses sent at the same time get no more tries than guesses sent one after another.
 
 **Password rules:** at least 8 characters (at most 256), not the account's email (or the part
 before `@`), not one of the most common passwords.
