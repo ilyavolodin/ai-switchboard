@@ -20,6 +20,7 @@ import {
 } from './instanceSettings.js';
 import { unsavedLabel } from './unsavedLabel.js';
 import { LeaveGuardDialog } from './LeaveGuardDialog.js';
+import type { InstanceDeletion } from './useInstanceDelete.js';
 import { useLeaveGuard } from './useLeaveGuard.js';
 
 export interface InstanceSettingsEntity<C> {
@@ -38,11 +39,10 @@ export interface InstanceSettingsFormProps<C extends object> {
   renderCaps: (caps: C, onChange: (next: C) => void, disabled: boolean, baseline: C) => ReactNode;
   onSave: (draft: InstanceSettingsDraft<C>) => Promise<InstanceSettingsEntity<C> | null>;
   saving: boolean;
-  onDelete: () => Promise<unknown>;
-  deleting: boolean;
+  /** From `useInstanceDelete`. */
+  deletion: InstanceDeletion;
   deleteNote: string;
   afterDelete: string;
-  deleteBlocked?: ReactNode;
   sample?: DeliverySample | null;
   renderAfterSettings?: (settings: Record<string, unknown>) => ReactNode;
 }
@@ -54,11 +54,9 @@ export function InstanceSettingsForm<C extends object>({
   renderCaps,
   onSave,
   saving,
-  onDelete,
-  deleting,
+  deletion,
   deleteNote,
   afterDelete,
-  deleteBlocked,
   sample,
   renderAfterSettings,
 }: InstanceSettingsFormProps<C>) {
@@ -106,7 +104,7 @@ export function InstanceSettingsForm<C extends object>({
     if (result) adopt(result);
   };
   const remove = async () => {
-    const result = await onDelete();
+    const result = await deletion.run();
     if (result === null) return;
     leaveGuard.allowNextNavigation();
     void navigate(afterDelete);
@@ -174,14 +172,14 @@ export function InstanceSettingsForm<C extends object>({
         </Button>
       </div>
       <Card title={`Delete this ${kind}`}>
-        {deleteBlocked}
+        {deletion.blocked}
         <div className={styles.dangerZone}>
           <span className={styles.spacer}>{deleteNote}</span>
           <Button
             variant="danger-outline"
             icon="trash"
             requires="operator"
-            loading={deleting}
+            loading={deletion.pending}
             onClick={() => void remove()}
           >
             Delete {kind}
