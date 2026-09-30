@@ -90,8 +90,10 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
   constructor(private readonly opts: PluginHostOptions) {
     const { db, clock, logger, telemetry, config } = opts;
     const persist = opts.persist ?? true;
-    this.catalog = persist ? createPluginCatalog(db) : readOnlyPluginCatalog;
-    this.store = persist ? createInstanceStore(db) : readOnlyInstanceStore(createInstanceStore(db));
+    const catalog = createPluginCatalog(db);
+    const store = createInstanceStore(db);
+    this.catalog = persist ? catalog : readOnlyPluginCatalog(catalog);
+    this.store = persist ? store : readOnlyInstanceStore(store);
     this.errorCounter = new PluginErrorCounter({
       telemetry,
       logger,

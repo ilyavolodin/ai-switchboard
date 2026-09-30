@@ -198,13 +198,15 @@ export function createPluginCatalog(db: Db): PluginCatalog {
   };
 }
 
-/** For a host that inspects without writing (`switchboard doctor`). */
-export const readOnlyPluginCatalog: PluginCatalog = {
-  replaceLoaded: () => Promise.resolve(),
-  upsertLoaded: () => Promise.resolve(),
-  recordInstall: () => Promise.resolve(),
-  tombstone: () => Promise.resolve(),
-  markRemoved: () => Promise.resolve(),
-  addErrorCounts: () => Promise.resolve(),
-  readInstallRecords: () => Promise.resolve([]),
-};
+/** Reads through; every write is dropped (`switchboard doctor`), like `readOnlyInstanceStore`. */
+export function readOnlyPluginCatalog(catalog: PluginCatalog): PluginCatalog {
+  return {
+    ...catalog,
+    replaceLoaded: () => Promise.resolve(),
+    upsertLoaded: () => Promise.resolve(),
+    recordInstall: () => Promise.resolve(),
+    tombstone: () => Promise.resolve(),
+    markRemoved: () => Promise.resolve(),
+    addErrorCounts: () => Promise.resolve(),
+  };
+}
