@@ -1,14 +1,15 @@
 import type { DestinationCapsDTO, MeterSpec, UsageDimension } from '@ai-switchboard/core/contract';
-
-import { sameValue } from '../../lib/instances.js';
-import { CapField } from '../shared/CapField.js';
-import styles from '../shared/forms.module.css';
 import {
   DEFAULT_INVOKE_TIMEOUT_SECONDS,
   DEFAULT_METER_POLL_SECONDS,
   MAX_INVOKE_TIMEOUT_SECONDS,
+  MIN_INVOKE_TIMEOUT_SECONDS,
   MIN_METER_POLL_SECONDS,
-} from './destinationModel.js';
+} from '@ai-switchboard/core/domain';
+
+import { sameValue } from '../../lib/values.js';
+import { CapField } from '../shared/CapField.js';
+import styles from '../shared/forms.module.css';
 
 export interface DestinationCapsFieldsProps {
   value: DestinationCapsDTO;
@@ -81,10 +82,10 @@ export function DestinationCapsFields({
       <CapField
         label="Invoke timeout"
         suffix="seconds"
-        min={1}
+        min={MIN_INVOKE_TIMEOUT_SECONDS}
         max={MAX_INVOKE_TIMEOUT_SECONDS}
         placeholder="type default"
-        help={`How long to wait for the backend to answer an invoke (1–${MAX_INVOKE_TIMEOUT_SECONDS} s). Empty uses the destination type's value, else ${DEFAULT_INVOKE_TIMEOUT_SECONDS} s. No answer in time counts as a lost response: retried when the destination is idempotent, otherwise the run is uncertain.`}
+        help={`How long to wait for the backend to answer an invoke (${MIN_INVOKE_TIMEOUT_SECONDS}–${MAX_INVOKE_TIMEOUT_SECONDS} s). Empty uses the destination type's value, else ${DEFAULT_INVOKE_TIMEOUT_SECONDS} s. No answer in time counts as a lost response: retried when the destination is idempotent, otherwise the run is uncertain.`}
         value={value.invokeTimeoutSeconds}
         changed={changed(value.invokeTimeoutSeconds, baseline?.invokeTimeoutSeconds)}
         onChange={(v) => {

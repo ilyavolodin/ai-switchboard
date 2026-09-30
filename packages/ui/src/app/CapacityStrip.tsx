@@ -5,6 +5,7 @@ import { Countdown } from '../components/Countdown.js';
 import { MeterGauge } from '../components/MeterGauge.js';
 import { useNow } from '../hooks/useNow.js';
 import { cx } from '../lib/cx.js';
+import { destinationHref } from '../lib/hrefs.js';
 import {
   lowestEventCeiling,
   meterTimes,
@@ -47,7 +48,7 @@ export function CapacityStrip({ meters }: { meters: MeterGaugeDTO[] }) {
             {i > 0 && <span className={styles.divider} aria-hidden="true" />}
             <span className={styles.groupLabel}>{destinationShortName(m.destinationName)}</span>
             <Link
-              to={`/destinations/${encodeURIComponent(m.destinationId)}`}
+              to={destinationHref(m.destinationId)}
               className={cx(styles.meter, m.stale && styles.stale)}
               title={tooltip(m, nowMs)}
               aria-label={tooltip(m, nowMs)}

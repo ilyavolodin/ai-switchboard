@@ -204,6 +204,10 @@
   color: var(--foreground-tertiary);
 }
 
+.detailTitle.spaced {
+  margin-top: 12px;
+}
+
 .replay {
   display: flex;
   align-items: center;
