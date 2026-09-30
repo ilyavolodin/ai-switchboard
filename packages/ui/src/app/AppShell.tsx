@@ -98,7 +98,7 @@ export function AppShell() {
               title="OIDC is not configured — evaluation sign-in"
               actions={
                 session.user?.role === 'admin' ? (
-                  <Link to="/settings/sign-in" style={{ fontWeight: 500, fontSize: 12 }}>
+                  <Link to="/settings/sign-in" className={styles.bannerLink}>
                     Configure sign-in
                   </Link>
                 ) : undefined

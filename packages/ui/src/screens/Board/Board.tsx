@@ -14,12 +14,13 @@ import { useBoard } from '../../api/index.js';
 import { Card } from '../../components/Card.js';
 import { FilterChips } from '../../components/FilterChips.js';
 import { FlowNode } from '../../components/FlowNode.js';
+import { PageHeader } from '../../components/PageHeader.js';
 import { PipelineDots } from '../../components/PipelineDots.js';
+import { QueryBoundary } from '../../components/QueryBoundary.js';
 import { SegmentedControl } from '../../components/SegmentedControl.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { Time } from '../../components/Time.js';
-import { QueryError } from '../../components/QueryError.js';
 import { useNow } from '../../hooks/useNow.js';
 import { useSearchParamState } from '../../hooks/useSearchParamState.js';
 import { AttentionPanel } from './AttentionPanel.js';
@@ -70,33 +71,41 @@ export function Board() {
 
   return (
     <>
-      <div className={styles.header}>
-        <h1 className="t-screen-title">Board</h1>
-        <span className="t-caption">what feeds what · last 24 h</span>
-        {board.data && (
+      <PageHeader
+        title="Board"
+        meta={
           <span className="t-caption">
-            · updated <Time value={board.data.generatedAt} />
+            what feeds what · last 24 h
+            {board.data && (
+              <>
+                {' '}
+                · updated <Time value={board.data.generatedAt} />
+              </>
+            )}
           </span>
-        )}
-      </div>
-      {board.isPending ? (
-        <div className={styles.grid}>
-          <Skeleton shape="card" height={480} label="Loading the board" />
-          <Skeleton shape="card" height={280} />
-        </div>
-      ) : board.isError ? (
-        <QueryError query={board} title="The board could not load" />
-      ) : board.data.processes.length === 0 ? (
-        <div className={styles.grid}>
-          <BoardEmpty
-            sources={board.data.sources.length}
-            destinations={board.data.destinations.length}
-          />
-          <AttentionPanel items={board.data.attention} />
-        </div>
-      ) : (
-        <BoardCanvas data={board.data} />
-      )}
+        }
+      />
+      <QueryBoundary
+        query={board}
+        errorTitle="The board could not load"
+        pending={
+          <div className={styles.grid}>
+            <Skeleton shape="card" height={480} label="Loading the board" />
+            <Skeleton shape="card" height={280} />
+          </div>
+        }
+      >
+        {(data) =>
+          data.processes.length === 0 ? (
+            <div className={styles.grid}>
+              <BoardEmpty sources={data.sources.length} destinations={data.destinations.length} />
+              <AttentionPanel items={data.attention} />
+            </div>
+          ) : (
+            <BoardCanvas data={data} />
+          )
+        }
+      </QueryBoundary>
     </>
   );
 }

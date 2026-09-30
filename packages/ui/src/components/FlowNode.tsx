@@ -14,7 +14,7 @@ import { SourceNode } from './SourceNode.js';
 
 export type FlowNodeData = (
   | { kind: 'source'; source: BoardSourceNode }
-  | { kind: 'process'; process: BoardProcessNode }
+  | { kind: 'process'; process: BoardProcessNode; nowMs: number }
   | { kind: 'destination'; destination: BoardDestinationNode }
 ) & {
   href: string;
@@ -37,6 +37,13 @@ export function FlowNode({ id, data }: NodeProps<FlowNodeType>) {
     data.onHover?.(on ? id : null);
   };
   const describedBy = facts.length ? cardId : undefined;
+  const common = {
+    href: data.href,
+    width: data.width,
+    dimmed: data.dimmed,
+    highlighted: data.highlighted,
+    describedBy,
+  };
   const title =
     data.kind === 'source'
       ? data.source.name
@@ -59,35 +66,12 @@ export function FlowNode({ id, data }: NodeProps<FlowNodeType>) {
           isConnectable={false}
         />
       )}
-      {data.kind === 'source' && (
-        <SourceNode
-          source={data.source}
-          href={data.href}
-          width={data.width}
-          dimmed={data.dimmed}
-          highlighted={data.highlighted}
-          describedBy={describedBy}
-        />
-      )}
+      {data.kind === 'source' && <SourceNode source={data.source} {...common} />}
       {data.kind === 'process' && (
-        <ProcessNode
-          process={data.process}
-          href={data.href}
-          width={data.width}
-          dimmed={data.dimmed}
-          highlighted={data.highlighted}
-          describedBy={describedBy}
-        />
+        <ProcessNode process={data.process} nowMs={data.nowMs} {...common} />
       )}
       {data.kind === 'destination' && (
-        <DestinationNode
-          destination={data.destination}
-          href={data.href}
-          width={data.width}
-          dimmed={data.dimmed}
-          highlighted={data.highlighted}
-          describedBy={describedBy}
-        />
+        <DestinationNode destination={data.destination} {...common} />
       )}
       {data.kind !== 'destination' && (
         <Handle
