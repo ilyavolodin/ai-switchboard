@@ -1,3 +1,4 @@
+import type { INVOKE_STATUSES, RUN_STATES, TRACKING_MODES } from '../constants.js';
 import type {
   ActionResult,
   ActionSpec,
@@ -69,6 +70,12 @@ export interface MeterReading {
   observedAt: IsoDateTime;
 }
 
+export type InvokeStatus = (typeof INVOKE_STATUSES)[number];
+
+export type RunState = (typeof RUN_STATES)[number];
+
+export type TrackingMode = (typeof TRACKING_MODES)[number];
+
 export interface InvokeResult {
   externalId?: string;
   externalUrl?: string;
@@ -76,7 +83,7 @@ export interface InvokeResult {
    * `completed`/`failed` only for sync destinations. `held` means the backend refused because the
    * target is paused or disabled on its side; `reason` names why.
    */
-  status: 'started' | 'completed' | 'failed' | 'held';
+  status: InvokeStatus;
   reason?: string;
   /** Sync destinations: the response body. */
   result?: unknown;
@@ -88,7 +95,7 @@ export interface InvokeResult {
 }
 
 export interface RunStatus {
-  state: 'running' | 'ok' | 'error' | 'unknown';
+  state: RunState;
   outputs?: number;
   errors?: string[];
   usage?: UsageReport;
@@ -115,8 +122,6 @@ export interface Destination {
   act?(action: string, args: unknown): Promise<ActionResult>;
   health(): Promise<Health>;
 }
-
-export type TrackingMode = 'sync' | 'poll' | 'callback' | 'none';
 
 export interface DestinationType {
   id: string;

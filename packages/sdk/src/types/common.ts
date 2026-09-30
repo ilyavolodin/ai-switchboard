@@ -1,3 +1,5 @@
+import type { HEALTH_STATUSES } from '../constants.js';
+
 /**
  * Draft 2020-12. The UI reads `x-*` annotations (`x-secret`, `x-widget`, `x-warning`,
  * `x-effectiveDefault`, ...); the plugin author guide lists them.
@@ -12,7 +14,7 @@ export type Expr = string;
 
 export type IsoDateTime = string;
 
-export type HealthStatus = 'healthy' | 'unhealthy' | 'unknown';
+export type HealthStatus = (typeof HEALTH_STATUSES)[number];
 
 export interface Health {
   status: HealthStatus;

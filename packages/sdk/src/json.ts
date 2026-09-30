@@ -7,6 +7,15 @@ export function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Narrows `value` to a member of a canonical `as const` list. */
+export function isOneOf<const T extends string>(list: readonly T[], value: unknown): value is T {
+  return (list as readonly unknown[]).includes(value);
+}
+
+export function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function asObject(value: unknown): JsonObject | undefined {
   return isRecord(value) ? value : undefined;
 }

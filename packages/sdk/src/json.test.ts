@@ -7,7 +7,9 @@ import {
   asNumber,
   asObject,
   asString,
+  errorText,
   getPath,
+  isOneOf,
   isRecord,
   parseJsonObject,
   tryJson,
@@ -66,5 +68,19 @@ describe('json narrowing helpers', () => {
     ['', undefined],
   ])('tryJson of %j', (body, expected) => {
     expect(tryJson(makeResponse(200, {}, Buffer.from(body)))).toEqual(expected);
+  });
+});
+
+describe('isOneOf and errorText', () => {
+  it('isOneOf accepts only members of the list', () => {
+    const modes = ['push', 'pull'] as const;
+    expect(isOneOf(modes, 'push')).toBe(true);
+    expect(isOneOf(modes, 'both')).toBe(false);
+    expect(isOneOf(modes, 1)).toBe(false);
+  });
+
+  it('errorText reads an Error or stringifies anything else', () => {
+    expect(errorText(new Error('boom'))).toBe('boom');
+    expect(errorText(42)).toBe('42');
   });
 });

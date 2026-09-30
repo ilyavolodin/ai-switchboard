@@ -5,6 +5,14 @@ export type * from './types/destination.js';
 export type * from './types/notifier.js';
 export type * from './types/context.js';
 export { dedupeKey } from './types/events.js';
+export {
+  HEALTH_STATUSES,
+  INVOKE_STATUSES,
+  PLUGIN_KINDS,
+  RUN_STATES,
+  SOURCE_MODES,
+  TRACKING_MODES,
+} from './constants.js';
 
 import { isPluginDefinition as hostIsPluginDefinition } from './plugin.js';
 import {
@@ -33,6 +41,8 @@ export type { HttpClient, HttpRequest, HttpResponse } from './http.js';
 
 export {
   isRecord,
+  isOneOf,
+  errorText,
   asObject,
   asString,
   asNumber,

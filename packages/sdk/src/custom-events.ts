@@ -1,4 +1,5 @@
 /** Event types a person defines in a source's settings (the generic webhook and poll-http sources). */
+import { isRecord } from './json.js';
 import type { JSONSchema } from './types/common.js';
 import {
   dedupeKey,
@@ -189,10 +190,6 @@ export function coerceAttribute(
       }
       return undefined;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function scalarString(value: unknown): string | undefined {

@@ -1,3 +1,4 @@
+import { asObject } from '../json.js';
 import type { JSONSchema } from '../types/common.js';
 
 /** The `x-*` keywords a settings, target or input schema may carry to steer the UI form. */
@@ -63,14 +64,8 @@ export interface SchemaUiExtensions {
   'x-docs'?: XDocs;
 }
 
-function asObject(v: unknown): Record<string, unknown> | null {
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : null;
-}
-
 function asCondition(v: unknown): JSONSchema | boolean | null {
-  return typeof v === 'boolean' ? v : asObject(v);
+  return typeof v === 'boolean' ? v : (asObject(v) ?? null);
 }
 
 function nonEmptyString(v: unknown): string | null {

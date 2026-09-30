@@ -1,5 +1,7 @@
+import { HEALTH_STATUSES, INVOKE_STATUSES, RUN_STATES } from '../constants.js';
 import { isCapabilityError, isSecretNotFoundError, isWritableSecretProvider } from '../errors.js';
 import type { HttpClient } from '../http.js';
+import { isOneOf } from '../json.js';
 import { definePlugin, validatePlugin, type PluginDefinition } from '../plugin.js';
 import { isValidSchema, validateAgainst, xSecret } from '../schema/index.js';
 import type { JSONSchema, RawRequest, Settings } from '../types/common.js';
@@ -186,7 +188,7 @@ function sourceChecks(
       name: 'health() resolves to a Health',
       run: async () => {
         const h = await make().health();
-        assert(['healthy', 'unhealthy', 'unknown'].includes(h.status), 'health status is invalid');
+        assert(isOneOf(HEALTH_STATUSES, h.status), 'health status is invalid');
       },
     },
   ];
@@ -380,10 +382,7 @@ function checkUsage(
 }
 
 function checkInvokeResult(r: InvokeResult, tracking: TrackingMode): void {
-  assert(
-    ['started', 'completed', 'failed', 'held'].includes(r.status),
-    `invalid InvokeResult.status "${r.status}"`,
-  );
+  assert(isOneOf(INVOKE_STATUSES, r.status), `invalid InvokeResult.status "${r.status}"`);
   if (tracking !== 'sync') {
     assert(r.status !== 'completed', 'only sync destinations may return status "completed"');
   }
@@ -477,10 +476,7 @@ function destinationChecks(
             ...handle,
             ...(result.externalId ? { externalId: result.externalId } : {}),
           });
-          assert(
-            ['running', 'ok', 'error', 'unknown'].includes(status.state),
-            'poll returned an invalid state',
-          );
+          assert(isOneOf(RUN_STATES, status.state), 'poll returned an invalid state');
           checkUsage(type, fixtures.settings, status.usage, 'poll');
         }
       },
@@ -676,7 +672,7 @@ export function secretProviderConformanceChecks(
       name: 'health() resolves to a Health',
       run: async () => {
         const h = await make().health();
-        assert(['healthy', 'unhealthy', 'unknown'].includes(h.status), 'health status is invalid');
+        assert(isOneOf(HEALTH_STATUSES, h.status), 'health status is invalid');
       },
     },
     {
@@ -800,7 +796,7 @@ function notifierChecks(
       name: 'health() resolves to a Health',
       run: async () => {
         const h = await make(fixtures.http ?? OK_REPLY).notifier.health();
-        assert(['healthy', 'unhealthy', 'unknown'].includes(h.status), 'health status is invalid');
+        assert(isOneOf(HEALTH_STATUSES, h.status), 'health status is invalid');
       },
     },
     {

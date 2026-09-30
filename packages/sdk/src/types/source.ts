@@ -1,3 +1,4 @@
+import type { SOURCE_MODES } from '../constants.js';
 import type {
   ActionResult,
   ActionSpec,
@@ -53,6 +54,8 @@ export interface Source {
   health(): Promise<Health>;
 }
 
+export type SourceMode = (typeof SOURCE_MODES)[number];
+
 export interface SourceType {
   /** Kebab-case, unique across all plugins. */
   id: string;
@@ -60,7 +63,7 @@ export interface SourceType {
   description?: string;
   /** A built-in icon name (`ICON_NAMES`) or a `data:image/svg+xml;base64,…` URI of at most 8 KB. */
   icon?: string;
-  mode: 'push' | 'pull' | 'both';
+  mode: SourceMode;
   settingsSchema: JSONSchema;
   eventTypes: EventTypeSpec[];
   actions?: ActionSpec[];

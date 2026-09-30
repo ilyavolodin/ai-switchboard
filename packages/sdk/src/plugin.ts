@@ -1,6 +1,8 @@
+import { SOURCE_MODES, TRACKING_MODES, type PLUGIN_KINDS } from './constants.js';
 import { iconProblem } from './icons.js';
 import { isValidSchema, secretPaths, validateAgainst } from './schema/index.js';
 import type { Capabilities, JSONSchema } from './types/common.js';
+import { isOneOf } from './json.js';
 import type { DestinationType } from './types/destination.js';
 import type { NotifierType, SecretProviderType } from './types/notifier.js';
 import type { SourceType } from './types/source.js';
@@ -32,7 +34,7 @@ export interface PluginDefinition extends Required<
   readonly switchboardSdk: { major: number; version: string };
 }
 
-export type PluginKind = 'source' | 'destination' | 'notifier' | 'secret_provider';
+export type PluginKind = (typeof PLUGIN_KINDS)[number];
 
 /** The declared `secrets` plus every `x-secret` settings field, so the install review lists them all. */
 function withDerivedSecrets(spec: PluginSpec): Capabilities {
@@ -125,7 +127,7 @@ export function validatePlugin(plugin: PluginDefinition): string[] {
     unique('source', s.id);
     checkIcon(`source ${s.id}`, s.icon);
     checkSchema(errors, `source ${s.id} settingsSchema`, s.settingsSchema);
-    if (!['push', 'pull', 'both'].includes(s.mode)) errors.push(`source ${s.id}: invalid mode`);
+    if (!isOneOf(SOURCE_MODES, s.mode)) errors.push(`source ${s.id}: invalid mode`);
     const types = new Set<string>();
     for (const et of s.eventTypes) {
       const where = `source ${s.id} event ${et.type}`;
@@ -167,8 +169,7 @@ export function validatePlugin(plugin: PluginDefinition): string[] {
     checkSchema(errors, `destination ${e.id} settingsSchema`, e.settingsSchema);
     checkSchema(errors, `destination ${e.id} targetSchema`, e.targetSchema);
     checkSchema(errors, `destination ${e.id} inputSchema`, e.inputSchema);
-    if (!['sync', 'poll', 'callback', 'none'].includes(e.tracking))
-      errors.push(`destination ${e.id}: invalid tracking`);
+    if (!isOneOf(TRACKING_MODES, e.tracking)) errors.push(`destination ${e.id}: invalid tracking`);
     if (typeof e.idempotentInvoke !== 'boolean')
       errors.push(`destination ${e.id}: idempotentInvoke must be declared`);
     const dims = new Set<string>();
