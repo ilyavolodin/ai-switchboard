@@ -352,6 +352,12 @@ stopped provider, or a failed or timed-out (10 s) listing gives `available: fals
 | POST   | `/apply`                               | `ApplyRequest` → `ApplyResponse`                    | admin                |
 | GET    | `/about`                               | → `AboutResponse`                                   | viewer               |
 
+`GlobalSettings.oidc` is `{ issuer, clientId, allowedDomains, trustUnverifiedEmail? }` or `null`.
+The server reads it at start, and only when `SWITCHBOARD_OIDC_ISSUER` is unset and
+`SWITCHBOARD_OIDC_CLIENT_SECRET` is set. `trustUnverifiedEmail: true` accepts an ID token whose
+email is not marked verified, as `SWITCHBOARD_OIDC_TRUST_UNVERIFIED_EMAIL` does for an issuer from
+the environment.
+
 `GET /about` returns versions, the database, the replicas and `telemetry`
 (`TelemetryStatusDTO`): for each signal (`traces`, `metrics`, `logs`) its exporters (`otlp`,
 `console`, or none), OTLP protocol, endpoint as `scheme://host:port` only, and how many export

@@ -8,13 +8,25 @@ export interface RetentionSettings {
   statsHourlyDays: number;
 }
 
+/** An issuer saved in Settings; its client secret stays in `SWITCHBOARD_OIDC_CLIENT_SECRET`. */
+export interface OidcSettings {
+  issuer: string;
+  clientId: string;
+  allowedDomains: string[];
+  /**
+   * Accept an ID token whose email is not marked verified; such a sign-in never links to an
+   * account that has a password. Absent means false.
+   */
+  trustUnverifiedEmail?: boolean;
+}
+
 export interface GlobalSettings {
   timezone: string;
   /** In the installation timezone. */
   defaultQuietHours: Omit<QuietWindow, 'timezone'> | null;
   meterStalenessMinutes: number;
   retention: RetentionSettings;
-  oidc: { issuer: string; clientId: string; allowedDomains: string[] } | null;
+  oidc: OidcSettings | null;
   systemNotifierId: string | null;
   sourceSilenceMinutes: number;
   /**

@@ -50,7 +50,10 @@ Booleans accept `1`, `true`, `yes` and `on` (any case). Anything else is false.
 `SWITCHBOARD_OIDC_TRUST_UNVERIFIED_EMAIL` (default `false`) accepts an ID token whose
 `email_verified` claim is missing or false, for an issuer that never sends it. Such a sign-in is
 still refused for an account that has a password and no OIDC identity yet
-([Security](security.md#sign-in-and-roles)).
+([Security](security.md#sign-in-and-roles)). The Helm chart sets it from
+`oidc.trustUnverifiedEmail`. An issuer saved in Settings (used when `SWITCHBOARD_OIDC_ISSUER` is
+unset) carries its own `oidc.trustUnverifiedEmail` (absent means `false`); the variable does not
+apply to it.
 
 ### Telemetry
 
@@ -109,7 +112,7 @@ updates:
 | `defaultQuietHours`     | `null`  | `{ start: 'HH:MM', end: 'HH:MM', days?: [1..7] }` offered to new processes                                                                 |
 | `meterStalenessMinutes` | `30`    | A meter reading older than this is stale: ceilings stop using it and only counters gate                                                    |
 | `retention`             | below   | Days to keep each kind of row                                                                                                              |
-| `oidc`                  | `null`  | `{ issuer, clientId, allowedDomains }` shown on the Settings page. Not part of the YAML format; the client secret stays in the environment |
+| `oidc`                  | `null`  | `{ issuer, clientId, allowedDomains, trustUnverifiedEmail? }` (read at start). Not in the YAML; the client secret stays in the environment |
 | `systemNotifierId`      | `null`  | Notifier instance for system alerts: breaker openings, plugin load failures, ceilings crossed, silent sources                              |
 | `sourceSilenceMinutes`  | `1440`  | A source with no events for this long raises a silence alert                                                                               |
 | `export`                | off     | `{ schedule, sourceId, repository, path, branch }`: commit the YAML export to a git repository on a cron schedule                          |

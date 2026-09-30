@@ -71,6 +71,7 @@ export const settingsPatchSchema = bodySchema<Partial<GlobalSettings>>()({
             issuer: { type: 'string' },
             clientId: { type: 'string' },
             allowedDomains: { type: 'array', items: { type: 'string' } },
+            trustUnverifiedEmail: { type: 'boolean' },
           },
         },
       ],

@@ -5,10 +5,11 @@ import { buildApiContext, type ApiContext } from './api/context.js';
 import type { PipelinePort, PreviewPort } from './api/pipeline-port.js';
 import { bootstrapAdmin } from './auth/bootstrap.js';
 import { OidcClient } from './auth/oidc.js';
+import { effectiveOidcConfig } from './auth/oidc-config.js';
 import { pruneSessions } from './auth/sessions.js';
 import { pruneLoginAttempts } from './auth/throttle.js';
 import { systemClock, type Clock } from './clock.js';
-import type { CoreConfig, OidcConfig } from './config.js';
+import type { CoreConfig } from './config.js';
 import { connect, runMigrations, type Database } from './db/client.js';
 import type { Deps } from './deps.js';
 import { loggerFor, type CoreLogger } from './logger.js';
@@ -89,11 +90,7 @@ async function resolveOidc(
   cookieKey: string,
 ): Promise<OidcClient | undefined> {
   const stored = await getSettings(database.db);
-  const oidcConfig: OidcConfig | undefined =
-    config.oidc ??
-    (stored.oidc && config.oidcClientSecret !== undefined
-      ? { ...stored.oidc, clientSecret: config.oidcClientSecret }
-      : undefined);
+  const oidcConfig = effectiveOidcConfig(config.oidc, stored.oidc, config.oidcClientSecret);
   return oidcConfig
     ? new OidcClient(oidcConfig, `${config.publicUrl}/api/v1/auth/oidc/callback`, cookieKey, {
         allowInsecure: config.evaluation,

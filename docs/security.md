@@ -16,7 +16,8 @@ people who deploy and operate it.
   that email, so an unverified address could otherwise take over an account. For an issuer that
   never sends the claim, `SWITCHBOARD_OIDC_TRUST_UNVERIFIED_EMAIL=true` accepts it, but such a
   sign-in is still refused (409) for an account that has a password and no OIDC identity yet. The
-  flag applies to an issuer configured in the environment.
+  variable applies to an issuer configured in the environment; an issuer saved in Settings uses
+  its own `oidc.trustUnverifiedEmail` setting (default off).
 - **Local passwords** work alongside OIDC (or without it). An account can have a password, an
   OIDC identity, or both. Passwords are hashed with scrypt; the rules are at least 8 characters,
   not the account's email, and not one of the most common passwords. Failed sign-ins and failed
