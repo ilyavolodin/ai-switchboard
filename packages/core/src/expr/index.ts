@@ -1,6 +1,5 @@
 export {
   createExpressionEngine,
-  toPlain,
   DEFAULT_MAX_RESOLVE_CALLS,
   DEFAULT_TIMEOUT_MS,
   ENV_PREFIX,
@@ -14,16 +13,14 @@ export type {
 } from './engine.js';
 export {
   approvalContext,
-  evaluateBatchKey,
-  evaluateFilter,
   filterContext,
   mappingContext,
-  renderTemplate,
   stepContext,
   templateContext,
-  toBoolean,
 } from './contexts.js';
-export type { FilterOutcome, KeyOutcome, RunContext } from './contexts.js';
+export type { RunContext } from './contexts.js';
+export { evaluateBatchKey, evaluateFilter, renderTemplate, toBoolean } from './evaluators.js';
+export type { FilterOutcome, KeyOutcome } from './evaluators.js';
 export { evaluateMapping } from './mapping.js';
 export type { MappingOutcome } from './mapping.js';
 export {

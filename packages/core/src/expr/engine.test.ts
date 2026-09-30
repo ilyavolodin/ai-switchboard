@@ -2,14 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { ArtifactRef, Event } from '@ai-switchboard/sdk';
 
-import {
-  evaluateBatchKey,
-  evaluateFilter,
-  filterContext,
-  renderTemplate,
-  toBoolean,
-} from './contexts.js';
+import { filterContext } from './contexts.js';
 import { createExpressionEngine, type EvalFunctions } from './engine.js';
+import { evaluateBatchKey, evaluateFilter, renderTemplate, toBoolean } from './evaluators.js';
 import { evaluateMapping } from './mapping.js';
 import { collectSecretMarkers, resolveSecretMarkers } from './secret-markers.js';
 

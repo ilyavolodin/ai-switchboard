@@ -1,6 +1,4 @@
-import type { BatchKind } from '../domain/status.js';
-
-export type MappingMode = Exclude<BatchKind, 'manual'>;
+import type { BatchKind, MappingMode } from '../domain/status.js';
 
 /** A manual run that replays a batch's events maps like an event run; with none, like a sweep. */
 export function runMode(kind: BatchKind, eventCount: number): MappingMode {

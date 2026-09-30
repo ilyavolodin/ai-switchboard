@@ -15,7 +15,7 @@ import {
   sources,
   type GateDecisionRecord,
 } from '../../db/schema.js';
-import type { HoldReason } from '../../domain/status.js';
+import type { HoldReason, MappingMode } from '../../domain/status.js';
 import {
   approvalContext,
   evaluateFilter,
@@ -34,7 +34,7 @@ import {
   type GateInput,
   type SettledGateResult,
 } from '../../pipeline/gate.js';
-import { runMode, type MappingMode } from '../../pipeline/run-mode.js';
+import { runMode } from '../../pipeline/run-mode.js';
 import { trackingDeadline } from '../../pipeline/tracking.js';
 import type { LiveDestination } from '../../plugins/runtime.js';
 import type { SpanHandle } from '../../telemetry/telemetry.js';

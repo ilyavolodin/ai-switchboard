@@ -12,7 +12,10 @@ describe('artifact refs from untrusted values', () => {
   });
 
   it.each([
-    [{ kind: 'k', id: '1', version: 'v', extra: 1 }, { kind: 'k', id: '1', version: 'v' }],
+    [
+      { kind: 'k', id: '1', version: 'v', extra: 1 },
+      { kind: 'k', id: '1', version: 'v' },
+    ],
     [{ kind: 'k' }, null],
     [null, null],
     [['k', '1'], null],

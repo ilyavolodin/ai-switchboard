@@ -4,7 +4,7 @@ import type { Event, NotificationMessage } from '@ai-switchboard/sdk';
 
 import { notificationLog, systemAlerts } from '../../db/schema.js';
 import { instanceErrorText } from '../../domain/instance-error.js';
-import type { BatchKind, NotifyOn } from '../../domain/status.js';
+import type { BatchKind, BindingLimit, NotifyOn } from '../../domain/status.js';
 import { renderTemplate, templateContext } from '../../expr/index.js';
 import { getSettings } from '../settings.js';
 
@@ -26,7 +26,7 @@ export interface ProcessNotification {
     batch: { id: string; kind: BatchKind };
     reason: string | null;
     run?: Record<string, unknown>;
-    bindingLimit?: string | null;
+    bindingLimit?: BindingLimit | null;
   };
   url?: string | null;
 }

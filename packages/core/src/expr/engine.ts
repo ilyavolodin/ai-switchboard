@@ -2,6 +2,7 @@ import jsonata from 'jsonata';
 
 import type { ArtifactRef } from '@ai-switchboard/sdk';
 
+import { toArtifactRef } from '../domain/artifact.js';
 import { errorText } from '../util/errors.js';
 import { withTimeout } from '../util/timeout.js';
 
@@ -44,8 +45,9 @@ export interface ExpressionEngine {
   evaluate(expr: string, context: unknown, fns: EvalFunctions): Promise<EvalResult>;
 }
 
-class ExprLimitError extends Error {
-  override readonly name = 'ExprLimitError';
+/** A failure the engine raises itself (a limit, a refused binding), with its code. */
+class ExprError extends Error {
+  override readonly name = 'ExprError';
   constructor(
     message: string,
     readonly code: ExprErrorCode,
@@ -72,14 +74,8 @@ function describeError(err: unknown): string {
   return String(err);
 }
 
-function isArtifactRef(value: unknown): value is ArtifactRef {
-  if (value === null || typeof value !== 'object') return false;
-  const v = value as Record<string, unknown>;
-  return typeof v.kind === 'string' && typeof v.id === 'string';
-}
-
 /** JSONata output (sequences, frozen arrays, functions) as plain JSON. */
-export function toPlain(value: unknown): unknown {
+function toPlain(value: unknown): unknown {
   if (value === undefined || typeof value === 'function') return undefined;
   return JSON.parse(JSON.stringify(value)) as unknown;
 }
@@ -135,16 +131,29 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
 
       let aborted = false;
       let lookups = 0;
-      const guard = (name: string): void => {
-        if (aborted) throw new ExprLimitError(`evaluation exceeded ${timeoutMs} ms`, 'timeout');
-        lookups++;
-        if (lookups > maxResolve) {
-          throw new ExprLimitError(
-            `${name} called more than ${maxResolve} times in one evaluation`,
-            'resolve_limit',
-          );
-        }
+      const assertLive = (): void => {
+        if (aborted) throw new ExprError(`evaluation exceeded ${timeoutMs} ms`, 'timeout');
       };
+      /** `$resolve`/`$linked`: counted against the limit, stopped once the evaluation timed out. */
+      const lookupBinding =
+        <T>(name: string, lookup: ((ref: ArtifactRef) => Promise<T>) | undefined) =>
+        async (value: unknown): Promise<unknown> => {
+          assertLive();
+          lookups++;
+          if (lookups > maxResolve) {
+            throw new ExprError(
+              `${name} called more than ${maxResolve} times in one evaluation`,
+              'resolve_limit',
+            );
+          }
+          const ref = toArtifactRef(value);
+          if (!ref)
+            throw new ExprError(`${name} expects an artifact reference {kind, id}`, 'runtime');
+          if (!lookup) throw new ExprError(`${name} is not available here`, 'runtime');
+          const found = await lookup(ref);
+          assertLive();
+          return neutralizeSecretMarkers(found) ?? undefined;
+        };
       const nowIso = fns.now.toISOString();
       const bindings: Record<SwitchboardFunctionName, unknown> = {
         now: () => nowIso,
@@ -156,42 +165,21 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
         },
         secretRef: (name: unknown): SecretRefMarker => {
           if (typeof name !== 'string') {
-            throw new ExprLimitError('$secretRef expects a string name', 'runtime');
+            throw new ExprError('$secretRef expects a string name', 'runtime');
           }
           return { [SECRET_MARKER_KEY]: secretRefString(name) };
         },
         secret: () => {
-          throw new ExprLimitError(
+          throw new ExprError(
             '$secret is not available: expressions cannot read secret values; use $secretRef(name)',
             'runtime',
           );
         },
         eval: () => {
-          throw new ExprLimitError('$eval is not available in Switchboard expressions', 'runtime');
+          throw new ExprError('$eval is not available in Switchboard expressions', 'runtime');
         },
-        resolve: async (ref: unknown) => {
-          guard('$resolve');
-          if (!isArtifactRef(ref)) {
-            throw new ExprLimitError(
-              '$resolve expects an artifact reference {kind, id}',
-              'runtime',
-            );
-          }
-          if (!fns.resolve) throw new ExprLimitError('$resolve is not available here', 'runtime');
-          const value = await fns.resolve({ kind: ref.kind, id: ref.id, ...rest(ref) });
-          if (aborted) throw new ExprLimitError(`evaluation exceeded ${timeoutMs} ms`, 'timeout');
-          return neutralizeSecretMarkers(value) ?? undefined;
-        },
-        linked: async (ref: unknown) => {
-          guard('$linked');
-          if (!isArtifactRef(ref)) {
-            throw new ExprLimitError('$linked expects an artifact reference {kind, id}', 'runtime');
-          }
-          if (!fns.linked) throw new ExprLimitError('$linked is not available here', 'runtime');
-          const value = await fns.linked({ kind: ref.kind, id: ref.id, ...rest(ref) });
-          if (aborted) throw new ExprLimitError(`evaluation exceeded ${timeoutMs} ms`, 'timeout');
-          return neutralizeSecretMarkers(value);
-        },
+        resolve: lookupBinding('$resolve', fns.resolve),
+        linked: lookupBinding('$linked', fns.linked),
       };
 
       const run = (async (): Promise<EvalResult> => {
@@ -202,8 +190,7 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
           );
           return { ok: true, value: toPlain(value) };
         } catch (err) {
-          if (err instanceof ExprLimitError)
-            return { ok: false, error: err.message, code: err.code };
+          if (err instanceof ExprError) return { ok: false, error: err.message, code: err.code };
           const code =
             err !== null && typeof err === 'object' && (err as JsonataFailure).code === 'D1012'
               ? 'timeout'
@@ -222,11 +209,4 @@ export function createExpressionEngine(options: ExpressionEngineOptions = {}): E
       }
     },
   };
-}
-
-function rest(ref: ArtifactRef): Partial<ArtifactRef> {
-  const out: Partial<ArtifactRef> = {};
-  if (typeof ref.url === 'string') out.url = ref.url;
-  if (typeof ref.version === 'string') out.version = ref.version;
-  return out;
 }
