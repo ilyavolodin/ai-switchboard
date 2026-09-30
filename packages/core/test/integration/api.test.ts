@@ -16,6 +16,7 @@ import type {
   ProcessSummary,
   RunSummary,
   SourceDetail,
+  SourceSummary,
   UserDTO,
 } from '../../src/contract/index.js';
 import {
@@ -607,6 +608,43 @@ describe('ingress surfaces', () => {
 });
 
 describe('read models over pipeline rows', () => {
+  it('lists each source with its events by type and by hour, throttled ones marked', async () => {
+    const src = await createSource('Test — hourly');
+    const now = h.clock.now();
+    const earlier = new Date(now.getTime() - 2 * 3_600_000);
+    const event = (n: number, at: Date, stage: 'matched' | 'source_throttled') => ({
+      id: randomUUID(),
+      sourceId: src.id,
+      sourceType: 'test-source',
+      type: 'test-source.item.created',
+      occurredAt: at,
+      receivedAt: at,
+      artifact: { kind: 'test.item', id: `HOURLY-${n}` },
+      artifactKey: `test.item:HOURLY-${n}`,
+      attributes: {},
+      dedupeKey: `k-hourly-${n}`,
+      rawRef: `r-hourly-${n}`,
+      stage,
+    });
+    await tdb.db
+      .insert(events)
+      .values([
+        event(1, now, 'matched'),
+        event(2, now, 'source_throttled'),
+        event(3, earlier, 'matched'),
+      ]);
+
+    const res = await h.request('GET', '/api/v1/sources', { cookie: h.adminCookie });
+    const summary = res.json<SourceSummary[]>().find((s) => s.id === src.id);
+    expect(summary?.eventsByType24h).toEqual([{ type: 'test-source.item.created', count: 3 }]);
+    const hours = summary?.eventsByHour24h ?? [];
+    expect(hours).toHaveLength(25);
+    const hourOf = (d: Date) => `${d.toISOString().slice(0, 13)}:00:00Z`;
+    expect(hours.at(-1)).toEqual({ hour: hourOf(now), count: 2, throttled: 1 });
+    expect(hours.at(-3)).toEqual({ hour: hourOf(earlier), count: 1, throttled: 0 });
+    expect(hours.reduce((n, b) => n + b.count, 0)).toBe(3);
+  });
+
   it('interpret merged sweeps and count only budget-counted runs', async () => {
     const src = await createSource('Rows source');
     const ex = await createDestination('Rows exec');

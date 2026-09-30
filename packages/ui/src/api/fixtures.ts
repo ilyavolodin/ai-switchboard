@@ -275,6 +275,18 @@ export function buildFixtures(now: number) {
     ...(message ? { message } : {}),
   });
 
+  const hours = Array.from({ length: 24 }, (_, i) => iso(-(23 - i) * HOUR));
+  const shape = [
+    20, 12, 8, 6, 6, 10, 30, 55, 70, 85, 100, 80, 65, 75, 90, 70, 60, 40, 25, 15, 10, 8, 12, 45,
+  ];
+  const eventsByHour = (total: number, throttledShare = 0) => {
+    const whole = shape.reduce((a, b) => a + b, 0);
+    return hours.map((hour, i) => {
+      const count = Math.round((total * (shape[i] ?? 0)) / whole);
+      return { hour, count, throttled: Math.round(count * throttledShare) };
+    });
+  };
+
   const sources: SourceSummary[] = [
     {
       id: S.github,
@@ -292,6 +304,7 @@ export function buildFixtures(now: number) {
         { type: 'check_suite.completed', count: 72 },
         { type: 'pull_request_review.submitted', count: 31 },
       ],
+      eventsByHour24h: eventsByHour(141),
       pluginAvailable: true,
       unauthenticated: false,
       processCount: 4,
@@ -312,6 +325,7 @@ export function buildFixtures(now: number) {
         { type: 'issue.state_changed', count: 96 },
         { type: 'comment.created', count: 48 },
       ],
+      eventsByHour24h: eventsByHour(312),
       pluginAvailable: true,
       unauthenticated: false,
       processCount: 3,
@@ -331,6 +345,7 @@ export function buildFixtures(now: number) {
         { type: 'error.issue_new', count: 19 },
         { type: 'monitor.alert', count: 8 },
       ],
+      eventsByHour24h: eventsByHour(27),
       pluginAvailable: true,
       unauthenticated: false,
       processCount: 2,
@@ -347,6 +362,7 @@ export function buildFixtures(now: number) {
       health: health('healthy'),
       lastEventAt: iso(-26 * HOUR),
       eventsByType24h: [],
+      eventsByHour24h: eventsByHour(0),
       pluginAvailable: false,
       unauthenticated: false,
       processCount: 1,
@@ -363,6 +379,7 @@ export function buildFixtures(now: number) {
       health: null,
       lastEventAt: iso(-18 * DAY),
       eventsByType24h: [],
+      eventsByHour24h: eventsByHour(0),
       pluginAvailable: true,
       unauthenticated: true,
       processCount: 0,
@@ -1526,10 +1543,6 @@ export function buildFixtures(now: number) {
     generatedAt: iso(0),
   };
 
-  const hours = Array.from({ length: 24 }, (_, i) => iso(-(23 - i) * HOUR));
-  const shape = [
-    20, 12, 8, 6, 6, 10, 30, 55, 70, 85, 100, 80, 65, 75, 90, 70, 60, 40, 25, 15, 10, 8, 12, 45,
-  ];
   const sourceStats: SourceStatsResponse = {
     window: '24h',
     buckets: hours.map((hour, i) => {

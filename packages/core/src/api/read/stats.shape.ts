@@ -6,6 +6,7 @@ import type {
   MeterHistoryResponse,
   ProcessStatsResponse,
   SourceStatsResponse,
+  SourceSummary,
   UsageHistoryResponse,
 } from '../../contract/index.js';
 import { runStatusLabel } from '../../domain/labels.js';
@@ -105,6 +106,26 @@ export function shapeSourceStats(
       };
     }),
     verifyFailures: hours.map((hour) => ({ hour, count: failed.get(hour) ?? 0 })),
+  };
+}
+
+export function shapeSourceActivity(
+  hours: readonly string[],
+  rows: readonly { hour: string; type: string; stage: EventStage; n: number }[],
+): Pick<SourceSummary, 'eventsByType24h' | 'eventsByHour24h'> {
+  const byHour = groupBy(rows, (r) => r.hour);
+  return {
+    eventsByType24h: Object.entries(sumBy(rows, (r) => r.type))
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count),
+    eventsByHour24h: hours.map((hour) => {
+      const inHour = byHour.get(hour) ?? [];
+      return {
+        hour,
+        count: sum(inHour.map((r) => r.n)),
+        throttled: sum(inHour.filter((r) => r.stage === 'source_throttled').map((r) => r.n)),
+      };
+    }),
   };
 }
 

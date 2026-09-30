@@ -45,6 +45,8 @@ export interface SourceSummary {
   health: Health | null;
   lastEventAt: Iso | null;
   eventsByType24h: { type: string; count: number }[];
+  /** Every hour of the last 24 h, oldest first; `throttled` is the part the source's caps stopped. */
+  eventsByHour24h: { hour: Iso; count: number; throttled: number }[];
   pluginAvailable: boolean;
   unauthenticated: boolean;
   processCount: number;

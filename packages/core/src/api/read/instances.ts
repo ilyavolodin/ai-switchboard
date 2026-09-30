@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, sql } from 'drizzle-orm';
 
 import { INSTANCE_TABLES } from '../../db/instance-tables.js';
 import { destinations, events, runs, sources, type notifiers } from '../../db/schema.js';
@@ -24,6 +24,8 @@ import type {
 import { notFound } from '../errors.js';
 import { meterGauges } from './meters.js';
 import { providerDependents } from './secrets.js';
+import { hourOf } from './stats.js';
+import { shapeSourceActivity, timeBuckets } from './stats.shape.js';
 
 type SourceRow = typeof sources.$inferSelect;
 type DestinationRow = typeof destinations.$inferSelect;
@@ -57,9 +59,16 @@ export async function sourceSummaries(
 ): Promise<SourceSummary[]> {
   const list = rows ?? (await ctx.db.select().from(sources).orderBy(sources.name));
   if (list.length === 0) return [];
-  const since = new Date(ctx.clock.now().getTime() - 24 * 3_600_000);
+  const now = ctx.clock.now();
+  const since = new Date(now.getTime() - 24 * 3_600_000);
   const counts = await ctx.db
-    .select({ sourceId: events.sourceId, type: events.type, n: count() })
+    .select({
+      hour: hourOf(events.receivedAt),
+      sourceId: events.sourceId,
+      type: events.type,
+      stage: events.stage,
+      n: count(),
+    })
     .from(events)
     .where(
       and(
@@ -70,7 +79,8 @@ export async function sourceSummaries(
         gte(events.receivedAt, since),
       ),
     )
-    .groupBy(events.sourceId, events.type);
+    .groupBy(sql`1`, events.sourceId, events.type, events.stage);
+  const hours = timeBuckets(since, now, 'hour');
   const procs = processList ?? (await loadProcessRefs(ctx.db));
   return list.map((row) => {
     const typeEntry = ctx.runtime.sourceType(row.typeId);
@@ -87,10 +97,10 @@ export async function sourceSummaries(
       status: instanceStatus({ enabled: row.enabled, health: row.health, instanceError: error }),
       health: row.health,
       lastEventAt: row.lastEventAt?.toISOString() ?? null,
-      eventsByType24h: counts
-        .filter((c) => c.sourceId === row.id)
-        .map((c) => ({ type: c.type, count: c.n }))
-        .sort((a, b) => b.count - a.count),
+      ...shapeSourceActivity(
+        hours,
+        counts.filter((c) => c.sourceId === row.id),
+      ),
       pluginAvailable: typeEntry !== undefined,
       unauthenticated: liveSource
         ? acceptsUnauthenticated(typeEntry?.type, liveSource.source)

@@ -12,16 +12,6 @@ import { seriesColor } from '../../lib/colors.js';
 import { formatClock, plural, toMs } from '../../lib/format.js';
 import { STAGE_SERIES } from '../../lib/stages.js';
 
-export function hourlyTotals(stats: SourceStatsResponse | undefined): {
-  total: number;
-  throttled: number;
-}[] {
-  return (stats?.buckets ?? []).map((b) => ({
-    total: Object.values(b.byType).reduce((s, v) => s + v, 0),
-    throttled: b.byStage.source_throttled ?? 0,
-  }));
-}
-
 interface Bucket {
   label: string;
   byType: Record<string, number>;

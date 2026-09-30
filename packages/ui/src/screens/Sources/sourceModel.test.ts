@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 import {
   describeSourceType,
   enableSourcePrompt,
-  hourlyTotals,
   modeLabel,
   stageSeries,
   statBuckets,
@@ -21,15 +20,6 @@ const stats = {
 } as unknown as SourceStatsResponse;
 
 describe('source stats', () => {
-  it('totals each hour and its throttled events', () => {
-    expect(hourlyTotals(stats)).toEqual([
-      { total: 3, throttled: 0 },
-      { total: 1, throttled: 1 },
-      { total: 4, throttled: 0 },
-    ]);
-    expect(hourlyTotals(undefined)).toEqual([]);
-  });
-
   it('keeps hours for 24 h and folds them into days otherwise', () => {
     expect(statBuckets(stats, '24h')).toHaveLength(3);
     const days = statBuckets(stats, '7d');

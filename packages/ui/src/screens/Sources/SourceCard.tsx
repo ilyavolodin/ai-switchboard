@@ -1,6 +1,5 @@
 import type { SourceSummary } from '@ai-switchboard/core/contract';
 
-import { useSourceStats } from '../../api/index.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
 import { cx } from '../../lib/cx.js';
@@ -9,16 +8,14 @@ import { sourceHref } from '../../lib/hrefs.js';
 import { cardTone } from '../../lib/instances.js';
 import { InstanceCardHeader } from '../shared/InstanceCardHeader.js';
 import styles from '../shared/instanceCard.module.css';
-import { hourlyTotals, modeLabel, typeSplit } from './sourceModel.js';
+import { modeLabel, typeSplit } from './sourceModel.js';
 import { useSourceActions } from './useSourceActions.js';
 
 export function SourceCard({ source }: { source: SourceSummary }) {
-  // One stats request per enabled card: the list response has no hourly buckets.
-  const stats = useSourceStats(source.enabled ? source.id : undefined, '24h');
   const actions = useSourceActions(source);
   const { total, parts } = typeSplit(source);
-  const hours = hourlyTotals(stats.data);
-  const peak = Math.max(1, ...hours.map((h) => h.total));
+  const hours = source.enabled ? source.eventsByHour24h : [];
+  const peak = Math.max(1, ...hours.map((h) => h.count));
   const tone = cardTone(source.enabled, source.status.tone);
 
   return (
@@ -60,13 +57,13 @@ export function SourceCard({ source }: { source: SourceSummary }) {
         >
           {total > 0 &&
             hours.map((h, i) => {
-              const throttled = h.total ? (h.throttled / h.total) * 100 : 0;
+              const throttled = h.count ? (h.throttled / h.count) * 100 : 0;
               return (
                 <span
                   key={i}
                   className={styles.bar}
                   style={{
-                    height: `${(h.total / peak) * 100}%`,
+                    height: `${(h.count / peak) * 100}%`,
                     background:
                       throttled > 0
                         ? `linear-gradient(to top, var(--primary) ${100 - throttled}%, var(--st-warn) ${100 - throttled}%)`

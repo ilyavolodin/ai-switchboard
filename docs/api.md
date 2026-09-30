@@ -116,6 +116,11 @@ through `<img>` only, never as inline markup, and fall back to the kind's generi
 | POST   | `/sources/preview`                  | `SourcePreviewRequest` → `SourcePreviewResponse` | operator |
 | GET    | `/sources/:id/last-delivery`        | → `LastDeliveryResponse`                         | operator |
 
+A `SourceSummary` carries the last 24 h of events two ways: `eventsByType24h` (largest type first)
+and `eventsByHour24h`, one `{ hour, count, throttled }` per UTC hour, oldest first, empty hours
+included, where `throttled` is the part the source's event caps stopped. `GET /sources/:id/stats`
+has the same hours split by type and stage, and longer windows.
+
 `POST /sources/preview` tries a sample delivery against draft settings, for push (and both)
 source types; a pull-only type is 422, an unknown type 404. It builds a throwaway instance
 (secret references resolved server-side; with `sourceId`, secret fields left empty keep that

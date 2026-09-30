@@ -38,6 +38,12 @@ describe('Sources', () => {
     expect(screen.getByText('5 sources · 4 enabled')).toBeInTheDocument();
   });
 
+  it('takes the hourly buckets from the list, with no stats request per card', async () => {
+    const { api } = renderWithProviders(<Sources />);
+    await card('Linear — lola');
+    expect(api.calls.filter((c) => c.path.endsWith('/stats'))).toEqual([]);
+  });
+
   it('flags unavailable plugins in amber and unauthenticated sources in red', async () => {
     renderWithProviders(<Sources />);
     const braintrust = await card('Braintrust — webhook');

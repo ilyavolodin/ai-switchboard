@@ -8,6 +8,7 @@ import {
   median,
   shapeFunnel,
   shapeProcessStats,
+  shapeSourceActivity,
   shapeSourceStats,
   shapeUsageHistory,
   sumBy,
@@ -90,6 +91,25 @@ describe('shapeSourceStats', () => {
     expect(out.verifyFailures).toEqual([
       { hour: hours[0], count: 4 },
       { hour: hours[1], count: 0 },
+    ]);
+  });
+});
+
+describe('shapeSourceActivity', () => {
+  it('splits a source day by type, largest first, and fills every hour with its throttled part', () => {
+    const hours = ['2026-01-05T08:00:00Z', '2026-01-05T09:00:00Z'];
+    const out = shapeSourceActivity(hours, [
+      { hour: hours[1]!, type: 'a.b', stage: 'matched', n: 2 },
+      { hour: hours[1]!, type: 'a.c', stage: 'source_throttled', n: 3 },
+      { hour: hours[1]!, type: 'a.b', stage: 'unmatched', n: 2 },
+    ]);
+    expect(out.eventsByType24h).toEqual([
+      { type: 'a.b', count: 4 },
+      { type: 'a.c', count: 3 },
+    ]);
+    expect(out.eventsByHour24h).toEqual([
+      { hour: hours[0], count: 0, throttled: 0 },
+      { hour: hours[1], count: 7, throttled: 3 },
     ]);
   });
 });
