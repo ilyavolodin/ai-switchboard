@@ -10,6 +10,7 @@ import { Card } from '../../components/Card.js';
 import { Field } from '../../components/Field.js';
 import { SchemaForm } from '../../components/SchemaForm.js';
 import { TextField } from '../../components/TextField.js';
+import { useLeaveGuard } from '../../hooks/useLeaveGuard.js';
 import { useSchemaErrors } from '../../hooks/useSchemaErrors.js';
 import type { DeliverySample } from '../../lib/suggest.js';
 import styles from './forms.module.css';
@@ -21,7 +22,6 @@ import {
 import { unsavedLabel } from './unsavedLabel.js';
 import { LeaveGuardDialog } from './LeaveGuardDialog.js';
 import type { InstanceDeletion } from './useInstanceDelete.js';
-import { useLeaveGuard } from './useLeaveGuard.js';
 
 export interface InstanceSettingsEntity<C> {
   id: string;

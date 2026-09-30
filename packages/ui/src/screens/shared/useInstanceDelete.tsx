@@ -3,8 +3,8 @@ import type { UseMutationResult } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
 import { useReasonedMutation } from '../../hooks/reason.js';
+import { type ProcessRef, useInUseRefusal } from '../../hooks/useInUseRefusal.js';
 import { InUseBanner } from './InUseBanner.js';
-import { type ProcessRef, useInUseRefusal } from './useInUseRefusal.js';
 
 export interface InstanceDeletion {
   /** Resolves `null` when it did not happen (cancelled, refused, failed). */

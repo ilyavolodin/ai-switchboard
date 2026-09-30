@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { usedByOf } from '../../api/client.js';
+import { usedByOf } from '../api/client.js';
 
 export interface ProcessRef {
   id: string;

@@ -5,11 +5,11 @@ import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
 import { Field } from '../../components/Field.js';
 import { TextField } from '../../components/TextField.js';
+import { useHiddenWhile } from '../../hooks/useHiddenWhile.js';
 import styles from '../shared/forms.module.css';
 import { ManifestReview } from '../shared/ManifestReview.js';
 import { PluginTrustNote } from '../shared/PluginTrustNote.js';
 import { isPackageName, parsePackageSpec } from '../shared/pluginModel.js';
-import { useHiddenWhile } from '../shared/useHiddenWhile.js';
 import type { usePluginInstall } from '../shared/usePluginInstall.js';
 
 export interface AddPluginDialogProps {

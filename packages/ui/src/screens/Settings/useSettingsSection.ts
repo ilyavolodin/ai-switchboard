@@ -1,7 +1,7 @@
 import { useUpdateSettings } from '../../api/index.js';
 import { type ReasonPromptOptions, useReasonedMutation } from '../../hooks/reason.js';
-import { useLeaveGuard } from '../shared/useLeaveGuard.js';
-import { useSettingsDraft } from '../shared/useSettingsDraft.js';
+import { useLeaveGuard } from '../../hooks/useLeaveGuard.js';
+import { useSettingsDraft } from '../../hooks/useSettingsDraft.js';
 import type { SectionCheck } from './settingsForm.js';
 
 export interface SettingsSectionOptions<F extends object> {

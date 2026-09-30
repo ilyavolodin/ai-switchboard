@@ -3,6 +3,7 @@ import { type ReactNode, useState } from 'react';
 
 import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
+import { useHiddenWhile } from '../../hooks/useHiddenWhile.js';
 import { useSchemaErrors } from '../../hooks/useSchemaErrors.js';
 import { deliverySample, EMPTY_SAMPLE, type SampleDraft } from '../../lib/sampleDelivery.js';
 import { schemaDefaults } from '../../lib/schema.js';
@@ -12,7 +13,6 @@ import { InstanceConfigureStep } from './InstanceConfigureStep.js';
 import { installOutcome } from './pluginModel.js';
 import { PluginReviewStep } from './PluginReviewStep.js';
 import { TypePicker } from './TypePicker.js';
-import { useHiddenWhile } from './useHiddenWhile.js';
 import { usePluginInstall } from './usePluginInstall.js';
 
 export interface InstanceDraft<C> {
