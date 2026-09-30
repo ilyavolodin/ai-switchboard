@@ -254,7 +254,9 @@ kubectl exec deploy/switchboard -- switchboard users create-admin ops@example.co
 
 `reset-password <email>` refuses an email with no account and lists close matches (the same
 local part, a typo, the same domain). `--password <pw>` sets a password of your choice instead of
-a generated one; it is checked against the password rules and not printed. Either way the
+a generated one; it is checked against the password rules and not printed. `--password-stdin`
+reads it from stdin instead (`printf '%s\n' "$PW" | switchboard users reset-password ...
+--password-stdin`), so it stays out of the shell history and the process list. Either way the
 password is temporary: the next password sign-in must change it. The reset signs the account out
 of every session, clears its failed sign-in count (so a 429 lockout ends too) and writes an
 `audit_log` row with actor `cli@<hostname>` and the `--reason` (default "password reset from the

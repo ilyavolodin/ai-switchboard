@@ -21,6 +21,8 @@ export interface CliIO {
   out(text: string): void;
   err(text: string): void;
   setExitCode(code: number): void;
+  /** All of stdin as UTF-8, for `--password-stdin`. */
+  readStdin(): Promise<string>;
 }
 
 export interface Installer {
@@ -74,6 +76,14 @@ function spawnNode(entry: string, env: NodeJS.ProcessEnv): Promise<number> {
   });
 }
 
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 export function defaultDeps(): CliDeps {
   return {
     io: {
@@ -82,6 +92,7 @@ export function defaultDeps(): CliDeps {
       setExitCode: (code) => {
         process.exitCode = code;
       },
+      readStdin,
     },
     env: process.env,
     fetch: globalThis.fetch.bind(globalThis),

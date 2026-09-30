@@ -47,7 +47,10 @@ const unknownUser = (suggestions: string[]): Error =>
     suggestions,
   });
 
-function harness(recovery: Partial<AccountRecovery> = {}): {
+function harness(
+  recovery: Partial<AccountRecovery> = {},
+  stdin = '',
+): {
   calls: Call[];
   run: (...argv: string[]) => Promise<Captured>;
 } {
@@ -82,6 +85,7 @@ function harness(recovery: Partial<AccountRecovery> = {}): {
         setExitCode: (c) => {
           cap.exitCode = c;
         },
+        readStdin: () => Promise.resolve(stdin),
       },
       env: { DATABASE_URL: 'postgres://db/switchboard' },
       loadConfig: ((env: NodeJS.ProcessEnv) =>
@@ -168,6 +172,30 @@ describe('switchboard users reset-password', () => {
     const cap = await run('users', 'reset-password', 'a@b.c', '--password', 'x', '--generate');
     expect(cap.exitCode).toBe(1);
     expect(cap.err.join('\n')).toMatch(/either --password or --generate/);
+    expect(calls).toEqual([]);
+  });
+
+  it('reads the temporary password from stdin with --password-stdin', async () => {
+    const { calls, run } = harness({}, 'quiet-harbour-lamp-7\n');
+    const cap = await run('users', 'reset-password', 'carol@acme.test', '--password-stdin');
+    expect(cap.exitCode).toBe(0);
+    expect(calls[0]?.[2]).toMatchObject({ password: 'quiet-harbour-lamp-7' });
+    expect(cap.out.join('\n')).not.toContain('quiet-harbour-lamp-7');
+  });
+
+  it('refuses --password-stdin when stdin is empty', async () => {
+    const { calls, run } = harness({}, '\n');
+    const cap = await run('users', 'reset-password', 'a@b.c', '--password-stdin');
+    expect(cap.exitCode).toBe(1);
+    expect(cap.err.join('\n')).toMatch(/no password on stdin/);
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses --password together with --password-stdin', async () => {
+    const { calls, run } = harness({}, 'x\n');
+    const cap = await run('users', 'create-admin', 'a@b.c', '--password-stdin', '--password', 'y');
+    expect(cap.exitCode).toBe(1);
+    expect(cap.err.join('\n')).toMatch(/--password or --password-stdin, not both/);
     expect(calls).toEqual([]);
   });
 

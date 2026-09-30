@@ -11,6 +11,7 @@ export const DEFAULT_ADMIN_REASON = 'break-glass admin from the server CLI';
 
 interface PasswordOptions {
   password?: string;
+  passwordStdin?: boolean;
   generate?: boolean;
   reason: string;
 }
@@ -25,10 +26,25 @@ function suggestionsOf(err: unknown): string[] | undefined {
 
 const yesNo = (value: boolean): string => (value ? 'yes' : 'no');
 
-function passwordFor(opts: PasswordOptions): string | undefined {
-  if (opts.password !== undefined && opts.generate === true)
+async function passwordFor(deps: CliDeps, opts: PasswordOptions): Promise<string | undefined> {
+  const given = opts.password !== undefined || opts.passwordStdin === true;
+  if (given && opts.generate === true)
     throw new Error('Use either --password or --generate, not both.');
-  return opts.password;
+  if (opts.passwordStdin !== true) return opts.password;
+  if (opts.password !== undefined)
+    throw new Error('Use either --password or --password-stdin, not both.');
+  const password = (await deps.io.readStdin()).replace(/\r?\n$/, '');
+  if (password === '') throw new Error('--password-stdin: no password on stdin.');
+  return password;
+}
+
+/** `--password-stdin` keeps the password out of the shell history and the process list. */
+function passwordOptions(cmd: Command, defaultReason: string): Command {
+  return cmd
+    .option('--password <password>', 'use this temporary password (checked against the rules)')
+    .option('--password-stdin', 'read the temporary password from stdin')
+    .option('--generate', 'generate the temporary password (the default)')
+    .option('--reason <reason>', 'why, for the audit log', defaultReason);
 }
 
 function printTemporary(deps: CliDeps, result: TemporaryPasswordResult, headline: string): void {
@@ -36,9 +52,7 @@ function printTemporary(deps: CliDeps, result: TemporaryPasswordResult, headline
   io.out(headline);
   io.out('');
   io.out(`  email               ${result.email}`);
-  io.out(
-    `  temporary password  ${result.generated ? result.password : '(the one given with --password)'}`,
-  );
+  io.out(`  temporary password  ${result.generated ? result.password : '(the one you gave)'}`);
   io.out('');
   io.out(
     result.generated
@@ -90,68 +104,66 @@ export function usersCommand(deps: CliDeps): Command {
       }),
     );
 
-  users
-    .command('reset-password')
-    .argument('<email>', 'the account to reset (see `switchboard users list`)')
-    .description(
-      'Set a temporary password, sign the account out everywhere and print the password once',
-    )
-    .option('--password <password>', 'use this temporary password (checked against the rules)')
-    .option('--generate', 'generate the temporary password (the default)')
-    .option('--reason <reason>', 'why, for the audit log', DEFAULT_RESET_REASON)
-    .action(
-      run(deps, async (email: string, opts: PasswordOptions) => {
-        const password = passwordFor(opts);
-        const config = await deps.loadConfig(deps.env);
-        try {
-          const result = await deps.recovery.resetPassword(config, {
-            email,
-            ...(password !== undefined ? { password } : {}),
-            actor: actor(),
-            reason: opts.reason,
-          });
-          printTemporary(deps, result, `Reset the password of ${result.email} (${result.role}).`);
-        } catch (err) {
-          const suggestions = suggestionsOf(err);
-          if (suggestions === undefined) throw err;
-          io.err(`error: no account has the email ${email.trim().toLowerCase()}.`);
-          if (suggestions.length > 0) {
-            io.err('Did you mean:');
-            for (const s of suggestions) io.err(`  ${s}`);
-          }
-          io.err('Run `switchboard users list` to see every account.');
-          io.setExitCode(1);
-        }
-      }),
-    );
-
-  users
-    .command('create-admin')
-    .argument('<email>', 'the admin account to create, or an existing account to promote')
-    .description(
-      'Break glass: create or promote a local admin with a temporary password, printed once',
-    )
-    .option('--password <password>', 'use this temporary password (checked against the rules)')
-    .option('--generate', 'generate the temporary password (the default)')
-    .option('--reason <reason>', 'why, for the audit log', DEFAULT_ADMIN_REASON)
-    .action(
-      run(deps, async (email: string, opts: PasswordOptions) => {
-        const password = passwordFor(opts);
-        const result = await deps.recovery.createAdmin(await deps.loadConfig(deps.env), {
+  passwordOptions(
+    users
+      .command('reset-password')
+      .argument('<email>', 'the account to reset (see `switchboard users list`)')
+      .description(
+        'Set a temporary password, sign the account out everywhere and print the password once',
+      ),
+    DEFAULT_RESET_REASON,
+  ).action(
+    run(deps, async (email: string, opts: PasswordOptions) => {
+      const password = await passwordFor(deps, opts);
+      const config = await deps.loadConfig(deps.env);
+      try {
+        const result = await deps.recovery.resetPassword(config, {
           email,
           ...(password !== undefined ? { password } : {}),
           actor: actor(),
           reason: opts.reason,
         });
-        const headline =
-          result.change === 'created'
-            ? `Created the admin ${result.email}.`
-            : result.change === 'promoted'
-              ? `Promoted ${result.email} to admin.`
-              : `${result.email} is already an admin; its password was reset.`;
-        printTemporary(deps, result, headline);
-      }),
-    );
+        printTemporary(deps, result, `Reset the password of ${result.email} (${result.role}).`);
+      } catch (err) {
+        const suggestions = suggestionsOf(err);
+        if (suggestions === undefined) throw err;
+        io.err(`error: no account has the email ${email.trim().toLowerCase()}.`);
+        if (suggestions.length > 0) {
+          io.err('Did you mean:');
+          for (const s of suggestions) io.err(`  ${s}`);
+        }
+        io.err('Run `switchboard users list` to see every account.');
+        io.setExitCode(1);
+      }
+    }),
+  );
+
+  passwordOptions(
+    users
+      .command('create-admin')
+      .argument('<email>', 'the admin account to create, or an existing account to promote')
+      .description(
+        'Break glass: create or promote a local admin with a temporary password, printed once',
+      ),
+    DEFAULT_ADMIN_REASON,
+  ).action(
+    run(deps, async (email: string, opts: PasswordOptions) => {
+      const password = await passwordFor(deps, opts);
+      const result = await deps.recovery.createAdmin(await deps.loadConfig(deps.env), {
+        email,
+        ...(password !== undefined ? { password } : {}),
+        actor: actor(),
+        reason: opts.reason,
+      });
+      const headline =
+        result.change === 'created'
+          ? `Created the admin ${result.email}.`
+          : result.change === 'promoted'
+            ? `Promoted ${result.email} to admin.`
+            : `${result.email} is already an admin; its password was reset.`;
+      printTemporary(deps, result, headline);
+    }),
+  );
 
   return users;
 }

@@ -34,6 +34,7 @@ function harness(overrides: Partial<CliDeps> = {}): {
       setExitCode: (c) => {
         cap.exitCode = c;
       },
+      readStdin: () => Promise.resolve(''),
     },
     env: {},
     ...overrides,
