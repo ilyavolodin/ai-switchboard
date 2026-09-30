@@ -78,12 +78,12 @@ describe('Activity', () => {
   it('reads the filters from the URL', async () => {
     const { seen, overrides } = capture();
     renderWithProviders(<Activity />, {
-      path: '/activity?process=p-autofix&destination=ex-routines&range=7d',
+      path: '/activity?process=p-autofix&destination=dst-routines&range=7d',
       overrides,
     });
     await screen.findByRole('list', { name: 'Events' });
     expect(seen[0]?.get('process')).toBe('p-autofix');
-    expect(seen[0]?.get('destination')).toBe('ex-routines');
+    expect(seen[0]?.get('destination')).toBe('dst-routines');
     expect(seen[0]?.get('from')).toBe('2026-09-20T12:00:00.000Z');
     expect(await screen.findByRole('combobox', { name: 'Process' })).toHaveValue('p-autofix');
   });

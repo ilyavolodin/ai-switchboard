@@ -57,7 +57,7 @@ describe('checkDocument', () => {
   });
 
   it('passes a complete document', () => {
-    expect(checkDocument({ ...newProcessDocument('ex-http'), name: 'Triage' })).toEqual({});
+    expect(checkDocument({ ...newProcessDocument('dst-http'), name: 'Triage' })).toEqual({});
   });
 });
 

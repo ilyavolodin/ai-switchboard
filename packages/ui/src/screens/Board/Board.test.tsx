@@ -19,7 +19,7 @@ describe('Board', () => {
     );
     expect(
       screen.getByRole('link', { name: /^Destination Claude Routines — automation seat, healthy/ }),
-    ).toHaveAttribute('href', '/destinations/ex-routines');
+    ).toHaveAttribute('href', '/destinations/dst-routines');
     expect(screen.getAllByRole('link', { name: /^Process / })).toHaveLength(11);
     expect(screen.getAllByRole('link', { name: /^Source / })).toHaveLength(5);
   });

@@ -53,7 +53,7 @@ describe('Settings › Secret providers › Secrets', () => {
     expect(row).toHaveTextContent('stored by Claude Routines — automation seat');
     expect(
       within(row).getByRole('link', { name: 'Claude Routines — automation seat' }),
-    ).toHaveAttribute('href', '/destinations/ex-routines');
+    ).toHaveAttribute('href', '/destinations/dst-routines');
     expect(within(row).queryByRole('button', { name: /^Copy/ })).toBeNull();
     expect(within(table).getByRole('row', { name: /github-app-key/ })).toHaveTextContent(
       'secret://file/github-app-key',

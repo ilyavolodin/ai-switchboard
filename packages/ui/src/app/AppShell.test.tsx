@@ -101,7 +101,7 @@ describe('app shell', () => {
     const strip = screen.getByLabelText('Destination capacity');
     expect(
       within(strip).getByRole('link', { name: /5-hour window 62%.*resets in 2 h 10 m/ }),
-    ).toHaveAttribute('href', '/destinations/ex-routines');
+    ).toHaveAttribute('href', '/destinations/dst-routines');
     expect(within(strip).getByRole('link', { name: /API rate limit 18%/ })).toBeInTheDocument();
   });
 
@@ -148,7 +148,7 @@ describe('app shell', () => {
 
   it.each([
     ['/executors', '/destinations', ''],
-    ['/executors/ex-routines/settings', '/destinations/ex-routines/settings', '?x=1'],
+    ['/executors/dst-routines/settings', '/destinations/dst-routines/settings', '?x=1'],
   ])('redirects the old path %s to %s', async (from, to, search) => {
     const { router } = renderApp(`${from}${search}`);
     await vi.waitFor(() => {

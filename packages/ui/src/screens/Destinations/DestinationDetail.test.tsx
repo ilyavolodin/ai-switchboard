@@ -25,7 +25,7 @@ async function reasonAndConfirm(
 
 describe('DestinationDetail', () => {
   it('draws the meters, the meter band with run markers and usage per dimension with its unit', async () => {
-    const { container, user } = renderDestination('/destinations/ex-routines');
+    const { container, user } = renderDestination('/destinations/dst-routines');
     expect(
       await screen.findByRole('heading', { name: 'Claude Routines — automation seat', level: 1 }),
     ).toBeVisible();
@@ -59,11 +59,11 @@ describe('DestinationDetail', () => {
   });
 
   it('reads meters now and reloads, each with a reason', async () => {
-    const { user, api } = renderDestination('/destinations/ex-routines');
+    const { user, api } = renderDestination('/destinations/dst-routines');
     await user.click(await screen.findByRole('button', { name: 'Read meters now' }));
     await reasonAndConfirm(user, 'window just reset', 'Read meters');
     await vi.waitFor(() => {
-      expect(api.callsTo('POST /destinations/ex-routines/meters/read')[0]?.body).toEqual({
+      expect(api.callsTo('POST /destinations/dst-routines/meters/read')[0]?.body).toEqual({
         reason: 'window just reset',
       });
     });
@@ -72,7 +72,7 @@ describe('DestinationDetail', () => {
     await user.click(screen.getByRole('button', { name: 'Reload' }));
     await reasonAndConfirm(user, 'new key', 'Reload');
     await vi.waitFor(() => {
-      expect(api.callsTo('POST /destinations/ex-routines/reload')).toHaveLength(1);
+      expect(api.callsTo('POST /destinations/dst-routines/reload')).toHaveLength(1);
     });
   });
 
@@ -80,7 +80,7 @@ describe('DestinationDetail', () => {
     const f = buildFixtures(TEST_NOW);
     const base = f.destinationDetail(at(f.destinations, 0));
     const detail = { ...base, caps: { ...base.caps, meterPollSeconds: undefined } };
-    renderDestination('/destinations/ex-routines', {
+    renderDestination('/destinations/dst-routines', {
       overrides: { 'GET /destinations/:id': () => detail },
     });
     const meters = await screen.findByText(/read every/);
@@ -94,21 +94,21 @@ describe('DestinationDetail', () => {
       softHoldUntil: new Date(TEST_NOW + 30 * 60_000).toISOString(),
       softHoldReason: 'The backend answered 429.',
     };
-    const { user, api } = renderDestination('/destinations/ex-routines', {
+    const { user, api } = renderDestination('/destinations/dst-routines', {
       overrides: { 'GET /destinations/:id': () => held },
     });
     expect(await screen.findByText(/The backend answered 429/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Clear soft hold' }));
     await reasonAndConfirm(user, 'confirmed with the vendor', 'Clear soft hold');
     await vi.waitFor(() => {
-      expect(api.callsTo('POST /destinations/ex-routines/soft-hold/clear')[0]?.body).toEqual({
+      expect(api.callsTo('POST /destinations/dst-routines/soft-hold/clear')[0]?.body).toEqual({
         reason: 'confirmed with the vendor',
       });
     });
   });
 
   it('lists runs with external links that open in a new tab', async () => {
-    renderDestination('/destinations/ex-routines/runs');
+    renderDestination('/destinations/dst-routines/runs');
     const table = await screen.findByRole('table', {
       name: 'Runs on Claude Routines — automation seat',
     });
@@ -120,7 +120,7 @@ describe('DestinationDetail', () => {
   });
 
   it('saves caps including usage per day and staleness', async () => {
-    const { user, api } = renderDestination('/destinations/ex-routines/settings');
+    const { user, api } = renderDestination('/destinations/dst-routines/settings');
     const tokens = await screen.findByLabelText('Input tokens per day');
     await user.type(tokens, '500000');
     const stale = screen.getByLabelText('Meter staleness');
@@ -129,9 +129,9 @@ describe('DestinationDetail', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await reasonAndConfirm(user, 'tighter budget', 'Save changes');
     await vi.waitFor(() => {
-      expect(api.callsTo('PUT /destinations/ex-routines')).toHaveLength(1);
+      expect(api.callsTo('PUT /destinations/dst-routines')).toHaveLength(1);
     });
-    expect(api.callsTo('PUT /destinations/ex-routines')[0]?.body).toMatchObject({
+    expect(api.callsTo('PUT /destinations/dst-routines')[0]?.body).toMatchObject({
       reason: 'tighter budget',
       settings: {
         token: 'secret://env/CLAUDE_API_KEY',
@@ -146,7 +146,7 @@ describe('DestinationDetail', () => {
   });
 
   it('keeps actions visible but disabled for viewers', async () => {
-    renderDestination('/destinations/ex-routines', { role: 'viewer' });
+    renderDestination('/destinations/dst-routines', { role: 'viewer' });
     for (const name of ['Read meters now', 'Reload']) {
       expect(await screen.findByRole('button', { name })).toHaveAttribute('aria-disabled', 'true');
     }
@@ -157,21 +157,21 @@ describe('DestinationDetail', () => {
   });
 
   it('shows the settings form and caps disabled for viewers', async () => {
-    renderDestination('/destinations/ex-routines/settings', { role: 'viewer' });
+    renderDestination('/destinations/dst-routines/settings', { role: 'viewer' });
     expect(await screen.findByLabelText('Input tokens per day')).toBeDisabled();
     expect(screen.getByLabelText('Meter staleness')).toBeDisabled();
     expect(screen.getByRole('textbox', { name: /^Name/ })).toBeDisabled();
   });
 
   it('deletes with a reason and goes back to the list without a leave prompt', async () => {
-    const { user, api, router } = renderDestination('/destinations/ex-routines/settings');
+    const { user, api, router } = renderDestination('/destinations/dst-routines/settings');
     await user.type(await screen.findByLabelText('Input tokens per day'), '5');
     await user.click(screen.getByRole('button', { name: 'Delete destination' }));
     await reasonAndConfirm(user, 'retired seat', 'Delete destination');
     await vi.waitFor(() => {
       expect(router.state.location.pathname).toBe('/destinations');
     });
-    expect(api.callsTo('DELETE /destinations/ex-routines')).toHaveLength(1);
+    expect(api.callsTo('DELETE /destinations/dst-routines')).toHaveLength(1);
     expect(screen.queryByRole('dialog', { name: 'Leave without saving?' })).toBeNull();
   });
 });

@@ -58,7 +58,7 @@ describe('ProcessDetail', () => {
       ...detail,
       document: {
         ...detail.document,
-        after: [{ provider: 'ex-routines', action: 'archive', args: '{}' }],
+        after: [{ provider: 'dst-routines', action: 'archive', args: '{}' }],
       },
     };
     renderWithProviders(<ProcessDetail />, {
