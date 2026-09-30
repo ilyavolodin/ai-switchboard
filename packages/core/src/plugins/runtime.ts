@@ -13,7 +13,7 @@ import type {
   UsageDimension,
 } from '@ai-switchboard/sdk';
 
-import type { InstanceKind } from '../domain/status.js';
+import type { InstanceKind, PluginErrorKind } from '../domain/status.js';
 
 export interface LiveSource {
   id: string;
@@ -82,11 +82,7 @@ export interface PluginRuntime {
 
   reload(kind: InstanceKind, id: string): Promise<void>;
 
-  recordPluginError(
-    pluginName: string,
-    kind: 'exception' | 'invalid_event' | 'invalid_usage',
-    detail?: string,
-  ): void;
+  recordPluginError(pluginName: string, kind: PluginErrorKind, detail?: string): void;
 }
 
 function positiveSeconds(n: unknown): number | undefined {

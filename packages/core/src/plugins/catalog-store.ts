@@ -2,6 +2,7 @@ import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 
 import type { Db, DbOrTx } from '../db/client.js';
 import { plugins, pluginTypes } from '../db/schema.js';
+import type { PluginErrorKind } from '../domain/status.js';
 
 import type { EvaluatedPlugin } from './loader.js';
 import { serializeType } from './manifest.js';
@@ -16,11 +17,7 @@ export interface InstallRecord {
   removeRequestedAt: Date | null;
 }
 
-export interface PluginErrorCounts {
-  exception: number;
-  invalid_event: number;
-  invalid_usage: number;
-}
+export type PluginErrorCounts = Record<PluginErrorKind, number>;
 
 /** Every write to `plugins` and `plugin_types`. */
 export interface PluginCatalog {

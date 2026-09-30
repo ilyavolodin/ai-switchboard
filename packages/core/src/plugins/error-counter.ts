@@ -1,9 +1,10 @@
+import type { PluginErrorKind } from '../domain/status.js';
 import type { CoreLogger } from '../logger.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
 
 import type { PluginErrorCounts } from './catalog-store.js';
 
-export type PluginErrorKind = keyof PluginErrorCounts;
+export type { PluginErrorKind } from '../domain/status.js';
 
 export interface PluginErrorContext {
   instanceId?: string;

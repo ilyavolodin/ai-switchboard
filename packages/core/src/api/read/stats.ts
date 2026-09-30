@@ -1,5 +1,7 @@
 import { and, count, eq, gte, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 
+import { isOneOf } from '@ai-switchboard/sdk';
+
 import {
   batches,
   dispatches,
@@ -11,7 +13,15 @@ import {
   runs,
 } from '../../db/schema.js';
 import { runStatusLabel } from '../../domain/labels.js';
-import type { EventStage, RunStatusValue } from '../../domain/status.js';
+import {
+  BATCH_OUTCOMES,
+  HELD_BATCH_OUTCOMES,
+  RUN_STATUSES,
+  STATS_WINDOWS,
+  STOPPED_BATCH_OUTCOMES,
+  type EventStage,
+  type RunStatusValue,
+} from '../../domain/status.js';
 import { destinationSpecs } from '../../services/destination-specs.js';
 import { isUuid } from '../../util/uuid.js';
 import type { ApiContext } from '../context.js';
@@ -33,7 +43,7 @@ export function windowMs(window: StatsWindow | undefined): number {
 }
 
 export function parseWindow(value: unknown, fallback: StatsWindow = '24h'): StatsWindow {
-  return value === '24h' || value === '7d' || value === '30d' ? value : fallback;
+  return isOneOf(STATS_WINDOWS, value) ? value : fallback;
 }
 
 const hourExpr = (col: unknown) =>
@@ -238,9 +248,9 @@ export async function processFunnel(
         )`),
   ]);
   const dn = (o: string) => d.filter((x) => x.outcome === o).reduce((a, x) => a + x.n, 0);
-  const bn = (kind: string[], o: string[]) =>
+  const bn = (kind: readonly string[], o: readonly string[]) =>
     b.filter((x) => kind.includes(x.kind) && o.includes(x.outcome)).reduce((a, x) => a + x.n, 0);
-  const rn = (kind: string[], s: string[]) =>
+  const rn = (kind: readonly string[], s: readonly string[]) =>
     r.filter((x) => kind.includes(x.kind) && s.includes(x.status)).reduce((a, x) => a + x.n, 0);
   const ev = ['event', 'manual'];
   return {
@@ -250,28 +260,10 @@ export async function processFunnel(
       matched: d.reduce((a, x) => a + x.n, 0),
       deduped: dn('deduped'),
       batched: dn('batched'),
-      batches: bn(ev, [
-        'open',
-        'closed',
-        'held',
-        'throttled',
-        'awaiting_approval',
-        'rejected',
-        'invoked',
-        'merged',
-      ]),
-      held: bn(ev, ['held', 'awaiting_approval', 'rejected']),
+      batches: bn(ev, BATCH_OUTCOMES),
+      held: bn(ev, HELD_BATCH_OUTCOMES),
       throttled: bn(ev, ['throttled']),
-      invoked: rn(ev, [
-        'invoking',
-        'running',
-        'uncertain',
-        'ok',
-        'error',
-        'failed',
-        'unknown',
-        'held',
-      ]),
+      invoked: rn(ev, RUN_STATUSES),
       ok: rn(ev, ['ok']),
       error: rn(ev, ['error']),
       failed: rn(ev, ['failed']),
@@ -279,25 +271,10 @@ export async function processFunnel(
       running: rn(ev, ['invoking', 'running']),
     },
     sweep: {
-      fired: bn(
-        ['sweep'],
-        [
-          'open',
-          'closed',
-          'held',
-          'throttled',
-          'awaiting_approval',
-          'rejected',
-          'invoked',
-          'merged',
-        ],
-      ),
-      held: bn(['sweep'], ['held', 'awaiting_approval', 'rejected']),
+      fired: bn(['sweep'], BATCH_OUTCOMES),
+      held: bn(['sweep'], HELD_BATCH_OUTCOMES),
       throttled: bn(['sweep'], ['throttled']),
-      invoked: rn(
-        ['sweep'],
-        ['invoking', 'running', 'uncertain', 'ok', 'error', 'failed', 'unknown', 'held'],
-      ),
+      invoked: rn(['sweep'], RUN_STATUSES),
       ok: rn(['sweep'], ['ok']),
       error: rn(['sweep'], ['error', 'failed', 'unknown']),
     },
@@ -339,7 +316,7 @@ export async function processStats(
         and(
           eq(batches.processId, processId),
           gte(batches.openedAt, from),
-          inArray(batches.outcome, ['held', 'throttled', 'awaiting_approval']),
+          inArray(batches.outcome, STOPPED_BATCH_OUTCOMES),
         ),
       )
       .groupBy(sql`1`, batches.outcome),

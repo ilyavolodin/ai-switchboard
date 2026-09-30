@@ -111,7 +111,8 @@ export interface SecretRefDTO {
   error?: string;
 }
 
-export type StatsWindow = '24h' | '7d' | '30d';
+export type { StatsWindow } from '../../domain/status.js';
+import type { StatsWindow } from '../../domain/status.js';
 
 export interface WindowQuery {
   window?: StatsWindow;

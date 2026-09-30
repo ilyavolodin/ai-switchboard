@@ -1,3 +1,5 @@
+import { isOneOf } from '@ai-switchboard/sdk';
+
 import {
   BREAKER_RUN_STATUSES,
   type BreakerStateValue,
@@ -18,7 +20,7 @@ export interface BreakerState {
 export function consecutiveFailures(newestFirst: readonly RunStatusValue[]): number {
   let n = 0;
   for (const status of newestFirst) {
-    if (BREAKER_RUN_STATUSES.includes(status)) n++;
+    if (isOneOf(BREAKER_RUN_STATUSES, status)) n++;
     else if (status === 'ok') break;
   }
   return n;

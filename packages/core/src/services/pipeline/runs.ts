@@ -6,6 +6,7 @@ import { batches, destinations, processes, runUpdates, runs } from '../../db/sch
 import {
   OPEN_RUN_STATUSES,
   TRACKED_RUN_STATUSES,
+  isOpenRunStatus,
   isTerminalRunStatus,
   type NotifyOn,
   type RunStatusValue,
@@ -46,10 +47,6 @@ export interface CloseInput {
   externalId?: string | null;
   externalUrl?: string | null;
   detail?: Record<string, unknown>;
-}
-
-function isOpen(status: RunStatusValue): boolean {
-  return OPEN_RUN_STATUSES.includes(status);
 }
 
 export function runHandle(ctx: Ctx, run: RunRow, processName: string): RunHandle {
@@ -340,7 +337,7 @@ export function pollRun(ctx: Ctx, runId: string): Promise<void> {
 async function pollRunInSpan(ctx: Ctx, runId: string): Promise<void> {
   const now = ctx.clock.now();
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
-  if (!run || !isOpen(run.status) || run.status === 'invoking') return;
+  if (!run || !isOpenRunStatus(run.status) || run.status === 'invoking') return;
   if (deadlinePassed(run.deadlineAt, now)) {
     await closeAtDeadline(ctx, runId);
     return;
@@ -412,7 +409,7 @@ export function deadlineRun(ctx: Ctx, runId: string): Promise<void> {
 async function deadlineRunInSpan(ctx: Ctx, runId: string): Promise<void> {
   const now = ctx.clock.now();
   const [run] = await ctx.db.select().from(runs).where(eq(runs.id, runId));
-  if (!run || !isOpen(run.status) || run.status === 'invoking') return;
+  if (!run || !isOpenRunStatus(run.status) || run.status === 'invoking') return;
   if (!deadlinePassed(run.deadlineAt, now)) {
     if (run.deadlineAt)
       await ctx.queue.send(JOBS.deadline, { runId }, { startAfter: run.deadlineAt });
