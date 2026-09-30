@@ -25,6 +25,9 @@ oidc:
   issuer: ''
   clientId: ''
   allowedDomains: []
+  # Accept an ID token whose email the issuer does not mark verified (email_verified). Such a
+  # sign-in never links to an account that has a password. Only for issuers that never send it.
+  trustUnverifiedEmail: false
   clientSecret:
     existingSecret: ''
     key: SWITCHBOARD_OIDC_CLIENT_SECRET

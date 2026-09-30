@@ -55,6 +55,7 @@ data:
   SWITCHBOARD_OIDC_ISSUER: {{ .Values.oidc.issuer | quote }}
   SWITCHBOARD_OIDC_CLIENT_ID: {{ .Values.oidc.clientId | quote }}
   SWITCHBOARD_OIDC_ALLOWED_DOMAINS: {{ join "," .Values.oidc.allowedDomains | quote }}
+  SWITCHBOARD_OIDC_TRUST_UNVERIFIED_EMAIL: {{ .Values.oidc.trustUnverifiedEmail | default false | toString | quote }}
   {{- end }}
   {{- range $key, $value := .Values.env }}
   {{ $key }}: {{ $value | toString | quote }}
