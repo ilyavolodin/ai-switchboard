@@ -7,6 +7,7 @@ import type { CoreConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { instanceState } from '../db/schema.js';
 import { toPluginLogger, type CoreLogger } from '../logger.js';
+import { matchableSecrets } from '../secrets/refs.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
 
 import { createInstanceSecrets } from './instance-secrets.js';
@@ -33,9 +34,6 @@ export interface ContextTarget {
   secretValues: readonly string[];
 }
 
-/** Shorter values would match ordinary text by accident. */
-const MIN_GUARDED_LENGTH = 8;
-
 export class SecretInStateError extends Error {
   override readonly name = 'SecretInStateError';
 }
@@ -52,8 +50,8 @@ export function guardInstanceState(
     get: (key) => state.get(key),
     set: async (key, value) => {
       const text = value === undefined ? '' : JSON.stringify(value);
-      for (const secret of known) {
-        if (secret.length >= MIN_GUARDED_LENGTH && text.includes(secret))
+      for (const secret of matchableSecrets(known)) {
+        if (text.includes(secret))
           throw new SecretInStateError(
             `instance state "${key}" would hold a credential; keep it in ctx.secrets instead`,
           );

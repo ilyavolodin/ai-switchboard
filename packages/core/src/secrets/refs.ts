@@ -1,5 +1,7 @@
 import { SECRET_SCHEME, isSecretRef, parseSecretRef } from '@ai-switchboard/sdk';
 
+import { KEEP, mapJson, mapJsonAsync, walkJson, type JsonPath } from '../util/json.js';
+
 export {
   SECRET_SCHEME,
   formatSecretRef,
@@ -8,38 +10,47 @@ export {
   type SecretRef,
 } from '@ai-switchboard/sdk';
 
-export function collectSecretRefs(value: unknown, path = ''): { path: string; ref: string }[] {
-  if (isSecretRef(value)) return [{ path, ref: value }];
-  if (Array.isArray(value)) return value.flatMap((v, i) => collectSecretRefs(v, `${path}[${i}]`));
-  if (value !== null && typeof value === 'object') {
-    return Object.entries(value).flatMap(([k, v]) =>
-      collectSecretRefs(v, path === '' ? k : `${path}.${k}`),
-    );
-  }
-  return [];
+/**
+ * Secret values shorter than this are never matched in text (redaction, the event and state
+ * guards): they would match ordinary words by accident. One threshold for every check, set low,
+ * so a short credential is still caught; the cost is a rare false positive, never a leak.
+ */
+export const MIN_SECRET_MATCH_LENGTH = 4;
+
+export function matchableSecrets(values: Iterable<string>): string[] {
+  return [...values].filter((s) => s.length >= MIN_SECRET_MATCH_LENGTH);
+}
+
+export interface FoundSecretRef {
+  path: JsonPath;
+  ref: string;
+}
+
+export function collectSecretRefs(value: unknown): FoundSecretRef[] {
+  const out: FoundSecretRef[] = [];
+  walkJson(value, (node, path) => {
+    if (isSecretRef(node)) out.push({ path, ref: node });
+  });
+  return out;
 }
 
 /** `$secretRef('<provider>/<name>')` (or with a full `secret://` reference) in expression text. */
 const EXPRESSION_REF = /\$secretRef\(\s*(['"])(?:secret:\/\/)?([^'"\s]+)\1\s*\)/g;
 
-/** Also finds literal `$secretRef('<provider>/<name>')` calls inside expression strings. */
-export function collectDocumentSecretRefs(value: unknown): { path: string; ref: string }[] {
-  const out = collectSecretRefs(value);
-  const walk = (v: unknown, path: string): void => {
-    if (typeof v === 'string') {
-      for (const m of v.matchAll(EXPRESSION_REF)) {
-        const ref = `${SECRET_SCHEME}${m[2] ?? ''}`;
-        if (parseSecretRef(ref)) out.push({ path, ref });
-      }
-    } else if (Array.isArray(v)) {
-      v.forEach((inner, i) => {
-        walk(inner, `${path}[${i}]`);
-      });
-    } else if (v !== null && typeof v === 'object') {
-      for (const [k, inner] of Object.entries(v)) walk(inner, path === '' ? k : `${path}.${k}`);
+/** `secret://` fields, and literal `$secretRef('<provider>/<name>')` calls inside expressions. */
+export function collectDocumentSecretRefs(value: unknown): FoundSecretRef[] {
+  const out: FoundSecretRef[] = [];
+  walkJson(value, (node, path) => {
+    if (isSecretRef(node)) {
+      out.push({ path, ref: node });
+      return;
     }
-  };
-  walk(value, '');
+    if (typeof node !== 'string') return;
+    for (const m of node.matchAll(EXPRESSION_REF)) {
+      const ref = `${SECRET_SCHEME}${m[2] ?? ''}`;
+      if (parseSecretRef(ref)) out.push({ path, ref });
+    }
+  });
   return out;
 }
 
@@ -52,26 +63,19 @@ export function referencesProvider(value: unknown, providers: ReadonlySet<string
 
 export type SecretLookup = (ref: string) => Promise<string>;
 
+/** References are looked up in parallel; `secrets` lists the resolved values. */
 export async function resolveSecretRefs(
   value: unknown,
   lookup: SecretLookup,
 ): Promise<{ value: unknown; secrets: string[] }> {
   const secrets: string[] = [];
-  const walk = async (v: unknown): Promise<unknown> => {
-    if (isSecretRef(v)) {
-      const resolved = await lookup(v);
-      secrets.push(resolved);
-      return resolved;
-    }
-    if (Array.isArray(v)) return Promise.all(v.map(walk));
-    if (v !== null && typeof v === 'object') {
-      const out: Record<string, unknown> = {};
-      for (const [k, inner] of Object.entries(v)) out[k] = await walk(inner);
-      return out;
-    }
-    return v;
-  };
-  return { value: await walk(value), secrets };
+  const resolved = await mapJsonAsync(value, async (node) => {
+    if (!isSecretRef(node)) return KEEP;
+    const secret = await lookup(node);
+    secrets.push(secret);
+    return secret;
+  });
+  return { value: resolved, secrets };
 }
 
 /** Fields marked `x-secret` must hold a reference (or be empty), never a literal value. */
@@ -95,26 +99,15 @@ export const REDACTED = '[redacted]';
 
 /**
  * Applied to what a backend sends back before it is stored, since a backend may echo the
- * credentials it received. Values shorter than 4 characters are not matched (false positives).
+ * credentials it received.
  */
 export function redactSecretValues(value: unknown, secrets: readonly string[]): unknown {
-  const list = [...new Set(secrets.filter((s) => s.length >= 4))].sort(
-    (a, b) => b.length - a.length,
-  );
+  const list = [...new Set(matchableSecrets(secrets))].sort((a, b) => b.length - a.length);
   if (list.length === 0) return value;
-  const walk = (v: unknown): unknown => {
-    if (typeof v === 'string') {
-      let out = v;
-      for (const s of list) if (out.includes(s)) out = out.split(s).join(REDACTED);
-      return out;
-    }
-    if (Array.isArray(v)) return v.map(walk);
-    if (v !== null && typeof v === 'object') {
-      const out: Record<string, unknown> = {};
-      for (const [k, inner] of Object.entries(v)) out[k] = walk(inner);
-      return out;
-    }
-    return v;
-  };
-  return walk(value);
+  return mapJson(value, (node) => {
+    if (typeof node !== 'string') return KEEP;
+    let out = node;
+    for (const s of list) if (out.includes(s)) out = out.split(s).join(REDACTED);
+    return out;
+  });
 }

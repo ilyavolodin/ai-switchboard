@@ -4,7 +4,6 @@ import {
   capsApply,
   checkDraft,
   doorStage,
-  matchableSecrets,
   sourceNotes,
   storedHeaders,
   type DoorCaps,
@@ -123,7 +122,6 @@ describe('stored headers and notes', () => {
         live.secretValues,
       ),
     ).toEqual({ 'x-sig': '[redacted]', 'x-ok': 'abc' });
-    expect(matchableSecrets(['fixture-secret', 'abc'])).toEqual(['fixture-secret']);
   });
 
   it.each([

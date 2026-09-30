@@ -7,6 +7,7 @@ import {
 } from '@ai-switchboard/sdk';
 
 import type { EventStage } from '../domain/status.js';
+import { matchableSecrets } from '../secrets/refs.js';
 import { errorText } from '../util/errors.js';
 
 /**
@@ -22,11 +23,6 @@ export const ACCEPTED_STAGES = [
 ] as const satisfies readonly EventStage[];
 
 const DROPPED_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization']);
-
-/** Shorter values would redact or flag ordinary text. */
-export function matchableSecrets(values: readonly string[]): string[] {
-  return values.filter((s) => s.length >= 4);
-}
 
 /** Headers as stored: credentials dropped, any header carrying a secret value redacted. */
 export function storedHeaders(

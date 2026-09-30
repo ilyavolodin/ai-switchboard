@@ -168,4 +168,11 @@ describe('guardInstanceState', () => {
     const guarded = guardInstanceState(createMemoryState(), new Set(['abc']));
     await expect(guarded.set('k', 'abcdef')).resolves.toBeUndefined();
   });
+
+  it('uses the same threshold as redaction, so a short credential is still refused', async () => {
+    const guarded = guardInstanceState(createMemoryState(), new Set(['pin42']));
+    await expect(guarded.set('k', { code: 'pin42' })).rejects.toMatchObject({
+      name: 'SecretInStateError',
+    });
+  });
 });

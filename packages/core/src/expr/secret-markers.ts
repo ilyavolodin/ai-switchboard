@@ -1,20 +1,26 @@
+import { SECRET_SCHEME, formatSecretRef, parseSecretRef } from '@ai-switchboard/sdk';
+
+import { KEEP, mapJson, walkJson } from '../util/json.js';
+
 export const SECRET_MARKER_KEY = '$secretRef';
 
 /** What `$secretRef(name)` returns: a reference the destination bridge resolves after evaluation. */
 export interface SecretRefMarker {
-  $secretRef: string;
+  [SECRET_MARKER_KEY]: string;
 }
 
+/** `provider/name` or `secret://provider/name` as a `secret://` reference; throws on anything else. */
 export function secretRefString(name: string): string {
   const trimmed = name.trim();
-  const bare = trimmed.startsWith('secret://') ? trimmed.slice('secret://'.length) : trimmed;
-  const slash = bare.indexOf('/');
-  if (slash <= 0 || slash === bare.length - 1) {
+  const parsed = parseSecretRef(
+    trimmed.startsWith(SECRET_SCHEME) ? trimmed : `${SECRET_SCHEME}${trimmed}`,
+  );
+  if (!parsed) {
     throw new Error(
       `$secretRef expects "<provider>/<name>" or "secret://<provider>/<name>", got "${name}"`,
     );
   }
-  return `secret://${bare}`;
+  return formatSecretRef(parsed);
 }
 
 export function isSecretRefMarker(value: unknown): value is SecretRefMarker {
@@ -27,26 +33,20 @@ export function isSecretRefMarker(value: unknown): value is SecretRefMarker {
   );
 }
 
-export function collectSecretMarkers(value: unknown, out = new Set<string>()): Set<string> {
-  if (isSecretRefMarker(value)) {
-    out.add(value.$secretRef);
-  } else if (Array.isArray(value)) {
-    for (const item of value) collectSecretMarkers(item, out);
-  } else if (value !== null && typeof value === 'object') {
-    for (const item of Object.values(value)) collectSecretMarkers(item, out);
-  }
+export function collectSecretMarkers(value: unknown): Set<string> {
+  const out = new Set<string>();
+  walkJson(value, (node) => {
+    if (!isSecretRefMarker(node)) return false;
+    out.add(node[SECRET_MARKER_KEY]);
+    return true;
+  });
   return out;
 }
 
 export function replaceSecretMarkers(value: unknown, replace: (ref: string) => unknown): unknown {
-  if (isSecretRefMarker(value)) return replace(value.$secretRef);
-  if (Array.isArray(value)) return value.map((item) => replaceSecretMarkers(item, replace));
-  if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = replaceSecretMarkers(v, replace);
-    return out;
-  }
-  return value;
+  return mapJson(value, (node) =>
+    isSecretRefMarker(node) ? replace(node[SECRET_MARKER_KEY]) : KEEP,
+  );
 }
 
 /** Called immediately before a plugin call; the resolved value is never stored. */
@@ -54,8 +54,9 @@ export async function resolveSecretMarkers(
   value: unknown,
   resolve: (ref: string) => Promise<string>,
 ): Promise<{ value: unknown; secrets: string[] }> {
-  const values = new Map<string, string>();
-  for (const ref of collectSecretMarkers(value)) values.set(ref, await resolve(ref));
+  const refs = [...collectSecretMarkers(value)];
+  const resolved = await Promise.all(refs.map(async (ref) => [ref, await resolve(ref)] as const));
+  const values = new Map(resolved);
   return {
     value: replaceSecretMarkers(value, (ref) => values.get(ref)),
     secrets: [...values.values()],
