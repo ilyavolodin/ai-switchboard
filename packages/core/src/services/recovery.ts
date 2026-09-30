@@ -5,7 +5,11 @@ import { passwordProblem } from '../auth/password-policy.js';
 import { emailKey } from '../auth/throttle.js';
 import type { Db } from '../db/client.js';
 import { loginAttempts, users } from '../db/schema.js';
-import type { RecoveryErrorCode, RecoveryErrorShape } from '../domain/recovery.js';
+import {
+  isRecoveryError as isRecoveryErrorShape,
+  type RecoveryErrorCode,
+  type RecoveryErrorShape,
+} from '../domain/recovery.js';
 import type { Role } from '../domain/status.js';
 import { closeEmails, isEmail, normaliseEmail } from '../util/emails.js';
 import { auditChange, type ChangeMeta } from './audit.js';
@@ -45,7 +49,7 @@ export interface TemporaryPasswordResult {
   change?: 'created' | 'promoted' | 'unchanged';
 }
 
-export { isRecoveryError, type RecoveryErrorCode } from '../domain/recovery.js';
+export type { RecoveryErrorCode } from '../domain/recovery.js';
 
 const KIND_OF: Readonly<Record<RecoveryErrorCode, ErrorKind>> = {
   unknown_user: 'not_found',
@@ -66,6 +70,11 @@ export class RecoveryError extends DomainError implements RecoveryErrorShape {
   ) {
     super(KIND_OF[code], message, { code });
   }
+}
+
+/** The domain's duck-typed check (`@ai-switchboard/core/domain`), narrowed to the class. */
+export function isRecoveryError(err: unknown): err is RecoveryError {
+  return isRecoveryErrorShape(err);
 }
 
 function toSummary(row: typeof users.$inferSelect): AccountSummary {
