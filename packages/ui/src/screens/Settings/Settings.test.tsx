@@ -434,6 +434,30 @@ describe('Settings', () => {
     expect(await screen.findByText(/1 created, 1 updated/)).toBeVisible();
   });
 
+  it('shows the dry run as loading on Preview changes, not on Apply', async () => {
+    let finish: () => void = () => undefined;
+    const { user } = open('export', 'admin', {
+      'POST /apply': () =>
+        new Promise<ApplyResponse>((resolve) => {
+          finish = () => {
+            resolve({ dryRun: true, changes: [], errors: [] });
+          };
+        }),
+    });
+    await user.click(await screen.findByRole('textbox', { name: /Configuration/ }));
+    await user.paste('processes: []');
+    await user.click(screen.getByRole('button', { name: 'Preview changes' }));
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: /Preview changes/ })).toHaveAttribute(
+        'aria-busy',
+        'true',
+      );
+    });
+    expect(screen.getByRole('button', { name: /Apply/ })).not.toHaveAttribute('aria-busy');
+    finish();
+    expect(await screen.findByText('Nothing would change')).toBeVisible();
+  });
+
   it('downloads the YAML export', async () => {
     const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:switchboard');
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
