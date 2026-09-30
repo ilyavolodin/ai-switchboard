@@ -12,6 +12,8 @@ import {
 } from '@ai-switchboard/sdk/schema';
 import type { Ajv2020, ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 
+import { plural } from './format.js';
+
 export type ValuePath = (string | number)[];
 
 export type FieldKind =
@@ -236,7 +238,7 @@ function friendly(e: ErrorObject): string {
     case 'required':
       return 'Required';
     case 'minLength':
-      return `Use at least ${String(p.limit)} character${p.limit === 1 ? '' : 's'}`;
+      return `Use at least ${plural(Number(p.limit), 'character')}`;
     case 'maxLength':
       return `Use at most ${String(p.limit)} characters`;
     case 'minimum':

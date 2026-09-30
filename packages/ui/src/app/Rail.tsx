@@ -1,11 +1,11 @@
 import { Link, NavLink, useNavigate } from 'react-router';
 
-import { usePlugins, useProcesses, useStatus } from '../api/index.js';
-import { useAbout } from '../api/hooks/settings.js';
+import { useAbout, usePlugins, useProcesses, useStatus } from '../api/index.js';
 import { Icon } from '../components/Icon.js';
 import { IconButton } from '../components/IconButton.js';
 import { Logo } from '../components/Logo.js';
 import { cx } from '../lib/cx.js';
+import { plural, pluralWord } from '../lib/format.js';
 import { NAV_ITEMS } from './nav.js';
 import styles from './Rail.module.css';
 import { roleLabel, useSession } from './session.js';
@@ -19,6 +19,9 @@ function initials(email: string): string {
   const second = parts[1];
   return (second ? `${first.charAt(0)}${second.charAt(0)}` : first.slice(0, 2)).toUpperCase();
 }
+
+const troubleLabel = (n: number) =>
+  `${plural(n, 'plugin')} ${pluralWord(n, 'needs', 'need')} attention`;
 
 export function Rail({ onSignOut }: { onSignOut: () => void }) {
   const { user } = useSession();
@@ -40,9 +43,7 @@ export function Rail({ onSignOut }: { onSignOut: () => void }) {
         <span className={styles.brandText}>
           <span className={styles.brandName}>AI Switchboard</span>
           <span className={styles.brandSub}>
-            {replicas != null
-              ? `${replicas} replica${replicas === 1 ? '' : 's'}`
-              : 'operations console'}
+            {replicas != null ? plural(replicas, 'replica') : 'operations console'}
           </span>
         </span>
       </Link>
@@ -70,8 +71,8 @@ export function Rail({ onSignOut }: { onSignOut: () => void }) {
             {item.to === '/plugins' && pluginTrouble > 0 && (
               <span
                 className={styles.badge}
-                title={`${pluginTrouble} plugin${pluginTrouble === 1 ? ' needs' : 's need'} attention`}
-                aria-label={`${pluginTrouble} plugin${pluginTrouble === 1 ? ' needs' : 's need'} attention`}
+                title={troubleLabel(pluginTrouble)}
+                aria-label={troubleLabel(pluginTrouble)}
               >
                 {pluginTrouble}
                 <span className={styles.badgeWord} aria-hidden="true">

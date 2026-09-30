@@ -16,7 +16,7 @@ import { useDebounced } from '../../hooks/useDebounced.js';
 import { cx } from '../../lib/cx.js';
 import { formatCount } from '../../lib/format.js';
 import styles from './NpmSearch.module.css';
-import { kindLabel } from './pluginModel.js';
+import { kindLabel, pluginKindOf } from './pluginModel.js';
 
 type KindFilter = PluginSearchKind | 'all';
 
@@ -134,11 +134,7 @@ export function NpmSearch({ kind, onInstall, compact = false }: NpmSearchProps) 
         )}
         <SearchInput
           label="Search npm"
-          placeholder={
-            kind
-              ? `search ${kindLabel(kind === 'secrets' ? 'secret_provider' : kind)} plugins`
-              : 'search plugins'
-          }
+          placeholder={kind ? `search ${kindLabel(pluginKindOf(kind))} plugins` : 'search plugins'}
           className={styles.search}
           value={query}
           onChange={(e) => {

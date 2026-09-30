@@ -1,7 +1,7 @@
 import type { RunSummary } from '@ai-switchboard/core/contract';
 import { Fragment, type ReactNode } from 'react';
 
-import { formatClock, toMs } from '../lib/format.js';
+import { formatClock, plural, toMs } from '../lib/format.js';
 import { Banner } from './Banner.js';
 import styles from './BreakerBanner.module.css';
 import { Countdown } from './Countdown.js';
@@ -25,7 +25,7 @@ export function BreakerBanner({
   const sorted = [...failures].sort((a, b) => (toMs(a.invokedAt) ?? 0) - (toMs(b.invokedAt) ?? 0));
   return (
     <Banner tone="error" size="lg" title="Breaker open" actions={action}>
-      {sorted.length} failed run{sorted.length === 1 ? '' : 's'}
+      {plural(sorted.length, 'failed run')}
       {openedAt ? (
         <>
           {' '}

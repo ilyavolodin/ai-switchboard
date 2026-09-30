@@ -26,7 +26,7 @@ export function useUsers() {
 
 export function useUserDirectory(enabled = true) {
   return useQuery({
-    queryKey: [...qk.users, 'directory'],
+    queryKey: qk.userDirectory,
     queryFn: ({ signal }) => apiFetch('GET /users/directory', { signal }),
     enabled,
   });
