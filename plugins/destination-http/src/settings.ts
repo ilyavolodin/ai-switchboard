@@ -1,5 +1,5 @@
 import type { JSONSchema, MeterSpec, Settings, UsageDimension } from '@ai-switchboard/sdk';
-import { parseWith, tryParse } from '@ai-switchboard/sdk/schema';
+import { tryParse } from '@ai-switchboard/sdk/schema';
 
 export interface HttpSettings {
   /** Relative target URLs are appended to it; default headers are pinned to its origin. */
@@ -145,16 +145,14 @@ export const settingsSchema: JSONSchema = {
   },
 };
 
-export function readSettings(settings: Settings): HttpSettings {
-  return validateSettings(
-    parseWith<HttpSettings>(settingsSchema, settings, 'http destination settings'),
-  );
+export class HttpSettingsError extends Error {
+  override readonly name = 'HttpSettingsError';
 }
 
 export function validateSettings(parsed: HttpSettings): HttpSettings {
   const ids = new Set<string>();
   for (const d of parsed.usageDimensions) {
-    if (ids.has(d.id)) throw new Error(`usage dimension "${d.id}" is declared twice`);
+    if (ids.has(d.id)) throw new HttpSettingsError(`usage dimension "${d.id}" is declared twice`);
     ids.add(d.id);
   }
   return parsed;

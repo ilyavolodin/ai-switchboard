@@ -1,17 +1,10 @@
-import type { Attributes, EventTypeSpec, JSONSchema } from '@ai-switchboard/sdk';
+import type { Attributes, EventTypeSpec } from '@ai-switchboard/sdk';
+import { attr, flatAttributesSchema as schema } from '@ai-switchboard/sdk/schema';
 
-const S = (description: string): JSONSchema => ({ type: 'string', description });
-const I = (description: string): JSONSchema => ({ type: 'integer', description });
-const B = (description: string): JSONSchema => ({ type: 'boolean', description });
-const L = (description: string): JSONSchema => ({
-  type: 'array',
-  items: { type: 'string' },
-  description,
-});
-
-function schema(properties: Record<string, JSONSchema>, required: string[]): JSONSchema {
-  return { type: 'object', properties, required, additionalProperties: false };
-}
+const S = attr.string;
+const I = attr.integer;
+const B = attr.boolean;
+const L = attr.strings;
 
 const common = {
   repo: S('Repository full name, e.g. `acme/api`.'),

@@ -1154,7 +1154,12 @@ with a real token.
   `xGroup`, `xOrder`, `xPlaceholder`, `xHelp`, `xWarnings`, `xEnumLabels`, `xEffectiveDefaults`,
   `xDocs`, `isXWidget`), the type argument of `HttpResponse.json` and `InstanceState.get`, and
   `parseRetryAfter`'s wall-clock default. `HttpClient` now refuses a request with both `body` and
-  `json`.
+  `json`. Plugin helpers, also new in 2.4.0: `verifySwitchboardCallback`, `callbackBodySchema` and
+  `CALLBACK_BODY_PROPERTIES` for completion callbacks, `parseDefinitive` for targets and inputs,
+  `dispatchAction` for `act`, `headerValue`, `responseSnippet`, `lowerCaseHeaders`, `meterReading`,
+  `attr` and `flatAttributesSchema` on `/schema`, and the `/jsonata` subpath (`compileExpression`,
+  `asList`, `MappingError`: the 2 s, deterministic expression sandbox; list `jsonata` in your own
+  dependencies to use it).
 - Your plugin's own version is yours, but treat event type ids, attribute names and action ids as
   public API: people's filters and processes depend on them. Removing or renaming one is a major.
 - SDK majors are announced through the `switchboard-plugin` topic on the repository.

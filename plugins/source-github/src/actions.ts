@@ -1,11 +1,4 @@
-import {
-  asArray,
-  asObject,
-  asString,
-  type ArtifactRef,
-  type ActionSpec,
-  type JSONSchema,
-} from '@ai-switchboard/sdk';
+import type { ActionSpec, ArtifactRef, JSONSchema } from '@ai-switchboard/sdk';
 
 export const NUMBERED_ID = /^([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)#([0-9]+)$/;
 
@@ -112,16 +105,15 @@ export const actions: ActionSpec[] = [
   },
 ];
 
-export const actionsById = new Map(actions.map((a) => [a.id, a]));
-export const MARK_READY = `mutation($id: ID!) {
-  markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } }
-}`;
+/** Every action's args, as their `argsSchema`s describe them. */
+export interface GitHubActionArgs {
+  artifact: ArtifactRef;
+  label?: string;
+  body?: string;
+}
 
-export function labelNames(value: unknown): string[] {
-  return asArray(value).flatMap((l) => {
-    const name = asString(asObject(l)?.name);
-    return name === undefined ? [] : [name];
-  });
+export class GitHubLookupError extends Error {
+  override readonly name = 'GitHubLookupError';
 }
 
 export function itemPath(n: Numbered, kind: string): string {
@@ -132,7 +124,9 @@ export function itemPath(n: Numbered, kind: string): string {
 export function numberedOrThrow(ref: ArtifactRef): Numbered {
   const n = parseNumberedId(ref.id);
   if (!n || (ref.kind !== 'github.pr' && ref.kind !== 'github.issue')) {
-    throw new Error(`github cannot look up ${ref.kind} ${ref.id}; only github.pr and github.issue`);
+    throw new GitHubLookupError(
+      `github cannot look up ${ref.kind} ${ref.id}; only github.pr and github.issue`,
+    );
   }
   return n;
 }

@@ -4,10 +4,10 @@ import {
   narrowMapped,
   type EventTypeDefinition,
 } from '@ai-switchboard/sdk';
+import { asList, compileExpression } from '@ai-switchboard/sdk/jsonata';
 
-import { draftFor, type Delivery, type Mapper } from './mapper.js';
-import { asList, compileExpression } from './mapping.js';
-import { SOURCE_ID } from './settings.js';
+import { draftFor, type Delivery, type Mapper } from '../mapper.js';
+import { SOURCE_ID } from '../settings.js';
 
 /** The only mode before 1.1. */
 export function compileJsonata(eventTypes: EventTypeDefinition[], mapping: string): Mapper {

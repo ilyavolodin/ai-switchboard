@@ -1,5 +1,5 @@
 import type { JSONSchema, MeterSpec, Settings, UsageDimension } from '@ai-switchboard/sdk';
-import { parseWith, tryParse } from '@ai-switchboard/sdk/schema';
+import { tryParse } from '@ai-switchboard/sdk/schema';
 
 /** All optional: without a refresh token there are no meters. */
 export interface RoutinesUsageSettings {
@@ -122,10 +122,6 @@ export const settingsSchema: JSONSchema = {
     },
   },
 };
-
-export function readSettings(settings: Settings): RoutinesSettings {
-  return parseWith<RoutinesSettings>(settingsSchema, settings, 'claude-routines settings');
-}
 
 const TOKEN_DIMENSION = { unit: 'tokens', aggregate: 'sum', budgetable: true } as const;
 

@@ -4,9 +4,12 @@ import { access, chmod, readdir, readFile, rename, rm, stat, writeFile } from 'n
 import { join } from 'node:path';
 
 import {
+  checkHealth,
   SecretNotFoundError,
+  SecretStoreError,
   withSettings,
   type Health,
+  type HealthProbe,
   type PluginContext,
   type SecretListing,
   type SecretProvider,
@@ -64,9 +67,12 @@ async function writeAtomically(directory: string, name: string, value: string): 
     await rename(tmp, path);
   } catch (err) {
     await rm(tmp, { force: true });
-    throw new Error(`Secret file ${path} cannot be written (${codeOf(err) ?? 'error'})`, {
-      cause: err,
-    });
+    throw new SecretStoreError(
+      `Secret file ${path} cannot be written (${codeOf(err) ?? 'error'})`,
+      {
+        cause: err,
+      },
+    );
   }
 }
 
@@ -83,12 +89,37 @@ function writes(settings: FileSecretSettings): Pick<SecretProvider, 'set' | 'del
       try {
         await rm(path, { force: true });
       } catch (err) {
-        throw new Error(`Secret file ${path} cannot be removed (${codeOf(err) ?? 'error'})`, {
-          cause: err,
-        });
+        throw new SecretStoreError(
+          `Secret file ${path} cannot be removed (${codeOf(err) ?? 'error'})`,
+          {
+            cause: err,
+          },
+        );
       }
     },
   };
+}
+
+async function inspectDirectory(settings: FileSecretSettings): ReturnType<HealthProbe> {
+  const dir = settings.directory;
+  try {
+    const info = await stat(dir);
+    if (!info.isDirectory()) return { status: 'unhealthy', message: `${dir} is not a directory` };
+    await access(dir, constants.R_OK | constants.X_OK);
+  } catch (err) {
+    return { status: 'unhealthy', message: `${dir} is not readable (${codeOf(err) ?? 'error'})` };
+  }
+  if (settings.writable === true) {
+    try {
+      await access(dir, constants.W_OK);
+    } catch (err) {
+      return {
+        status: 'unhealthy',
+        message: `${dir} is not writable (${codeOf(err) ?? 'error'}); turn writes off or fix the mount`,
+      };
+    }
+  }
+  return { status: 'healthy' };
 }
 
 function createFileProvider(settings: FileSecretSettings, ctx: PluginContext): SecretProvider {
@@ -143,38 +174,7 @@ function createFileProvider(settings: FileSecretSettings, ctx: PluginContext): S
       return out;
     },
 
-    async health(): Promise<Health> {
-      const checkedAt = (): string => ctx.now().toISOString();
-      try {
-        const info = await stat(settings.directory);
-        if (!info.isDirectory()) {
-          return {
-            status: 'unhealthy',
-            message: `${settings.directory} is not a directory`,
-            checkedAt: checkedAt(),
-          };
-        }
-        await access(settings.directory, constants.R_OK | constants.X_OK);
-        if (settings.writable === true) {
-          try {
-            await access(settings.directory, constants.W_OK);
-          } catch (err) {
-            return {
-              status: 'unhealthy',
-              message: `${settings.directory} is not writable (${codeOf(err) ?? 'error'}); turn writes off or fix the mount`,
-              checkedAt: checkedAt(),
-            };
-          }
-        }
-        return { status: 'healthy', checkedAt: checkedAt() };
-      } catch (err) {
-        return {
-          status: 'unhealthy',
-          message: `${settings.directory} is not readable (${codeOf(err) ?? 'error'})`,
-          checkedAt: checkedAt(),
-        };
-      }
-    },
+    health: (): Promise<Health> => checkHealth(ctx, () => inspectDirectory(settings)),
   };
 }
 

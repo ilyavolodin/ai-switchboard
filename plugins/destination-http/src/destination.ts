@@ -1,12 +1,12 @@
-import jsonata from 'jsonata';
-
 import {
+  asObject,
   checkHealth,
   InvokeError,
-  parseWith,
-  pickDeclaredUsage,
+  lowerCaseHeaders,
+  meterReading,
+  parseDefinitive,
   refusalFor,
-  SchemaMismatchError,
+  responseSnippet,
   SWITCHBOARD_RUN_ID_HEADER,
   tryJson,
   tryParse,
@@ -19,7 +19,6 @@ import {
   type MeterReading,
   type PluginContext,
   type RunHandle,
-  type UsageReport,
 } from '@ai-switchboard/sdk';
 
 import { verifySignedCallback } from './callback.js';
@@ -42,11 +41,14 @@ import {
   trackingFor,
   type HttpTarget,
 } from './target.js';
+import { createUsageMeasurer } from './usage.js';
 
 const PAUSED_STATUS = 423;
-const USAGE_EXPRESSION_TIMEOUT_MS = 2_000;
-const USAGE_EXPRESSION_MAX_DEPTH = 500;
-const ERROR_SNIPPET_CHARS = 200;
+
+/** Thrown when the meter endpoint cannot be read; the core shows the meter as stale. */
+export class MeterEndpointError extends Error {
+  override readonly name = 'MeterEndpointError';
+}
 
 /** Absolute URLs pass through. */
 export function resolveUrl(baseUrl: string | undefined, url: string): string {
@@ -59,29 +61,12 @@ export function resolveUrl(baseUrl: string | undefined, url: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
 }
 
-function lowerKeys(headers: Record<string, string> | undefined): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(headers ?? {})) out[k.toLowerCase()] = v;
-  return out;
-}
-
 /** Default headers carry the authorization secret: only send them to the base URL's origin. */
 function defaultHeadersFor(settings: HttpSettings, url: string): Record<string, string> {
-  if (settings.baseUrl === undefined) return lowerKeys(settings.headers);
+  if (settings.baseUrl === undefined) return lowerCaseHeaders(settings.headers);
   return new URL(url).origin === new URL(settings.baseUrl).origin
-    ? lowerKeys(settings.headers)
+    ? lowerCaseHeaders(settings.headers)
     : {};
-}
-
-/** A bad target is definitive: retrying cannot fix it. */
-export function readTarget(target: unknown): HttpTarget {
-  try {
-    return parseWith<HttpTarget>(targetSchema, target, 'http target');
-  } catch (err) {
-    if (err instanceof SchemaMismatchError)
-      throw new InvokeError(err.message, { definitive: true });
-    throw err;
-  }
 }
 
 function parseBody(res: HttpResponse): unknown {
@@ -91,9 +76,8 @@ function parseBody(res: HttpResponse): unknown {
 }
 
 function snippet(res: HttpResponse): string {
-  const text = res.text().trim();
-  if (text === '') return '';
-  return `: ${text.length > ERROR_SNIPPET_CHARS ? `${text.slice(0, ERROR_SNIPPET_CHARS)}…` : text}`;
+  const text = responseSnippet(res);
+  return text === '' ? '' : `: ${text}`;
 }
 
 /**
@@ -109,30 +93,14 @@ export function refusal(res: HttpResponse, now: Date, what: string): InvokeResul
 }
 
 function externalIdOf(body: unknown): string | undefined {
-  if (body === null || typeof body !== 'object') return undefined;
-  const record = body as Record<string, unknown>;
+  const record = asObject(body);
+  if (!record) return undefined;
   for (const key of ['id', 'requestId', 'request_id']) {
     const value = record[key];
     if (typeof value === 'string' && value !== '') return value;
     if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   }
   return undefined;
-}
-
-/**
- * Evaluate a `usageFrom` expression. JSONata's own `timeout` and `stack` limits are checked on
- * every step; a timer racing the evaluation cannot fire while JSONata keeps the microtask queue
- * busy, so an endless expression would block the event loop.
- */
-async function evaluateUsage(
-  expression: jsonata.Expression,
-  data: unknown,
-): Promise<Record<string, unknown>> {
-  const value: unknown = await expression.evaluate(data);
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('usageFrom must return an object of dimension id → number');
-  }
-  return value as Record<string, unknown>;
 }
 
 interface MeterBody {
@@ -153,56 +121,16 @@ const meterBodySchema: JSONSchema = {
 
 function createHttpDestination(settings: HttpSettings, ctx: PluginContext): Destination {
   const declared = new Set(settings.usageDimensions.map((d) => d.id));
-
-  // Compiled per instance: the set of expressions is bounded by this instance's targets.
-  const compiled = new Map<string, jsonata.Expression>();
-  function usageExpression(source: string): jsonata.Expression {
-    let expression = compiled.get(source);
-    if (!expression) {
-      expression = jsonata(source, {
-        timeout: USAGE_EXPRESSION_TIMEOUT_MS,
-        stack: USAGE_EXPRESSION_MAX_DEPTH,
-      });
-      compiled.set(source, expression);
-    }
-    return expression;
-  }
-
-  async function syncUsage(
-    target: HttpTarget,
-    res: HttpResponse,
-    body: unknown,
-    durationSeconds: number,
-  ): Promise<UsageReport | undefined> {
-    const measured: Record<string, unknown> = {
-      duration_seconds: durationSeconds,
-      response_bytes: res.body.length,
-    };
-    if (target.usageFrom !== undefined) {
-      try {
-        const fromExpr = await evaluateUsage(usageExpression(target.usageFrom), {
-          response: { status: res.status, headers: res.headers, body },
-          durationSeconds,
-        });
-        Object.assign(measured, fromExpr);
-      } catch (err) {
-        // The work already happened; a broken usage expression must not fail the run.
-        ctx.logger.warn('usageFrom evaluation failed', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-    return pickDeclaredUsage(measured, declared);
-  }
+  const usage = createUsageMeasurer(declared, ctx.logger);
 
   return {
     async invoke(rawTarget: unknown, input: unknown, run: RunHandle): Promise<InvokeResult> {
-      const target = readTarget(rawTarget);
+      const target = parseDefinitive<HttpTarget>(targetSchema, rawTarget, 'http target');
       const url = resolveUrl(settings.baseUrl, target.url);
       const headers: Record<string, string> = {
         accept: 'application/json, text/plain;q=0.9, */*;q=0.5',
         ...defaultHeadersFor(settings, url),
-        ...lowerKeys(target.headers),
+        ...lowerCaseHeaders(target.headers),
         [SWITCHBOARD_RUN_ID_HEADER]: run.id,
         'x-switchboard-callback-url': run.callbackUrl,
         ...(run.dryRun ? { 'x-switchboard-dry-run': '1' } : {}),
@@ -224,12 +152,16 @@ function createHttpDestination(settings: HttpSettings, ctx: PluginContext): Dest
       if (target.tracking !== 'sync') {
         return { status: 'started', ...(externalId !== undefined ? { externalId } : {}) };
       }
-      const usage = await syncUsage(target, res, body, Math.round(durationSeconds * 1000) / 1000);
+      const measured = await usage.measure(
+        target,
+        { res, body, durationSeconds: Math.round(durationSeconds * 1000) / 1000 },
+        ctx.now(),
+      );
       return {
         status: 'completed',
         result: body,
         ...(externalId !== undefined ? { externalId } : {}),
-        ...(usage ? { usage } : {}),
+        ...(measured ? { usage: measured } : {}),
       };
     },
 
@@ -241,19 +173,19 @@ function createHttpDestination(settings: HttpSettings, ctx: PluginContext): Dest
       const res = await ctx.http.get(url, {
         headers: { accept: 'application/json', ...defaultHeadersFor(settings, url) },
       });
-      if (!res.ok) throw new Error(`meter endpoint answered ${res.status}`);
+      if (!res.ok) throw new MeterEndpointError(`meter endpoint answered ${res.status}`);
       const reading = tryParse<MeterBody>(meterBodySchema, parseBody(res));
-      if (!reading) throw new Error('meter endpoint did not return { used, limit, resetsAt }');
-      const utilization = Math.min(100, Math.max(0, (reading.used / reading.limit) * 100));
+      if (!reading) {
+        throw new MeterEndpointError('meter endpoint did not return { used, limit, resetsAt }');
+      }
       return [
-        {
+        meterReading({
           id: ENDPOINT_METER_ID,
           used: reading.used,
           limit: reading.limit,
-          utilization,
           ...(reading.resetsAt !== undefined ? { resetsAt: reading.resetsAt } : {}),
           observedAt: ctx.now().toISOString(),
-        },
+        }),
       ];
     },
 

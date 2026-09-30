@@ -1,4 +1,4 @@
-import type { EventDraft } from '@ai-switchboard/sdk';
+import { asArray, asString, parseJsonObject, type EventDraft } from '@ai-switchboard/sdk';
 
 const MAX_SEEN = 500;
 
@@ -30,19 +30,15 @@ export function decodeWatermark(
   initial: string | undefined,
 ): WatermarkState {
   if (watermark == null || watermark === '') return fromPlain(initial);
-  try {
-    const parsed = JSON.parse(watermark) as unknown;
-    if (typeof parsed === 'object' && parsed !== null && 'v' in parsed && parsed.v === 1) {
-      const p = parsed as { cursor?: unknown; at?: unknown; seen?: unknown };
-      return {
-        cursor: typeof p.cursor === 'string' ? p.cursor : null,
-        at: typeof p.at === 'string' ? p.at : null,
-        seen: Array.isArray(p.seen) ? p.seen.filter((k): k is string => typeof k === 'string') : [],
-      };
-    }
-  } catch {
-    // Not ours: treat it as a plain cursor below.
+  const p = parseJsonObject(watermark);
+  if (p?.v === 1) {
+    return {
+      cursor: asString(p.cursor) ?? null,
+      at: asString(p.at) ?? null,
+      seen: asArray(p.seen).filter((k): k is string => typeof k === 'string'),
+    };
   }
+  // Not ours: a plain cursor.
   return fromPlain(watermark);
 }
 

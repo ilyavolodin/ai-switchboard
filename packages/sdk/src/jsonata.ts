@@ -1,34 +1,40 @@
+/**
+ * The JSONata sandbox for plugins that let a person write expressions
+ * (`@ai-switchboard/sdk/jsonata`). `jsonata` is an optional peer dependency: a plugin that
+ * imports this subpath lists `jsonata` in its own dependencies.
+ */
 import jsonata from 'jsonata';
 
-/** Evaluation limits, matching the core's rule that every expression has a 2 s budget. */
-const TIMEOUT_MS = 2_000;
-const MAX_DEPTH = 500;
+import { errorText, isRecord } from './json.js';
+
+/** Every evaluation's limit, matching the core's 2 s rule for expressions. */
+export const EXPRESSION_TIMEOUT_MS = 2_000;
+export const EXPRESSION_MAX_DEPTH = 500;
 
 export class MappingError extends Error {
   override readonly name = 'MappingError';
 }
 
+/** JSONata throws plain objects (`{ code, message, position }`) as well as `Error`s. */
 function describe(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'object' && err !== null && 'message' in err) {
-    if (typeof err.message === 'string') return err.message;
-  }
-  return String(err);
+  if (isRecord(err) && typeof err.message === 'string') return err.message;
+  return errorText(err);
 }
 
 export interface CompiledExpression {
   /**
-   * Evaluate over `input`. `$now()` and `$millis()` return `fixedNow` (the poll's start time)
-   * instead of reading the clock mid-evaluation, so every item of one poll sees the same instant.
-   * `$random()` is unavailable so a mapping stays repeatable.
+   * Evaluate over `input`. `$now()` and `$millis()` return `fixedNow` instead of reading the
+   * clock, so the same input always gives the same result; `$random()` throws for the same
+   * reason. The result is plain JSON data (or `undefined`). Failures throw `MappingError`.
    */
   evaluate(input: unknown, fixedNow: string): Promise<unknown>;
 }
 
+/** Throws `MappingError` when `source` does not compile; `what` names it in messages. */
 export function compileExpression(source: string, what: string): CompiledExpression {
   let expr: jsonata.Expression;
   try {
-    expr = jsonata(source, { timeout: TIMEOUT_MS, stack: MAX_DEPTH });
+    expr = jsonata(source, { timeout: EXPRESSION_TIMEOUT_MS, stack: EXPRESSION_MAX_DEPTH });
   } catch (err) {
     throw new MappingError(`${what} does not compile: ${describe(err)}`);
   }
@@ -39,7 +45,7 @@ export function compileExpression(source: string, what: string): CompiledExpress
         now: () => fixedNow,
         millis: () => millis,
         random: () => {
-          throw new MappingError('$random() is not available: mappings must be deterministic');
+          throw new MappingError('$random() is not available: expressions must be deterministic');
         },
       };
       let result: unknown;
@@ -55,6 +61,7 @@ export function compileExpression(source: string, what: string): CompiledExpress
   };
 }
 
+/** An expression result as a list: nothing for `undefined`/`null`, a single value wrapped. */
 export function asList(result: unknown): unknown[] {
   if (result === undefined || result === null) return [];
   return Array.isArray(result) ? (result as unknown[]) : [result];

@@ -191,3 +191,21 @@ export {
 export type { IconName } from './icons.js';
 
 export { SDK_VERSION, SDK_MAJOR } from './version.js';
+
+export {
+  verifySwitchboardCallback,
+  callbackBodySchema,
+  CALLBACK_BODY_PROPERTIES,
+} from './protocol-callback.js';
+export type { SwitchboardCallbackBody, CallbackOptions } from './protocol-callback.js';
+export { parseDefinitive } from './definitive.js';
+export { dispatchAction } from './actions.js';
+export type { ActionHandlers } from './actions.js';
+export {
+  headerValue,
+  responseSnippet,
+  lowerCaseHeaders,
+  RESPONSE_SNIPPET_CHARS,
+} from './request.js';
+export { meterReading } from './meters.js';
+export type { MeterReadingInput } from './meters.js';

@@ -8,8 +8,8 @@ import issue from './__fixtures__/issue-created.json' with { type: 'json' };
 import legacySettings from './__fixtures__/settings.json' with { type: 'json' };
 import mappedSettings from './__fixtures__/settings-mapped.json' with { type: 'json' };
 import quickSettings from './__fixtures__/settings-quick.json' with { type: 'json' };
-import { ruleDefinitions } from './mapped.js';
-import { quickArtifactKind } from './quick.js';
+import { ruleDefinitions } from './modes/mapped.js';
+import { quickArtifactKind } from './modes/quick.js';
 import { mappingModeOf, settingsSchema, type MappedRule } from './settings.js';
 import { webhookSource } from './source.js';
 

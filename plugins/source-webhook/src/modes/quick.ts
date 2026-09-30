@@ -5,8 +5,8 @@ import {
   type EventTypeSpec,
 } from '@ai-switchboard/sdk';
 
-import { bodyHash, draftFor, type Delivery, type Mapper } from './mapper.js';
-import { describeValue, readPath, scalarText } from './paths.js';
+import { bodyHash, draftFor, type Delivery, type Mapper } from '../mapper.js';
+import { describeValue, readPath, scalarText } from '../paths.js';
 
 export interface QuickSettings {
   quickEventType: string;

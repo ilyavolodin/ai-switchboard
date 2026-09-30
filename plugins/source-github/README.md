@@ -18,8 +18,9 @@ releases and pushes from one organization (or user), plus live state (`resolve`)
 | `webhookSecret`  | Webhook        | **Secret.** The webhook secret GitHub signs with.                                                               |
 
 App mode signs an RS256 JWT with `node:crypto`, exchanges it at
-`POST /app/installations/{id}/access_tokens`, and keeps the installation token in memory until a
-minute before it expires. Nothing secret is written to instance state.
+`POST /app/installations/{id}/access_tokens`, and keeps the installation token in memory until
+five minutes before it expires, or until GitHub answers 401 to it. Nothing secret is written to
+instance state.
 
 ## Verification
 
