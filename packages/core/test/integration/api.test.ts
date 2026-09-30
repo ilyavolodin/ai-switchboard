@@ -402,6 +402,23 @@ describe('processes', () => {
     expect(first.dots.tones).toHaveLength(5);
     expect(first.status.label).toBe('disabled');
   });
+
+  it('reports the window the daily stats cover, at least seven days', async () => {
+    const procs = await h.request('GET', '/api/v1/processes', { cookie: h.adminCookie });
+    const dests = await h.request('GET', '/api/v1/destinations', { cookie: h.adminCookie });
+    const [proc] = procs.json<ProcessSummary[]>();
+    const [dest] = dests.json<{ id: string }[]>();
+    for (const [url, days] of [
+      [`/api/v1/processes/${proc!.id}/stats?window=24h`, '7d'],
+      [`/api/v1/processes/${proc!.id}/stats?window=30d`, '30d'],
+      [`/api/v1/destinations/${dest!.id}/usage?window=24h`, '7d'],
+      [`/api/v1/destinations/${dest!.id}/usage`, '7d'],
+    ] as const) {
+      const res = await h.request('GET', url, { cookie: h.adminCookie });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.json<{ window: string }>().window, url).toBe(days);
+    }
+  });
 });
 
 describe('board and status', () => {

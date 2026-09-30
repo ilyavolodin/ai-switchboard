@@ -1,150 +1,74 @@
-import { and, count, desc, eq, gt, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, gte, inArray, isNull } from 'drizzle-orm';
 
-import {
-  approvals,
-  batches,
-  dispatches,
-  destinations,
-  processes,
-  processVersions,
-  runs,
-  sources,
-} from '../../db/schema.js';
-import { processStatus } from '../../domain/labels.js';
-import { nextSweepAt } from '../../scheduler/due.js';
-import { countedRun } from '../../services/pipeline/counters.js';
-import { savedVersion } from '../../services/processes.js';
-import type { StatusTone } from '../../domain/status.js';
-import type { ApiContext } from '../context.js';
 import type {
-  PipelineDots,
   ProcessDetail,
   ProcessSummary,
   ProcessVersionDetail,
   ProcessVersionSummary,
   RecentBatchDTO,
 } from '../../contract/index.js';
+import {
+  approvals,
+  batches,
+  dispatches,
+  processes,
+  processVersions,
+  runs,
+} from '../../db/schema.js';
+import { processStatus } from '../../domain/labels.js';
+import { nextSweepAt } from '../../scheduler/due.js';
+import { countedRun } from '../../services/pipeline/counters.js';
+import { savedVersion } from '../../services/processes.js';
+import { groupBy } from '../../util/collections.js';
+import { DAY_MS, HOUR_MS, msAgo } from '../../util/time.js';
 import { notFound } from '../errors.js';
+import type { ReadDeps } from './deps.js';
+import { namesById } from './names.js';
+import { PROBLEM_RUN_STATUSES } from './outcomes.js';
 import { pageLimit } from './paging.js';
+import {
+  dotsFrom,
+  hourCountsByProcess,
+  NO_HOUR_COUNTS,
+  sparklineFrom,
+  type HourCounts,
+} from './processes.shape.js';
 import { batchArtifacts, runSummaries } from './runs.js';
+import { dayOf } from './stats.js';
 
 type ProcessRow = typeof processes.$inferSelect;
 
-interface HourCounts {
-  matched: number;
-  batched: number;
-  passed: number;
-  stopped: number;
-  invoked: number;
-  ok: number;
-  bad: number;
-}
-
-function tone(n: number, problem = false): StatusTone {
-  if (problem) return 'warn';
-  return n > 0 ? 'ok' : 'off';
-}
-
-export function dotsFrom(c: HourCounts): PipelineDots {
-  return {
-    matched: c.matched,
-    batched: c.batched,
-    gated: c.passed,
-    invoked: c.invoked,
-    ok: c.ok,
-    tones: [
-      tone(c.matched),
-      tone(c.batched),
-      c.stopped > 0 ? 'warn' : tone(c.passed),
-      tone(c.invoked),
-      c.bad > 0 ? 'error' : tone(c.ok),
-    ],
-  };
-}
-
-async function hourCounts(ctx: ApiContext, ids: string[]): Promise<Map<string, HourCounts>> {
-  const since = new Date(ctx.clock.now().getTime() - 3_600_000);
-  const out = new Map<string, HourCounts>(
-    ids.map((id) => [
-      id,
-      { matched: 0, batched: 0, passed: 0, stopped: 0, invoked: 0, ok: 0, bad: 0 },
-    ]),
-  );
-  if (ids.length === 0) return out;
+async function hourCounts(deps: ReadDeps, ids: string[]): Promise<Map<string, HourCounts>> {
+  const since = msAgo(deps.clock.now(), HOUR_MS);
   const [d, b, r] = await Promise.all([
-    ctx.db
+    deps.db
       .select({ processId: dispatches.processId, outcome: dispatches.outcome, n: count() })
       .from(dispatches)
       .where(and(inArray(dispatches.processId, ids), gte(dispatches.createdAt, since)))
       .groupBy(dispatches.processId, dispatches.outcome),
-    ctx.db
+    deps.db
       .select({ processId: batches.processId, outcome: batches.outcome, n: count() })
       .from(batches)
       .where(and(inArray(batches.processId, ids), gte(batches.openedAt, since)))
       .groupBy(batches.processId, batches.outcome),
-    ctx.db
+    deps.db
       .select({ processId: runs.processId, status: runs.status, n: count() })
       .from(runs)
       .where(and(inArray(runs.processId, ids), gte(runs.createdAt, since)))
       .groupBy(runs.processId, runs.status),
   ]);
-  for (const row of d) {
-    const c = out.get(row.processId);
-    if (!c) continue;
-    c.matched += row.n;
-    if (row.outcome === 'batched') c.batched += row.n;
-  }
-  for (const row of b) {
-    const c = out.get(row.processId);
-    if (!c) continue;
-    if (row.outcome === 'invoked' || row.outcome === 'merged') c.passed += row.n;
-    if (
-      row.outcome === 'held' ||
-      row.outcome === 'throttled' ||
-      row.outcome === 'awaiting_approval'
-    )
-      c.stopped += row.n;
-  }
-  for (const row of r) {
-    const c = out.get(row.processId);
-    if (!c) continue;
-    c.invoked += row.n;
-    if (row.status === 'ok') c.ok += row.n;
-    if (row.status === 'error' || row.status === 'failed' || row.status === 'unknown')
-      c.bad += row.n;
-  }
-  return out;
+  return hourCountsByProcess(ids, d, b, r);
 }
 
-export async function processSummaries(
-  ctx: ApiContext,
-  rows?: ProcessRow[],
-): Promise<ProcessSummary[]> {
-  const list = rows ?? (await ctx.db.select().from(processes).orderBy(processes.name));
-  if (list.length === 0) return [];
-  const ids = list.map((p) => p.id);
-  const now = ctx.clock.now();
-  const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
-  const dayAgo = new Date(now.getTime() - 86_400_000);
-  const [hours, daily, pending, lastRuns, srcs, exs, day24] = await Promise.all([
-    hourCounts(ctx, ids),
-    ctx.db
-      .select({
-        processId: runs.processId,
-        day: sql<string>`to_char(date_trunc('day', ${runs.createdAt} AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
-        n: count(),
-      })
-      .from(runs)
-      .where(
-        and(inArray(runs.processId, ids), gte(runs.createdAt, weekAgo), eq(runs.dryRun, false)),
-      )
-      .groupBy(runs.processId, sql`2`),
-    ctx.db
+/** Pending approvals and the newest run, per process: what `processStatus` needs. */
+async function processState(deps: ReadDeps, ids: string[]) {
+  const [pending, lastRuns] = await Promise.all([
+    deps.db
       .select({ processId: approvals.processId, n: count() })
       .from(approvals)
       .where(and(inArray(approvals.processId, ids), isNull(approvals.decision)))
       .groupBy(approvals.processId),
-    ctx.db
+    deps.db
       .selectDistinctOn([runs.processId], {
         processId: runs.processId,
         status: runs.status,
@@ -153,62 +77,94 @@ export async function processSummaries(
       .from(runs)
       .where(inArray(runs.processId, ids))
       .orderBy(runs.processId, desc(runs.createdAt)),
-    ctx.db.select({ id: sources.id, name: sources.name }).from(sources),
-    ctx.db.select({ id: destinations.id, name: destinations.name }).from(destinations),
+  ]);
+  const awaiting = new Map(pending.map((p) => [p.processId, p.n]));
+  const last = new Map(lastRuns.map((r) => [r.processId, r]));
+  return (p: ProcessRow) => {
+    const awaitingApproval = awaiting.get(p.id) ?? 0;
+    const lastRun = last.get(p.id);
+    return {
+      awaitingApproval,
+      lastRun,
+      status: processStatus({
+        enabled: p.enabled,
+        breakerOpen: p.breakerState === 'open',
+        awaitingApproval,
+        lastRunStatus: lastRun?.status ?? null,
+      }),
+    };
+  };
+}
+
+export async function processSummaries(
+  deps: ReadDeps,
+  rows?: ProcessRow[],
+): Promise<ProcessSummary[]> {
+  const list = rows ?? (await deps.db.select().from(processes).orderBy(processes.name));
+  if (list.length === 0) return [];
+  const ids = list.map((p) => p.id);
+  const now = deps.clock.now();
+  const [hours, daily, stateOf, sourceNames, destinationNames, day24] = await Promise.all([
+    hourCounts(deps, ids),
+    deps.db
+      .select({ processId: runs.processId, day: dayOf(runs.createdAt), n: count() })
+      .from(runs)
+      .where(
+        and(
+          inArray(runs.processId, ids),
+          gte(runs.createdAt, msAgo(now, 7 * DAY_MS)),
+          eq(runs.dryRun, false),
+        ),
+      )
+      .groupBy(runs.processId, dayOf(runs.createdAt)),
+    processState(deps, ids),
+    namesById(
+      deps.db,
+      'source',
+      list.flatMap((p) => p.document.triggers.map((t) => t.sourceId)),
+      '(missing source)',
+    ),
+    namesById(
+      deps.db,
+      'destination',
+      list.map((p) => p.document.destination.instanceId),
+    ),
     // The daily-cap bar counts exactly what the budget stage counts (by reservation time).
-    ctx.db
+    deps.db
       .select({ processId: runs.processId, n: count() })
       .from(runs)
-      .where(and(inArray(runs.processId, ids), gt(runs.invokedAt, dayAgo), countedRun()))
+      .where(
+        and(inArray(runs.processId, ids), gt(runs.invokedAt, msAgo(now, DAY_MS)), countedRun()),
+      )
       .groupBy(runs.processId),
   ]);
+  const used = new Map(day24.map((d) => [d.processId, d.n]));
+  const dailyOf = groupBy(daily, (d) => d.processId);
 
   return list.map((p) => {
     const doc = p.document;
-    const last = lastRuns.find((r) => r.processId === p.id);
-    const awaiting = pending.find((x) => x.processId === p.id)?.n ?? 0;
-    const sparkline: number[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const day = new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10);
-      sparkline.push(daily.find((d) => d.processId === p.id && d.day === day)?.n ?? 0);
-    }
-    const ex = exs.find((e) => e.id === doc.destination.instanceId);
-    const next = nextSweepAt(doc, now);
+    const state = stateOf(p);
+    const destinationName = destinationNames.get(doc.destination.instanceId);
     return {
       id: p.id,
       name: p.name,
       description: doc.description,
       enabled: p.enabled,
-      status: processStatus({
-        enabled: p.enabled,
-        breakerOpen: p.breakerState === 'open',
-        awaitingApproval: awaiting,
-        lastRunStatus: last?.status ?? null,
-      }),
+      status: state.status,
       breakerState: p.breakerState,
-      awaitingApproval: awaiting,
-      dots: dotsFrom(
-        hours.get(p.id) ?? {
-          matched: 0,
-          batched: 0,
-          passed: 0,
-          stopped: 0,
-          invoked: 0,
-          ok: 0,
-          bad: 0,
-        },
-      ),
-      sparkline,
-      nextSweepAt: next?.toISOString() ?? null,
-      dailyCap: {
-        used: day24.find((d) => d.processId === p.id)?.n ?? 0,
-        limit: doc.budgets.runsPerDay ?? null,
-      },
-      lastRunAt: last?.at.toISOString() ?? null,
-      destination: ex ? { id: ex.id, name: ex.name } : null,
+      awaitingApproval: state.awaitingApproval,
+      dots: dotsFrom(hours.get(p.id) ?? NO_HOUR_COUNTS),
+      sparkline: sparklineFrom(dailyOf.get(p.id) ?? [], now),
+      nextSweepAt: nextSweepAt(doc, now)?.toISOString() ?? null,
+      dailyCap: { used: used.get(p.id) ?? 0, limit: doc.budgets.runsPerDay ?? null },
+      lastRunAt: state.lastRun?.at.toISOString() ?? null,
+      destination:
+        destinationName === undefined
+          ? null
+          : { id: doc.destination.instanceId, name: destinationName },
       triggers: doc.triggers.map((t) => ({
         sourceId: t.sourceId,
-        sourceName: srcs.find((s) => s.id === t.sourceId)?.name ?? '(missing source)',
+        sourceName: sourceNames.of(t.sourceId),
         describe: t.describe,
         eventTypes: t.eventTypes,
       })),
@@ -217,39 +173,40 @@ export async function processSummaries(
   });
 }
 
-export async function processDetail(ctx: ApiContext, id: string): Promise<ProcessDetail> {
-  const [row] = await ctx.db.select().from(processes).where(eq(processes.id, id));
+export async function processDetail(deps: ReadDeps, id: string): Promise<ProcessDetail> {
+  const [row] = await deps.db.select().from(processes).where(eq(processes.id, id));
   if (!row) throw notFound('Process');
-  const [summary] = await processSummaries(ctx, [row]);
-  if (!summary) throw notFound('Process');
-  const failures =
+  const [stateOf, failures] = await Promise.all([
+    processState(deps, [row.id]),
     row.breakerState === 'open'
-      ? await ctx.db
+      ? deps.db
           .select()
           .from(runs)
-          .where(and(eq(runs.processId, id), inArray(runs.status, ['error', 'unknown', 'failed'])))
+          .where(and(eq(runs.processId, id), inArray(runs.status, PROBLEM_RUN_STATUSES)))
           .orderBy(desc(runs.createdAt))
           .limit(5)
-      : [];
+      : Promise.resolve([]),
+  ]);
+  const state = stateOf(row);
   return {
     id: row.id,
     name: row.name,
     document: row.document,
     enabled: row.enabled,
-    status: summary.status,
+    status: state.status,
     breakerState: row.breakerState,
     breakerOpenedAt: row.breakerOpenedAt?.toISOString() ?? null,
-    recentFailures: await runSummaries(ctx, failures),
+    recentFailures: await runSummaries(deps, failures),
     version: row.version,
-    nextSweepAt: summary.nextSweepAt,
-    awaitingApproval: summary.awaitingApproval,
+    nextSweepAt: nextSweepAt(row.document, deps.clock.now())?.toISOString() ?? null,
+    awaitingApproval: state.awaitingApproval,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-export async function processExists(ctx: ApiContext, id: string): Promise<boolean> {
-  const rows = await ctx.db
+export async function processExists(deps: ReadDeps, id: string): Promise<boolean> {
+  const rows = await deps.db
     .select({ id: processes.id })
     .from(processes)
     .where(eq(processes.id, id));
@@ -258,10 +215,10 @@ export async function processExists(ctx: ApiContext, id: string): Promise<boolea
 
 /** A process's saved versions, newest first. */
 export async function processVersionList(
-  ctx: ApiContext,
+  deps: ReadDeps,
   processId: string,
 ): Promise<ProcessVersionSummary[]> {
-  const rows = await ctx.db
+  const rows = await deps.db
     .select({
       version: processVersions.version,
       savedBy: processVersions.savedBy,
@@ -275,11 +232,11 @@ export async function processVersionList(
 }
 
 export async function processVersion(
-  ctx: ApiContext,
+  deps: ReadDeps,
   processId: string,
   version: string | number,
 ): Promise<ProcessVersionDetail> {
-  const row = await savedVersion(ctx.db, processId, version);
+  const row = await savedVersion(deps.db, processId, version);
   return {
     version: row.version,
     savedBy: row.savedBy,
@@ -290,20 +247,18 @@ export async function processVersion(
 }
 
 export async function recentBatches(
-  ctx: ApiContext,
+  deps: ReadDeps,
   processId: string,
   limit: number | undefined,
 ): Promise<RecentBatchDTO[]> {
-  const rows = await ctx.db
+  const rows = await deps.db
     .select()
     .from(batches)
-    .where(
-      and(eq(batches.processId, processId), inArray(batches.kind, ['event', 'sweep', 'manual'])),
-    )
+    .where(eq(batches.processId, processId))
     .orderBy(desc(batches.openedAt))
     .limit(pageLimit(limit, 20, 100));
   const arts = await batchArtifacts(
-    ctx,
+    deps,
     rows.map((r) => r.id),
   );
   return rows.map((b) => ({

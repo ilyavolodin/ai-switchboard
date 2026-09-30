@@ -133,6 +133,7 @@ export interface FunnelResponse {
 }
 
 export interface ProcessStatsResponse {
+  /** The window the days cover: at least `7d`, whatever was asked. */
   window: StatsWindow;
   days: {
     day: Iso;
