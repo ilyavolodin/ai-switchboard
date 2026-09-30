@@ -1,9 +1,10 @@
 import type { DbOrTx } from '../db/client.js';
 import { auditLog } from '../db/schema.js';
+import type { AuditScope } from '../domain/status.js';
 
 export interface AuditInput {
   actor: string;
-  scope: string;
+  scope: AuditScope;
   targetId?: string | null;
   field?: string | null;
   before?: unknown;

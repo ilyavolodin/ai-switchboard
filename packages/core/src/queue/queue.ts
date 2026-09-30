@@ -96,8 +96,8 @@ export class PgBossQueue implements JobQueue {
   ): Promise<string | null> {
     await this.ensure(name);
     return this.boss.send(name, data, {
-      ...(options.startAfter ? { startAfter: options.startAfter } : {}),
-      ...(options.singletonKey ? { singletonKey: options.singletonKey } : {}),
+      ...(options.startAfter !== undefined ? { startAfter: options.startAfter } : {}),
+      ...(options.singletonKey !== undefined ? { singletonKey: options.singletonKey } : {}),
       ...(options.singletonSeconds !== undefined
         ? { singletonSeconds: options.singletonSeconds }
         : {}),
@@ -129,6 +129,6 @@ export class PgBossQueue implements JobQueue {
     options: { tz?: string } = {},
   ): Promise<void> {
     await this.ensure(name);
-    await this.boss.schedule(name, cron, data, options.tz ? { tz: options.tz } : {});
+    await this.boss.schedule(name, cron, data, options.tz !== undefined ? { tz: options.tz } : {});
   }
 }

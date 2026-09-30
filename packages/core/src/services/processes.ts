@@ -120,7 +120,7 @@ export async function saveProcessVersionIn(
     savedAt: now,
     reason: change.versionReason ?? reason,
   });
-  const base = { actor, scope: 'process', targetId: before.id, reason, at: now };
+  const base = { actor, scope: 'process' as const, targetId: before.id, reason, at: now };
   if (change.audit === 'diff') {
     await recordAuditDiff(tx, base, flattenForAudit(before.document), flattenForAudit(doc));
   } else {

@@ -24,7 +24,7 @@ import { isUuid } from '../../util/uuid.js';
 
 import { evaluateBreakerAfterClose } from './breaker.js';
 import type { Ctx } from './context.js';
-import { JOBS, runJob } from './jobs.js';
+import { JOBS, runJob, sendJob } from './jobs.js';
 import { batchEvents } from './load.js';
 import { notifyProcess, sendSystemAlert } from './notify.js';
 import { callPlugin } from './plugin-call.js';
@@ -538,9 +538,9 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
           ),
         )
         .returning({ id: runs.id });
-      if (moved.length > 0) await ctx.queue.send(JOBS.invoke, runJob(run));
+      if (moved.length > 0) await sendJob(ctx.queue, JOBS.invoke, runJob(run));
     } else if (action === 'resume') {
-      await ctx.queue.send(JOBS.invoke, runJob(run));
+      await sendJob(ctx.queue, JOBS.invoke, runJob(run));
     }
   }
   const overdue = await ctx.db
@@ -554,5 +554,5 @@ export async function recoverRuns(ctx: Ctx): Promise<void> {
     .where(
       and(inArray(runs.status, TRACKED_RUN_STATUSES), lte(runs.nextPollAt, lostPollCutoff(now))),
     );
-  for (const r of lostPolls) await ctx.queue.send(JOBS.poll, runJob(r));
+  for (const r of lostPolls) await sendJob(ctx.queue, JOBS.poll, runJob(r));
 }
