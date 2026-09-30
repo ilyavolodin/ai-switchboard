@@ -65,7 +65,9 @@ new password, clears `mustChangePassword` and signs out the user's other session
 **Sign-in throttle.** Failed attempts are counted in Postgres across replicas: 10 failures per
 client address or 5 per account (normalised email) within 5 minutes answer 429
 `too_many_attempts` with `Retry-After: <seconds>` until the oldest counted failure leaves the
-window. `POST /auth/password` allows 5 failed confirmations per user in the same window.
+window. `POST /auth/password` allows 5 failed confirmations per user in the same window. Each
+attempt is counted as a failure before the password is checked (and withdrawn when it matches),
+so guesses sent at the same time get no more tries than guesses sent one after another.
 
 **Password rules:** at least 8 characters (at most 256), not the account's email (or the part
 before `@`), not one of the most common passwords.
