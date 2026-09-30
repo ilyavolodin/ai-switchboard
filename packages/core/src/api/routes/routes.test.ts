@@ -4,7 +4,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { FakeClock } from '../../clock.js';
 import { testConfig } from '../../config.js';
 import type { ApiContext } from '../context.js';
-import type { ApiRoute, ApiRoutes, RouteShape } from '../contract.js';
+import type { ApiRoute, ApiRoutes, RouteShape } from '../../contract/index.js';
 import { registerApiRoutes } from './index.js';
 
 /** `satisfies` fails to compile when a route is missing from, or not in, `ApiRoutes`. */

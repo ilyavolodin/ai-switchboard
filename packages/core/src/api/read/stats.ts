@@ -32,7 +32,7 @@ import type {
   SourceStatsResponse,
   StatsWindow,
   UsageHistoryResponse,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { notFound } from '../errors.js';
 import { meterGauges } from './meters.js';
 

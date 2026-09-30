@@ -7,7 +7,7 @@ import type {
   UsageDimension,
 } from '@ai-switchboard/sdk';
 
-import type { RunStatusValue } from '../../domain/status.js';
+import type { RunStatusValue } from '../domain/status.js';
 import type { Iso, Reasoned, SecretRefDTO, StatsWindow, StatusLabel } from './common.js';
 import { bodySchema } from './schema.js';
 

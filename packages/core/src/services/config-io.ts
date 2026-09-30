@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { validateAgainst, type JSONSchema } from '@ai-switchboard/sdk';
 import { parse, stringify } from 'yaml';
 
-import type { ApplyResponse } from '../api/contract.js';
+import type { ApplyResponse } from '../contract/index.js';
 import type { Clock } from '../clock.js';
 import type { Db, DbOrTx } from '../db/client.js';
 import { INSTANCE_TABLES, type InstanceTable } from '../db/instance-tables.js';

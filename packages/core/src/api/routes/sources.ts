@@ -18,7 +18,7 @@ import {
   type UpdateSourceRequest,
   type WindowQuery,
   updateSourceBody,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { requireReason } from '../errors.js';
 import { listActivity } from '../read/activity.js';
 import { sourceDetail, sourceSummaries } from '../read/instances.js';

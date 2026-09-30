@@ -16,7 +16,7 @@ import type {
   ProviderSecretsResponse,
   SecretOwnerDTO,
   SecretProviderDependentDTO,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { notFound } from '../errors.js';
 
 /** How long a provider's `list()` may take before the listing is reported unavailable. */

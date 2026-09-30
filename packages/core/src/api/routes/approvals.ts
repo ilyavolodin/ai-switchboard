@@ -7,7 +7,7 @@ import {
   type ApprovalHistoryQuery,
   type ApproveResponse,
   type Reasoned,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { requireReason } from '../errors.js';
 import { approvalHistory, approvalRules, pendingApprovals } from '../read/approvals.js';
 import { allow } from './options.js';

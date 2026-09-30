@@ -2,7 +2,7 @@ import { users } from '../../db/schema.js';
 import type { TokenRow } from '../../services/tokens.js';
 import type { UserRow } from '../../services/users.js';
 import type { ApiContext } from '../context.js';
-import type { ApiTokenDTO, UserDirectoryEntry, UserDTO } from '../contract.js';
+import type { ApiTokenDTO, UserDirectoryEntry, UserDTO } from '../../contract/index.js';
 
 export function toUserDTO(row: UserRow): UserDTO {
   return {

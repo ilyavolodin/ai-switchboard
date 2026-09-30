@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SecretOwnerDTO } from '../contract.js';
+import type { SecretOwnerDTO } from '../../contract/index.js';
 import { storedByOf } from './secrets.js';
 
 const owners: SecretOwnerDTO[] = [

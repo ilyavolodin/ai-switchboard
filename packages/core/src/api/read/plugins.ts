@@ -15,7 +15,7 @@ import type {
   PluginSearchResult,
   PluginSummary,
   PluginTypeDTO,
-} from '../contract.js';
+} from '../../contract/index.js';
 
 export function typeDTO(kind: PluginKind, row: typeof pluginTypes.$inferSelect): PluginTypeDTO {
   const m = row.manifest;

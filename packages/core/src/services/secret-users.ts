@@ -1,4 +1,4 @@
-import type { SecretUserDTO } from '../api/contract.js';
+import type { SecretUserDTO } from '../contract/index.js';
 import type { DbOrTx } from '../db/client.js';
 import { INSTANCE_TABLES } from '../db/instance-tables.js';
 import { INSTANCE_KINDS } from '../domain/status.js';

@@ -12,10 +12,10 @@ import type {
   UsageReport,
 } from '@ai-switchboard/sdk';
 
-import type { StatusTone } from '../../domain/status.js';
+import type { StatusTone } from '../domain/status.js';
 import { bodySchema } from './schema.js';
 
-export type { ProcessDocument } from '../../domain/process.js';
+export type { ProcessDocument } from '../domain/process.js';
 export type {
   Trigger,
   Schedule,
@@ -23,7 +23,7 @@ export type {
   Notification,
   QuietWindow,
   MeterCeiling,
-} from '../../domain/process.js';
+} from '../domain/process.js';
 export type {
   ApprovalState,
   BatchKind,
@@ -39,8 +39,8 @@ export type {
   SettledRunStatus,
   StatusTone,
   StepStatus,
-} from '../../domain/status.js';
-export type { GlobalSettings, RetentionSettings } from '../../domain/settings.js';
+} from '../domain/status.js';
+export type { GlobalSettings, RetentionSettings } from '../domain/settings.js';
 export type {
   ArtifactRef,
   Attributes,
@@ -111,8 +111,8 @@ export interface SecretRefDTO {
   error?: string;
 }
 
-export type { StatsWindow } from '../../domain/status.js';
-import type { StatsWindow } from '../../domain/status.js';
+export type { StatsWindow } from '../domain/status.js';
+import type { StatsWindow } from '../domain/status.js';
 
 export interface WindowQuery {
   window?: StatsWindow;

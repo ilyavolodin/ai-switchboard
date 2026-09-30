@@ -7,7 +7,7 @@ import type {
   FilterPreviewResponse,
   InputPreviewRequest,
   InputPreviewResponse,
-} from '../api/contract.js';
+} from '../contract/index.js';
 import type { Clock } from '../clock.js';
 import { batches, events, destinations } from '../db/schema.js';
 import type { Deps } from '../deps.js';

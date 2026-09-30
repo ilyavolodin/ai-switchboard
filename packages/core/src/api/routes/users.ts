@@ -23,7 +23,7 @@ import {
   type Reasoned,
   type SetPasswordRequest,
   type UpdateUserRequest,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { HttpError } from '../errors.js';
 import { toTokenDTO, toUserDTO, userDirectory, userList } from '../read/users.js';
 import { allow } from './options.js';

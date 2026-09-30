@@ -1,8 +1,9 @@
 # REST API
 
 All routes live under `/api/v1` unless noted. Request and response types are in
-[`packages/core/src/api/contract.ts`](../packages/core/src/api/contract.ts) (`@ai-switchboard/core/contract`),
-a barrel over one file per resource in `api/contract/`. `ApiRoutes` maps every route
+[`packages/core/src/contract/index.ts`](../packages/core/src/contract/index.ts)
+(`@ai-switchboard/core/contract`), a barrel over one file per resource in `contract/`. It is
+layer-neutral: routes, services and the UI import it. `ApiRoutes` maps every route
 (`'POST /api/v1/sources'`) to its body, query and response types; a core test fails when it and
 the registered routes differ. Each request body's JSON Schema sits next to its type
 (`createSourceBody` next to `CreateSourceRequest`) and is checked against it at compile time.

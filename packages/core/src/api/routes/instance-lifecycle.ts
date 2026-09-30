@@ -20,7 +20,7 @@ import {
   type EnableRequest,
   type Reasoned,
   type UpdateInstanceRequest,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { instanceDetail, instanceSummaries } from '../read/instances.js';
 import { allow, instanceDeps } from './options.js';
 

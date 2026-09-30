@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { GlobalSettings, MeResponse, UserDTO } from '../../src/api/contract.js';
+import type { GlobalSettings, MeResponse, UserDTO } from '../../src/contract/index.js';
 import { auditLog } from '../../src/db/schema.js';
 import { createApiHarness, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';

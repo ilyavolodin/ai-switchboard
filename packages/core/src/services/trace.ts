@@ -2,7 +2,7 @@ import { desc, eq, inArray, or, sql } from 'drizzle-orm';
 
 import type { ArtifactRef } from '@ai-switchboard/sdk';
 
-import type { StatusTone, TraceEntry, TraceEntryKind, TraceResponse } from '../api/contract.js';
+import type { StatusTone, TraceEntry, TraceEntryKind, TraceResponse } from '../contract/index.js';
 import {
   approvals,
   batches,

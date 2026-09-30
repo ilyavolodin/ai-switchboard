@@ -18,7 +18,7 @@ import type {
   SecretRefDTO,
   SourceDetail,
   SourceSummary,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { notFound } from '../errors.js';
 import { meterGauges } from './meters.js';
 import { providerDependents } from './secrets.js';

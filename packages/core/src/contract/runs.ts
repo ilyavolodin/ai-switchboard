@@ -6,7 +6,7 @@ import {
   type RunStatusValue,
   type SettledRunStatus,
   type StepStatus,
-} from '../../domain/status.js';
+} from '../domain/status.js';
 import type { Iso, Reasoned, StatusLabel } from './common.js';
 import { bodySchema } from './schema.js';
 

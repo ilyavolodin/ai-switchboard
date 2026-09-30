@@ -20,7 +20,7 @@ import {
   type PluginSummary,
   type PluginTypesQuery,
   type Reasoned,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { HttpError } from '../errors.js';
 import {
   catalogue,

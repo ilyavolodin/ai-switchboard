@@ -2,7 +2,7 @@ import type { FastifyError, FastifyInstance } from 'fastify';
 
 import { badRequest, isServiceError, type ServiceError } from '../services/errors.js';
 import { isPipelineError } from '../services/pipeline/errors.js';
-import type { ApiError } from './contract.js';
+import type { ApiError } from '../contract/index.js';
 
 export {
   badRequest,

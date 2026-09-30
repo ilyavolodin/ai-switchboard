@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { InstanceSummary, SourceDetail } from '../../src/api/contract.js';
+import type { InstanceSummary, SourceDetail } from '../../src/contract/index.js';
 import { defaultProcessDocument } from '../../src/domain/process.js';
 import { createApiHarness, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';

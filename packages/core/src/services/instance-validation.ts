@@ -1,7 +1,7 @@
 import { secretPaths, validateAgainst, type JSONSchema } from '@ai-switchboard/sdk';
 
-import { destinationCapsSchema } from '../api/contract/destinations.js';
-import { sourceCapsSchema } from '../api/contract/sources.js';
+import { destinationCapsSchema } from '../contract/destinations.js';
+import { sourceCapsSchema } from '../contract/sources.js';
 import { acceptsUnauthenticated } from '../domain/authentication.js';
 import type { InstanceKind } from '../domain/status.js';
 import type { PluginRuntime } from '../plugins/runtime.js';

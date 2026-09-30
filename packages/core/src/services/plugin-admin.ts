@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 
-import type { InspectPluginResponse } from '../api/contract.js';
+import type { InspectPluginResponse } from '../contract/index.js';
 import type { CoreConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { plugins } from '../db/schema.js';

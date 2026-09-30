@@ -1,7 +1,7 @@
 import { and, eq, lt, or, type AnyColumn, type SQL } from 'drizzle-orm';
 
 import { isRecord } from '../../util/guards.js';
-import type { Page } from '../contract.js';
+import type { Page } from '../../contract/index.js';
 import { badRequest } from '../errors.js';
 
 /** Opaque cursors: base64url JSON of the last row's sort key. */

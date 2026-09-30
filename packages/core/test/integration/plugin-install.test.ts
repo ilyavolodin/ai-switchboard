@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { PluginSearchResponse, PluginSummary, PluginTypeDTO } from '../../src/api/contract.js';
+import type {
+  PluginSearchResponse,
+  PluginSummary,
+  PluginTypeDTO,
+} from '../../src/contract/index.js';
 import { FakeClock } from '../../src/clock.js';
 import { testConfig } from '../../src/config.js';
 import { auditLog, notifiers, plugins, pluginTypes } from '../../src/db/schema.js';

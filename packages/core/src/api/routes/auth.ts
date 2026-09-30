@@ -34,7 +34,7 @@ import {
   type LocalLoginRequest,
   type MeResponse,
   type WhoAmIResponse,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { forbidden, HttpError } from '../errors.js';
 import { toUserDTO } from '../read/users.js';
 

@@ -3,7 +3,11 @@ import type { FastifyInstance } from 'fastify';
 import { getSettings, updateSettings } from '../../services/settings.js';
 import { changeMeta } from '../change.js';
 import type { ApiContext } from '../context.js';
-import { updateSettingsBody, type AuditQuery, type UpdateSettingsRequest } from '../contract.js';
+import {
+  updateSettingsBody,
+  type AuditQuery,
+  type UpdateSettingsRequest,
+} from '../../contract/index.js';
 import { about } from '../read/about.js';
 import { listAudit } from '../read/audit.js';
 import { allow } from './options.js';

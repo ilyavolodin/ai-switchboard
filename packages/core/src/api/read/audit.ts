@@ -5,7 +5,7 @@ import { auditLog, processes, users } from '../../db/schema.js';
 import { INSTANCE_KINDS } from '../../domain/status.js';
 import { isUuid } from '../../util/uuid.js';
 import type { ApiContext } from '../context.js';
-import type { AuditEntry, AuditQuery, Page } from '../contract.js';
+import type { AuditEntry, AuditQuery, Page } from '../../contract/index.js';
 import { keysetPage } from './paging.js';
 
 type AuditRow = typeof auditLog.$inferSelect;

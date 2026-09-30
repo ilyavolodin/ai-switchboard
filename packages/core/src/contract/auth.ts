@@ -1,5 +1,5 @@
-import { PASSWORD_MAX_LENGTH } from '../../auth/password-policy.js';
-import { ROLES, type Role } from '../../domain/status.js';
+import { PASSWORD_MAX_LENGTH } from '../auth/password-policy.js';
+import { ROLES, type Role } from '../domain/status.js';
 import type { Iso, Reasoned } from './common.js';
 import { bodySchema } from './schema.js';
 

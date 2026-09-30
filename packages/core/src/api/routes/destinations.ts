@@ -12,7 +12,7 @@ import {
   type Reasoned,
   type UpdateDestinationRequest,
   type WindowQuery,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { requireReason } from '../errors.js';
 import { destinationDetail, destinationSummaries } from '../read/instances.js';
 import { meterGauges } from '../read/meters.js';

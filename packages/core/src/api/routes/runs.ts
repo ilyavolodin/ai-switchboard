@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { actorOf } from '../../auth/fastify.js';
 import type { ApiContext } from '../context.js';
-import { closeRunBody, type CloseRunRequest, type RunsQuery } from '../contract.js';
+import { closeRunBody, type CloseRunRequest, type RunsQuery } from '../../contract/index.js';
 import { requireReason } from '../errors.js';
 import { listRuns, runDetail } from '../read/runs.js';
 import { allow } from './options.js';

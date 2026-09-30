@@ -1,6 +1,6 @@
 import type { MeterCeiling } from '../../domain/process.js';
 import { budget, type MeterSnapshot } from '../../pipeline/budget.js';
-import type { CeilingState } from '../contract.js';
+import type { CeilingState } from '../../contract/index.js';
 
 const NO_COUNTERS = {
   processRunsHour: 0,

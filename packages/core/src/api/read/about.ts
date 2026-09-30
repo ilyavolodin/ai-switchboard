@@ -4,7 +4,7 @@ import { desc, eq, sql } from 'drizzle-orm';
 import { plugins, replicas } from '../../db/schema.js';
 import { telemetryStatus } from '../../telemetry/otel-config.js';
 import type { ApiContext } from '../context.js';
-import type { AboutResponse } from '../contract.js';
+import type { AboutResponse } from '../../contract/index.js';
 
 /** A replica whose heartbeat is older than this is shown as gone. */
 const LIVE_HEARTBEAT_MS = 90_000;

@@ -9,7 +9,7 @@ import type {
   LastDeliveryResponse,
   SourceDetail,
   SourcePreviewResponse,
-} from '../../src/api/contract.js';
+} from '../../src/contract/index.js';
 import { eventRaw } from '../../src/db/schema.js';
 import { createApiHarness, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';

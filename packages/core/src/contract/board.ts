@@ -1,9 +1,9 @@
-import type { AttentionItem } from '../../domain/attention.js';
-import type { StatusTone } from '../../domain/status.js';
+import type { AttentionItem } from '../domain/attention.js';
+import type { StatusTone } from '../domain/status.js';
 import type { Iso, StatusLabel } from './common.js';
 import type { MeterGaugeDTO } from './destinations.js';
 
-export type { AttentionItem } from '../../domain/attention.js';
+export type { AttentionItem } from '../domain/attention.js';
 
 export interface StatusStripResponse {
   meters: MeterGaugeDTO[];

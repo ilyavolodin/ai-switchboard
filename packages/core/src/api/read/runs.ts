@@ -14,7 +14,7 @@ import {
 import { runStatusLabel } from '../../domain/labels.js';
 import type { RunStatusValue } from '../../domain/status.js';
 import type { ApiContext } from '../context.js';
-import type { Page, RunDetail, RunSummary, RunsQuery } from '../contract.js';
+import type { Page, RunDetail, RunSummary, RunsQuery } from '../../contract/index.js';
 import { notFound } from '../errors.js';
 import { keysetPage } from './paging.js';
 

@@ -4,7 +4,7 @@ import type {
   InstanceSummary,
   ProviderSecretsResponse,
   SourceDetail,
-} from '../../src/api/contract.js';
+} from '../../src/contract/index.js';
 import { defaultProcessDocument } from '../../src/domain/process.js';
 import { createApiHarness, TEST_VAULT, type ApiHarness } from '../helpers/api.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';

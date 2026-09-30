@@ -13,7 +13,7 @@ import type {
   RunNowResponse,
   SettledRunStatus,
   TraceResponse,
-} from './contract.js';
+} from '../contract/index.js';
 
 /** Declared here so the HTTP layer depends on a port, not on the pipeline's internals. */
 export interface PipelinePort {

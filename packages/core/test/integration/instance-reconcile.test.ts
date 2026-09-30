@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { InstanceSummary, SourceDetail } from '../../src/api/contract.js';
+import type { InstanceSummary, SourceDetail } from '../../src/contract/index.js';
 import { FakeClock } from '../../src/clock.js';
 import { testConfig } from '../../src/config.js';
 import { destinations, secretProviders, sources } from '../../src/db/schema.js';

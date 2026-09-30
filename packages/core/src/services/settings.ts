@@ -1,7 +1,7 @@
 import { validateAgainst } from '@ai-switchboard/sdk';
 import { eq } from 'drizzle-orm';
 
-import { settingsPatchSchema } from '../api/contract/admin.js';
+import { settingsPatchSchema } from '../contract/admin.js';
 import type { Db, DbOrTx } from '../db/client.js';
 import { settings } from '../db/schema.js';
 import { DEFAULT_SETTINGS, mergeSettings, type GlobalSettings } from '../domain/settings.js';

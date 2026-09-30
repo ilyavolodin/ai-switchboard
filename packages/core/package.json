@@ -19,9 +19,9 @@
       "default": "./dist/index.js"
     },
     "./contract": {
-      "@ai-switchboard/source": "./src/api/contract.ts",
-      "types": "./dist/api/contract.d.ts",
-      "default": "./dist/api/contract.js"
+      "@ai-switchboard/source": "./src/contract/index.ts",
+      "types": "./dist/contract/index.d.ts",
+      "default": "./dist/contract/index.js"
     },
     "./domain": {
       "@ai-switchboard/source": "./src/domain/index.ts",

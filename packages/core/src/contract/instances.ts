@@ -1,6 +1,6 @@
 import type { Health, JSONSchema } from '@ai-switchboard/sdk';
 
-import type { InstanceKind } from '../../domain/status.js';
+import type { InstanceKind } from '../domain/status.js';
 import type { Iso, Reasoned, StatusLabel } from './common.js';
 import { bodySchema } from './schema.js';
 

@@ -8,7 +8,7 @@ import {
   type EventIdsResponse,
   type Reasoned,
   type TraceQuery,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { badRequest, notFound, requireReason } from '../errors.js';
 import { eventDetail, eventExists, listActivity } from '../read/activity.js';
 import { allow } from './options.js';

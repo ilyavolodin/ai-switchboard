@@ -1,4 +1,4 @@
-import type { GlobalSettings, RetentionSettings } from '../../domain/settings.js';
+import type { GlobalSettings, RetentionSettings } from '../domain/settings.js';
 import type { Iso, Reasoned } from './common.js';
 import { bodySchema } from './schema.js';
 

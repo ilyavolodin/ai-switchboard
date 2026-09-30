@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { eq, sql, type SQL } from 'drizzle-orm';
 
-import type { ResultResponse } from '../api/contract.js';
+import type { ResultResponse } from '../contract/index.js';
 import type { Db, DbOrTx } from '../db/client.js';
 import { INSTANCE_TABLES, type InstanceTable } from '../db/instance-tables.js';
 import { destinations, notifiers, secretProviders, sources } from '../db/schema.js';

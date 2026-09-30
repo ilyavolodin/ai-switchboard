@@ -7,7 +7,7 @@ import type {
   JSONSchema,
 } from '@ai-switchboard/sdk';
 
-import type { EventStage } from '../../domain/status.js';
+import type { EventStage } from '../domain/status.js';
 import type { Iso, Reasoned, SecretRefDTO, StatsWindow, StatusLabel } from './common.js';
 import { bodySchema } from './schema.js';
 

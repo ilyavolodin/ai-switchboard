@@ -4,7 +4,7 @@ import { approvals, dispatches, events, plugins, processes, runs } from '../../d
 import { attentionItems } from '../../domain/attention.js';
 import { getSettings } from '../../services/settings.js';
 import type { ApiContext } from '../context.js';
-import type { BoardEdge, BoardResponse, StatusStripResponse } from '../contract.js';
+import type { BoardEdge, BoardResponse, StatusStripResponse } from '../../contract/index.js';
 import { destinationSummaries, sourceSummaries } from './instances.js';
 import { meterGauges } from './meters.js';
 import { processSummaries } from './processes.js';

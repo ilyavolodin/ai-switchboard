@@ -8,7 +8,7 @@ import type {
   ApprovalItem,
   ApprovalRulesResponse,
   Page,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { keysetPage } from './paging.js';
 import { batchArtifacts } from './runs.js';
 

@@ -31,7 +31,7 @@ import {
   type RunNowResponse,
   type UpdateProcessRequest,
   type WindowQuery,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { notFound, requireReason } from '../errors.js';
 import { listActivity } from '../read/activity.js';
 import {

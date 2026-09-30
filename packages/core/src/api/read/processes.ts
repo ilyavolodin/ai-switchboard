@@ -24,7 +24,7 @@ import type {
   ProcessVersionDetail,
   ProcessVersionSummary,
   RecentBatchDTO,
-} from '../contract.js';
+} from '../../contract/index.js';
 import { notFound } from '../errors.js';
 import { pageLimit } from './paging.js';
 import { batchArtifacts, runSummaries } from './runs.js';

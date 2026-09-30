@@ -7,7 +7,7 @@ import type {
   SourcePreviewEvent,
   SourcePreviewRequest,
   SourcePreviewResponse,
-} from '../api/contract.js';
+} from '../contract/index.js';
 import { eventRaw, sources } from '../db/schema.js';
 import type { Deps } from '../deps.js';
 import { checkDraft } from '../pipeline/door.js';

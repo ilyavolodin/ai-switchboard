@@ -1,6 +1,6 @@
 import type { ArtifactRef, Attributes } from '@ai-switchboard/sdk';
 
-import type { EventStage, RunStatusValue, StatusTone } from '../../domain/status.js';
+import type { EventStage, RunStatusValue, StatusTone } from '../domain/status.js';
 import type { Iso, StatusLabel } from './common.js';
 
 /** Five stops: received → matched → batched → gated → invoked; `reached` is how far it got. */

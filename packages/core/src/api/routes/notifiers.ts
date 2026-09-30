@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { sendTestNotification } from '../../services/instances.js';
 import { changeMeta } from '../change.js';
 import type { ApiContext } from '../context.js';
-import { reasonedBody, type Reasoned } from '../contract.js';
+import { reasonedBody, type Reasoned } from '../../contract/index.js';
 import { registerAdminInstanceRoutes } from './instance-lifecycle.js';
 import { allow } from './options.js';
 

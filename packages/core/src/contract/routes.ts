@@ -1,4 +1,4 @@
-import type { GlobalSettings } from '../../domain/settings.js';
+import type { GlobalSettings } from '../domain/settings.js';
 import type {
   AboutResponse,
   ApplyRequest,

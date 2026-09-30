@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { applyConfiguration, exportConfiguration } from '../../services/config-io.js';
 import { changeMeta } from '../change.js';
 import type { ApiContext } from '../context.js';
-import { applyBody, type ApplyRequest } from '../contract.js';
+import { applyBody, type ApplyRequest } from '../../contract/index.js';
 import { allow, instanceDeps } from './options.js';
 
 export function registerConfigRoutes(app: FastifyInstance, ctx: ApiContext): void {

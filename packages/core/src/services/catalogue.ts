@@ -1,4 +1,4 @@
-import type { CatalogueEntry } from '../api/contract.js';
+import type { CatalogueEntry } from '../contract/index.js';
 
 /** The project's reviewed plugins. Reference plugins ship in the image. */
 export const CATALOGUE: readonly Omit<CatalogueEntry, 'installed'>[] = [

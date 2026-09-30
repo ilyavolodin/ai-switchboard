@@ -1,6 +1,6 @@
 import type { ArtifactRef } from '@ai-switchboard/sdk';
 
-import type { ApprovalDecision, BatchKind } from '../../domain/status.js';
+import type { ApprovalDecision, BatchKind } from '../domain/status.js';
 import type { Iso } from './common.js';
 
 export interface ApprovalItem {

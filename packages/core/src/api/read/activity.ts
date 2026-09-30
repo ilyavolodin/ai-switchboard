@@ -14,7 +14,13 @@ import type { BatchOutcome, RunStatusValue } from '../../domain/status.js';
 import { summarizeWhy } from '../../pipeline/explain.js';
 import { explanationsFor } from '../../services/explain.js';
 import type { ApiContext } from '../context.js';
-import type { ActivityQuery, ActivityRow, EventDetail, Page, StageIndicator } from '../contract.js';
+import type {
+  ActivityQuery,
+  ActivityRow,
+  EventDetail,
+  Page,
+  StageIndicator,
+} from '../../contract/index.js';
 import { notFound } from '../errors.js';
 import { keysetPage, parseTime } from './paging.js';
 

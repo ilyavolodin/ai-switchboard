@@ -1,12 +1,12 @@
 import type { ArtifactRef, Attributes } from '@ai-switchboard/sdk';
 
-import type { ProcessDocument } from '../../domain/process.js';
+import type { ProcessDocument } from '../domain/process.js';
 import type {
   BatchKind,
   BatchOutcome,
   BreakerStateValue,
   RunStatusValue,
-} from '../../domain/status.js';
+} from '../domain/status.js';
 import type { PipelineDots } from './board.js';
 import type { Iso, Reasoned, StatsWindow, StatusLabel } from './common.js';
 import type { RunSummary } from './runs.js';

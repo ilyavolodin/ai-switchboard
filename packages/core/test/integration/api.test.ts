@@ -17,7 +17,7 @@ import type {
   RunSummary,
   SourceDetail,
   UserDTO,
-} from '../../src/api/contract.js';
+} from '../../src/contract/index.js';
 import {
   approvals,
   auditLog,

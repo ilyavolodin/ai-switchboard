@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { MeResponse, UserDTO } from '../../src/api/contract.js';
+import type { MeResponse, UserDTO } from '../../src/contract/index.js';
 import { bootstrapAdmin } from '../../src/auth/bootstrap.js';
 import { verifyPassword } from '../../src/auth/crypto.js';
 import { OidcClient } from '../../src/auth/oidc.js';
