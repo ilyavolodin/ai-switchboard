@@ -6,6 +6,10 @@ import type { Logger } from '../logger.js';
  * here (the host refuses values it knows are secret); use `ctx.secrets` instead.
  */
 export interface InstanceState {
+  /**
+   * Unchecked. Read it as `unknown` and narrow with `parseWith` / `tryParse`; the type argument is
+   * deprecated and goes away in SDK 3.
+   */
   get<T = unknown>(key: string): Promise<T | undefined>;
   set(key: string, value: unknown): Promise<void>;
 }

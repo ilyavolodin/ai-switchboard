@@ -466,7 +466,7 @@ function destinationChecks(
       name: 'invoke with the example target and input returns a well-formed InvokeResult',
       run: async () => {
         const ex = make();
-        const handle = runHandle(fixtures.run);
+        const handle = runHandle(fixtures.run, fixtures.now ? { now: fixtures.now } : {});
         const result = await ex.invoke(target, input, handle);
         checkInvokeResult(result, tracking());
         checkUsage(type, fixtures.settings, result.usage, 'invoke');

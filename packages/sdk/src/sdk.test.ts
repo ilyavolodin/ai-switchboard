@@ -28,7 +28,7 @@ import {
   type SourceType,
 } from './index.js';
 import { createHttpClient, hostMatches } from './host.js';
-import { createStubHttp, rawRequest, scrubRequest } from './testing/index.js';
+import { createStubHttp, rawRequest, runHandle, scrubRequest } from './testing/index.js';
 
 const sourceType = (overrides: Partial<SourceType> = {}): SourceType => ({
   id: 'demo',
@@ -211,6 +211,15 @@ describe('HttpClient', () => {
       headers: { 'Content-Type': 'application/merge-patch+json' },
     });
     expect(stub.calls[0]?.headers['content-type']).toBe('application/merge-patch+json');
+  });
+
+  it('refuses a request that sets both body and json, before sending anything', async () => {
+    const stub = createStubHttp(() => ({ json: {} }));
+    const err = await stub.client
+      .post('https://x.test/p', { body: 'raw', json: { a: 1 } })
+      .catch((e: unknown) => e);
+    expect(isTransportError(err) && err.sent).toBe(false);
+    expect(stub.calls).toHaveLength(0);
   });
 
   it('keeps only safe headers on a cross-origin redirect and turns a 303 into a bodiless GET', async () => {
@@ -502,5 +511,14 @@ describe('error guards', () => {
     [isSecretNotFoundError, { name: 'SecretNotFoundError' }, false],
   ])('%o(%o) is %s', (guard, err, expected) => {
     expect(guard(err)).toBe(expected);
+  });
+});
+
+describe('test clock', () => {
+  const now = (): Date => new Date('2026-03-01T12:00:00Z');
+
+  it('stamps rawRequest and runHandle from the given clock', () => {
+    expect(rawRequest({ now }).receivedAt).toBe('2026-03-01T12:00:00.000Z');
+    expect(runHandle({}, { now }).deadline).toBe('2026-03-01T13:00:00.000Z');
   });
 });
