@@ -2,22 +2,13 @@ import { Command } from 'commander';
 import { parseDocument } from 'yaml';
 
 import type { ApplyRequest, ApplyResponse } from '@ai-switchboard/core/contract';
+import { isRecord } from '@ai-switchboard/sdk/json';
 
-import { apiRequest, DEFAULT_URL, serverOptions } from '../api.js';
+import { apiJson, apiRequest, serverOptions } from '../api.js';
 import type { CliDeps } from '../deps.js';
+import { serverFlags, type ServerFlags } from '../options.js';
 import { table } from '../output.js';
 import { run } from './run.js';
-
-interface ServerFlags {
-  url?: string;
-  token?: string;
-}
-
-export function serverFlags(cmd: Command): Command {
-  return cmd
-    .option('--url <url>', `server base URL (env SWITCHBOARD_URL, default ${DEFAULT_URL})`)
-    .option('--token <token>', 'API token sent as Authorization: Bearer (env SWITCHBOARD_TOKEN)');
-}
 
 const MARK: Record<ApplyResponse['changes'][number]['action'], string> = {
   create: '+',
@@ -31,19 +22,13 @@ function checkYaml(text: string, file: string): void {
   const doc = parseDocument(text);
   const first = doc.errors[0];
   if (first !== undefined) throw new Error(`${file}: ${first.message}`);
-  const value: unknown = doc.toJS();
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  if (!isRecord(doc.toJS())) {
     throw new Error(`${file}: expected a mapping with apiVersion: switchboard/v1`);
   }
 }
 
 function isApplyResponse(value: unknown): value is ApplyResponse {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    Array.isArray((value as { changes?: unknown }).changes) &&
-    Array.isArray((value as { errors?: unknown }).errors)
-  );
+  return isRecord(value) && Array.isArray(value.changes) && Array.isArray(value.errors);
 }
 
 export function exportCommand(deps: CliDeps): Command {
@@ -54,7 +39,7 @@ export function exportCommand(deps: CliDeps): Command {
   ).action(
     run(deps, async (opts: ServerFlags & { output?: string }) => {
       const server = serverOptions(opts, deps.env);
-      const yaml = await apiRequest(deps, server, 'GET', '/export', {
+      const yaml = await apiRequest(deps, server, 'GET /export', {
         accept: 'text/yaml, application/yaml;q=0.9, */*;q=0.1',
       });
       if (opts.output !== undefined) {
@@ -88,14 +73,7 @@ export function applyCommand(deps: CliDeps): Command {
         reason: opts.reason?.trim() ?? '',
         ...(opts.dryRun === true ? { dryRun: true } : {}),
       };
-      const answer = await apiRequest(deps, server, 'POST', '/apply', { json: request });
-      let body: unknown;
-      try {
-        body = JSON.parse(answer);
-      } catch {
-        throw new Error(`${server.url} returned a non-JSON answer to POST /apply; is --url right?`);
-      }
-      if (!isApplyResponse(body)) throw new Error('the server returned an unexpected response');
+      const body = await apiJson(deps, server, 'POST /apply', isApplyResponse, { body: request });
 
       const { io } = deps;
       io.out(
