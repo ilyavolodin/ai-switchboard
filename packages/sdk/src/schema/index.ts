@@ -54,3 +54,5 @@ export {
   openAttributesSchema,
 } from '../custom-events.js';
 export type { AttributeKind, AttributeDefinition, EventTypeDefinition } from '../custom-events.js';
+
+export { attr, flatAttributesSchema } from './attributes.js';

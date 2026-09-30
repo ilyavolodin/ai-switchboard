@@ -1108,6 +1108,12 @@ with a real token.
   subpath, which also carries `MAX_INVOKE_TIMEOUT_SECONDS`) with the unions `SourceMode`,
   `InvokeStatus` and `RunState` derived from them, and `isOneOf` and `errorText` on the root and
   `/json`.
+- SDK 2.4.0 is additive: `verifySwitchboardCallback`, `callbackBodySchema` and
+  `CALLBACK_BODY_PROPERTIES` for completion callbacks, `parseDefinitive` for targets and inputs,
+  `dispatchAction` for `act`, `headerValue`, `responseSnippet`, `lowerCaseHeaders`, `meterReading`,
+  `attr` and `flatAttributesSchema` on `/schema`, and the `/jsonata` subpath (`compileExpression`,
+  `asList`, `MappingError`: the 2 s, deterministic expression sandbox; list `jsonata` in your own
+  dependencies to use it).
 - Your plugin's own version is yours, but treat event type ids, attribute names and action ids as
   public API: people's filters and processes depend on them. Removing or renaming one is a major.
 - SDK majors are announced through the `switchboard-plugin` topic on the repository.
