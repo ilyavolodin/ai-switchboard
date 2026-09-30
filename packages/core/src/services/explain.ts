@@ -2,7 +2,7 @@ import { inArray } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
 import { dispatches, processes, type events } from '../db/schema.js';
-import { explainEvent, type Explanation } from '../pipeline/explain.js';
+import { explainEvent, type Explanation } from '../views/explain.js';
 
 type EventRow = typeof events.$inferSelect;
 

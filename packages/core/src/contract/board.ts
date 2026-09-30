@@ -1,9 +1,20 @@
-import type { AttentionItem } from '../domain/attention.js';
-import type { StatusTone } from '../domain/status.js';
+import type { AttentionAction, AttentionKind, StatusTone } from '../domain/status.js';
 import type { Iso, StatusLabel } from './common.js';
 import type { MeterGaugeDTO } from './destinations.js';
 
-export type { AttentionItem } from '../domain/attention.js';
+export interface AttentionItem {
+  id: string;
+  /** `process_disabled`: a disabled process that has never run turned events away in 24 h. */
+  kind: AttentionKind;
+  tone: StatusTone;
+  title: string;
+  detail: string;
+  targetKind: 'process' | 'source' | 'destination' | 'plugin' | 'approval';
+  targetId: string;
+  /** The one-click action. */
+  action: { id: AttentionAction; label: string };
+  since: string | null;
+}
 
 export interface StatusStripResponse {
   meters: MeterGaugeDTO[];

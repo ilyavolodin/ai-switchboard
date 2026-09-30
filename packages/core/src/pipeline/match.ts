@@ -1,5 +1,6 @@
 import type { ProcessDocument } from '../domain/process.js';
-import type { MatchSkip } from '../domain/status.js';
+import type { MatchSkip, ProcessMatchOutcome } from '../domain/status.js';
+import { groupBy } from '../util/collections.js';
 
 /** Filters are evaluated by the caller (they may call `$resolve`), not here. */
 
@@ -80,8 +81,6 @@ export interface FilterEvaluation extends TriggerCandidate {
   error?: string;
 }
 
-export type ProcessMatchOutcome = 'matched' | 'filter_error' | 'filtered';
-
 export interface ProcessMatch {
   processId: string;
   triggerId: string;
@@ -92,14 +91,8 @@ export interface ProcessMatch {
 
 /** Any true filter wins, so overlapping triggers converge on one dispatch. */
 export function decideMatches(evaluations: readonly FilterEvaluation[]): ProcessMatch[] {
-  const byProcess = new Map<string, FilterEvaluation[]>();
-  for (const e of evaluations) {
-    const list = byProcess.get(e.processId) ?? [];
-    list.push(e);
-    byProcess.set(e.processId, list);
-  }
   const out: ProcessMatch[] = [];
-  for (const [processId, list] of byProcess) {
+  for (const [processId, list] of groupBy(evaluations, (e) => e.processId)) {
     const hit = list.find((e) => e.result);
     const errored = list.find((e) => e.error !== undefined);
     const chosen = hit ?? errored ?? list[0];

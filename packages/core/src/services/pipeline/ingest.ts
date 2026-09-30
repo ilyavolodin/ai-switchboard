@@ -7,9 +7,8 @@ import type { EventDraft, RawRequest } from '@ai-switchboard/sdk';
 import type { Tx } from '../../db/client.js';
 import { eventRaw, events, sources } from '../../db/schema.js';
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
-import type { EventStage, RawOrigin } from '../../domain/status.js';
+import { ACCEPTED_STAGES, type EventStage, type RawOrigin } from '../../domain/status.js';
 import {
-  ACCEPTED_STAGES,
   capsApply,
   checkDraft,
   doorStage,

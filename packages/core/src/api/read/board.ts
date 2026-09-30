@@ -1,7 +1,7 @@
 import { and, count, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import { approvals, dispatches, events, plugins, processes, runs } from '../../db/schema.js';
-import { attentionItems } from '../../domain/attention.js';
+import { attentionItems } from '../../views/attention.js';
 import { getSettings } from '../../services/settings.js';
 import type { ApiContext } from '../context.js';
 import type { BoardEdge, BoardResponse, StatusStripResponse } from '../../contract/index.js';
@@ -124,19 +124,22 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
       .from(plugins)
       .where(inArray(plugins.status, ['failed', 'incompatible'])),
   ]);
-  const attention = attentionItems({
+  const attention = attentionItems(
+    {
+      sourceSilenceMinutes: settings.sourceSilenceMinutes,
+      processes: procs.map((p) => ({
+        ...p,
+        breakerOpenedAt:
+          procRows.find((r) => r.id === p.id)?.breakerOpenedAt?.toISOString() ?? null,
+      })),
+      sources: srcs,
+      destinations: exs,
+      uncertain,
+      turnedAway,
+      failedPlugins,
+    },
     now,
-    sourceSilenceMinutes: settings.sourceSilenceMinutes,
-    processes: procs.map((p) => ({
-      ...p,
-      breakerOpenedAt: procRows.find((r) => r.id === p.id)?.breakerOpenedAt?.toISOString() ?? null,
-    })),
-    sources: srcs,
-    destinations: exs,
-    uncertain,
-    turnedAway,
-    failedPlugins,
-  });
+  );
 
   return {
     sources: srcs.map((s) => ({

@@ -274,6 +274,7 @@ export type AttentionKind = (typeof ATTENTION_KINDS)[number];
 /** The one-click action an attention item offers. */
 export const ATTENTION_ACTIONS = [
   'reset_breaker',
+  'approve',
   'open_approvals',
   'reload',
   'open',

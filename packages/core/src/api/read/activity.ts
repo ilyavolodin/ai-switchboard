@@ -10,8 +10,8 @@ import {
   sources,
 } from '../../db/schema.js';
 import { runStatusLabel } from '../../domain/labels.js';
-import type { BatchOutcome, RunStatusValue } from '../../domain/status.js';
-import { summarizeWhy } from '../../pipeline/explain.js';
+import { toneRank, type BatchOutcome, type RunStatusValue } from '../../domain/status.js';
+import { summarizeWhy } from '../../views/explain.js';
 import { explanationsFor } from '../../services/explain.js';
 import type { ApiContext } from '../context.js';
 import type {
@@ -87,11 +87,10 @@ export function indicatorFor(stage: string, ds: DispatchInfo[]): StageIndicator 
     }
   };
   // Show the furthest-reaching dispatch; on a tie, the worse tone.
-  const toneRank = { error: 3, warn: 2, ok: 1, off: 0 } as const;
   return (
     ds
       .map(rank)
-      .sort((a, b) => b.reached - a.reached || toneRank[b.tone] - toneRank[a.tone])[0] ?? {
+      .sort((a, b) => b.reached - a.reached || toneRank(a.tone) - toneRank(b.tone))[0] ?? {
       reached: 1,
       tone: 'ok',
       label: 'received',

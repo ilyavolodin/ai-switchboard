@@ -1,4 +1,5 @@
 import {
+  isRecord,
   validateAgainst,
   type ArtifactRef,
   type Attributes,
@@ -6,21 +7,16 @@ import {
   type EventTypeSpec,
 } from '@ai-switchboard/sdk';
 
+import { artifactFields } from '../domain/artifact.js';
 import type { EventStage } from '../domain/status.js';
 import { matchableSecrets } from '../secrets/refs.js';
 import { errorText } from '../util/errors.js';
+import { str } from '../util/guards.js';
 
 /**
  * The receive stage: every drafted event is checked and given a stage at the door (disabled
  * source, invalid, muted type, over the source's event caps) before anything matches it.
  */
-
-/** Stages that count against a source's event caps. */
-export const ACCEPTED_STAGES = [
-  'received',
-  'matched',
-  'unmatched',
-] as const satisfies readonly EventStage[];
 
 const DROPPED_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization']);
 
@@ -66,64 +62,85 @@ function isFlatValue(v: unknown): boolean {
   );
 }
 
-export function checkDraft(draft: unknown, live: DraftChecker, now: Date): CheckedDraft {
-  const d = (draft !== null && typeof draft === 'object' ? draft : {}) as Partial<
-    Record<keyof EventDraft, unknown>
-  >;
-  const problems: string[] = [];
-  const type = typeof d.type === 'string' && d.type !== '' ? d.type : '(invalid)';
-  const rawArtifact = (
-    d.artifact !== null && typeof d.artifact === 'object' ? d.artifact : {}
-  ) as Record<string, unknown>;
-  const artifact: ArtifactRef = {
-    kind: typeof rawArtifact.kind === 'string' ? rawArtifact.kind : '(invalid)',
-    id: typeof rawArtifact.id === 'string' ? rawArtifact.id : '',
-    ...(typeof rawArtifact.url === 'string' ? { url: rawArtifact.url } : {}),
-    ...(typeof rawArtifact.version === 'string' ? { version: rawArtifact.version } : {}),
-  };
-  const attributes = (
-    d.attributes !== null && typeof d.attributes === 'object' && !Array.isArray(d.attributes)
-      ? structuredClone(d.attributes)
-      : {}
-  ) as Attributes;
-  const occurred = typeof d.occurredAt === 'string' ? new Date(d.occurredAt) : new Date(Number.NaN);
-  const dedupeKey = typeof d.dedupeKey === 'string' ? d.dedupeKey : '';
+const INVALID = '(invalid)';
 
-  if (draft === null || typeof draft !== 'object') problems.push('event is not an object');
-  const spec = live.eventTypes.find((t) => t.type === type);
-  if (!spec) problems.push(`event type ${type} is not declared by ${live.typeId}`);
-  if (artifact.kind === '(invalid)' || artifact.kind === '' || artifact.id === '') {
+/** A plugin's draft read field by field; anything missing or mistyped gets a placeholder. */
+export interface ParsedDraft {
+  isObject: boolean;
+  type: string;
+  /** Null when `occurredAt` is missing or not a time. */
+  occurredAt: Date | null;
+  artifact: ArtifactRef;
+  attributes: Attributes;
+  dedupeKey: string;
+  deliveryId: string | null;
+}
+
+export function parseDraft(draft: unknown): ParsedDraft {
+  const d: Partial<Record<keyof EventDraft, unknown>> = isRecord(draft) ? draft : {};
+  const occurred = typeof d.occurredAt === 'string' ? new Date(d.occurredAt) : null;
+  const { kind, id, ...artifactRest } = artifactFields(d.artifact);
+  return {
+    isObject: isRecord(draft),
+    type: str(d.type) ?? INVALID,
+    occurredAt: occurred && !Number.isNaN(occurred.getTime()) ? occurred : null,
+    artifact: { kind: kind ?? INVALID, id: id ?? '', ...artifactRest },
+    attributes: (isRecord(d.attributes) ? structuredClone(d.attributes) : {}) as Attributes,
+    dedupeKey: typeof d.dedupeKey === 'string' ? d.dedupeKey : '',
+    deliveryId: str(d.deliveryId) ?? null,
+  };
+}
+
+/** Everything wrong with a parsed draft, in the order a person should fix it. */
+export function draftProblems(
+  draft: ParsedDraft,
+  spec: EventTypeSpec | undefined,
+  live: DraftChecker,
+): string[] {
+  const problems: string[] = [];
+  if (!draft.isObject) problems.push('event is not an object');
+  if (!spec) problems.push(`event type ${draft.type} is not declared by ${live.typeId}`);
+  const { kind, id } = draft.artifact;
+  if (kind === INVALID || kind === '' || id === '') {
     problems.push('artifact must have a kind and an id');
   }
-  if (dedupeKey === '') problems.push('dedupeKey is missing');
-  if (Number.isNaN(occurred.getTime())) problems.push('occurredAt is not an ISO-8601 time');
-  for (const [k, v] of Object.entries(attributes)) {
+  if (draft.dedupeKey === '') problems.push('dedupeKey is missing');
+  if (draft.occurredAt === null) problems.push('occurredAt is not an ISO-8601 time');
+  for (const [k, v] of Object.entries(draft.attributes)) {
     if (!isFlatValue(v)) problems.push(`attribute ${k} is not a scalar or a string array`);
   }
   if (spec) {
     try {
-      const check = validateAgainst(spec.attributes, structuredClone(attributes));
-      problems.push(...check.errors);
+      problems.push(...validateAgainst(spec.attributes, structuredClone(draft.attributes)).errors);
     } catch (err) {
       problems.push(`declared attribute schema is invalid: ${errorText(err)}`);
     }
   }
   const secrets = matchableSecrets(live.secretValues);
   if (secrets.length > 0) {
-    const text = JSON.stringify(attributes);
-    if (secrets.some((s) => text.includes(s)))
+    const text = JSON.stringify(draft.attributes);
+    if (secrets.some((s) => text.includes(s))) {
       problems.push('an attribute contains a secret value');
+    }
   }
+  return problems;
+}
+
+export function checkDraft(draft: unknown, live: DraftChecker, now: Date): CheckedDraft {
+  const parsed = parseDraft(draft);
+  const spec = live.eventTypes.find((t) => t.type === parsed.type);
+  const problems = draftProblems(parsed, spec, live);
+  const invalid = problems.length > 0;
   return {
-    stage: problems.length > 0 ? 'event_invalid' : null,
-    reason: problems.length > 0 ? problems.join('; ').slice(0, 1000) : null,
+    stage: invalid ? 'event_invalid' : null,
+    reason: invalid ? problems.join('; ').slice(0, 1000) : null,
     problems,
-    type,
-    occurredAt: Number.isNaN(occurred.getTime()) ? now : occurred,
-    artifact,
-    attributes: problems.length > 0 && !spec ? {} : attributes,
-    dedupeKey,
-    deliveryId: typeof d.deliveryId === 'string' && d.deliveryId !== '' ? d.deliveryId : null,
+    type: parsed.type,
+    occurredAt: parsed.occurredAt ?? now,
+    artifact: parsed.artifact,
+    attributes: invalid && !spec ? {} : parsed.attributes,
+    dedupeKey: parsed.dedupeKey,
+    deliveryId: parsed.deliveryId,
   };
 }
 

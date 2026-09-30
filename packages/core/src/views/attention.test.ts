@@ -5,7 +5,6 @@ import { attentionItems, type AttentionInput } from './attention.js';
 const now = new Date('2026-09-29T12:00:00Z');
 
 const empty: AttentionInput = {
-  now,
   sourceSilenceMinutes: 60,
   processes: [],
   sources: [],
@@ -42,7 +41,7 @@ const destination = (over: Partial<AttentionInput['destinations'][number]> = {})
 });
 
 const kinds = (input: Partial<AttentionInput>) =>
-  attentionItems({ ...empty, ...input }).map((i) => i.id);
+  attentionItems({ ...empty, ...input }, now).map((i) => i.id);
 
 describe('attentionItems', () => {
   it.each<[string, Partial<AttentionInput>, string[]]>([
@@ -142,26 +141,29 @@ describe('attentionItems', () => {
   });
 
   it('words counts and falls back to the health message', () => {
-    const items = attentionItems({
-      ...empty,
-      processes: [
-        {
-          id: 'p1',
-          name: 'Autofix',
-          breakerState: 'closed',
-          breakerOpenedAt: null,
-          awaitingApproval: 0,
-        },
-      ],
-      uncertain: [{ processId: 'p1', n: 1 }],
-      turnedAway: [{ processId: 'p2', name: 'Triage', n: 1 }],
-      destinations: [
-        destination({
-          status: { tone: 'error', label: 'unhealthy' },
-          health: { message: '401 from the backend', checkedAt: now.toISOString() },
-        }),
-      ],
-    });
+    const items = attentionItems(
+      {
+        ...empty,
+        processes: [
+          {
+            id: 'p1',
+            name: 'Autofix',
+            breakerState: 'closed',
+            breakerOpenedAt: null,
+            awaitingApproval: 0,
+          },
+        ],
+        uncertain: [{ processId: 'p1', n: 1 }],
+        turnedAway: [{ processId: 'p2', name: 'Triage', n: 1 }],
+        destinations: [
+          destination({
+            status: { tone: 'error', label: 'unhealthy' },
+            health: { message: '401 from the backend', checkedAt: now.toISOString() },
+          }),
+        ],
+      },
+      now,
+    );
     expect(items.map((i) => [i.title, i.detail])).toEqual([
       ['Routines: unhealthy', '401 from the backend'],
       [
