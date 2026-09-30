@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
-import { Field } from '../../components/Field.js';
-import { TextField, type TextFieldProps } from '../../components/TextField.js';
+import { Field } from './Field.js';
+import { TextField, type TextFieldProps } from './TextField.js';
 
 export type TextRowProps = Omit<
   TextFieldProps,

@@ -98,6 +98,14 @@ function entityStore<S extends { id: string }, D extends { id: string }>(
       created += 1;
       return write({ ...template, ...patch, id: `${prefix}-new-${String(created)}` });
     },
+    /** `false` when there was no such row. */
+    remove(id: string | undefined): boolean {
+      const i = list.findIndex((x) => x.id === id);
+      if (i === -1 || id === undefined) return false;
+      list.splice(i, 1);
+      saved.delete(id);
+      return true;
+    },
   };
 }
 
@@ -166,6 +174,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     (req) =>
       requireReason(req) ?? fn(req);
   const orNotFound = <T>(what: string, value: T | undefined) => value ?? notFound(what);
+  const deleted = (what: string, removed: boolean) => (removed ? mockStatus(204) : notFound(what));
 
   const sources = entityStore(f.sources, f.sourceDetail);
   const destinations = entityStore(f.destinations, f.destinationDetail);
@@ -195,7 +204,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'PUT /sources/:id': reasoned((r) =>
       orNotFound('source', sources.patch(r.params.id, patchOf(r.body))),
     ),
-    'DELETE /sources/:id': reasoned(() => mockStatus(204)),
+    'DELETE /sources/:id': reasoned((r) => deleted('source', sources.remove(r.params.id))),
     'POST /sources/:id/enable': reasoned((r) =>
       orNotFound('source', sources.patch(r.params.id, patchOf(r.body))),
     ),
@@ -213,13 +222,15 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
 
     'GET /destinations': () => f.destinations,
     'POST /destinations': reasoned((r) =>
-      destinations.create('ex', f.destinationDetail(at(f.destinations, 0)), patchOf(r.body)),
+      destinations.create('dst', f.destinationDetail(at(f.destinations, 0)), patchOf(r.body)),
     ),
     'GET /destinations/:id': (r) => orNotFound('destination', destinations.get(r.params.id)),
     'PUT /destinations/:id': reasoned((r) =>
       orNotFound('destination', destinations.patch(r.params.id, patchOf(r.body))),
     ),
-    'DELETE /destinations/:id': reasoned(() => mockStatus(204)),
+    'DELETE /destinations/:id': reasoned((r) =>
+      deleted('destination', destinations.remove(r.params.id)),
+    ),
     'POST /destinations/:id/enable': reasoned((r) =>
       orNotFound('destination', destinations.patch(r.params.id, patchOf(r.body))),
     ),
@@ -276,7 +287,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
         }),
       );
     }),
-    'DELETE /processes/:id': reasoned(() => mockStatus(204)),
+    'DELETE /processes/:id': reasoned((r) => deleted('process', processes.remove(r.params.id))),
     'POST /processes/:id/enable': reasoned((r) => {
       const current = processes.get(r.params.id);
       if (!current) return notFound('process');
@@ -403,7 +414,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
       orNotFound('notifier', notifiers.get(r.params.id)),
     ),
     'POST /notifiers/:id/test': reasoned(() => ({ ok: true, message: 'Test notification sent' })),
-    'DELETE /notifiers/:id': reasoned(() => mockStatus(204)),
+    'DELETE /notifiers/:id': reasoned((r) => deleted('notifier', notifiers.remove(r.params.id))),
     'GET /secret-providers': () => f.secretProviders,
     'POST /secret-providers': reasoned((r) =>
       providers.create('sp', at(f.secretProviders, 0), {
@@ -420,7 +431,9 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'POST /secret-providers/:id/reload': reasoned((r) =>
       orNotFound('secret provider', providers.get(r.params.id)),
     ),
-    'DELETE /secret-providers/:id': reasoned(() => mockStatus(204)),
+    'DELETE /secret-providers/:id': reasoned((r) =>
+      deleted('secret provider', providers.remove(r.params.id)),
+    ),
     'GET /secret-providers/:id/secrets': (req) =>
       f.providerSecrets[req.params.id ?? ''] ?? notFound('Secret provider'),
 
@@ -440,7 +453,7 @@ export function defaultHandlers(f: Fixtures): MockHandlers {
     'PUT /users/:id': reasoned((r) =>
       orNotFound('User', users.patch(r.params.id, r.body ? { role: r.body.role } : {})),
     ),
-    'DELETE /users/:id': reasoned(() => mockStatus(204)),
+    'DELETE /users/:id': reasoned((r) => deleted('User', users.remove(r.params.id))),
     'POST /users/:id/sessions/revoke': reasoned(() => mockStatus(204)),
     'PUT /users/:id/password': reasoned((r) =>
       orNotFound('User', users.patch(r.params.id, { hasPassword: true, mustChangePassword: true })),

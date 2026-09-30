@@ -2,7 +2,7 @@ import type { JSONSchema, SecretRefDTO } from '@ai-switchboard/core/contract';
 import { type ReactNode, useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { useSecretProviders } from '../../api/index.js';
+import { useSecretFieldProps } from '../../api/index.js';
 import { useCan } from '../../app/session.js';
 import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
@@ -10,8 +10,7 @@ import { Card } from '../../components/Card.js';
 import { Field } from '../../components/Field.js';
 import { SchemaForm } from '../../components/SchemaForm.js';
 import { TextField } from '../../components/TextField.js';
-import { secretProviderIds } from '../../lib/instances.js';
-import { validateAgainstSchema } from '../../lib/schema.js';
+import { useSchemaErrors } from '../../hooks/useSchemaErrors.js';
 import type { DeliverySample } from '../../lib/suggest.js';
 import styles from './forms.module.css';
 import {
@@ -21,6 +20,7 @@ import {
 } from './instanceSettings.js';
 import { unsavedLabel } from './unsavedLabel.js';
 import { LeaveGuardDialog } from './LeaveGuardDialog.js';
+import type { InstanceDeletion } from './useInstanceDelete.js';
 import { useLeaveGuard } from './useLeaveGuard.js';
 
 export interface InstanceSettingsEntity<C> {
@@ -39,11 +39,10 @@ export interface InstanceSettingsFormProps<C extends object> {
   renderCaps: (caps: C, onChange: (next: C) => void, disabled: boolean, baseline: C) => ReactNode;
   onSave: (draft: InstanceSettingsDraft<C>) => Promise<InstanceSettingsEntity<C> | null>;
   saving: boolean;
-  onDelete: () => Promise<unknown>;
-  deleting: boolean;
+  /** From `useInstanceDelete`. */
+  deletion: InstanceDeletion;
   deleteNote: string;
   afterDelete: string;
-  deleteBlocked?: ReactNode;
   sample?: DeliverySample | null;
   renderAfterSettings?: (settings: Record<string, unknown>) => ReactNode;
 }
@@ -55,17 +54,15 @@ export function InstanceSettingsForm<C extends object>({
   renderCaps,
   onSave,
   saving,
-  onDelete,
-  deleting,
+  deletion,
   deleteNote,
   afterDelete,
-  deleteBlocked,
   sample,
   renderAfterSettings,
 }: InstanceSettingsFormProps<C>) {
   const navigate = useNavigate();
   const canEdit = useCan('operator');
-  const secretProviders = useSecretProviders();
+  const secretFields = useSecretFieldProps(entity.settingsSchema);
   const [name, setName] = useState(entity.name);
   const [settings, setSettings] = useState(entity.settings);
   const [caps, setCaps] = useState<C>(entity.caps);
@@ -90,7 +87,7 @@ export function InstanceSettingsForm<C extends object>({
     if (changes === 0) adopt(entity);
   }
   const leaveGuard = useLeaveGuard(changes > 0);
-  const errors = validateAgainstSchema(entity.settingsSchema, settings);
+  const errors = useSchemaErrors(entity.settingsSchema, settings);
   const nameMissing = name.trim() === '';
   const invalid = Object.keys(errors).length > 0 || nameMissing;
   const disabled = !canEdit;
@@ -107,7 +104,7 @@ export function InstanceSettingsForm<C extends object>({
     if (result) adopt(result);
   };
   const remove = async () => {
-    const result = await onDelete();
+    const result = await deletion.run();
     if (result === null) return;
     leaveGuard.allowNextNavigation();
     void navigate(afterDelete);
@@ -142,7 +139,8 @@ export function InstanceSettingsForm<C extends object>({
           onChange={setSettings}
           baseline={saved.settings}
           secretStatus={entity.secretRefs}
-          secretProviders={secretProviderIds(secretProviders.data)}
+          {...secretFields}
+          errors={errors}
           showAllErrors={attempted}
           disabled={disabled}
           layout="row"
@@ -174,14 +172,14 @@ export function InstanceSettingsForm<C extends object>({
         </Button>
       </div>
       <Card title={`Delete this ${kind}`}>
-        {deleteBlocked}
+        {deletion.blocked}
         <div className={styles.dangerZone}>
           <span className={styles.spacer}>{deleteNote}</span>
           <Button
             variant="danger-outline"
             icon="trash"
             requires="operator"
-            loading={deleting}
+            loading={deletion.pending}
             onClick={() => void remove()}
           >
             Delete {kind}

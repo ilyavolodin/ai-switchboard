@@ -1,21 +1,22 @@
-import { type SubmitEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import type { TraceResponse } from '@ai-switchboard/core/contract';
+import { Link, useParams } from 'react-router';
 
 import { isApiRequestError } from '../../api/client.js';
 import { useTrace } from '../../api/index.js';
-import { ArtifactChip } from '../../components/ArtifactChip.js';
+import { ArtifactChips } from '../../components/ArtifactChips.js';
 import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { PageHeader } from '../../components/PageHeader.js';
-import { SearchInput } from '../../components/SearchInput.js';
+import { QueryError } from '../../components/QueryError.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { StageIndicator } from '../../components/StageIndicator.js';
 import { StatusChip } from '../../components/StatusChip.js';
+import { TraceSearchForm } from '../../components/TraceSearchForm.js';
 import { TraceTimeline } from '../../components/TraceTimeline.js';
 import { WhyNothingRan } from '../../components/WhyNothingRan.js';
-import { QueryError } from '../../components/QueryError.js';
-import { traceHref } from '../../lib/artifact.js';
-import { whyFromTrace } from '../../lib/why.js';
+import { plural } from '../../lib/format.js';
+import { processHref, traceHref } from '../../lib/hrefs.js';
+import { whyFromTrace, whyTitle } from '../../lib/why.js';
 import {
   EXPANDED_KINDS,
   QUERY_FORMS,
@@ -27,14 +28,7 @@ import styles from './Trace.module.css';
 
 export function Trace() {
   const { query = '' } = useParams();
-  const navigate = useNavigate();
   const trace = useTrace(query || undefined);
-
-  const onSearch = (e: SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const q = new FormData(e.currentTarget).get('trace');
-    if (typeof q === 'string' && q.trim()) void navigate(traceHref(q.trim()));
-  };
 
   const notFound =
     (trace.isError && isApiRequestError(trace.error) && trace.error.status === 404) ||
@@ -45,20 +39,13 @@ export function Trace() {
       <PageHeader
         title={<span className="mono">{query}</span>}
         back={{ to: '/activity', label: 'Back to Activity' }}
-        meta={trace.data?.artifacts.map((a) => (
-          <ArtifactChip key={`${a.kind}:${a.id}`} artifact={a} />
-        ))}
+        meta={trace.data && <ArtifactChips artifacts={trace.data.artifacts} />}
         actions={
-          <form role="search" className={styles.search} onSubmit={onSearch}>
-            <SearchInput
-              key={query}
-              name="trace"
-              mono
-              label="Trace an artifact"
-              placeholder="artifact id"
-              defaultValue={query}
-            />
-          </form>
+          <TraceSearchForm
+            className={styles.search}
+            placeholder="artifact id"
+            defaultValue={query}
+          />
         }
       />
 
@@ -97,13 +84,11 @@ export function Trace() {
   );
 }
 
-function TraceBody({ data }: { data: NonNullable<ReturnType<typeof useTrace>['data']> }) {
+function TraceBody({ data }: { data: TraceResponse }) {
   const summary = summarizeTrace(data.entries);
   const stage = traceStage(data.entries);
   const why = whyFromTrace(data.entries);
-  const whyTitle =
-    summary.processes.length === 0 ? 'Why nothing ran' : 'Processes that did not take it';
-  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const title = whyTitle(summary.processes.length);
   return (
     <div className={styles.grid}>
       <Card
@@ -129,8 +114,8 @@ function TraceBody({ data }: { data: NonNullable<ReturnType<typeof useTrace>['da
           <StageIndicator indicator={stage} />
         </Card>
         {why.length > 0 && (
-          <Card title={whyTitle} aria-label={whyTitle}>
-            <WhyNothingRan items={why} label={whyTitle} />
+          <Card title={title} aria-label={title}>
+            <WhyNothingRan items={why} label={title} />
           </Card>
         )}
         <Card title="Processes that touched it" aria-label="Processes that touched it">
@@ -140,7 +125,7 @@ function TraceBody({ data }: { data: NonNullable<ReturnType<typeof useTrace>['da
             <ul className={styles.touched}>
               {summary.processes.map((p) => (
                 <li key={p.id}>
-                  <Link to={`/processes/${encodeURIComponent(p.id)}`}>{p.name}</Link>
+                  <Link to={processHref(p.id)}>{p.name}</Link>
                   <StatusChip size="sm" tone={p.tone} label={TOUCH_WORD[p.tone]} />
                 </li>
               ))}

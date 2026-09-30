@@ -1,5 +1,6 @@
 /** The filters live in the URL so a filtered view can be shared. */
 import type { ActivityQuery, ActivityRow, StatusTone } from '@ai-switchboard/core/contract';
+import { EVENT_STAGE_LABELS, EVENT_STAGES } from '@ai-switchboard/core/domain';
 
 import { withParam } from '../../hooks/useSearchParamState.js';
 
@@ -24,15 +25,10 @@ export const RANGES = [
 ] as const;
 export const DEFAULT_RANGE = '24h';
 
-export const STAGE_OPTIONS = [
-  { value: 'matched', label: 'matched a process' },
-  { value: 'unmatched', label: 'no process matched' },
-  { value: 'received', label: 'received only' },
-  { value: 'source_throttled', label: 'source throttled' },
-  { value: 'source_disabled', label: 'source disabled' },
-  { value: 'type_muted', label: 'type muted' },
-  { value: 'event_invalid', label: 'invalid event' },
-];
+export const STAGE_OPTIONS = EVENT_STAGES.map((stage) => ({
+  value: stage,
+  label: EVENT_STAGE_LABELS[stage].label,
+}));
 
 export function readFilters(params: URLSearchParams): ActivityFilters {
   const out: ActivityFilters = {};

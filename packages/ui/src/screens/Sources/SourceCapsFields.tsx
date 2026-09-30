@@ -2,7 +2,8 @@ import type { EventTypeSpec, SourceCapsDTO } from '@ai-switchboard/core/contract
 import { useId } from 'react';
 
 import { Checkbox } from '../../components/Checkbox.js';
-import { sameValue } from '../../lib/instances.js';
+import { cx } from '../../lib/cx.js';
+import { sameValue } from '../../lib/values.js';
 import { CapField } from '../shared/CapField.js';
 import styles from '../shared/forms.module.css';
 
@@ -84,7 +85,7 @@ export function SourceCapsFields({
         />
       )}
       {eventTypes.length > 0 && (
-        <div className={styles.stack} style={{ gap: 6 }}>
+        <div className={cx(styles.stack, styles.tight)}>
           <span className={styles.typeName} id={typesLabel}>
             Event types{changed('eventTypesEnabled') ? ' · changed' : ''}
           </span>

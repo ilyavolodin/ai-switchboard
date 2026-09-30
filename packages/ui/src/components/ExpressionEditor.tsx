@@ -4,7 +4,7 @@ import { type ReactNode, useRef, useState } from 'react';
 import { useSuggestions } from '../hooks/useSuggestions.js';
 import { cx } from '../lib/cx.js';
 import { evaluationCounts } from '../lib/expression.js';
-import { formatClock, toMs } from '../lib/format.js';
+import { formatClock, plural, toMs } from '../lib/format.js';
 import {
   expressionCompletions,
   rankSuggestions,
@@ -210,7 +210,7 @@ function EvaluationPanel({
             {scope} · <span className={styles.trueCount}>{counts.true} true</span> · {counts.false}{' '}
             false ·{' '}
             <span className={counts.errors > 0 ? styles.errorCount : undefined}>
-              {counts.errors} error{counts.errors === 1 ? '' : 's'}
+              {plural(counts.errors, 'error')}
             </span>
           </span>
         ) : (

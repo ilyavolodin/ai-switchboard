@@ -1,4 +1,9 @@
-import type { DestinationDetail, StatsWindow } from '@ai-switchboard/core/contract';
+import type {
+  DestinationDetail,
+  StatsWindow,
+  UsageHistoryResponse,
+} from '@ai-switchboard/core/contract';
+import { DEFAULT_METER_POLL_SECONDS } from '@ai-switchboard/core/domain';
 import { useState } from 'react';
 
 import { useDestinationMeters, useDestinationUsage } from '../../api/index.js';
@@ -6,21 +11,16 @@ import { BarChart } from '../../components/BarChart.js';
 import { Card } from '../../components/Card.js';
 import { MeterBand } from '../../components/MeterBand.js';
 import { MeterGauge } from '../../components/MeterGauge.js';
+import { QueryBoundary } from '../../components/QueryBoundary.js';
 import { SegmentedControl } from '../../components/SegmentedControl.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { Time } from '../../components/Time.js';
-import { QueryError } from '../../components/QueryError.js';
+import { seriesColor } from '../../lib/colors.js';
 import { formatCount, formatUsage, toMs } from '../../lib/format.js';
-import { seriesColor } from '../../lib/instances.js';
 import styles from '../shared/detail.module.css';
 import { WINDOW_LABEL, WINDOW_OPTIONS } from '../shared/statsWindow.js';
-import {
-  DEFAULT_METER_POLL_SECONDS,
-  dayLabel,
-  runProcesses,
-  runStatusSeries,
-} from './destinationModel.js';
+import { dayLabel, runProcesses, runStatusSeries } from './destinationModel.js';
 
 export function DestinationOverview({ destination }: { destination: DestinationDetail }) {
   const [range, setRange] = useState<StatsWindow>('7d');
@@ -93,70 +93,72 @@ export function DestinationOverview({ destination }: { destination: DestinationD
             ) : undefined
           }
         >
-          {meters.isPending ? (
-            <Skeleton height={160} label="Loading meter history" />
-          ) : meters.isError ? (
-            <QueryError query={meters} title="Meter history could not load" />
-          ) : meters.data.meters.length === 0 ? (
-            <span className={styles.caption}>No readings in this window.</span>
-          ) : (
-            <MeterBand
-              meters={meters.data.meters}
-              runs={meters.data.runs}
-              processId={processId || undefined}
-              ariaLabel={`Meter history over ${label} with ${meters.data.runs.length} run markers`}
-            />
-          )}
+          <QueryBoundary
+            query={meters}
+            errorTitle="Meter history could not load"
+            pending={<Skeleton height={160} label="Loading meter history" />}
+            empty={<span className={styles.caption}>No readings in this window.</span>}
+            isEmpty={(d) => d.meters.length === 0}
+          >
+            {(d) => (
+              <MeterBand
+                meters={d.meters}
+                runs={d.runs}
+                processId={processId || undefined}
+                ariaLabel={`Meter history over ${label} with ${d.runs.length} run markers`}
+              />
+            )}
+          </QueryBoundary>
         </Card>
       )}
 
-      {usage.isPending ? (
-        <Skeleton shape="card" height={200} label="Loading usage" />
-      ) : usage.isError ? (
-        <QueryError query={usage} title="Usage could not load" />
-      ) : (
-        <div className={styles.threeUp}>
-          {usage.data.dimensions.map((d, i) => {
-            const total = d.days.reduce((s, x) => s + x.value, 0);
-            return (
-              <Card
-                key={d.id}
-                title={d.title}
-                subtitle={`${d.unit} · per day`}
-                meta={<span className="mono">{formatUsage(total, d.unit)}</span>}
-              >
-                <BarChart
-                  labels={d.days.map((x) => dayLabel(x.day))}
-                  series={[
-                    {
-                      id: d.id,
-                      label: d.title,
-                      color: seriesColor(i),
-                      values: d.days.map((x) => x.value),
-                    },
-                  ]}
-                  height={110}
-                  labelEvery={d.days.length > 10 ? 5 : 1}
-                  ariaLabel={`${d.title} per day over ${label}, in ${d.unit}`}
-                  formatValue={(v) => formatUsage(v, d.unit)}
-                />
-              </Card>
-            );
-          })}
-          <RunsByStatus usage={usage.data} label={label} />
-        </div>
-      )}
+      <QueryBoundary
+        query={usage}
+        errorTitle="Usage could not load"
+        pending={<Skeleton shape="card" height={200} label="Loading usage" />}
+      >
+        {(data) => <UsageCards usage={data} label={label} />}
+      </QueryBoundary>
     </>
   );
 }
 
-function RunsByStatus({
-  usage,
-  label,
-}: {
-  usage: NonNullable<ReturnType<typeof useDestinationUsage>['data']>;
-  label: string;
-}) {
+function UsageCards({ usage, label }: { usage: UsageHistoryResponse; label: string }) {
+  return (
+    <div className={styles.threeUp}>
+      {usage.dimensions.map((d, i) => {
+        const total = d.days.reduce((s, x) => s + x.value, 0);
+        return (
+          <Card
+            key={d.id}
+            title={d.title}
+            subtitle={`${d.unit} · per day`}
+            meta={<span className="mono">{formatUsage(total, d.unit)}</span>}
+          >
+            <BarChart
+              labels={d.days.map((x) => dayLabel(x.day))}
+              series={[
+                {
+                  id: d.id,
+                  label: d.title,
+                  color: seriesColor(i),
+                  values: d.days.map((x) => x.value),
+                },
+              ]}
+              height={110}
+              labelEvery={d.days.length > 10 ? 5 : 1}
+              ariaLabel={`${d.title} per day over ${label}, in ${d.unit}`}
+              formatValue={(v) => formatUsage(v, d.unit)}
+            />
+          </Card>
+        );
+      })}
+      <RunsByStatus usage={usage} label={label} />
+    </div>
+  );
+}
+
+function RunsByStatus({ usage, label }: { usage: UsageHistoryResponse; label: string }) {
   const series = runStatusSeries(usage);
   const totals = series.map((s) => ({ ...s, total: s.values.reduce((a, b) => a + b, 0) }));
   const all = totals.reduce((s, t) => s + t.total, 0);

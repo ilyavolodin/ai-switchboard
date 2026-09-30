@@ -1,5 +1,6 @@
 import type { AttentionItem } from '@ai-switchboard/core/contract';
-import { useNavigate } from 'react-router';
+import type { AttentionAction } from '@ai-switchboard/core/domain';
+import { Link, useNavigate } from 'react-router';
 
 import {
   useApprove,
@@ -14,8 +15,9 @@ import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { Time } from '../../components/Time.js';
+import { ToneDot } from '../../components/ToneDot.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
-import { toneVars } from '../../lib/tone.js';
+import { plural } from '../../lib/format.js';
 import {
   approvePrompt,
   enableProcessPrompt,
@@ -47,7 +49,7 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
     { successMessage: reloadedMessage('destination') },
   );
   const readMeters = useReasonedMutation(useReadMeters(), readMetersPrompt(), {
-    successMessage: (d) => `Read ${d.length} meter${d.length === 1 ? '' : 's'}`,
+    successMessage: (d) => `Read ${plural(d.length, 'meter')}`,
   });
   const testEvent = useReasonedMutation(useSendTestEvent(), testEventPrompt(), {
     successMessage: 'Test event sent',
@@ -60,7 +62,8 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
     },
   );
 
-  const handlers: Record<string, Run | undefined> = {
+  // `null`: the action is "go there".
+  const handlers: Record<AttentionAction, Run | null> = {
     enable_process: (i) => enableProcess.run({ id: i.targetId, enabled: true }),
     reset_breaker: (i) => reset.run({ id: i.targetId }),
     approve: (i) => approve.run({ batchId: i.targetId }),
@@ -70,6 +73,8 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
         : reloadSource.run({ id: i.targetId }),
     read_meters: (i) => readMeters.run({ id: i.targetId }),
     test_event: (i) => testEvent.run({ id: i.targetId }),
+    open: null,
+    open_approvals: null,
   };
 
   return (
@@ -89,25 +94,13 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
             const handler = handlers[item.action.id];
             return (
               <li key={item.id} className={styles.attentionRow}>
-                <span
-                  className={styles.attentionDot}
-                  style={{ background: toneVars(item.tone).fill }}
-                  aria-hidden="true"
-                />
+                <ToneDot tone={item.tone} size={8} />
                 <span className={styles.attentionText}>
                   <span className={styles.attentionTitle}>
                     <span className="visually-hidden">
                       {item.tone === 'error' ? 'Error: ' : 'Warning: '}
                     </span>
-                    <a
-                      href={attentionHref(item)}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        void navigate(attentionHref(item));
-                      }}
-                    >
-                      {item.title}
-                    </a>
+                    <Link to={attentionHref(item)}>{item.title}</Link>
                   </span>
                   <span className={styles.attentionDetail}>
                     {item.detail}

@@ -1,11 +1,12 @@
-import type { PluginSearchResult, PluginTypeDTO } from '@ai-switchboard/core/contract';
+import type { JSONSchema, PluginSearchResult, PluginTypeDTO } from '@ai-switchboard/core/contract';
 import { type ReactNode, useState } from 'react';
 
 import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
-import { asRecord } from '../../lib/instances.js';
+import { useSchemaErrors } from '../../hooks/useSchemaErrors.js';
 import { deliverySample, EMPTY_SAMPLE, type SampleDraft } from '../../lib/sampleDelivery.js';
-import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
+import { schemaDefaults } from '../../lib/schema.js';
+import { asRecord } from '../../lib/values.js';
 import styles from './forms.module.css';
 import { InstanceConfigureStep } from './InstanceConfigureStep.js';
 import { installOutcome } from './pluginModel.js';
@@ -52,6 +53,8 @@ interface Configuring<C> {
   attempted: boolean;
 }
 
+const NO_SCHEMA: JSONSchema = {};
+
 function startConfiguring<C>(type: PluginTypeDTO, caps: C): Configuring<C> {
   return {
     type,
@@ -80,9 +83,11 @@ export function AddInstanceDialog<C>({
   const [review, setReview] = useState<PluginSearchResult | null>(null);
   const [awaiting, setAwaiting] = useState<string[] | null>(null);
   const [installNote, setInstallNote] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const behind = useHiddenWhile();
-  const { inspect, install } = usePluginInstall('Install', `You continue with its ${kind} form.`);
+  const { inspect, install, manifestFor, inspectErrorFor } = usePluginInstall(
+    'Install',
+    `You continue with its ${kind} form.`,
+  );
 
   const choose = (t: PluginTypeDTO) => {
     setConfig(startConfiguring(t, initialCaps(t)));
@@ -97,17 +102,17 @@ export function AddInstanceDialog<C>({
     setConfig((c) => (c ? { ...c, ...patch } : c));
   };
 
+  const requestFor = (r: PluginSearchResult) => ({ package: r.package, range: `^${r.version}` });
   const startReview = (r: PluginSearchResult) => {
     setInstallNote(null);
     setReview(r);
     inspect.reset();
-    inspect.mutate({ package: r.package, range: `^${r.version}` });
+    inspect.mutate(requestFor(r));
   };
-  const manifest =
-    review && inspect.data && inspect.variables.package === review.package ? inspect.data : null;
+  const request = review ? requestFor(review) : null;
+  const manifest = manifestFor(request);
   const runInstall = async () => {
-    if (!review || !manifest) return;
-    const request = { package: review.package, range: `^${review.version}` };
+    if (!request || !manifest) return;
     const added = await behind.run(() => install.run(request));
     if (!added) return;
     setReview(null);
@@ -116,7 +121,7 @@ export function AddInstanceDialog<C>({
     else setAwaiting(outcome.typeIds);
   };
 
-  const errors = config ? validateAgainstSchema(config.type.settingsSchema, config.settings) : {};
+  const errors = useSchemaErrors(config?.type.settingsSchema ?? NO_SCHEMA, config?.settings ?? {});
   const invalid = Object.keys(errors).length > 0 || (config?.name.trim() ?? '') === '';
   const withSample = config != null && sample?.applies(config.type) === true;
 
@@ -126,7 +131,6 @@ export function AddInstanceDialog<C>({
       edit({ attempted: true });
       return;
     }
-    setBusy(true);
     const ok = await behind.run(() =>
       onSubmit({
         type: config.type,
@@ -135,7 +139,6 @@ export function AddInstanceDialog<C>({
         caps: config.caps,
       }),
     );
-    setBusy(false);
     if (ok) setConfig(null);
   };
 
@@ -202,7 +205,7 @@ export function AddInstanceDialog<C>({
             <Button
               variant="primary"
               requires="operator"
-              loading={busy}
+              loading={behind.hidden}
               onClick={() => void submit()}
             >
               Create {kind}
@@ -225,6 +228,7 @@ export function AddInstanceDialog<C>({
           }}
           attempted={config.attempted}
           invalid={invalid}
+          errors={errors}
           sample={withSample ? deliverySample(config.sample) : null}
           afterSettings={
             withSample
@@ -243,7 +247,12 @@ export function AddInstanceDialog<C>({
           })}
         />
       ) : review ? (
-        <PluginReviewStep review={review} inspect={inspect} manifest={manifest} />
+        <PluginReviewStep
+          review={review}
+          inspecting={inspect.isPending}
+          manifest={manifest}
+          inspectError={inspectErrorFor(review.package)}
+        />
       ) : (
         <TypePicker
           kind={kind}

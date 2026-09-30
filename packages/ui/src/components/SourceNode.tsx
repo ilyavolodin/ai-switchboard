@@ -1,8 +1,9 @@
 import type { BoardSourceNode } from '@ai-switchboard/core/contract';
 
 import { formatCount } from '../lib/format.js';
-import { toneVars } from '../lib/tone.js';
+import styles from './NodeCard.module.css';
 import { NodeCard } from './NodeCard.js';
+import { ToneDot } from './ToneDot.js';
 
 export interface SourceNodeProps {
   source: Pick<BoardSourceNode, 'id' | 'name' | 'typeName' | 'status' | 'enabled' | 'events24h'>;
@@ -39,18 +40,9 @@ export function SourceNode({
     >
       {detail ?? (
         <>
-          <span
-            aria-hidden="true"
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: toneVars(tone).fill,
-              flexShrink: 0,
-            }}
-          />
+          <ToneDot tone={tone} />
           <span>{label}</span>
-          <span style={{ flexGrow: 1 }} />
+          <span className={styles.grow} />
           <span>
             <span className="mono">{formatCount(source.events24h)}</span> / 24 h
           </span>

@@ -5,6 +5,7 @@ import {
   type InstanceRoute,
   useCreateInstance,
   usePluginTypes,
+  useSecretNames,
   useSecretProviders,
   useUpdateInstance,
 } from '../../api/index.js';
@@ -35,6 +36,7 @@ export function InstanceEditorDrawer({
   const copy = INSTANCE_ROUTES[route];
   const types = usePluginTypes(copy.kind);
   const secretProviders = useSecretProviders();
+  const secretNames = useSecretNames();
   const isAdmin = useCan('admin');
   const existing = editing.mode === 'edit' ? editing.instance : null;
   const [typeId, setTypeId] = useState(existing?.typeId ?? '');
@@ -141,6 +143,7 @@ export function InstanceEditorDrawer({
             showAllErrors={tried}
             baseline={existing?.settings}
             secretProviders={secretProviderIds(secretProviders.data)}
+            secretNames={secretNames}
             disabled={!isAdmin}
           />
         )}

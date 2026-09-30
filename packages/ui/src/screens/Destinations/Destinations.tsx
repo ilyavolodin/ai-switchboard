@@ -1,15 +1,15 @@
 import type { DestinationCapsDTO } from '@ai-switchboard/core/contract';
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
 
 import { useCreateDestination, useDestinations, usePluginTypes } from '../../api/index.js';
 import { Button } from '../../components/Button.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { PageHeader } from '../../components/PageHeader.js';
-import { useReasonedMutation } from '../../hooks/reason.js';
-import { withoutUndefined } from '../../lib/instances.js';
-import { InstanceGrid } from '../shared/InstanceGrid.js';
+import { plural } from '../../lib/format.js';
+import { destinationHref } from '../../lib/hrefs.js';
 import { AddInstanceDialog } from '../shared/AddInstanceDialog.js';
+import { InstanceGrid } from '../shared/InstanceGrid.js';
+import styles from '../shared/instanceCard.module.css';
+import { useAddInstance } from '../shared/useAddInstance.js';
 import { DestinationCapsFields } from './DestinationCapsFields.js';
 import { DestinationCard } from './DestinationCard.js';
 import { describeDestinationType, estimatedMeters } from './destinationModel.js';
@@ -17,36 +17,18 @@ import { describeDestinationType, estimatedMeters } from './destinationModel.js'
 export function Destinations() {
   const destinations = useDestinations();
   const types = usePluginTypes('destination');
-  const navigate = useNavigate();
-  const [adding, setAdding] = useState(false);
-  const create = useReasonedMutation(
-    useCreateDestination(),
-    (v: { name: string }) => ({
-      title: `Create ${v.name}?`,
-      consequence:
-        'The destination is ready as soon as it is created; no process runs on it until one binds to it.',
-      confirmLabel: 'Create destination',
-    }),
-    { successMessage: (d) => `${d.name} created` },
-  );
+  const add = useAddInstance({
+    noun: 'destination',
+    mutation: useCreateDestination(),
+    consequence:
+      'The destination is ready as soon as it is created; no process runs on it until one binds to it.',
+    href: (id) => destinationHref(id),
+  });
 
   const list = destinations.data ?? [];
   const typeCount = new Set(list.map((x) => x.typeId)).size;
-  const tick = (
-    <p className="t-caption" style={{ margin: 0 }}>
-      A tick on an arc is a process ceiling: event runs hold above it, sweeps a little later. A grey
-      arc means the last reading is stale and only the run counters gate.
-    </p>
-  );
   const addButton = (
-    <Button
-      variant="primary"
-      icon="plus"
-      requires="operator"
-      onClick={() => {
-        setAdding(true);
-      }}
-    >
+    <Button variant="primary" icon="plus" requires="operator" onClick={add.open}>
       Add destination
     </Button>
   );
@@ -58,8 +40,7 @@ export function Destinations() {
         meta={
           destinations.data ? (
             <span className="t-caption">
-              {list.length} instance{list.length === 1 ? '' : 's'} · {typeCount} type
-              {typeCount === 1 ? '' : 's'}
+              {plural(list.length, 'instance')} · {plural(typeCount, 'type')}
             </span>
           ) : null
         }
@@ -70,7 +51,12 @@ export function Destinations() {
         title="Destinations"
         heldNote="the processes bound to them are held until it is back."
         renderCard={(x) => <DestinationCard key={x.id} destination={x} />}
-        footer={tick}
+        footer={
+          <p className={`t-caption ${styles.footNote}`}>
+            A tick on an arc is a process ceiling: event runs hold above it, sweeps a little later.
+            A grey arc means the last reading is stale and only the run counters gate.
+          </p>
+        }
         empty={
           <EmptyState title="No destinations yet" illustration="ghost" actions={addButton}>
             A destination starts the automations you already have: a Claude Routine, an HTTP
@@ -80,10 +66,8 @@ export function Destinations() {
       />
 
       <AddInstanceDialog<DestinationCapsDTO>
-        open={adding}
-        onClose={() => {
-          setAdding(false);
-        }}
+        open={add.adding}
+        onClose={add.close}
         kind="destination"
         types={types.data}
         loading={types.isPending}
@@ -98,19 +82,7 @@ export function Destinations() {
             hasMeters={(t.meters?.length ?? 0) > 0}
           />
         )}
-        onSubmit={async ({ type, name, settings, caps }) => {
-          const created = await create.run({
-            typeId: type.typeId,
-            name,
-            settings,
-            caps: withoutUndefined(caps),
-            enabled: true,
-          });
-          if (!created) return false;
-          setAdding(false);
-          void navigate(`/destinations/${created.id}`);
-          return true;
-        }}
+        onSubmit={add.submit}
       />
     </>
   );

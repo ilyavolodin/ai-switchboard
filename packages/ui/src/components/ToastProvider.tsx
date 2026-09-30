@@ -2,19 +2,12 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 
 import { ToastContext, type ToastInput } from '../hooks/toast.js';
 import { Icon } from './Icon.js';
+import { ToneDot } from './ToneDot.js';
 import styles from './ToastProvider.module.css';
 
 interface ToastItem extends ToastInput {
   id: number;
 }
-
-const DOT: Record<NonNullable<ToastInput['tone']>, string> = {
-  ok: 'var(--st-ok)',
-  warn: 'var(--st-warn)',
-  error: 'var(--st-err)',
-  off: 'var(--st-off)',
-  info: 'var(--sky)',
-};
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
@@ -57,11 +50,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div className={styles.stack} role="status" aria-live="polite">
         {items.map((t) => (
           <div key={t.id} className={styles.toast}>
-            <span
-              className={styles.dot}
-              style={{ background: DOT[t.tone ?? 'info'] }}
-              aria-hidden="true"
-            />
+            <ToneDot tone={t.tone ?? 'info'} size={8} className={styles.dot} />
             <span className={styles.text}>
               <span className={styles.title}>{t.title}</span>
               {t.detail && <div>{t.detail}</div>}

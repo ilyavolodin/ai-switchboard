@@ -1,7 +1,7 @@
 import type { BoardProcessNode } from '@ai-switchboard/core/contract';
 
-import { useNow } from '../hooks/useNow.js';
 import { formatWhen, toMs } from '../lib/format.js';
+import styles from './NodeCard.module.css';
 import { NodeCard } from './NodeCard.js';
 import { PipelineDots } from './PipelineDots.js';
 
@@ -22,6 +22,8 @@ export interface ProcessNodeProps {
   dimmed?: boolean;
   highlighted?: boolean;
   describedBy?: string;
+  /** The board's clock, so every node reads the same time without its own timer. */
+  nowMs: number;
 }
 
 export function ProcessNode({
@@ -31,8 +33,8 @@ export function ProcessNode({
   dimmed,
   highlighted,
   describedBy,
+  nowMs,
 }: ProcessNodeProps) {
-  const nowMs = useNow(60_000);
   const next = toMs(process.nextSweepAt);
   const sweep = !process.enabled
     ? 'disabled'
@@ -54,7 +56,7 @@ export function ProcessNode({
     >
       <PipelineDots dots={process.dots} />
       <span className="visually-hidden">{process.status.label}</span>
-      <span style={{ flexGrow: 1 }} />
+      <span className={styles.grow} />
       <span>{sweep}</span>
     </NodeCard>
   );

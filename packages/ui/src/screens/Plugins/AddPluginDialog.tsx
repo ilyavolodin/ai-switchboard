@@ -1,24 +1,23 @@
 import type { InspectPluginRequest, InspectPluginResponse } from '@ai-switchboard/core/contract';
-import type { UseMutationResult } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { errorMessage } from '../../api/client.js';
-import { Banner } from '../../components/Banner.js';
 import { Button } from '../../components/Button.js';
 import { Dialog } from '../../components/Dialog.js';
 import { Field } from '../../components/Field.js';
 import { TextField } from '../../components/TextField.js';
 import styles from '../shared/forms.module.css';
 import { ManifestReview } from '../shared/ManifestReview.js';
+import { PluginTrustNote } from '../shared/PluginTrustNote.js';
 import { isPackageName, parsePackageSpec } from '../shared/pluginModel.js';
 import { useHiddenWhile } from '../shared/useHiddenWhile.js';
+import type { usePluginInstall } from '../shared/usePluginInstall.js';
 
 export interface AddPluginDialogProps {
   open: boolean;
   onClose: () => void;
   initialSpec: string;
-  /** Owned by the page so the catalogue can start it on open. */
-  inspect: UseMutationResult<InspectPluginResponse, Error, InspectPluginRequest>;
+  /** Owned by the page so a search result can start inspecting on open. */
+  install: ReturnType<typeof usePluginInstall>;
   onConfirm: (request: InspectPluginRequest, manifest: InspectPluginResponse) => Promise<boolean>;
 }
 
@@ -26,20 +25,15 @@ export function AddPluginDialog({
   open,
   onClose,
   initialSpec,
-  inspect,
+  install,
   onConfirm,
 }: AddPluginDialogProps) {
+  const { inspect, manifestFor, inspectErrorFor } = install;
   const [spec, setSpec] = useState(initialSpec);
-  const [busy, setBusy] = useState(false);
   const behind = useHiddenWhile();
   const request = parsePackageSpec(spec);
   const validName = isPackageName(request.package);
-  const manifest =
-    inspect.data &&
-    inspect.variables.package === request.package &&
-    inspect.variables.range === request.range
-      ? inspect.data
-      : null;
+  const manifest = manifestFor(request);
 
   const runInspect = () => {
     if (validName) inspect.mutate(request);
@@ -60,7 +54,7 @@ export function AddPluginDialog({
           <Button
             variant="primary"
             requires="admin"
-            loading={busy}
+            loading={behind.hidden}
             disabled={!manifest?.compatible}
             disabledReason={
               manifest && !manifest.compatible
@@ -68,13 +62,7 @@ export function AddPluginDialog({
                 : 'Inspect the package first to see what it asks for'
             }
             onClick={() => {
-              if (!manifest) return;
-              setBusy(true);
-              void behind
-                .run(() => onConfirm(request, manifest))
-                .finally(() => {
-                  setBusy(false);
-                });
+              if (manifest) void behind.run(() => onConfirm(request, manifest));
             }}
           >
             Add plugin
@@ -124,19 +112,13 @@ export function AddPluginDialog({
           </Button>
         </form>
 
-        {inspect.isError && inspect.variables.package === request.package && (
-          <Banner tone="error" title="The package could not be inspected">
-            {errorMessage(inspect.error)}
-          </Banner>
-        )}
-
         {manifest && <ManifestReview manifest={manifest} />}
 
-        <Banner tone="info" icon="info">
-          Plugins run in the core&apos;s process as trusted code. Adding one installs and loads it
-          now, and every replica installs it within a minute. Removing one unloads it everywhere
-          within a minute; upgrading a loaded plugin applies on the next restart.
-        </Banner>
+        <PluginTrustNote inspectError={inspectErrorFor(request.package)}>
+          Adding one installs and loads it now, and every replica installs it within a minute.
+          Removing one unloads it everywhere within a minute; upgrading a loaded plugin applies on
+          the next restart.
+        </PluginTrustNote>
       </div>
     </Dialog>
   );

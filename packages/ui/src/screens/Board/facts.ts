@@ -1,17 +1,13 @@
-import type {
-  AttentionItem,
-  BoardDestinationNode,
-  BoardProcessNode,
-  BoardSourceNode,
-} from '@ai-switchboard/core/contract';
+import type { AttentionItem } from '@ai-switchboard/core/contract';
 
 import { formatCount, formatRelative, formatWhen, toMs } from '../../lib/format.js';
+import { destinationHref, processHref, sourceHref } from '../../lib/hrefs.js';
 import { meterValueText } from '../../lib/meter.js';
 import type { LaidOutNode } from './layout.js';
 
 export function keyFacts(n: LaidOutNode, nowMs: number): string[] {
   if (n.kind === 'source') {
-    const s = n.node as BoardSourceNode;
+    const s = n.node;
     const last = toMs(s.lastEventAt);
     return [
       `${s.status.label}${s.enabled ? '' : ' · disabled'}${s.pluginAvailable ? '' : ' · plugin unavailable'}`,
@@ -20,7 +16,7 @@ export function keyFacts(n: LaidOutNode, nowMs: number): string[] {
     ];
   }
   if (n.kind === 'process') {
-    const p = n.node as BoardProcessNode;
+    const p = n.node;
     const next = toMs(p.nextSweepAt);
     const last = toMs(p.lastRunAt);
     return [
@@ -29,7 +25,7 @@ export function keyFacts(n: LaidOutNode, nowMs: number): string[] {
       next != null ? `next sweep ${formatWhen(next, nowMs)}` : 'no sweep scheduled',
     ];
   }
-  const x = n.node as BoardDestinationNode;
+  const x = n.node;
   const meters = x.meters.map((m) => `${m.title} ${meterValueText(m)}${m.stale ? ' (stale)' : ''}`);
   return [
     `${x.status.label} · ${x.typeName}`,
@@ -40,22 +36,18 @@ export function keyFacts(n: LaidOutNode, nowMs: number): string[] {
   ];
 }
 
+const HREF = { source: sourceHref, process: processHref, destination: destinationHref } as const;
+
 export function nodeHref(n: Pick<LaidOutNode, 'kind' | 'id'>): string {
-  const id = encodeURIComponent(n.id);
-  if (n.kind === 'source') return `/sources/${id}`;
-  if (n.kind === 'process') return `/processes/${id}`;
-  return `/destinations/${id}`;
+  return HREF[n.kind](n.id);
 }
 
 export function attentionHref(item: Pick<AttentionItem, 'targetKind' | 'targetId'>): string {
-  const id = encodeURIComponent(item.targetId);
   switch (item.targetKind) {
     case 'process':
-      return `/processes/${id}`;
     case 'source':
-      return `/sources/${id}`;
     case 'destination':
-      return `/destinations/${id}`;
+      return HREF[item.targetKind](item.targetId);
     case 'plugin':
       return '/plugins';
     case 'approval':

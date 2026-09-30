@@ -1,5 +1,5 @@
 import type { JSONSchema, SecretRefDTO } from '@ai-switchboard/core/contract';
-import { xDocs, xHelp, xPlaceholder, xWidget } from '@ai-switchboard/sdk/schema';
+import { xDocs, xHelp, xPlaceholder, xSecret, xWidget } from '@ai-switchboard/sdk/schema';
 import { type ReactNode, useMemo, useState } from 'react';
 
 import {
@@ -12,7 +12,6 @@ import {
   formatDefault,
   getIn,
   groupProperties,
-  isSecretField,
   listItemValue,
   orderedProperties,
   pickWidget,
@@ -28,6 +27,7 @@ import {
   type Widget,
 } from '../lib/schema.js';
 import { samplePaths, type DeliverySample, type Suggestion } from '../lib/suggest.js';
+import { sameValue } from '../lib/values.js';
 import { Button } from './Button.js';
 import { Checkbox } from './Checkbox.js';
 import type { ControlProps } from './controlProps.js';
@@ -49,6 +49,8 @@ export interface SchemaFormProps {
   value: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   secretProviders?: string[];
+  /** Name suggestions for secret fields (`useSecretNames`). */
+  secretNames?: (provider: string) => string[] | null;
   /** Matched to secret fields by field name. */
   secretStatus?: SecretRefDTO[];
   /** Show every validation message (after a save attempt); otherwise only touched fields. */
@@ -60,6 +62,8 @@ export interface SchemaFormProps {
   layout?: 'stack' | 'row';
   /** Its dotted paths feed `x-widget: 'path'` suggestions and expression completions. */
   sample?: DeliverySample | null;
+  /** From `useSchemaErrors`, when the parent validates too; otherwise the form validates itself. */
+  errors?: Record<string, string[]>;
 }
 
 interface Ctx {
@@ -68,6 +72,7 @@ interface Ctx {
   errors: Record<string, string[]>;
   visible: (path: ValuePath) => boolean;
   secretProviders: string[] | undefined;
+  secretNames: ((provider: string) => string[] | null) | undefined;
   secretStatus: SecretRefDTO[] | undefined;
   baseline: Record<string, unknown> | undefined;
   disabled: boolean;
@@ -85,15 +90,20 @@ export function SchemaForm({
   value,
   onChange,
   secretProviders,
+  secretNames,
   secretStatus,
   showAllErrors = false,
   baseline,
   disabled = false,
   layout = 'stack',
   sample,
+  errors: given,
 }: SchemaFormProps) {
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
-  const errors = useMemo(() => validateAgainstSchema(schema, value), [schema, value]);
+  const errors = useMemo(
+    () => given ?? validateAgainstSchema(schema, value),
+    [given, schema, value],
+  );
   const paths = useMemo(() => (sample ? samplePaths(sample) : []), [sample]);
   const ctx: Ctx = {
     root: value,
@@ -110,6 +120,7 @@ export function SchemaForm({
       return false;
     },
     secretProviders,
+    secretNames,
     secretStatus,
     baseline,
     disabled,
@@ -222,7 +233,7 @@ function PropertyField({
     ctx,
   };
 
-  if (kind === 'object' && !isSecretField(schema)) return <NestedObjectField {...props} />;
+  if (kind === 'object' && !xSecret(schema)) return <NestedObjectField {...props} />;
   if (kind === 'array') {
     const items = fieldSchema(asSchema(schema.items) ?? {});
     if (fieldKind(items) === 'object') return <ObjectListField {...props} items={items} />;
@@ -373,10 +384,8 @@ function ControlField({
   kind,
 }: FieldProps & { kind: FieldKind }) {
   const value = getIn(ctx.root, path);
-  const changed =
-    ctx.baseline !== undefined &&
-    JSON.stringify(getIn(ctx.baseline, path)) !== JSON.stringify(value);
-  const hasDefault = 'default' in schema && !isSecretField(schema) && kind !== 'object';
+  const changed = ctx.baseline !== undefined && !sameValue(getIn(ctx.baseline, path), value);
+  const hasDefault = 'default' in schema && !xSecret(schema) && kind !== 'object';
   const aside = hasDefault ? (
     <span className={styles.default}>
       default <span className="mono">{formatDefault(schema.default)}</span>
@@ -530,6 +539,7 @@ function SecretWidget({ control, name, title, ctx }: WidgetProps) {
       {...control}
       label={title}
       providers={ctx.secretProviders}
+      secretNames={ctx.secretNames}
       status={ctx.secretStatus?.find((s) => s.field === name)}
     />
   );
@@ -582,7 +592,7 @@ function PathWidget({ control, title, changed, placeholder, ctx }: WidgetProps) 
 function ChoiceWidget({ control, schema, path, title, required, ctx }: WidgetProps) {
   const { value, onChange, id, describedBy, invalid, disabled } = control;
   const raw = (Array.isArray(schema.enum) ? schema.enum : schema.examples) as unknown[];
-  const indexOf = (v: unknown) => raw.findIndex((o) => JSON.stringify(o) === JSON.stringify(v));
+  const indexOf = (v: unknown) => raw.findIndex((o) => sameValue(o, v));
   const index = indexOf(value);
   const labelOf = (o: unknown): string => enumLabel(schema, o) ?? formatDefault(o);
   if (pickWidget(schema) === 'radio') {

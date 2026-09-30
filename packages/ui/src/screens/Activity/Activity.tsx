@@ -1,24 +1,25 @@
 import type { ActivityRow, StatusTone } from '@ai-switchboard/core/contract';
 import { type SubmitEvent, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 
-import { useEvents, useDestinations, useProcesses, useSources } from '../../api/index.js';
+import { useDestinations, useEvents, useProcesses, useSources } from '../../api/index.js';
 import { ArtifactChip } from '../../components/ArtifactChip.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { EmptyState } from '../../components/EmptyState.js';
 import { LoadMore } from '../../components/LoadMore.js';
-import { SearchInput } from '../../components/SearchInput.js';
+import { PageHeader } from '../../components/PageHeader.js';
+import { ProcessOutcomes } from '../../components/ProcessOutcomes.js';
+import { QueryBoundary } from '../../components/QueryBoundary.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { StageIndicator } from '../../components/StageIndicator.js';
 import { TextField } from '../../components/TextField.js';
 import { Time } from '../../components/Time.js';
-import { QueryError } from '../../components/QueryError.js';
+import { TraceSearchForm } from '../../components/TraceSearchForm.js';
 import { useFlatPages } from '../../hooks/useFlatPages.js';
-import { traceHref } from '../../lib/artifact.js';
 import { now } from '../../lib/clock.js';
-import { toneVars } from '../../lib/tone.js';
+import { traceHref } from '../../lib/hrefs.js';
 import styles from './Activity.module.css';
 import {
   DEFAULT_RANGE,
@@ -42,7 +43,6 @@ const LEGEND: { tone: StatusTone; label: string }[] = [
 
 export function Activity() {
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   const filters = readFilters(params);
   // The moment the time range was chosen: the query's lower bound stays put while live refresh
   // brings in newer events.
@@ -57,12 +57,6 @@ export function Activity() {
     setParams(withFilter(params, key, value), { replace: true });
   };
 
-  const onTrace = (e: SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const q = new FormData(e.currentTarget).get('trace');
-    if (typeof q === 'string' && q.trim()) void navigate(traceHref(q.trim()));
-  };
-
   const onArtifact = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const q = new FormData(e.currentTarget).get('artifact');
@@ -74,20 +68,17 @@ export function Activity() {
 
   return (
     <>
-      <div className={styles.header}>
-        <h1 className="t-screen-title">Activity</h1>
-        <span className="t-caption">every event and where it stopped</span>
-        <span className={styles.spacer} />
-        <form role="search" className={styles.traceForm} onSubmit={onTrace}>
-          <SearchInput
-            name="trace"
-            mono
-            label="Trace an artifact"
+      <PageHeader
+        title="Activity"
+        meta={<span className="t-caption">every event and where it stopped</span>}
+        actions={
+          <TraceSearchForm
+            className={styles.traceForm}
+            inputClassName={styles.traceInput}
             placeholder="artifact id — what happened to LOL-1712?"
-            className={styles.traceInput}
           />
-        </form>
-      </div>
+        }
+      />
 
       <div className={styles.filters} role="group" aria-label="Filters">
         <Select
@@ -172,13 +163,7 @@ export function Activity() {
           <ul className={styles.legend} aria-label="Where events stopped (loaded rows)">
             {LEGEND.map((l) => (
               <li key={l.tone} className={styles.legendKey}>
-                <span
-                  className={styles.swatch}
-                  style={{
-                    background: l.tone === 'off' ? 'var(--border-4)' : toneVars(l.tone).fill,
-                  }}
-                  aria-hidden="true"
-                />
+                <span className={styles.swatch} data-tone={l.tone} aria-hidden="true" />
                 {l.label} · <span className="mono">{counts[l.tone]}</span>
               </li>
             ))}
@@ -186,43 +171,49 @@ export function Activity() {
         )}
       </div>
 
-      {events.isPending ? (
-        <Card padding="flush">
-          <Skeleton lines={8} height={28} label="Loading activity" />
-        </Card>
-      ) : events.isError ? (
-        <QueryError query={events} title="Activity could not load" />
-      ) : rows.length === 0 ? (
-        <Card>
-          <EmptyState
-            title={hasFilters(filters) ? 'No events match these filters' : 'No events yet'}
-          >
-            {hasFilters(filters)
-              ? 'Widen the time range or clear a filter. Events older than the retention window are gone.'
-              : 'Events appear here as soon as a source receives one. Send a test event from a source to see the pipeline work.'}
-          </EmptyState>
-        </Card>
-      ) : (
-        <Card padding="flush" className={styles.stream}>
-          <div className={styles.head} aria-hidden="true">
-            <span>time</span>
-            <span>event</span>
-            <span>artifact</span>
-            <span>received › matched › batched › gated › invoked</span>
-            <span>processes</span>
-          </div>
-          <ul className={styles.rows} aria-label="Events">
-            {rows.map((r) => (
-              <EventRow key={r.eventId} row={r} />
-            ))}
-          </ul>
-          <LoadMore
-            hasMore={events.hasNextPage}
-            loading={events.isFetchingNextPage}
-            onLoadMore={() => void events.fetchNextPage()}
-          />
-        </Card>
-      )}
+      <QueryBoundary
+        query={events}
+        errorTitle="Activity could not load"
+        pending={
+          <Card padding="flush">
+            <Skeleton lines={8} height={28} label="Loading activity" />
+          </Card>
+        }
+        isEmpty={() => rows.length === 0}
+        empty={
+          <Card>
+            <EmptyState
+              title={hasFilters(filters) ? 'No events match these filters' : 'No events yet'}
+            >
+              {hasFilters(filters)
+                ? 'Widen the time range or clear a filter. Events older than the retention window are gone.'
+                : 'Events appear here as soon as a source receives one. Send a test event from a source to see the pipeline work.'}
+            </EmptyState>
+          </Card>
+        }
+      >
+        {() => (
+          <Card padding="flush" className={styles.stream}>
+            <div className={styles.head} aria-hidden="true">
+              <span>time</span>
+              <span>event</span>
+              <span>artifact</span>
+              <span>received › matched › batched › gated › invoked</span>
+              <span>processes</span>
+            </div>
+            <ul className={styles.rows} aria-label="Events">
+              {rows.map((r) => (
+                <EventRow key={r.eventId} row={r} />
+              ))}
+            </ul>
+            <LoadMore
+              hasMore={events.hasNextPage}
+              loading={events.isFetchingNextPage}
+              onLoadMore={() => void events.fetchNextPage()}
+            />
+          </Card>
+        )}
+      </QueryBoundary>
     </>
   );
 }
@@ -255,15 +246,7 @@ function EventRow({ row }: { row: ActivityRow }) {
             {row.whyNothingRan ? `why: ${row.whyNothingRan}` : 'no process'}
           </span>
         ) : (
-          row.processes.map((p) => (
-            <span key={p.id} className={styles.process}>
-              <Link to={`/processes/${encodeURIComponent(p.id)}`}>{p.name}</Link>
-              <span className={styles.outcome}>
-                {' '}
-                {(p.runStatus ?? p.outcome).replace(/_/g, ' ')}
-              </span>
-            </span>
-          ))
+          <ProcessOutcomes processes={row.processes} />
         )}
       </span>
     </li>
