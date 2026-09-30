@@ -1,6 +1,5 @@
 import type { ProcessDocument } from '@ai-switchboard/core/contract';
 
-import { useDestinations, useNotifiers, useSources } from '../../api/index.js';
 import { Card } from '../../components/Card.js';
 import { CodeBlock } from '../../components/CodeBlock.js';
 import { KeyValueList } from '../../components/KeyValueList.js';
@@ -11,6 +10,7 @@ import { describeCron } from '../../lib/cron.js';
 import { asRecord } from '../../lib/instances.js';
 import { approvalMode, batchingSummary, budgetsSummary } from './editorModel.js';
 import styles from './ProcessDetail.module.css';
+import { useEditorLookups } from './useEditorLookups.js';
 
 function Expr({ value }: { value: string | undefined }) {
   return value ? (
@@ -21,17 +21,12 @@ function Expr({ value }: { value: string | undefined }) {
 }
 
 export function DefinitionTab({ processId, doc }: { processId: string; doc: ProcessDocument }) {
-  const sources = useSources();
-  const destinations = useDestinations();
-  const notifiers = useNotifiers();
-  const sourceName = (id: string) => sources.data?.find((s) => s.id === id)?.name ?? id;
-  const providerName = (id: string) =>
-    sources.data?.find((s) => s.id === id)?.name ??
-    destinations.data?.find((x) => x.id === id)?.name ??
-    id;
+  const names = useEditorLookups();
+  const sourceName = (id: string) => names.sourceName(id) || id;
+  const providerName = (id: string) => names.providerName(id) || id;
+  const notifierName = (id: string) => names.notifierName(id) || id;
   const destinationName =
-    destinations.data?.find((x) => x.id === doc.destination.instanceId)?.name ??
-    doc.destination.instanceId;
+    names.destinationSummary(doc.destination.instanceId)?.name ?? doc.destination.instanceId;
   const g = doc.gates;
   const target = asRecord(doc.destination.target);
 
@@ -183,8 +178,7 @@ export function DefinitionTab({ processId, doc }: { processId: string; doc: Proc
               {doc.notify.map((n, i) => (
                 <li key={i} className={styles.defItem}>
                   <span>
-                    {notifiers.data?.find((x) => x.id === n.notifierId)?.name ?? n.notifierId} on{' '}
-                    {n.on.join(', ')}
+                    {notifierName(n.notifierId)} on {n.on.join(', ')}
                   </span>
                   <Expr value={n.template} />
                 </li>

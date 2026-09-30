@@ -13,6 +13,7 @@ import { Time } from '../../components/Time.js';
 import { QueryError } from '../../components/QueryError.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { cx } from '../../lib/cx.js';
+import { restoreVersionPrompt } from '../shared/actionPrompts.js';
 import { changeLabel, documentChanges, formatChangeValue } from './diff.js';
 import styles from './ProcessDetail.module.css';
 
@@ -78,11 +79,7 @@ export function HistoryTab({
   const [selected, setSelected] = useState<number | null>(null);
   const restore = useReasonedMutation(
     useRestoreProcessVersion(),
-    (v) => ({
-      title: `Restore version ${v.version} of ${processName}?`,
-      consequence: `Version ${v.version}'s document is saved as version ${currentVersion + 1}; the current version stays in the history.`,
-      confirmLabel: 'Restore',
-    }),
+    (v) => restoreVersionPrompt(processName, v.version, currentVersion),
     { successMessage: (p) => `${p.name} restored · version ${p.version}` },
   );
 

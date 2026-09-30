@@ -32,7 +32,42 @@ export const SECTIONS = [
   'steps',
   'notifications',
 ] as const;
-export type SectionId = (typeof SECTIONS)[number] | 'basics';
+export type EditorSectionId = (typeof SECTIONS)[number];
+export type SectionId = EditorSectionId | 'basics';
+
+export const SECTION_TITLES: Record<EditorSectionId, string> = {
+  triggers: 'Triggers',
+  batching: 'Batching',
+  schedules: 'Schedules',
+  gates: 'Gates',
+  budgets: 'Budgets',
+  destination: 'Destination',
+  steps: 'Steps',
+  notifications: 'Notifications',
+};
+
+export interface DocumentNames {
+  sourceName: (id: string) => string;
+  notifierName: (id: string) => string;
+  destinationName: string | undefined;
+}
+
+/** The line each collapsed section shows. */
+export function sectionSummaries(
+  doc: ProcessDocument,
+  names: DocumentNames,
+): Record<EditorSectionId, string> {
+  return {
+    triggers: triggersSummary(doc, names.sourceName),
+    batching: batchingSummary(doc.batching),
+    schedules: schedulesSummary(doc.schedules),
+    gates: gatesSummary(doc.gates),
+    budgets: budgetsSummary(doc.budgets),
+    destination: destinationSectionSummary(doc, names.destinationName),
+    steps: stepsSummary(doc),
+    notifications: notificationsSummary(doc.notify, names.notifierName),
+  };
+}
 
 /** Unlike the core's default, enabled: a process made in the editor is meant to run. */
 export function newProcessDocument(destinationInstanceId: string): ProcessDocument {
