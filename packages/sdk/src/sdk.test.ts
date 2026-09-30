@@ -18,7 +18,6 @@ import {
   parseWith,
   safeEqual,
   SchemaMismatchError,
-  secretPaths,
   signHmac,
   TransportError,
   tryParse,
@@ -433,19 +432,6 @@ describe('schema helpers', () => {
     expect(
       validateAgainst({ type: 'string', 'x-secret': true, 'x-widget': 'textarea' }, 'x').valid,
     ).toBe(true);
-  });
-
-  it('finds secret paths', () => {
-    expect(
-      secretPaths({
-        type: 'object',
-        properties: {
-          token: { type: 'string', 'x-secret': true },
-          auth: { type: 'object', properties: { key: { type: 'string', 'x-secret': true } } },
-          name: { type: 'string' },
-        },
-      }),
-    ).toEqual(['token', 'auth.key']);
   });
 });
 

@@ -3,7 +3,7 @@ import { isCapabilityError, isSecretNotFoundError, isWritableSecretProvider } fr
 import type { HttpClient } from '../http.js';
 import { isOneOf } from '../json.js';
 import { definePlugin, validatePlugin, type PluginDefinition } from '../plugin.js';
-import { isValidSchema, validateAgainst, xSecret } from '../schema/index.js';
+import { isValidSchema, schemaFields, validateAgainst, xSecret } from '../schema/index.js';
 import type { JSONSchema, RawRequest, Settings } from '../types/common.js';
 import type { ArtifactRef, EventDraft, EventTypeSpec } from '../types/events.js';
 import type {
@@ -831,15 +831,6 @@ export interface SettingsSchemaOptions {
 const CREDENTIAL_NAME =
   /(token|secret|password|passphrase|apikey|appkey|privatekey|accesskey|signingkey)$/i;
 
-function fieldsOf(schema: JSONSchema, prefix = ''): [string, JSONSchema][] {
-  const props = schema.properties;
-  if (props === null || typeof props !== 'object') return [];
-  return Object.entries(props as Record<string, JSONSchema>).flatMap(([key, sub]) => {
-    const path = prefix === '' ? key : `${prefix}.${key}`;
-    return [[path, sub] as [string, JSONSchema], ...fieldsOf(sub, path)];
-  });
-}
-
 /**
  * The settings-form rules: every field has a `title` and a `description` (the UI renders the
  * form from them), and every credential-looking field is marked `x-secret: true`.
@@ -853,7 +844,7 @@ export function settingsSchemaChecks(
     {
       name: 'every settings field has a title and a description',
       run: () => {
-        const missing = fieldsOf(schema).flatMap(([path, sub]) => {
+        const missing = schemaFields(schema).flatMap(({ path, schema: sub }) => {
           const gaps = [
             typeof sub.title === 'string' && sub.title !== '' ? [] : ['title'],
             typeof sub.description === 'string' && sub.description !== '' ? [] : ['description'],
@@ -867,12 +858,12 @@ export function settingsSchemaChecks(
     {
       name: 'credential settings fields are marked x-secret',
       run: () => {
-        const unmarked = fieldsOf(schema)
-          .filter(([path, sub]) => {
+        const unmarked = schemaFields(schema)
+          .filter(({ path, schema: sub }) => {
             const name = path.split('.').at(-1) ?? path;
             return CREDENTIAL_NAME.test(name) && !notSecret.has(path) && !xSecret(sub);
           })
-          .map(([path]) => path);
+          .map(({ path }) => path);
         assert(unmarked.length === 0, `credential fields without x-secret: ${unmarked.join(', ')}`);
         return Promise.resolve();
       },
