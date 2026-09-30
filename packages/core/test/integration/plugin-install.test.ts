@@ -530,7 +530,7 @@ describe('removal reaches every replica', () => {
     expect((await listInstalled(home2)).map((l) => l.name)).not.toContain(BELL);
     expect(r2.notifierType('bell')).toBeUndefined();
     expect(r2.notifier(notifierId)).toBeUndefined();
-    expect(r2.instanceError(notifierId)).toBe('plugin_unavailable');
+    expect(r2.instanceError(notifierId)?.code).toBe('plugin_unavailable');
     expect(r2.loaded.find((p) => p.name === BELL)?.status).toBe('removed');
     const [t] = await tdb.db
       .select()
@@ -548,7 +548,7 @@ describe('removal reaches every replica', () => {
     await again.boot();
     expect(again.loaded.find((p) => p.name === BELL)).toBeUndefined();
     expect(again.notifierType('bell')).toBeUndefined();
-    expect(again.instanceError(notifierId)).toBe('plugin_unavailable');
+    expect(again.instanceError(notifierId)?.code).toBe('plugin_unavailable');
     const [row] = await tdb.db.select().from(plugins).where(eq(plugins.name, BELL));
     expect(row).toMatchObject({ status: 'unavailable', statusMessage: 'removed by an admin' });
   });

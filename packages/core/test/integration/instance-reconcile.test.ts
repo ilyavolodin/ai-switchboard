@@ -5,6 +5,7 @@ import type { InstanceSummary, SourceDetail } from '../../src/contract/index.js'
 import { FakeClock } from '../../src/clock.js';
 import { testConfig } from '../../src/config.js';
 import { destinations, secretProviders, sources } from '../../src/db/schema.js';
+import { instanceErrorText } from '../../src/domain/instance-error.js';
 import { silentLogger } from '../../src/logger.js';
 import { PluginHost, type ReconcileResult } from '../../src/plugins/host.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
@@ -136,7 +137,7 @@ describe('instance convergence across replicas', () => {
     await call('POST', `/api/v1/destinations/${destinationId}/enable`, { enabled: false });
     await expectNothingOnA();
     await b.reconcile();
-    expect(b.instanceError(destinationId)).toBe('disabled');
+    expect(b.instanceError(destinationId)?.code).toBe('disabled');
 
     await call('POST', `/api/v1/destinations/${destinationId}/enable`, { enabled: true });
     await expectNothingOnA();
@@ -178,12 +179,14 @@ describe('instance convergence across replicas', () => {
     // Renaming the provider leaves the source's secret://vault/… reference dangling.
     await call('PUT', `/api/v1/secret-providers/${provider.id}`, { name: 'vault-2' });
     await expectNothingOnA();
-    expect(a.ctx.runtime.instanceError(source.id)).toMatch(/^secret_error: .*"vault"/);
+    expect(instanceErrorText(a.ctx.runtime.instanceError(source.id))).toMatch(
+      /^secret_error: .*"vault"/,
+    );
 
     const result = await b.reconcile();
     expect(ids(result.rebuilt)).toEqual([provider.id]);
     expect(ids(result.dependents)).toEqual([source.id]);
-    expect(b.instanceError(source.id)).toMatch(/^secret_error: .*"vault"/);
+    expect(instanceErrorText(b.instanceError(source.id))).toMatch(/^secret_error: .*"vault"/);
     expect(b.source(source.id)).toBeUndefined();
 
     await call('PUT', `/api/v1/secret-providers/${provider.id}`, { name: 'vault' });
@@ -205,7 +208,7 @@ describe('instance convergence across replicas', () => {
       201,
     );
     await b.reconcile();
-    expect(b.instanceError(waiting.id)).toMatch(/^secret_error/);
+    expect(b.instanceError(waiting.id)?.code).toBe('secret_error');
 
     const late = await call<InstanceSummary>(
       'POST',
