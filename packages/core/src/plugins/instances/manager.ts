@@ -5,7 +5,7 @@ import { referencesProvider } from '../../secrets/refs.js';
 import type { Telemetry } from '../../telemetry/telemetry.js';
 
 import { DISABLED, buildError, type InstanceBuilder } from './builder.js';
-import { BUILD_ORDER, recordsResolution } from './kind-specs.js';
+import { BUILD_ORDER, healthSeries, recordsResolution } from './kind-specs.js';
 import type { BuiltInstance, LiveSet } from './live-set.js';
 import { diffInstances } from './reconcile.js';
 import type { InstanceRowHead, InstanceStore } from './store.js';
@@ -37,7 +37,7 @@ export interface InstanceManagerDeps {
   store: InstanceStore;
   clock: Clock;
   logger: CoreLogger;
-  telemetry: Pick<Telemetry, 'counter'>;
+  telemetry: Pick<Telemetry, 'decision' | 'clearGauge'>;
   /** The row is gone: release what the instance kept outside Postgres. Never throws. */
   onDropped?(id: string): Promise<void>;
 }
@@ -99,7 +99,7 @@ export class InstanceManager {
     await live.withPending([id], async () => {
       const [row] = await store.rows(kind, { ids: [id] });
       if (row) await this.build(kind, row, ticket);
-      else if (live.commit(id, ticket, undefined, undefined)) await this.deps.onDropped?.(id);
+      else if (live.commit(id, ticket, undefined, undefined)) await this.dropped(kind, id);
     });
   }
 
@@ -159,7 +159,7 @@ export class InstanceManager {
       }
       if (names.size > 0) {
         result.dependents = await this.reloadDependentsOf([...names]);
-        for (const d of result.dependents) this.countRebuild(d.kind, 'dependent');
+        for (const d of result.dependents) this.countRebuild(d.kind, 'dependent', d.id);
       }
       for (const kind of DEPENDENT_KINDS) await this.reconcileKind(kind, result);
     } catch (err) {
@@ -182,7 +182,7 @@ export class InstanceManager {
     kind: InstanceKind,
     result: ReconcileResult,
   ): Promise<(ReconciledInstance & { previousName?: string })[]> {
-    const { live, store, logger } = this.deps;
+    const { live, store } = this.deps;
     const ticket = live.ticket();
     const diff = diffInstances(await store.versions(kind), live.builtVersions(kind), (id) =>
       live.busy(id, ticket),
@@ -203,28 +203,33 @@ export class InstanceManager {
         ...entry,
         ...(before !== undefined && before !== row.name ? { previousName: before } : {}),
       });
-      this.countRebuild(kind, wasChanged ? 'changed' : 'created');
-      logger.debug(
-        { kind, instance_id: row.id, version: row.configVersion },
-        wasChanged
-          ? 'rebuilt an instance changed elsewhere'
-          : 'built an instance created elsewhere',
-      );
+      this.countRebuild(kind, wasChanged ? 'changed' : 'created', row.id);
     }
     for (const id of diff.removed) {
       const before = live.builtOf(id);
       if (!before || !live.commit(id, ticket, undefined, undefined)) continue;
-      await this.deps.onDropped?.(id);
+      await this.dropped(kind, id);
       const entry = { kind, id, name: before.name };
       result.dropped.push(entry);
       touched.push(entry);
-      this.countRebuild(kind, 'removed');
-      logger.debug({ kind, instance_id: id }, 'dropped an instance deleted elsewhere');
+      this.countRebuild(kind, 'removed', id);
     }
     return touched;
   }
 
-  private countRebuild(kind: InstanceKind, change: RebuildChange): void {
-    this.deps.telemetry.counter('switchboard.instance.rebuilds', { kind, change });
+  /** The row is gone: release what the instance kept outside Postgres and its gauge series. */
+  private async dropped(kind: InstanceKind, id: string): Promise<void> {
+    const series = healthSeries(kind, id);
+    if (series) this.deps.telemetry.clearGauge(series.name, series.attributes);
+    await this.deps.onDropped?.(id);
+  }
+
+  /** One decision per instance another replica changed: a metric and a log line. */
+  private countRebuild(kind: InstanceKind, change: RebuildChange, instanceId: string): void {
+    this.deps.telemetry.decision(
+      'switchboard.instance.rebuilds',
+      { kind, change },
+      { instance_id: instanceId },
+    );
   }
 }

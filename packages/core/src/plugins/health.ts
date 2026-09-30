@@ -5,7 +5,7 @@ import { INSTANCE_KINDS, type InstanceKind } from '../domain/status.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
 import { errorText } from '../util/errors.js';
 
-import { KIND_SPECS } from './instances/kind-specs.js';
+import { healthSeries, KIND_SPECS } from './instances/kind-specs.js';
 import type { LiveByKind, LiveSet } from './instances/live-set.js';
 import type { InstanceStore } from './instances/store.js';
 
@@ -69,8 +69,7 @@ async function checkOne<K extends InstanceKind>(
   const health = await probeHealth(() => object.health(), deps.clock);
   if (stored?.status === 'unhealthy' && health.status === 'unknown') return;
   await deps.store.saveHealth(kind, live.id, health);
-  if (spec.healthGauge)
-    deps.telemetry.gauge(spec.healthGauge, health.status === 'healthy' ? 1 : 0, {
-      instance: live.name,
-    });
+  const series = healthSeries(kind, live.id);
+  if (series)
+    deps.telemetry.gauge(series.name, health.status === 'healthy' ? 1 : 0, series.attributes);
 }

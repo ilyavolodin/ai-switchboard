@@ -1,4 +1,4 @@
-import { SpanKind, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api';
+import { SpanKind, SpanStatusCode, context, trace } from '@opentelemetry/api';
 import {
   ATTR_ERROR_TYPE,
   ATTR_HTTP_REQUEST_METHOD,
@@ -8,24 +8,25 @@ import {
   ATTR_URL_FULL,
 } from '@opentelemetry/semantic-conventions';
 
+import { failSpan, injectTraceHeaders, SCOPE_NAME } from './trace-context.js';
+
 /**
  * Outside a recording span it only propagates the active context (an incoming sender's). The URL
  * is recorded without its query string, which may carry a token.
  */
 export function createTracedFetch(
   base: typeof fetch = globalThis.fetch,
-  tracer = trace.getTracer('switchboard'),
+  tracer = trace.getTracer(SCOPE_NAME),
 ): typeof fetch {
   return async (input, init = {}) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const method = (init.method ?? 'GET').toUpperCase();
     const active = context.active();
     if (!trace.getSpan(active)?.isRecording()) {
-      const headers = new Headers(init.headers);
-      propagation.inject(active, headers, {
-        set: (carrier, key, value) => carrier.set(key, value),
+      return base(input, {
+        ...init,
+        headers: injectTraceHeaders(active, new Headers(init.headers)),
       });
-      return base(input, { ...init, headers });
     }
     const span = tracer.startSpan(
       method,
@@ -40,10 +41,7 @@ export function createTracedFetch(
       },
       active,
     );
-    const headers = new Headers(init.headers);
-    propagation.inject(trace.setSpan(active, span), headers, {
-      set: (carrier, key, value) => carrier.set(key, value),
-    });
+    const headers = injectTraceHeaders(trace.setSpan(active, span), new Headers(init.headers));
     try {
       const res = await base(input, { ...init, headers });
       span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, res.status);
@@ -53,10 +51,7 @@ export function createTracedFetch(
       }
       return res;
     } catch (err) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      span.recordException(e);
-      span.setAttribute(ATTR_ERROR_TYPE, e.name);
-      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+      failSpan(span, err);
       throw err;
     } finally {
       span.end();

@@ -138,7 +138,10 @@ async function storeDrafts(
       { event_id: e.id },
     );
     if (e.stage === 'event_invalid') {
-      ctx.runtime.recordPluginError(live.pluginName, 'invalid_event', e.reason ?? undefined);
+      ctx.runtime.recordPluginError(live.pluginName, 'invalid_event', e.reason ?? undefined, {
+        instanceId: live.id,
+        method: 'parse',
+      });
     }
   }
   ctx.telemetry.annotate({
@@ -187,7 +190,10 @@ async function parseDrafts(
   if (!out.ok) return out;
   const parsed: unknown = out.value;
   if (Array.isArray(parsed)) return { ok: true, drafts: parsed as unknown[] };
-  ctx.runtime.recordPluginError(live.pluginName, 'invalid_event', 'parse did not return an array');
+  ctx.runtime.recordPluginError(live.pluginName, 'invalid_event', 'parse did not return an array', {
+    instanceId: live.id,
+    method: 'parse',
+  });
   return { ok: true, drafts: [] };
 }
 
@@ -305,7 +311,10 @@ async function pollSourceInSpan(ctx: Ctx, sourceId: string): Promise<void> {
   }
   const out: unknown = polled.value;
   if (out === null || typeof out !== 'object') {
-    ctx.runtime.recordPluginError(live.pluginName, 'exception', 'poll returned no result object');
+    ctx.runtime.recordPluginError(live.pluginName, 'exception', 'poll returned no result object', {
+      instanceId: live.id,
+      method: 'poll',
+    });
     return;
   }
   const {

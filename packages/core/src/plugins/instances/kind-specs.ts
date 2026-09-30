@@ -46,7 +46,7 @@ export interface KindSpec<K extends InstanceKind> {
   resolvesSecrets: boolean;
   /** A disabled instance still gets a live object, flagged `disabled` (a push source keeps parsing). */
   buildsWhenDisabled: boolean;
-  /** Reported per instance after each health probe. */
+  /** Reported per instance after each health probe, labelled `{ <kind>: <id> }` (`healthSeries`). */
   healthGauge: GaugeName | undefined;
   /** A probe that cannot tell (`unknown`) keeps an `unhealthy` the pipeline stored (401/403). */
   keepsStoredUnhealthy: boolean;
@@ -58,6 +58,18 @@ export interface KindSpec<K extends InstanceKind> {
 
 /** Providers first: every other kind resolves its settings through them. */
 export const BUILD_ORDER = ['secret_provider', 'source', 'destination', 'notifier'] as const;
+
+/**
+ * The health gauge series of one instance, keyed by id like the pipeline's own health signals
+ * (a 401 sets `switchboard.destination.health{destination}`), so a rename keeps one series.
+ */
+export function healthSeries(
+  kind: InstanceKind,
+  id: string,
+): { name: GaugeName; attributes: Record<string, string> } | undefined {
+  const name = KIND_SPECS[kind].healthGauge;
+  return name ? { name, attributes: { [kind]: id } } : undefined;
+}
 
 type Create<K extends InstanceKind> = (settings: Settings, ctx: PluginContext) => ObjectByKind[K];
 

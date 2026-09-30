@@ -11,6 +11,7 @@ import {
   LoggerProvider,
   SimpleLogRecordProcessor,
 } from '@opentelemetry/sdk-logs';
+import { AggregationTemporality, MeterProvider, MetricReader } from '@opentelemetry/sdk-metrics';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { FakeClock } from '../clock.js';
@@ -50,6 +51,45 @@ describe('traceparent', () => {
     );
     expect(parseTraceparent('garbage')).toBeUndefined();
     expect(parseTraceparent(null)).toBeUndefined();
+  });
+});
+
+class TestReader extends MetricReader {
+  protected onShutdown(): Promise<void> {
+    return Promise.resolve();
+  }
+  protected onForceFlush(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+describe('gauges', () => {
+  async function observed(reader: TestReader, name: string) {
+    const { resourceMetrics } = await reader.collect();
+    const metric = resourceMetrics.scopeMetrics
+      .flatMap((s) => s.metrics)
+      .find((m) => m.descriptor.name === name);
+    return (metric?.dataPoints ?? []).map((p) => ({ attributes: p.attributes, value: p.value }));
+  }
+
+  // Delta temporality shows what is observed per collection; cumulative readers keep the SDK's copy.
+  it('observes the last value per series until the series is cleared', async () => {
+    const reader = new TestReader({
+      aggregationTemporalitySelector: () => AggregationTemporality.DELTA,
+    });
+    const meter = new MeterProvider({ readers: [reader] }).getMeter('test');
+    const t = createTelemetry(silentLogger(), meter, tracer);
+    t.gauge('switchboard.destination.health', 1, { destination: 'd1' });
+    t.gauge('switchboard.destination.health', 0, { destination: 'd1' });
+    t.gauge('switchboard.destination.health', 1, { destination: 'd2' });
+    expect(await observed(reader, 'switchboard.destination.health')).toEqual([
+      { attributes: { destination: 'd1' }, value: 0 },
+      { attributes: { destination: 'd2' }, value: 1 },
+    ]);
+    t.clearGauge('switchboard.destination.health', { destination: 'd1' });
+    expect(await observed(reader, 'switchboard.destination.health')).toEqual([
+      { attributes: { destination: 'd2' }, value: 1 },
+    ]);
   });
 });
 
