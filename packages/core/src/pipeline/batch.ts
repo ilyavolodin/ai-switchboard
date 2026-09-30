@@ -1,5 +1,5 @@
 import type { ProcessDocument } from '../domain/process.js';
-import { SECOND_MS } from '../util/time.js';
+import { addSeconds, SECOND_MS } from '../util/time.js';
 
 /**
  * Each join pushes `fireAfter` to `now + debounceSeconds`. A batch closes at `maxSize`, at
@@ -32,12 +32,12 @@ export type JoinDecision =
 
 function ageLimit(openedAt: Date, config: BatchingConfig): number {
   return config.maxAgeSeconds > 0
-    ? openedAt.getTime() + config.maxAgeSeconds * 1000
+    ? addSeconds(openedAt, config.maxAgeSeconds).getTime()
     : Number.POSITIVE_INFINITY;
 }
 
 function fireAfterFor(openedAt: Date, config: BatchingConfig, now: Date): Date {
-  const debounced = now.getTime() + Math.max(0, config.debounceSeconds) * 1000;
+  const debounced = addSeconds(now, Math.max(0, config.debounceSeconds)).getTime();
   return new Date(Math.min(debounced, ageLimit(openedAt, config)));
 }
 

@@ -5,7 +5,7 @@ import jsonata from 'jsonata';
 import type { Clock } from '../clock.js';
 import type { DbOrTx } from '../db/client.js';
 import { destinations, notifiers, sources } from '../db/schema.js';
-import { processDocumentSchema, type ProcessDocument } from '../domain/process.js';
+import { approvalMode, processDocumentSchema, type ProcessDocument } from '../domain/process.js';
 import { effectiveTarget } from '../pipeline/target.js';
 import type { PluginRuntime } from '../plugins/runtime.js';
 import { errorText } from '../util/errors.js';
@@ -119,9 +119,7 @@ export async function validateProcessDocument(
     ['batching.groupBy', doc.batching.groupBy],
     [
       'gates.approval',
-      doc.gates.approval === 'none' || doc.gates.approval === 'always'
-        ? undefined
-        : doc.gates.approval,
+      approvalMode(doc.gates.approval) === 'expression' ? doc.gates.approval : undefined,
     ],
   ] as const) {
     const err = compileError(expr);

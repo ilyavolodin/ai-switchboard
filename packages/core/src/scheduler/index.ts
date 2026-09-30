@@ -1,7 +1,7 @@
 export {
+  CronScanLimitError,
   describeCron,
   isValidTimezone,
-  matchesWall,
   nextTicks,
   parseCron,
   ticksBetween,

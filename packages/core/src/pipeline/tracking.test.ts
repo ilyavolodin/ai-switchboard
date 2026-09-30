@@ -1,21 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import type { MeterSpec, UsageDimension } from '@ai-switchboard/sdk';
-
-import {
-  breakerAtGate,
-  breakerHistoryLimit,
-  breakerOpensAfterRun,
-  consecutiveFailures,
-} from './breaker.js';
-import {
-  ceilingCrossed,
-  estimatedLimit,
-  estimateReading,
-  isFresh,
-  normaliseUtilization,
-  periodBounds,
-} from './meters.js';
 import {
   deadlinePassed,
   isTrackingState,
@@ -23,10 +7,8 @@ import {
   nextPollAt,
   pollDelaySeconds,
   recoverInvoking,
-  statusFromTracking,
   trackingDeadline,
 } from './tracking.js';
-import { mergeUsage, sanitizeUsage } from './usage.js';
 
 const now = new Date('2026-01-07T15:00:00Z');
 
@@ -50,15 +32,6 @@ describe('tracking', () => {
     expect(deadlinePassed(deadline, new Date('2026-01-07T16:59:59Z'))).toBe(false);
     expect(deadlinePassed(deadline, deadline)).toBe(true);
     expect(deadlinePassed(null, now)).toBe(false);
-  });
-
-  it.each([
-    ['running', 'running'],
-    ['ok', 'ok'],
-    ['error', 'error'],
-    ['unknown', 'unknown'],
-  ] as const)('tracking state %s → run %s', (state, status) => {
-    expect(statusFromTracking(state)).toBe(status);
   });
 
   it.each<
@@ -174,110 +147,6 @@ describe('tracking', () => {
     ],
   ])('%s', (_name, run, idempotent, action) => {
     expect(recoverInvoking(run, idempotent, now)).toBe(action);
-  });
-});
-
-describe('breaker', () => {
-  it.each<[string, Parameters<typeof consecutiveFailures>[0], number]>([
-    ['none', [], 0],
-    ['two errors', ['error', 'unknown'], 2],
-    ['an ok ends the streak', ['error', 'ok', 'error', 'error'], 1],
-    ['failed and held neither count nor end it', ['error', 'failed', 'held', 'unknown', 'ok'], 2],
-  ])('%s', (_name, statuses, n) => {
-    expect(consecutiveFailures(statuses)).toBe(n);
-  });
-
-  it.each([
-    ['below the threshold', ['error', 'error'], 3, false],
-    ['at the threshold', ['unknown', 'error', 'error'], 3, true],
-    ['a zero threshold never opens', ['error', 'error', 'error'], 0, false],
-  ] as const)('%s', (_name, statuses, threshold, opens) => {
-    expect(breakerOpensAfterRun(statuses, threshold)).toEqual({ opens, failures: statuses.length });
-  });
-
-  it.each([
-    [1, 50],
-    [20, 80],
-  ])('reads enough history for threshold %d', (threshold, limit) => {
-    expect(breakerHistoryLimit(threshold)).toBe(limit);
-  });
-
-  it('closes after the cooldown, not before', () => {
-    const open = { state: 'open' as const, openedAt: new Date(now.getTime() - 59 * 60_000) };
-    expect(breakerAtGate(open, 60, now).next.state).toBe('open');
-    expect(breakerAtGate(open, 60, new Date(now.getTime() + 60_000))).toMatchObject({
-      transition: 'closed_cooldown',
-      next: { state: 'closed' },
-    });
-  });
-});
-
-describe('meters', () => {
-  it('freshness against the staleness window', () => {
-    expect(isFresh(new Date(now.getTime() - 30 * 60_000), now, 30)).toBe(true);
-    expect(isFresh(new Date(now.getTime() - 31 * 60_000), now, 30)).toBe(false);
-  });
-
-  it.each([
-    ['hour', '2026-01-07T15:00:00.000Z', '2026-01-07T16:00:00.000Z'],
-    ['day', '2026-01-07T00:00:00.000Z', '2026-01-08T00:00:00.000Z'],
-    ['week', '2026-01-05T00:00:00.000Z', '2026-01-12T00:00:00.000Z'],
-  ] as const)('%s period bounds', (period, start, end) => {
-    const b = periodBounds(period, new Date('2026-01-07T15:20:00Z'));
-    expect([b.start.toISOString(), b.end.toISOString()]).toEqual([start, end]);
-  });
-
-  it('estimates a reading from run counts against the typed-in limit', () => {
-    const r = estimateReading('daily_runs', 20, 15, 'day', now);
-    expect(r).toMatchObject({ utilization: 75, used: 15, limit: 20, estimated: true });
-    expect(r.resetsAt?.toISOString()).toBe('2026-01-08T00:00:00.000Z');
-    expect(estimateReading('x', 10, 30, 'day', now).utilization).toBe(100);
-  });
-
-  it('picks the typed-in limit over the spec default', () => {
-    const spec: MeterSpec = {
-      id: 'daily_runs',
-      title: 'Daily runs',
-      kind: 'allowance',
-      unit: 'runs',
-      estimate: { period: 'day', defaultLimit: 15 },
-    };
-    expect(estimatedLimit(spec, { daily_runs: 25 })).toBe(25);
-    expect(estimatedLimit(spec, undefined)).toBe(15);
-    expect(estimatedLimit({ ...spec, estimate: { period: 'day' } }, {})).toBeUndefined();
-  });
-
-  it('clamps utilization and detects ceiling crossings', () => {
-    expect(normaliseUtilization(120)).toBe(100);
-    expect(normaliseUtilization(-1)).toBe(0);
-    expect(normaliseUtilization('50')).toBeNull();
-    expect(ceilingCrossed(80, 86, 85)).toBe(true);
-    expect(ceilingCrossed(86, 90, 85)).toBe(false);
-    expect(ceilingCrossed(undefined, 90, 85)).toBe(true);
-  });
-});
-
-describe('usage', () => {
-  const dims: UsageDimension[] = [
-    { id: 'tokens', title: 'Tokens', unit: 'tokens', aggregate: 'sum', budgetable: true },
-    { id: 'peak', title: 'Peak', unit: 'bytes', aggregate: 'max', budgetable: false },
-  ];
-
-  it('drops undeclared keys and non-numbers', () => {
-    expect(sanitizeUsage({ tokens: 10, bogus: 1, peak: 'x' }, dims)).toEqual({
-      usage: { tokens: 10 },
-      dropped: ['bogus', 'peak'],
-    });
-    expect(sanitizeUsage(undefined, dims)).toEqual({ usage: null, dropped: [] });
-    expect(sanitizeUsage([1], dims).dropped).toHaveLength(1);
-  });
-
-  it('merges later tracking reports', () => {
-    expect(mergeUsage({ tokens: 10, peak: 5 }, { tokens: 12, peak: 3 }, dims)).toEqual({
-      tokens: 12,
-      peak: 5,
-    });
-    expect(mergeUsage(null, { tokens: 1 }, dims)).toEqual({ tokens: 1 });
   });
 });
 

@@ -18,7 +18,6 @@ import {
   lostPollCutoff,
   nextPollAt,
   recoverInvoking,
-  statusFromTracking,
 } from '../../pipeline/tracking.js';
 import { mergeUsage, sanitizeUsage } from '../../pipeline/usage.js';
 import { isUuid } from '../../util/uuid.js';
@@ -284,7 +283,7 @@ async function applyTracking(
   status: RunStatus,
   source: 'poll' | 'callback',
 ): Promise<void> {
-  const next = statusFromTracking(status.state);
+  const next: RunStatusValue = status.state;
   if (next === 'running') {
     const live = ctx.runtime.destination(run.destinationId);
     const usage =

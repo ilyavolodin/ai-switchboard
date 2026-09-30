@@ -1,6 +1,4 @@
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+export { isRecord } from '@ai-switchboard/sdk/json';
 
 /** A non-empty string, or undefined. */
 export function str(value: unknown): string | undefined {

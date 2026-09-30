@@ -1,3 +1,1 @@
-export function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+export { errorText } from '@ai-switchboard/sdk/json';

@@ -1,6 +1,7 @@
-import type { RunStatus } from '@ai-switchboard/sdk';
+import { isOneOf } from '@ai-switchboard/sdk';
 
-import type { RunStatusValue } from '../domain/status.js';
+import { TRACKING_STATES, type RunStatusValue, type TrackingState } from '../domain/status.js';
+import { addMinutes, addSeconds, msAgo, SECOND_MS } from '../util/time.js';
 
 export const POLL_BACKOFF_SECONDS = [30, 60, 120, 300] as const;
 /**
@@ -13,18 +14,12 @@ export const INVOKING_STALE_SECONDS = 60;
 export const LOST_POLL_GRACE_SECONDS = 60;
 
 export function lostPollCutoff(now: Date): Date {
-  return new Date(now.getTime() - LOST_POLL_GRACE_SECONDS * 1000);
+  return msAgo(now, LOST_POLL_GRACE_SECONDS * SECOND_MS);
 }
 
-export const TRACKING_STATES = [
-  'running',
-  'ok',
-  'error',
-  'unknown',
-] as const satisfies readonly RunStatus['state'][];
-
-export function isTrackingState(value: unknown): value is RunStatus['state'] {
-  return (TRACKING_STATES as readonly unknown[]).includes(value);
+/** A tracking state is also the run status it settles to. */
+export function isTrackingState(value: unknown): value is TrackingState {
+  return isOneOf(TRACKING_STATES, value);
 }
 
 export function pollDelaySeconds(pollCount: number): number {
@@ -37,32 +32,17 @@ export function nextPollAt(
   pollCount: number,
   deadline: Date,
 ): { at: Date; atDeadline: boolean } {
-  const at = from.getTime() + pollDelaySeconds(pollCount) * 1000;
-  if (at >= deadline.getTime()) return { at: deadline, atDeadline: true };
-  return { at: new Date(at), atDeadline: false };
+  const at = addSeconds(from, pollDelaySeconds(pollCount));
+  if (at.getTime() >= deadline.getTime()) return { at: deadline, atDeadline: true };
+  return { at, atDeadline: false };
 }
 
 export function trackingDeadline(invokedAt: Date, deadlineMinutes: number): Date {
-  return new Date(invokedAt.getTime() + Math.max(1, deadlineMinutes) * 60_000);
+  return addMinutes(invokedAt, Math.max(1, deadlineMinutes));
 }
 
 export function deadlinePassed(deadline: Date | null, now: Date): boolean {
   return deadline !== null && now.getTime() >= deadline.getTime();
-}
-
-export function statusFromTracking(state: RunStatus['state']): RunStatusValue {
-  switch (state) {
-    case 'running':
-      return 'running';
-    case 'ok':
-      return 'ok';
-    case 'error':
-      return 'error';
-    case 'unknown':
-      return 'unknown';
-    default:
-      return 'running';
-  }
 }
 
 export interface InvokingRun {
@@ -82,7 +62,7 @@ export type RecoveryAction = 'uncertain' | 'reinvoke' | 'resume' | null;
  */
 export function recoverInvoking(run: InvokingRun, idempotent: boolean, now: Date): RecoveryAction {
   if (run.status !== 'invoking') return null;
-  const cutoff = now.getTime() - INVOKING_STALE_SECONDS * 1000;
+  const cutoff = msAgo(now, INVOKING_STALE_SECONDS * SECOND_MS).getTime();
   if (run.invokeStartedAt !== null) {
     const stale =
       run.invokeDeadlineAt !== null

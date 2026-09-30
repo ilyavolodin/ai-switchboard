@@ -1,5 +1,7 @@
 import type { ProcessDocument, Schedule } from '../domain/process.js';
 
+import { addDays, addMinutes } from '../util/time.js';
+
 import { nextTicks, parseCron, ticksBetween } from './cron.js';
 
 /** A tick this old still counts as on time: the scheduler job itself may run late. */
@@ -22,12 +24,12 @@ export function dueSweep(schedule: Schedule, history: ScheduleHistory, now: Date
   if (!schedule.enabled) return null;
   const parsed = parseCron(schedule.cron);
   if (!parsed.ok) return null;
-  const floor = now.getTime() - MAX_CATCH_UP_DAYS * 86_400_000;
+  const floor = addDays(now, -MAX_CATCH_UP_DAYS).getTime();
   const from = new Date(Math.max((history.lastTickAt ?? history.since).getTime(), floor));
   const ticks = ticksBetween(parsed.cron, schedule.timezone, from, now);
   const latest = ticks.at(-1);
   if (!latest) return null;
-  const onTimeFrom = now.getTime() - ON_TIME_GRACE_MINUTES * 60_000;
+  const onTimeFrom = addMinutes(now, -ON_TIME_GRACE_MINUTES).getTime();
   if (latest.getTime() >= onTimeFrom) return { tickAt: latest, catchUp: false };
   return schedule.catchUp === 'once' ? { tickAt: latest, catchUp: true } : null;
 }

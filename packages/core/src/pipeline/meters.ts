@@ -1,5 +1,7 @@
 import type { MeterReading, MeterSpec } from '@ai-switchboard/sdk';
 
+import { addDays, addMs, HOUR_MS, MINUTE_MS } from '../util/time.js';
+
 export interface StoredReading {
   meterId: string;
   utilization: number;
@@ -11,7 +13,7 @@ export interface StoredReading {
 }
 
 export function isFresh(observedAt: Date, now: Date, stalenessMinutes: number): boolean {
-  return now.getTime() - observedAt.getTime() <= stalenessMinutes * 60_000;
+  return now.getTime() - observedAt.getTime() <= stalenessMinutes * MINUTE_MS;
 }
 
 export type EstimatePeriod = 'day' | 'hour' | 'week';
@@ -21,14 +23,13 @@ export function periodBounds(period: EstimatePeriod, now: Date): { start: Date; 
   const d = new Date(now.getTime());
   if (period === 'hour') {
     d.setUTCMinutes(0, 0, 0);
-    return { start: d, end: new Date(d.getTime() + 3_600_000) };
+    return { start: d, end: addMs(d, HOUR_MS) };
   }
   d.setUTCHours(0, 0, 0, 0);
-  if (period === 'day') return { start: d, end: new Date(d.getTime() + 86_400_000) };
+  if (period === 'day') return { start: d, end: addDays(d, 1) };
   // ISO week: Monday 00:00 UTC.
-  const back = (d.getUTCDay() + 6) % 7;
-  const start = new Date(d.getTime() - back * 86_400_000);
-  return { start, end: new Date(start.getTime() + 7 * 86_400_000) };
+  const start = addDays(d, -((d.getUTCDay() + 6) % 7));
+  return { start, end: addDays(start, 7) };
 }
 
 export function estimatedLimit(

@@ -3,6 +3,7 @@ import cronstrue from 'cronstrue';
 import { DateTime } from 'luxon';
 
 import { errorText } from '../util/errors.js';
+import { addDays, HOUR_MS, MINUTE_MS } from '../util/time.js';
 
 /**
  * DST rules: a wall time skipped by a spring-forward gap fires once, at the first instant after
@@ -31,7 +32,26 @@ function numbers(values: readonly (number | string)[]): Set<number> {
   return out;
 }
 
+/**
+ * A pure function's cache, not state: the scheduler re-reads every schedule each tick, and a parse
+ * result depends only on the text. Bounded, oldest entry evicted first.
+ */
+const PARSED = new Map<string, CronParse>();
+const PARSED_LIMIT = 1000;
+
 export function parseCron(expression: string): CronParse {
+  const hit = PARSED.get(expression);
+  if (hit) return hit;
+  const parsed = parseUncached(expression);
+  if (PARSED.size >= PARSED_LIMIT) {
+    const oldest = PARSED.keys().next();
+    if (oldest.done !== true) PARSED.delete(oldest.value);
+  }
+  PARSED.set(expression, parsed);
+  return parsed;
+}
+
+function parseUncached(expression: string): CronParse {
   const source = expression.trim().replace(/\s+/g, ' ');
   if (source === '') return { ok: false, error: 'cron expression is empty' };
   if (source.startsWith('@')) {
@@ -107,11 +127,9 @@ function wallOf(dt: DateTime): Wall {
   };
 }
 
-export function matchesWall(cron: ParsedCron, w: Wall): boolean {
+function matchesWall(cron: ParsedCron, w: Wall): boolean {
   return dayMatches(cron, w) && cron.hour.has(w.hour) && cron.minute.has(w.minute);
 }
-
-const MINUTE = 60_000;
 
 /** Does a wall time skipped by a gap just before `t` match? */
 function gapMatches(cron: ParsedCron, t: DateTime, prev: DateTime): boolean {
@@ -120,7 +138,7 @@ function gapMatches(cron: ParsedCron, t: DateTime, prev: DateTime): boolean {
   if (jump <= 0) return false;
   const base = Date.UTC(prev.year, prev.month - 1, prev.day, prev.hour, prev.minute);
   for (let i = 1; i <= jump; i++) {
-    const naive = new Date(base + i * MINUTE);
+    const naive = new Date(base + i * MINUTE_MS);
     const w: Wall = {
       minute: naive.getUTCMinutes(),
       hour: naive.getUTCHours(),
@@ -144,9 +162,18 @@ function isRepeat(t: DateTime, zone: string): boolean {
 
 export interface TickOptions {
   limit?: number;
+  /** Scan steps before giving up; far more than any real range needs, since steps skip ahead. */
+  maxSteps?: number;
 }
 
-/** Ascending; instants are whole UTC minutes. */
+const DEFAULT_MAX_STEPS = 2_000_000;
+
+/** A scan ran out of steps before reaching the end of its range; its ticks would be incomplete. */
+export class CronScanLimitError extends Error {
+  override readonly name = 'CronScanLimitError';
+}
+
+/** Ascending; instants are whole UTC minutes. Throws `CronScanLimitError` rather than truncate. */
 export function ticksBetween(
   cron: ParsedCron,
   timezone: string,
@@ -155,34 +182,40 @@ export function ticksBetween(
   options: TickOptions = {},
 ): Date[] {
   const limit = options.limit ?? Number.POSITIVE_INFINITY;
+  const maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
   const out: Date[] = [];
-  let t = Math.floor(fromExclusive.getTime() / MINUTE) * MINUTE + MINUTE;
+  let t = Math.floor(fromExclusive.getTime() / MINUTE_MS) * MINUTE_MS + MINUTE_MS;
   const end = toInclusive.getTime();
-  let guard = 0;
-  while (t <= end && out.length < limit && guard++ < 2_000_000) {
+  let steps = 0;
+  while (t <= end && out.length < limit) {
+    if (steps++ >= maxSteps) {
+      throw new CronScanLimitError(
+        `${cron.source}: no end of range after ${maxSteps} steps (at ${new Date(t).toISOString()})`,
+      );
+    }
     const dt = DateTime.fromMillis(t, { zone: timezone });
-    const prev = DateTime.fromMillis(t - MINUTE, { zone: timezone });
+    const prev = DateTime.fromMillis(t - MINUTE_MS, { zone: timezone });
     const w = wallOf(dt);
     const repeat = isRepeat(dt, timezone);
     const fires = (!repeat && matchesWall(cron, w)) || gapMatches(cron, dt, prev);
     if (fires) {
       out.push(new Date(t));
-      t += MINUTE;
+      t += MINUTE_MS;
       continue;
     }
     if (!repeat && dt.offset === prev.offset) {
       // Skip ahead when the day or the hour cannot match. Gaps sit on hour boundaries, which
       // these jumps always land on, so the check above still sees the instant after a gap.
       if (!dayMatches(cron, w)) {
-        t = Math.max(t + MINUTE, dt.startOf('day').plus({ days: 1 }).toMillis());
+        t = Math.max(t + MINUTE_MS, dt.startOf('day').plus({ days: 1 }).toMillis());
         continue;
       }
       if (!cron.hour.has(w.hour)) {
-        t = Math.max(t + MINUTE, dt.startOf('hour').toMillis() + 60 * MINUTE);
+        t = Math.max(t + MINUTE_MS, dt.startOf('hour').toMillis() + HOUR_MS);
         continue;
       }
     }
-    t += MINUTE;
+    t += MINUTE_MS;
   }
   return out;
 }
@@ -194,9 +227,7 @@ export function nextTicks(
   count: number,
   horizonDays = 366 * 5,
 ): Date[] {
-  return ticksBetween(cron, timezone, after, new Date(after.getTime() + horizonDays * 86_400_000), {
-    limit: count,
-  });
+  return ticksBetween(cron, timezone, after, addDays(after, horizonDays), { limit: count });
 }
 
 export function describeCron(expression: string): string | null {

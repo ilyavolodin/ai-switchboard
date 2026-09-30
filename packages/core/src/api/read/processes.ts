@@ -1,4 +1,3 @@
-import { CronExpressionParser } from 'cron-parser';
 import { and, count, desc, eq, gt, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import {
@@ -12,9 +11,9 @@ import {
   sources,
 } from '../../db/schema.js';
 import { processStatus } from '../../domain/labels.js';
+import { nextSweepAt } from '../../scheduler/due.js';
 import { countedRun } from '../../services/pipeline/counters.js';
 import { savedVersion } from '../../services/processes.js';
-import type { ProcessDocument } from '../../domain/process.js';
 import type { StatusTone } from '../../domain/status.js';
 import type { ApiContext } from '../context.js';
 import type {
@@ -30,22 +29,6 @@ import { pageLimit } from './paging.js';
 import { batchArtifacts, runSummaries } from './runs.js';
 
 type ProcessRow = typeof processes.$inferSelect;
-
-export function nextSweepAt(document: ProcessDocument, now: Date): Date | null {
-  let best: Date | null = null;
-  for (const s of document.schedules) {
-    if (!s.enabled) continue;
-    try {
-      const next = CronExpressionParser.parse(s.cron, { tz: s.timezone, currentDate: now })
-        .next()
-        .toDate();
-      if (!best || next < best) best = next;
-    } catch {
-      // An invalid cron never fires; the editor reports it.
-    }
-  }
-  return best;
-}
 
 interface HourCounts {
   matched: number;

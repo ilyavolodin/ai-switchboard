@@ -8,6 +8,7 @@ import {
 } from '@ai-switchboard/sdk';
 
 import { DEFAULT_INVOKE_TIMEOUT_SECONDS, MIN_INVOKE_TIMEOUT_SECONDS } from '../domain/defaults.js';
+import { addSeconds } from '../util/time.js';
 
 /**
  * The idempotency rule: a non-idempotent invoke is retried only when the request never left
@@ -52,8 +53,10 @@ export function invokeAttemptDeadline(
   invokeTimeoutSeconds: number,
   beforeStepBudgetSeconds: number,
 ): Date {
-  const total = invokeTimeoutSeconds + beforeStepBudgetSeconds + INVOKE_DEADLINE_MARGIN_SECONDS;
-  return new Date(startedAt.getTime() + total * 1000);
+  return addSeconds(
+    startedAt,
+    invokeTimeoutSeconds + beforeStepBudgetSeconds + INVOKE_DEADLINE_MARGIN_SECONDS,
+  );
 }
 
 /** A timeout is a lost response (the request may have reached the backend), not a plugin error. */
@@ -100,12 +103,30 @@ export interface ClassifyInput {
 
 export function classifyInvoke(input: ClassifyInput, outcome: InvokeOutcome): InvokeClassification {
   const max = input.maxAttempts ?? MAX_INVOKE_ATTEMPTS;
-  const retry = (reason: string): InvokeClassification =>
+  const retry = (
+    reason: string,
+    minDelaySeconds = 0,
+    exhausted: { reason: string; errors: string[] } = {
+      reason: `retries_exhausted: ${reason}`,
+      errors: [reason],
+    },
+  ): InvokeClassification =>
     input.attempt < max
-      ? { action: 'retry', reason, delaySeconds: retryDelaySeconds(input.attempt) }
-      : { action: 'failed', reason: `retries_exhausted: ${reason}`, errors: [reason] };
+      ? {
+          action: 'retry',
+          reason,
+          delaySeconds: Math.max(retryDelaySeconds(input.attempt), minDelaySeconds),
+        }
+      : { action: 'failed', ...exhausted };
   const lost = (reason: string): InvokeClassification =>
     input.idempotent ? retry(reason) : { action: 'uncertain', reason };
+  /** Out of capacity: the backend refused before doing any work. */
+  const rateLimited = (errors: string[], softHoldSeconds: number): InvokeClassification => ({
+    action: 'failed',
+    reason: 'rate_limited',
+    errors,
+    softHoldSeconds,
+  });
 
   if (outcome.kind === 'result') {
     const r = outcome.result;
@@ -130,15 +151,7 @@ export function classifyInvoke(input: ClassifyInput, outcome: InvokeOutcome): In
       case 'held':
         return { action: 'held', reason: r.reason ?? 'paused', ...ids };
       case 'failed':
-        if (soft) {
-          // Out of capacity: the backend refused before doing any work.
-          return {
-            action: 'failed',
-            reason: 'rate_limited',
-            errors: r.errors ?? [`retry after ${soft} s`],
-            softHoldSeconds: soft,
-          };
-        }
+        if (soft) return rateLimited(r.errors ?? [`retry after ${soft} s`], soft);
         return {
           action: 'completed',
           status: 'error',
@@ -162,13 +175,10 @@ export function classifyInvoke(input: ClassifyInput, outcome: InvokeOutcome): In
   if (isInvokeError(err)) {
     const soft = positive(err.retryAfterSeconds);
     if (err.status === 503) {
-      return input.attempt < max
-        ? {
-            action: 'retry',
-            reason: `503: ${err.message}`,
-            delaySeconds: Math.max(retryDelaySeconds(input.attempt), soft ?? 0),
-          }
-        : { action: 'failed', reason: 'retries_exhausted: 503', errors: [err.message] };
+      return retry(`503: ${err.message}`, soft ?? 0, {
+        reason: 'retries_exhausted: 503',
+        errors: [err.message],
+      });
     }
     if (!err.sent) return retry(`not sent: ${err.message}`);
     const unhealthy = err.status === 401 || err.status === 403;
@@ -181,14 +191,7 @@ export function classifyInvoke(input: ClassifyInput, outcome: InvokeOutcome): In
         ...(unhealthy ? { unhealthy: true } : {}),
       };
     }
-    if (soft) {
-      return {
-        action: 'failed',
-        reason: 'rate_limited',
-        errors: [err.message],
-        softHoldSeconds: soft,
-      };
-    }
+    if (soft) return rateLimited([err.message], soft);
     return lost(`${err.status ?? 'error'}: ${err.message}`);
   }
   // An unexpected exception may have happened after the request was sent.

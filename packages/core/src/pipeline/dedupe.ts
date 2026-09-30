@@ -1,6 +1,9 @@
+import { DAY_MS, SECOND_MS, msAgo } from '../util/time.js';
+
 /** `(process, dedupeKey)` is unique for 7 days, so redeliveries and replays converge on one run. */
 
-export const DEDUPE_WINDOW_SECONDS = 7 * 24 * 3600;
+export const DEDUPE_WINDOW_DAYS = 7;
+export const DEDUPE_WINDOW_SECONDS = (DEDUPE_WINDOW_DAYS * DAY_MS) / SECOND_MS;
 
 export interface PriorDispatch {
   id: string;
@@ -10,7 +13,7 @@ export interface PriorDispatch {
 export type DedupeDecision = { outcome: 'batched' } | { outcome: 'deduped'; duplicateOf: string };
 
 export function dedupeWindowStart(now: Date): Date {
-  return new Date(now.getTime() - DEDUPE_WINDOW_SECONDS * 1000);
+  return msAgo(now, DEDUPE_WINDOW_DAYS * DAY_MS);
 }
 
 /**
