@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -129,6 +130,13 @@ describe('switchboard (program)', () => {
     const cap = await run('--version');
     expect(cap.out.join('')).toContain(`switchboard ${CLI_VERSION}`);
     expect(cap.exitCode).toBe(0);
+  });
+
+  it('takes the version from package.json', async () => {
+    const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
+      version: string;
+    };
+    expect(CLI_VERSION).toBe(pkg.version);
   });
 
   it('lists every command in --help', async () => {

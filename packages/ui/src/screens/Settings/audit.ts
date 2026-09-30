@@ -1,27 +1,10 @@
-/** What the API writes in `audit_log.scope`. */
-export const AUDIT_SCOPES = [
-  'process',
-  'source',
-  'destination',
-  'notifier',
-  'secret_provider',
-  'plugin',
-  'approval',
-  'run',
-  'event',
-  'user',
-  'token',
-  'settings',
-];
+import { isPlainObject } from '../../lib/json.js';
 
 export interface ChangeLine {
   key: string | null;
   before: string;
   after: string;
 }
-
-const isPlainObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
 
 export function auditValue(v: unknown): string {
   if (v === undefined || v === null) return '—';

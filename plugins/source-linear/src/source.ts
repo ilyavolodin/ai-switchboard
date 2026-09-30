@@ -1,12 +1,11 @@
 import {
-  asArray,
   asNumber,
   asObject,
   asString,
   checkHealth,
+  dispatchAction,
   getPath,
   parseJsonObject,
-  validateAgainst,
   verifyHmacHeader,
   withSettings,
   type ActionResult,
@@ -22,46 +21,27 @@ import {
   type VerifyResult,
 } from '@ai-switchboard/sdk';
 
+import { actions, type LinearActionArgs } from './actions.js';
 import {
-  actions,
-  actionsById,
   COMMENT_CREATE,
+  createApi,
+  ISSUE_QUERY,
   ISSUE_UPDATE,
   LABELS_QUERY,
+  LinearApiError,
+  nodes,
   STATES_QUERY,
-} from './actions.js';
-import { createApi, LinearApiError, type LinearApi } from './api.js';
+  TEAMS_QUERY,
+  VIEWER_QUERY,
+  WEBHOOK_CREATE,
+  type LinearApi,
+} from './api.js';
 import { eventTypes } from './events.js';
-import { parseDelivery } from './parse.js';
+import { labelNames, parseDelivery } from './parse.js';
 import { LinearSettingsError, settingsSchema, type LinearSettings } from './settings.js';
 
 /** Linear's documented replay window: reject deliveries whose timestamp is further off. */
 export const MAX_SKEW_MS = 60_000;
-
-const ISSUE_QUERY = `query Issue($id: String!) {
-  issue(id: $id) {
-    id identifier title url updatedAt priority priorityLabel
-    state { id name type }
-    team { id key }
-    assignee { name }
-    labels { nodes { id name } }
-  }
-}`;
-
-const TEAMS_QUERY = `query Teams($keys: [String!]) {
-  teams(filter: { key: { in: $keys } }) { nodes { id key } }
-}`;
-
-const WEBHOOK_CREATE = `mutation WebhookCreate($input: WebhookCreateInput!) {
-  webhookCreate(input: $input) { success webhook { id enabled } }
-}`;
-
-function nodes(value: unknown): JsonObject[] {
-  return asArray(getPath(value, 'nodes')).flatMap((n) => {
-    const o = asObject(n);
-    return o ? [o] : [];
-  });
-}
 
 /**
  * Linear-Signature is the hex HMAC-SHA256 of the raw body; `webhookTimestamp` (ms, in the body)
@@ -116,72 +96,65 @@ function createLinearSource(s: LinearSettings, ctx: PluginContext): Source {
       : { ok: false, message: 'Linear did not apply the update' };
   }
 
-  async function act(action: string, args: unknown): Promise<ActionResult> {
-    const spec = actionsById.get(action);
-    if (!spec) return { ok: false, message: `Unknown action "${action}"` };
-    const check = validateAgainst(spec.argsSchema, args);
-    if (!check.valid) return { ok: false, message: `Invalid args: ${check.errors.join('; ')}` };
-    const a = args as { artifact: ArtifactRef; label?: string; state?: string; body?: string };
-    const id = a.artifact.id;
-    switch (action) {
-      case 'addLabel':
-        return withIssue(a.artifact, async (issue) => {
-          const wanted = (a.label ?? '').toLowerCase();
-          const current = nodes(issue.labels);
-          if (current.some((l) => asString(l.name)?.toLowerCase() === wanted)) {
-            return { ok: true, message: `${id} already has label ${a.label ?? ''}` };
-          }
-          const teamId = asString(getPath(issue, 'team', 'id'));
-          const candidates = nodes(
-            (await api.graphql(LABELS_QUERY, { name: a.label })).issueLabels,
-          );
-          // Prefer the issue's team label over a workspace label of the same name.
-          const label =
-            candidates.find((l) => asString(getPath(l, 'team', 'id')) === teamId) ??
-            candidates.find((l) => getPath(l, 'team') == null);
-          const labelId = asString(label?.id);
-          if (labelId === undefined)
-            return {
-              ok: false,
-              message: `No label named ${a.label ?? ''} in the issue's team or workspace`,
-            };
-          const labelIds = [...current.flatMap((l) => asString(l.id) ?? []), labelId];
-          return update(issue, { labelIds }, `Added label ${asString(label?.name) ?? ''} to ${id}`);
+  const handlers = {
+    addLabel: (a: LinearActionArgs) =>
+      withIssue(a.artifact, async (issue) => {
+        const id = a.artifact.id;
+        const wanted = (a.label ?? '').toLowerCase();
+        if (labelNames(getPath(issue, 'labels', 'nodes')).some((l) => l.toLowerCase() === wanted)) {
+          return { ok: true, message: `${id} already has label ${a.label ?? ''}` };
+        }
+        const teamId = asString(getPath(issue, 'team', 'id'));
+        const candidates = nodes((await api.graphql(LABELS_QUERY, { name: a.label })).issueLabels);
+        // Prefer the issue's team label over a workspace label of the same name.
+        const label =
+          candidates.find((l) => asString(getPath(l, 'team', 'id')) === teamId) ??
+          candidates.find((l) => getPath(l, 'team') == null);
+        const labelId = asString(label?.id);
+        if (labelId === undefined)
+          return {
+            ok: false,
+            message: `No label named ${a.label ?? ''} in the issue's team or workspace`,
+          };
+        // Only the addition: a full label list would drop a label added since the fetch.
+        return update(
+          issue,
+          { addedLabelIds: [labelId] },
+          `Added label ${asString(label?.name) ?? ''} to ${id}`,
+        );
+      }),
+    setState: (a: LinearActionArgs) =>
+      withIssue(a.artifact, async (issue) => {
+        const id = a.artifact.id;
+        const teamId = asString(getPath(issue, 'team', 'id')) ?? '';
+        const states = nodes(
+          (await api.graphql(STATES_QUERY, { teamId, name: a.state })).workflowStates,
+        );
+        const stateId = asString(states[0]?.id);
+        if (stateId === undefined)
+          return {
+            ok: false,
+            message: `No workflow state named ${a.state ?? ''} in the issue's team`,
+          };
+        if (asString(getPath(issue, 'state', 'id')) === stateId)
+          return { ok: true, message: `${id} is already in ${a.state ?? ''}` };
+        return update(issue, { stateId }, `Moved ${id} to ${asString(states[0]?.name) ?? ''}`);
+      }),
+    comment: (a: LinearActionArgs) =>
+      withIssue(a.artifact, async (issue) => {
+        const data = await api.graphql(COMMENT_CREATE, {
+          input: { issueId: asString(issue.id) ?? '', body: a.body },
         });
-      case 'setState':
-        return withIssue(a.artifact, async (issue) => {
-          const teamId = asString(getPath(issue, 'team', 'id')) ?? '';
-          const states = nodes(
-            (await api.graphql(STATES_QUERY, { teamId, name: a.state })).workflowStates,
-          );
-          const stateId = asString(states[0]?.id);
-          if (stateId === undefined)
-            return {
-              ok: false,
-              message: `No workflow state named ${a.state ?? ''} in the issue's team`,
-            };
-          if (asString(getPath(issue, 'state', 'id')) === stateId)
-            return { ok: true, message: `${id} is already in ${a.state ?? ''}` };
-          return update(issue, { stateId }, `Moved ${id} to ${asString(states[0]?.name) ?? ''}`);
-        });
-      case 'comment':
-        return withIssue(a.artifact, async (issue) => {
-          const data = await api.graphql(COMMENT_CREATE, {
-            input: { issueId: asString(issue.id) ?? '', body: a.body },
-          });
-          const comment = asObject(getPath(data, 'commentCreate', 'comment'));
-          return getPath(data, 'commentCreate', 'success') === true
-            ? {
-                ok: true,
-                message: `Commented on ${id}`,
-                data: { id: asString(comment?.id), url: asString(comment?.url) },
-              }
-            : { ok: false, message: 'Linear did not create the comment' };
-        });
-      default:
-        return { ok: false, message: `Unknown action "${action}"` };
-    }
-  }
+        const comment = asObject(getPath(data, 'commentCreate', 'comment'));
+        return getPath(data, 'commentCreate', 'success') === true
+          ? {
+              ok: true,
+              message: `Commented on ${a.artifact.id}`,
+              data: { id: asString(comment?.id), url: asString(comment?.url) },
+            }
+          : { ok: false, message: 'Linear did not create the comment' };
+      }),
+  };
 
   async function provision(webhookUrl: string): Promise<ProvisionResult> {
     const base = {
@@ -226,7 +199,7 @@ function createLinearSource(s: LinearSettings, ctx: PluginContext): Source {
   }
 
   async function resolve(ref: ArtifactRef): Promise<ArtifactSnapshot | null> {
-    if (ref.kind !== 'linear.issue') throw new Error(`linear cannot look up ${ref.kind}`);
+    if (ref.kind !== 'linear.issue') throw new LinearApiError(`linear cannot look up ${ref.kind}`);
     const issue = await fetchIssue(ref.id);
     if (!issue) return null;
     const url = asString(issue.url) ?? '';
@@ -241,7 +214,7 @@ function createLinearSource(s: LinearSettings, ctx: PluginContext): Source {
       title: asString(issue.title) ?? '',
       state: asString(getPath(issue, 'state', 'name')) ?? '',
       stateType: asString(getPath(issue, 'state', 'type')) ?? '',
-      labels: nodes(issue.labels).flatMap((l) => asString(l.name) ?? []),
+      labels: labelNames(getPath(issue, 'labels', 'nodes')),
       priority: asNumber(issue.priority) ?? 0,
       assignee: asString(getPath(issue, 'assignee', 'name')) ?? null,
       url,
@@ -251,7 +224,7 @@ function createLinearSource(s: LinearSettings, ctx: PluginContext): Source {
 
   function health(): Promise<Health> {
     return checkHealth(ctx, async () => {
-      const data = await api.graphql('query Viewer { viewer { id name } }');
+      const data = await api.graphql(VIEWER_QUERY);
       const name = asString(getPath(data, 'viewer', 'name'));
       return {
         status: 'healthy',
@@ -265,7 +238,7 @@ function createLinearSource(s: LinearSettings, ctx: PluginContext): Source {
     parse: (req) => parseDelivery(req, s.teamKeys),
     provision,
     resolve,
-    act,
+    act: (action, args) => dispatchAction(actions, handlers, action, args),
     health,
   };
 }

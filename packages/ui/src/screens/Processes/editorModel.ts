@@ -1,16 +1,26 @@
 import type {
   EventTypeSpec,
+  MeterCeiling,
+  MeterGaugeDTO,
   Notification,
   ProcessDocument,
   Schedule,
   Step,
   Trigger,
 } from '@ai-switchboard/core/contract';
+import {
+  approvalMode,
+  defaultProcessDocument,
+  processDocumentSchema,
+} from '@ai-switchboard/core/domain';
 
 import { errorMessage, isApiRequestError } from '../../api/client.js';
 import { describeCron } from '../../lib/cron.js';
 import { formatCount, formatDays } from '../../lib/format.js';
-import { asSchema } from '../../lib/schema.js';
+import { shortInstanceName } from '../../lib/instanceNames.js';
+import { asSchema, validateAgainstSchema } from '../../lib/schema.js';
+
+export { approvalMode, type ApprovalMode } from '@ai-switchboard/core/domain';
 
 export const SECTIONS = [
   'triggers',
@@ -22,29 +32,46 @@ export const SECTIONS = [
   'steps',
   'notifications',
 ] as const;
-export type SectionId = (typeof SECTIONS)[number] | 'basics';
+export type EditorSectionId = (typeof SECTIONS)[number];
+export type SectionId = EditorSectionId | 'basics';
 
-/**
- * Unlike the core's `defaultProcessDocument`, enabled: a process made in the editor is meant to
- * run.
- */
-export function newProcessDocument(destinationInstanceId: string): ProcessDocument {
+export const SECTION_TITLES: Record<EditorSectionId, string> = {
+  triggers: 'Triggers',
+  batching: 'Batching',
+  schedules: 'Schedules',
+  gates: 'Gates',
+  budgets: 'Budgets',
+  destination: 'Destination',
+  steps: 'Steps',
+  notifications: 'Notifications',
+};
+
+export interface DocumentNames {
+  sourceName: (id: string) => string;
+  notifierName: (id: string) => string;
+  destinationName: string | undefined;
+}
+
+/** The line each collapsed section shows. */
+export function sectionSummaries(
+  doc: ProcessDocument,
+  names: DocumentNames,
+): Record<EditorSectionId, string> {
   return {
-    name: '',
-    description: '',
-    enabled: true,
-    triggers: [],
-    schedules: [],
-    batching: { ...BATCHING_DEFAULTS },
-    gates: { approval: 'none', breaker: { threshold: 3, cooldownMinutes: 60 } },
-    budgets: { ...BUDGETS_DEFAULTS, meterCeilings: {} },
-    destination: { instanceId: destinationInstanceId, target: {} },
-    input: '{ "mode": mode, "runId": run.id, "artifacts": events.artifact }',
-    before: [],
-    after: [],
-    notify: [],
-    trackingDeadlineMinutes: 120,
+    triggers: triggersSummary(doc, names.sourceName),
+    batching: batchingSummary(doc.batching),
+    schedules: schedulesSummary(doc.schedules),
+    gates: gatesSummary(doc.gates),
+    budgets: budgetsSummary(doc.budgets),
+    destination: destinationSectionSummary(doc, names.destinationName),
+    steps: stepsSummary(doc),
+    notifications: notificationsSummary(doc.notify, names.notifierName),
   };
+}
+
+/** Unlike the core's default, enabled: a process made in the editor is meant to run. */
+export function newProcessDocument(destinationInstanceId: string): ProcessDocument {
+  return { ...defaultProcessDocument('', destinationInstanceId), enabled: true };
 }
 
 export function nextId(prefix: string, taken: string[]): string {
@@ -116,7 +143,7 @@ export function defaultDescribe(
 ): string {
   if (eventTypes.length === 0) return '';
   const titles = eventTypes.map((t) => specs.find((s) => s.type === t)?.title ?? t);
-  const source = sourceName.split(' — ')[0] ?? sourceName;
+  const source = shortInstanceName(sourceName);
   let text = `${source}: ${titles.join(' or ')}`;
   const f = filter?.trim();
   if (f) {
@@ -130,60 +157,12 @@ export function defaultDescribe(
   return text;
 }
 
-export interface CoalescedBatch {
-  events: number[];
-  closesAt: number;
-  reason: 'debounce' | 'size' | 'age';
-}
-
-/**
- * A batch opens on its first event and every join restarts the debounce; it closes when the
- * debounce elapses, on `maxSize`, or `maxAgeSeconds` after opening, whichever comes first.
- */
-export function coalesce(
-  arrivals: number[],
-  batching: ProcessDocument['batching'],
-): CoalescedBatch[] {
-  const { debounceSeconds, maxSize, maxAgeSeconds } = batching;
-  const out: CoalescedBatch[] = [];
-  let open: { events: number[]; openedAt: number; last: number } | null = null;
-  const close = (b: { events: number[]; openedAt: number; last: number }) => {
-    const byDebounce = b.last + debounceSeconds;
-    const byAge = maxAgeSeconds > 0 ? b.openedAt + maxAgeSeconds : Infinity;
-    out.push(
-      byAge < byDebounce
-        ? { events: b.events, closesAt: byAge, reason: 'age' }
-        : { events: b.events, closesAt: byDebounce, reason: 'debounce' },
-    );
-  };
-  for (const [i, t] of arrivals.entries()) {
-    if (open) {
-      const byAge = maxAgeSeconds > 0 ? open.openedAt + maxAgeSeconds : Infinity;
-      if (t > open.last + debounceSeconds || t > byAge) {
-        close(open);
-        open = null;
-      }
-    }
-    if (!open) open = { events: [i], openedAt: t, last: t };
-    else {
-      open.events.push(i);
-      open.last = t;
-    }
-    if (open.events.length >= Math.max(1, maxSize)) {
-      out.push({ events: open.events, closesAt: t, reason: 'size' });
-      open = null;
-    }
-  }
-  if (open) close(open);
-  return out;
-}
-
 export function triggersSummary(doc: ProcessDocument, sourceName: (id: string) => string): string {
   if (doc.triggers.length === 0) return 'no triggers · sweeps only';
   const on = doc.triggers.filter((t) => t.enabled);
   const first = on[0] ?? doc.triggers[0];
   const head = first
-    ? `${(sourceName(first.sourceId) || 'no source').split(' — ')[0] ?? ''} ${first.eventTypes.join(', ')}`
+    ? `${shortInstanceName(sourceName(first.sourceId) || 'no source')} ${first.eventTypes.join(', ')}`
     : '';
   return `${on.length} on${doc.triggers.length > on.length ? ` · ${doc.triggers.length - on.length} off` : ''} · ${head}`;
 }
@@ -191,7 +170,7 @@ export function triggersSummary(doc: ProcessDocument, sourceName: (id: string) =
 type Batching = ProcessDocument['batching'];
 type Budgets = ProcessDocument['budgets'];
 
-export const BATCHING_DEFAULTS: Batching = { debounceSeconds: 30, maxSize: 20, maxAgeSeconds: 600 };
+export const BATCHING_DEFAULTS: Batching = defaultProcessDocument('', '').batching;
 
 /**
  * `maxSize: 1` closes a batch on its first event. Debounce and max age are 0 so the document reads
@@ -221,7 +200,7 @@ export function withBatching(
   return { ...doc, batching: { ...restored } };
 }
 
-export const BUDGETS_DEFAULTS: Budgets = { runsPerDay: 20, meterCeilings: {} };
+export const BUDGETS_DEFAULTS: Budgets = defaultProcessDocument('', '').budgets;
 
 /** Any run cap, usage cap or meter ceiling counts; "off" is `{ meterCeilings: {} }`. */
 export function budgetsOn(b: Budgets): boolean {
@@ -244,6 +223,71 @@ export function withBudgets(
     ...doc,
     budgets: { ...restored, meterCeilings: { ...restored.meterCeilings } },
   };
+}
+
+/** A ceiling of 100% throttles nothing; the inputs show it as empty. */
+export const NO_CEILING = 100;
+
+export function withCeiling(
+  doc: ProcessDocument,
+  meterId: string,
+  kind: keyof MeterCeiling,
+  value: number | undefined,
+): ProcessDocument {
+  const current = doc.budgets.meterCeilings[meterId] ?? { events: NO_CEILING, sweeps: NO_CEILING };
+  const next = { ...current, [kind]: value ?? NO_CEILING };
+  const { [meterId]: _drop, ...others } = doc.budgets.meterCeilings;
+  const meterCeilings =
+    next.events === NO_CEILING && next.sweeps === NO_CEILING
+      ? others
+      : { ...others, [meterId]: next };
+  return { ...doc, budgets: { ...doc.budgets, meterCeilings } };
+}
+
+export function withUsageCap(
+  doc: ProcessDocument,
+  dimension: string,
+  value: number | undefined,
+): ProcessDocument {
+  const { [dimension]: _drop, ...others } = doc.budgets.usagePerDay ?? {};
+  const usagePerDay = value == null ? others : { ...others, [dimension]: value };
+  const { usagePerDay: _old, ...budgets } = doc.budgets;
+  return {
+    ...doc,
+    budgets: Object.keys(usagePerDay).length > 0 ? { ...budgets, usagePerDay } : budgets,
+  };
+}
+
+/** Another destination has other usage and meters: its target, usage caps and ceilings reset. */
+export function withDestination(doc: ProcessDocument, instanceId: string): ProcessDocument {
+  const { usagePerDay: _drop, ...budgets } = doc.budgets;
+  return {
+    ...doc,
+    destination: { instanceId, target: {} },
+    budgets: { ...budgets, meterCeilings: {} },
+  };
+}
+
+/** The draft's own ceiling on each meter, for the gauge marks while editing. */
+export function draftMeterCeilings<M extends { meterId: string }>(
+  meters: M[],
+  doc: ProcessDocument,
+  processId: string,
+): (M & { ceilings: MeterGaugeDTO['ceilings'] })[] {
+  return meters.map((m) => {
+    const c = doc.budgets.meterCeilings[m.meterId];
+    return {
+      ...m,
+      ceilings: c ? [{ processId, processName: doc.name, events: c.events, sweeps: c.sweeps }] : [],
+    };
+  });
+}
+
+export function destinationSectionSummary(
+  doc: ProcessDocument,
+  destinationName: string | undefined,
+): string {
+  return `${destinationName ?? 'no destination'} · ${doc.trackingDeadlineMinutes} min tracking deadline`;
 }
 
 export function batchingSummary(b: ProcessDocument['batching']): string {
@@ -272,9 +316,27 @@ export function gatesSummary(g: ProcessDocument['gates']): string {
     g.quietHours
       ? `quiet ${g.quietHours.start}–${g.quietHours.end} ${formatDays(g.quietHours.days)}`
       : 'no quiet hours',
-    `approval ${g.approval === 'none' || g.approval === 'always' ? g.approval : 'by expression'}`,
+    `approval ${approvalLabel(g.approval)}`,
     `breaker ${g.breaker.threshold} failures, cooldown ${g.breaker.cooldownMinutes} min`,
   ].join(' · ');
+}
+
+/** The diagram's short form of `gatesSummary`. */
+export function gatesBrief(g: ProcessDocument['gates']): string[] {
+  return [
+    g.quietHours ? `quiet hours ${g.quietHours.start}–${g.quietHours.end}` : null,
+    `approval ${approvalLabel(g.approval)}`,
+    `breaker ${g.breaker.threshold}/${g.breaker.cooldownMinutes} min`,
+  ].filter((p): p is string => p != null);
+}
+
+/** The diagram's short form of `budgetsSummary`: run caps, then whether usage caps are set. */
+export function budgetsBrief(b: Budgets): string[] {
+  return [
+    b.runsPerHour != null ? `${b.runsPerHour}/h` : null,
+    b.runsPerDay != null ? `${b.runsPerDay}/d` : null,
+    Object.keys(b.usagePerDay ?? {}).length > 0 ? 'usage caps' : null,
+  ].filter((p): p is string => p != null);
 }
 
 export function budgetsSummary(b: ProcessDocument['budgets']): string {
@@ -357,17 +419,37 @@ export function placeErrors(details: string[]): PlacedError[] {
   });
 }
 
+const FRIENDLY: [RegExp, string][] = [
+  [/^\/name$/, 'A process needs a name'],
+  [/^\/triggers\/\d+\/sourceId$/, 'Pick a source'],
+  [/^\/triggers\/\d+\/eventTypes$/, 'Tick at least one event type'],
+  [/^\/destination\/instanceId$/, 'Pick a destination'],
+  [/^\/schedules\/\d+\/cron$/, 'Enter a cron expression'],
+];
+
+/**
+ * The core's document schema, plus what it leaves to the server (a blank name or cron, a
+ * destination). A problem no section can show is left for the server to report.
+ */
 export function checkDocument(doc: ProcessDocument): Record<string, string> {
   const out: Record<string, string> = {};
-  if (!doc.name.trim()) out['/name'] = 'A process needs a name';
-  doc.triggers.forEach((t, i) => {
-    if (!t.sourceId) out[`/triggers/${i}/sourceId`] = 'Pick a source';
-    else if (t.eventTypes.length === 0)
-      out[`/triggers/${i}/eventTypes`] = 'Tick at least one event type';
-  });
-  if (!doc.destination.instanceId) out['/destination/instanceId'] = 'Pick a destination';
+  // Event types are asked for once a source is picked.
+  const later = new Set(
+    doc.triggers.flatMap((t, i) => (t.sourceId ? [] : [`/triggers/${i}/eventTypes`])),
+  );
+  const add = (pointer: string, fallback: string) => {
+    if (later.has(pointer)) return;
+    out[pointer] ??= FRIENDLY.find(([re]) => re.test(pointer))?.[1] ?? fallback;
+  };
+  for (const [pointer, messages] of Object.entries(
+    validateAgainstSchema(processDocumentSchema, doc),
+  )) {
+    if (sectionForKey(pointer.split('/')[1]) != null) add(pointer, messages[0] ?? 'Invalid value');
+  }
+  if (!doc.name.trim()) add('/name', '');
+  if (!doc.destination.instanceId) add('/destination/instanceId', '');
   doc.schedules.forEach((s, i) => {
-    if (!s.cron.trim()) out[`/schedules/${i}/cron`] = 'Enter a cron expression';
+    if (!s.cron.trim()) add(`/schedules/${i}/cron`, '');
   });
   return out;
 }
@@ -483,12 +565,6 @@ export function setOptionalKey<T extends object, K extends keyof T>(
 ): T {
   const { [key]: _drop, ...rest } = obj;
   return (value === undefined ? rest : { ...rest, [key]: value }) as T;
-}
-
-export type ApprovalMode = 'none' | 'always' | 'expression';
-
-export function approvalMode(approval: string): ApprovalMode {
-  return approval === 'none' || approval === 'always' ? approval : 'expression';
 }
 
 export function approvalLabel(approval: string): string {

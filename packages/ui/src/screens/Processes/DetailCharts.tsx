@@ -2,35 +2,36 @@ import type { ProcessStatsResponse, StatsWindow } from '@ai-switchboard/core/con
 
 import { BarChart } from '../../components/BarChart.js';
 import { Card } from '../../components/Card.js';
+import { type BoundaryQuery, QueryBoundary } from '../../components/QueryBoundary.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { formatSeconds, formatUsage } from '../../lib/format.js';
 import { WINDOW_LABEL } from '../shared/statsWindow.js';
 import { dayLabel } from './detailModel.js';
 import styles from './ProcessDetail.module.css';
 
+const pending = (
+  <div className={styles.charts}>
+    {[0, 1, 2].map((i) => (
+      <Skeleton key={i} shape="card" height={180} label={i === 0 ? 'Loading charts' : undefined} />
+    ))}
+  </div>
+);
+
 export function DetailCharts({
   stats,
   window,
-  loading,
 }: {
-  stats: ProcessStatsResponse | undefined;
+  stats: BoundaryQuery<ProcessStatsResponse>;
   window: StatsWindow;
-  loading: boolean;
 }) {
-  if (loading || !stats) {
-    return (
-      <div className={styles.charts}>
-        {[0, 1, 2].map((i) => (
-          <Skeleton
-            key={i}
-            shape="card"
-            height={180}
-            label={i === 0 ? 'Loading charts' : undefined}
-          />
-        ))}
-      </div>
-    );
-  }
+  return (
+    <QueryBoundary query={stats} errorTitle="The charts could not load" pending={pending}>
+      {(data) => <Charts stats={data} window={window} />}
+    </QueryBoundary>
+  );
+}
+
+function Charts({ stats, window }: { stats: ProcessStatsResponse; window: StatsWindow }) {
   const labels = stats.days.map((d) => dayLabel(d.day, window));
   const every = window === '30d' ? 5 : 1;
   const failed = (r: ProcessStatsResponse['days'][number]['runs']) =>

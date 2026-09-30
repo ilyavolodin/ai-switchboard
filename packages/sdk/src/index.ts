@@ -4,7 +4,7 @@ export type * from './types/source.js';
 export type * from './types/destination.js';
 export type * from './types/notifier.js';
 export type * from './types/context.js';
-export { dedupeKey } from './types/events.js';
+export { dedupeKey } from './dedupe.js';
 export {
   HEALTH_STATUSES,
   INVOKE_STATUSES,
@@ -21,6 +21,7 @@ import {
   makeResponse as hostMakeResponse,
   type HttpClientOptions as HostHttpClientOptions,
 } from './http.js';
+import * as schema from './schema/index.js';
 
 export { definePlugin, validatePlugin, MAX_INVOKE_TIMEOUT_SECONDS } from './plugin.js';
 export type { DeclaredCapabilities, PluginDefinition, PluginKind, PluginSpec } from './plugin.js';
@@ -97,7 +98,63 @@ export {
   invokeErrorForStatus,
 } from './errors.js';
 
-export * from './schema/index.js';
+export {
+  createAjv,
+  compileSchema,
+  validateAgainst,
+  isValidSchema,
+  formatErrors,
+  parseWith,
+  tryParse,
+  SchemaMismatchError,
+  schemaFields,
+  UI_KEYWORDS,
+  X_WIDGETS,
+  SECRET_SCHEME,
+  SECRET_PROVIDER_SEGMENT,
+  isSecretProviderSegment,
+  isSecretRef,
+  parseSecretRef,
+  formatSecretRef,
+} from './schema/index.js';
+export type {
+  CreateAjvOptions,
+  SchemaCheck,
+  ParseWithOptions,
+  SchemaField,
+  UiKeyword,
+  XWidget,
+  XWarning,
+  XEffectiveDefault,
+  XDocs,
+  SchemaUiExtensions,
+  SecretRef,
+} from './schema/index.js';
+
+/** @deprecated Import from `@ai-switchboard/sdk/host`. */
+export const secretPaths = schema.secretPaths;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const isXWidget = schema.isXWidget;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xSecret = schema.xSecret;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xWidget = schema.xWidget;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xGroup = schema.xGroup;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xOrder = schema.xOrder;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xPlaceholder = schema.xPlaceholder;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xHelp = schema.xHelp;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xWarnings = schema.xWarnings;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xEnumLabels = schema.xEnumLabels;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xEffectiveDefaults = schema.xEffectiveDefaults;
+/** @deprecated The form reads these; import from `@ai-switchboard/sdk/schema`. */
+export const xDocs = schema.xDocs;
 
 export {
   compileEventTypes,
@@ -108,12 +165,20 @@ export {
   draftFromMapped,
   flattenAttributes,
   attributeKey,
+  ATTRIBUTE_KINDS,
+  ATTRIBUTE_NAME_PATTERN,
+  customEventTypePattern,
+  eventTypeDefinitionSchema,
+  openAttributesSchema,
 } from './custom-events.js';
 export type {
   CompiledEventType,
   MappedEvent,
   DraftOptions,
   FlattenOptions,
+  AttributeKind,
+  AttributeDefinition,
+  EventTypeDefinition,
 } from './custom-events.js';
 
 export {
@@ -126,3 +191,21 @@ export {
 export type { IconName } from './icons.js';
 
 export { SDK_VERSION, SDK_MAJOR } from './version.js';
+
+export {
+  verifySwitchboardCallback,
+  callbackBodySchema,
+  CALLBACK_BODY_PROPERTIES,
+} from './protocol-callback.js';
+export type { SwitchboardCallbackBody, CallbackOptions } from './protocol-callback.js';
+export { parseDefinitive } from './definitive.js';
+export { dispatchAction } from './actions.js';
+export type { ActionHandlers } from './actions.js';
+export {
+  headerValue,
+  responseSnippet,
+  lowerCaseHeaders,
+  RESPONSE_SNIPPET_CHARS,
+} from './request.js';
+export { meterReading } from './meters.js';
+export type { MeterReadingInput } from './meters.js';

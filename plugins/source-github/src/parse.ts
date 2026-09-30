@@ -1,17 +1,19 @@
 import {
-  dedupeKey,
-  type ArtifactRef,
-  type Attributes,
-  type EventDraft,
-  type RawRequest,
   asArray,
   asBoolean,
   asNumber,
   asObject,
-  parseJsonObject,
-  getPath,
   asString,
+  draftFromMapped,
+  getPath,
+  headerValue,
+  parseJsonObject,
+  toIsoTime,
+  type ArtifactRef,
+  type Attributes,
+  type EventDraft,
   type JsonObject,
+  type RawRequest,
 } from '@ai-switchboard/sdk';
 
 const PR_ACTIONS: Record<string, string> = {
@@ -42,7 +44,8 @@ export function repoAllowed(repo: string, allowlist: string[]): boolean {
   });
 }
 
-function labelNames(value: unknown): string[] {
+/** Names of a label list (`[{ name }]`), as webhooks and the REST API both carry it. */
+export function labelNames(value: unknown): string[] {
   return asArray(value).flatMap((l) => {
     const name = asString(asObject(l)?.name);
     return name === undefined ? [] : [name];
@@ -53,16 +56,9 @@ function login(value: unknown): string {
   return asString(asObject(value)?.login) ?? '';
 }
 
+/** ISO strings, or epoch seconds as push payloads carry some times. */
 function iso(value: unknown, fallback: string): string {
-  const s = asString(value);
-  if (s !== undefined) {
-    const ms = Date.parse(s);
-    if (!Number.isNaN(ms)) return new Date(ms).toISOString();
-  }
-  const n = asNumber(value);
-  // Push payloads carry some times as epoch seconds.
-  if (n !== undefined) return new Date(n * 1000).toISOString();
-  return fallback;
+  return toIsoTime(value) ?? fallback;
 }
 
 interface Draft {
@@ -70,14 +66,6 @@ interface Draft {
   artifact: ArtifactRef;
   attributes: Attributes;
   occurredAt: string;
-}
-
-function finish(d: Draft, deliveryId: string | undefined): EventDraft {
-  return {
-    ...d,
-    dedupeKey: dedupeKey(d.type, d.artifact, deliveryId),
-    ...(deliveryId !== undefined ? { deliveryId } : {}),
-  };
 }
 
 function prAttributes(pr: JsonObject, repo: string, action: string, sender: string): Attributes {
@@ -303,7 +291,7 @@ function pushEvent(body: JsonObject, repo: string, sender: string, fallback: str
 /** Unknown events and actions (and `ping`) yield no events. */
 export function parseDelivery(req: RawRequest, allowlist: string[]): EventDraft[] {
   const event = req.headers['x-github-event'];
-  const deliveryId = req.headers['x-github-delivery'];
+  const deliveryId = headerValue(req, 'x-github-delivery');
   const body = parseJsonObject(req.body.toString('utf8'));
   if (!body || event === undefined || event === 'ping') return [];
   const repo = asString(getPath(body, 'repository', 'full_name'));
@@ -333,5 +321,7 @@ export function parseDelivery(req: RawRequest, allowlist: string[]): EventDraft[
     default:
       drafts = [];
   }
-  return drafts.map((d) => finish(d, deliveryId === '' ? undefined : deliveryId));
+  return drafts.map((d) =>
+    draftFromMapped({ ...d, deliveryId: undefined }, { occurredAt: d.occurredAt, deliveryId }),
+  );
 }

@@ -40,12 +40,8 @@ describe('decodeCursor', () => {
 describe('pageLimit', () => {
   it.each([
     [undefined, 50],
-    ['10', 10],
-    [10.7, 10],
-    ['0', 50],
-    ['-3', 50],
-    ['abc', 50],
-    ['999', 200],
+    [10, 10],
+    [999, 200],
   ] as const)('%s → %i', (limit, expected) => {
     expect(pageLimit(limit)).toBe(expected);
   });

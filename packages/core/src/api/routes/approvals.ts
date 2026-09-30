@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { actorOf } from '../../auth/fastify.js';
 import type { ApiContext } from '../context.js';
 import {
+  approvalHistoryQuery,
   reasonedBody,
   type ApprovalHistoryQuery,
   type ApproveResponse,
@@ -16,7 +17,7 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: ApiContext): v
   app.get('/api/v1/approvals', allow('viewer'), async () => pendingApprovals(ctx));
   app.get<{ Querystring: ApprovalHistoryQuery }>(
     '/api/v1/approvals/history',
-    allow('viewer'),
+    allow('viewer', { querystring: approvalHistoryQuery }),
     async (req) => approvalHistory(ctx, req.query),
   );
   app.get('/api/v1/approvals/rules', allow('viewer'), async () => approvalRules(ctx));

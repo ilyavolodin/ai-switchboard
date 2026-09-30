@@ -3,7 +3,7 @@ import addFormatsModule from 'ajv-formats';
 
 import type { JSONSchema } from '../types/common.js';
 
-import { UI_KEYWORDS, xSecret } from './extensions.js';
+import { UI_KEYWORDS } from './extensions.js';
 
 // ajv-formats ships CJS with a default export that ESM sees as a namespace.
 const addFormats = addFormatsModule as unknown as (ajv: Ajv2020) => Ajv2020;
@@ -70,19 +70,6 @@ export function isValidSchema(schema: unknown): SchemaCheck {
   } catch (err) {
     return { valid: false, errors: [err instanceof Error ? err.message : String(err)] };
   }
-}
-
-/** Dotted paths of properties marked `x-secret: true`, including in nested objects. */
-export function secretPaths(schema: JSONSchema, prefix = ''): string[] {
-  const props = schema.properties as Record<string, JSONSchema> | undefined;
-  if (!props) return [];
-  const out: string[] = [];
-  for (const [key, sub] of Object.entries(props)) {
-    const path = prefix === '' ? key : `${prefix}.${key}`;
-    if (xSecret(sub)) out.push(path);
-    if (sub.type === 'object') out.push(...secretPaths(sub, path));
-  }
-  return out;
 }
 
 /** A settings, target or input value that does not match its schema. */

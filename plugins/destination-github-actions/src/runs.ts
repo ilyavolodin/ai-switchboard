@@ -1,6 +1,16 @@
-import { tryParse, type JSONSchema, type RunStatus, type UsageReport } from '@ai-switchboard/sdk';
+import {
+  asNumber,
+  asString,
+  getPath,
+  meterReading,
+  tryParse,
+  type JSONSchema,
+  type MeterReading,
+  type RunStatus,
+  type UsageReport,
+} from '@ai-switchboard/sdk';
 
-import { OS_KEYS, osDimension } from './settings.js';
+import { OS_KEYS, osDimension, RATE_LIMIT_METER } from './settings.js';
 
 export interface WorkflowRun {
   id: number;
@@ -126,6 +136,35 @@ export function usageFromTiming(timing: unknown): UsageReport {
     usage.duration_seconds = parsed.run_duration_ms / 1000;
   }
   return usage;
+}
+
+/** A newer dispatch answers 200 with the run it started; an older one answers 204. */
+export function dispatchedRun(body: unknown): { runId: number; htmlUrl?: string } | undefined {
+  const runId = asNumber(getPath(body, 'workflow_run_id'));
+  if (runId === undefined || !Number.isInteger(runId)) return undefined;
+  const htmlUrl = asString(getPath(body, 'html_url'));
+  return { runId, ...(htmlUrl !== undefined ? { htmlUrl } : {}) };
+}
+
+/** `total_count` of a jobs listing. */
+export function jobCount(body: unknown): number | undefined {
+  return asNumber(getPath(body, 'total_count'));
+}
+
+/** The core rate limit from `/rate_limit`; `undefined` when the shape is unexpected. */
+export function rateLimitReading(body: unknown, observedAt: string): MeterReading | undefined {
+  const core = getPath(body, 'resources', 'core');
+  const limit = asNumber(getPath(core, 'limit'));
+  const used = asNumber(getPath(core, 'used'));
+  if (limit === undefined || used === undefined || limit <= 0) return undefined;
+  const reset = asNumber(getPath(core, 'reset'));
+  return meterReading({
+    id: RATE_LIMIT_METER,
+    used,
+    limit,
+    ...(reset !== undefined ? { resetsAt: new Date(reset * 1000).toISOString() } : {}),
+    observedAt,
+  });
 }
 
 /** Fallback when the timing endpoint has no `run_duration_ms`. */

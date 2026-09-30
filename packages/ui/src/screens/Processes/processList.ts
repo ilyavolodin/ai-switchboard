@@ -1,6 +1,7 @@
 import type { ProcessSummary } from '@ai-switchboard/core/contract';
 
 import { toMs } from '../../lib/format.js';
+import { shortInstanceName } from '../../lib/instanceNames.js';
 import { toneRank } from '../../lib/tone.js';
 
 export const PROCESS_SORTS = ['activity', 'status', 'name'] as const;
@@ -60,10 +61,6 @@ export function sortProcesses(list: ProcessSummary[], sort: ProcessSort): Proces
           byName(a, b),
       );
   }
-}
-
-export function shortInstanceName(name: string): string {
-  return name.split(' — ')[0] ?? name;
 }
 
 export function flowLine(p: ProcessSummary): string {

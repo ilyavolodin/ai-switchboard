@@ -36,7 +36,7 @@ import {
   OAUTH_STATE_KEY,
   fingerprint,
   type OAuthMeta,
-} from './meters.js';
+} from './oauth.js';
 import plugin, { routinesDestinationType } from './plugin.js';
 import { DEFAULT_BETA_HEADER } from './settings.js';
 
@@ -602,5 +602,15 @@ describe('claude-routines: settings and health', () => {
       createMemorySecrets({}, { writable: false }),
     );
     expect((await destination.health()).status).toBe('unknown');
+  });
+
+  it('health reports a failing secret store as unhealthy instead of throwing', async () => {
+    const secrets = createMemorySecrets();
+    secrets.check = () => Promise.reject(new Error('secret provider unreachable'));
+    const { destination } = setup(anthropic(), {}, createMemoryState(), secrets);
+    await expect(destination.health()).resolves.toMatchObject({
+      status: 'unhealthy',
+      message: 'secret provider unreachable',
+    });
   });
 });

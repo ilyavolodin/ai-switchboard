@@ -852,15 +852,15 @@ describe('github App authentication', () => {
     const claims = JSON.parse(Buffer.from(payload!, 'base64url').toString()) as {
       iat: number;
       exp: number;
-      iss: string;
+      iss: number;
     };
-    expect(claims.iss).toBe('123456');
+    expect(claims.iss).toBe(123456);
     expect(claims.iat).toBe(Math.floor(NOW.getTime() / 1000) - 60);
     expect(claims.exp - claims.iat).toBeLessThanOrEqual(600);
     expect(calls[1]!.headers.authorization).toBe('Bearer ghs_fixtureInstallationToken1');
   });
 
-  it('caches the installation token in memory until a minute before it expires', async () => {
+  it('caches the installation token in memory until five minutes before it expires', async () => {
     let now = NOW;
     const stub = createStubHttp(appApi());
     const state = createMemoryState();
@@ -873,11 +873,37 @@ describe('github App authentication', () => {
     const exchanges = () =>
       stub.calls.filter((c) => c.url.pathname.endsWith('/access_tokens')).length;
     expect(exchanges()).toBe(1);
-    now = new Date(NOW.getTime() + 3_600_000 - 59_000);
+    now = new Date(NOW.getTime() + 3_600_000 - 301_000);
+    await source.resolve!({ kind: 'github.pr', id: 'acme/api#482' });
+    expect(exchanges()).toBe(1);
+    now = new Date(NOW.getTime() + 3_600_000 - 299_000);
     await source.resolve!({ kind: 'github.pr', id: 'acme/api#482' });
     expect(exchanges()).toBe(2);
     expect(stub.calls.at(-1)!.headers.authorization).toBe('Bearer ghs_fixtureInstallationToken2');
     expect(state.data).toEqual({});
+  });
+
+  it('drops a cached installation token GitHub answers 401 to', async () => {
+    let revoked = true;
+    const api = appApi();
+    const stub = createStubHttp((req) => {
+      if (
+        revoked &&
+        req.headers.authorization === 'Bearer ghs_fixtureInstallationToken1' &&
+        req.url.pathname === '/rate_limit'
+      ) {
+        revoked = false;
+        return { status: 401, json: { message: 'Bad credentials' } };
+      }
+      return api(req);
+    });
+    const source = githubSource.create(
+      appSettings,
+      createTestContext({ http: stub.client, now: () => NOW }),
+    );
+    expect((await source.health()).status).toBe('unhealthy');
+    expect((await source.health()).status).toBe('healthy');
+    expect(stub.calls.at(-1)!.headers.authorization).toBe('Bearer ghs_fixtureInstallationToken2');
   });
 
   it('shares one exchange between concurrent calls', async () => {

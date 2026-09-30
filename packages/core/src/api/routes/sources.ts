@@ -6,10 +6,12 @@ import { actorOf } from '../../auth/fastify.js';
 import { changeMeta } from '../change.js';
 import type { ApiContext } from '../context.js';
 import {
+  activityQuery,
   createSourceBody,
   reasonedBody,
   sourcePreviewBody,
   testEventBody,
+  windowQuery,
   type ActivityQuery,
   type CreateSourceRequest,
   type Reasoned,
@@ -22,7 +24,7 @@ import {
 import { requireReason } from '../errors.js';
 import { listActivity } from '../read/activity.js';
 import { sourceDetail, sourceSummaries } from '../read/instances.js';
-import { parseWindow, sourceStats } from '../read/stats.js';
+import { sourceStats } from '../read/stats.js';
 import { registerInstanceLifecycle } from './instance-lifecycle.js';
 import { allow, instanceDeps } from './options.js';
 
@@ -97,12 +99,12 @@ export function registerSourceRoutes(app: FastifyInstance, ctx: ApiContext): voi
 
   app.get<{ Params: { id: string }; Querystring: WindowQuery }>(
     '/api/v1/sources/:id/stats',
-    allow('viewer'),
-    async (req) => sourceStats(ctx, req.params.id, parseWindow(req.query.window)),
+    allow('viewer', { querystring: windowQuery }),
+    async (req) => sourceStats(ctx, req.params.id, req.query.window),
   );
   app.get<{ Params: { id: string }; Querystring: ActivityQuery }>(
     '/api/v1/sources/:id/events',
-    allow('viewer'),
+    allow('viewer', { querystring: activityQuery }),
     async (req) => listActivity(ctx, { ...req.query, source: req.params.id }),
   );
 

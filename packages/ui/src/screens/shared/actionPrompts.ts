@@ -86,6 +86,55 @@ export function enableProcessPrompt(
   };
 }
 
+export function runProcessPrompt(processName: string): ReasonPromptOptions {
+  return {
+    title: `Run ${processName} now?`,
+    consequence:
+      'Starts a manual run with the open batch, or an empty sweep context — it passes the same gates and budgets as any other run.',
+    confirmLabel: 'Run now',
+  };
+}
+
+export function testRunPrompt(processName: string, dryRun: boolean): ReasonPromptOptions {
+  return {
+    title: `Test run ${processName || 'this process'}?`,
+    consequence: dryRun
+      ? 'Invokes the saved version with the chosen batch and a dry-run flag; destinations that honour it change nothing.'
+      : 'Invokes the saved version for real with the chosen batch: it spends budget and may change things.',
+    confirmLabel: 'Start test run',
+    danger: !dryRun,
+  };
+}
+
+/** The toast after a manual or test run, e.g. "Run started · r-12". */
+export function runStartedMessage(
+  label: 'Run' | 'Test run',
+  r: { outcome: string; runId?: string | null },
+): string {
+  return `${label} ${r.outcome}${r.runId ? ` · ${r.runId}` : ''}`;
+}
+
+export function deleteProcessPrompt(processName: string, consequence: string): ReasonPromptOptions {
+  return {
+    title: `Delete ${processName}?`,
+    consequence,
+    confirmLabel: `Delete ${processName}`,
+    danger: true,
+  };
+}
+
+export function restoreVersionPrompt(
+  processName: string,
+  version: number,
+  currentVersion: number,
+): ReasonPromptOptions {
+  return {
+    title: `Restore version ${version} of ${processName}?`,
+    consequence: `Version ${version}'s document is saved as version ${currentVersion + 1}; the current version stays in the history.`,
+    confirmLabel: 'Restore',
+  };
+}
+
 const SETTLE_CONSEQUENCE: Record<SettledRunStatus, string> = {
   ok: 'The run counts as a success: it stops being tracked and the breaker sees no failure.',
   error:

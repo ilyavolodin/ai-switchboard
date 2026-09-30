@@ -1,13 +1,11 @@
-/** Event types a person defines in a source's settings (the generic webhook and poll-http sources). */
+/**
+ * Event types a person defines in a source's settings (the generic webhook and poll-http sources).
+ * Browser-safe (`@ai-switchboard/sdk/custom-events`): no Node imports belong here.
+ */
+import { dedupeKey } from './dedupe.js';
 import { isRecord } from './json.js';
 import type { JSONSchema } from './types/common.js';
-import {
-  dedupeKey,
-  type ArtifactRef,
-  type Attributes,
-  type EventDraft,
-  type EventTypeSpec,
-} from './types/events.js';
+import type { ArtifactRef, Attributes, EventDraft, EventTypeSpec } from './types/events.js';
 
 export const ATTRIBUTE_KINDS = ['string', 'number', 'boolean', 'string[]'] as const;
 export type AttributeKind = (typeof ATTRIBUTE_KINDS)[number];

@@ -101,12 +101,14 @@ describe('log destination', () => {
     expect(isInvokeError(err) && err.definitive).toBe(true);
   });
 
-  it('rejects an invalid target without sending anything', async () => {
+  it('refuses an invalid target definitively', async () => {
     const { destination } = make();
     const err = await destination
       .invoke({ outcome: 'explode' }, {}, runHandle())
       .catch((e: unknown) => e);
-    expect(isInvokeError(err) && err.definitive && !err.sent).toBe(true);
+    // `sent: false` would make the core retry a target that can never become valid.
+    expect(isInvokeError(err) && err.definitive && err.sent).toBe(true);
+    expect((err as Error).message).toMatch(/^Invalid log target: /);
   });
 
   it('waits for the configured delay', async () => {

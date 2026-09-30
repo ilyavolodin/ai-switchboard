@@ -43,7 +43,3 @@ export function formatCapabilities(capabilities: Capabilities | undefined): stri
 export function checkLine(ok: boolean, name: string, detail: string): string {
   return `${ok ? OK : FAIL} ${name}${detail !== '' ? ` — ${detail}` : ''}`;
 }
-
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}

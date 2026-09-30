@@ -1,18 +1,18 @@
 import { desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 
-import { INSTANCE_TABLES } from '../../db/instance-tables.js';
+import type { AuditEntry, AuditQuery, Page } from '../../contract/index.js';
+import { selectFromEachInstanceTable } from '../../db/instance-tables.js';
 import { auditLog, processes, users } from '../../db/schema.js';
 import { INSTANCE_KINDS } from '../../domain/status.js';
 import { isUuid } from '../../util/uuid.js';
-import type { ApiContext } from '../context.js';
-import type { AuditEntry, AuditQuery, Page } from '../../contract/index.js';
+import type { ReadDeps } from './deps.js';
 import { keysetPage } from './paging.js';
 
 type AuditRow = typeof auditLog.$inferSelect;
 
 /** id → display name for the audit rows on one page, across instances, users and processes. */
 async function targetNames(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   targetIds: (string | null)[],
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>();
@@ -24,10 +24,9 @@ async function targetNames(
       .select({ id: processes.id, name: processes.name })
       .from(processes)
       .where(inArray(processes.id, ids)),
-    ...INSTANCE_KINDS.map((kind) => {
-      const t = INSTANCE_TABLES[kind];
-      return ctx.db.select({ id: t.id, name: t.name }).from(t).where(inArray(t.id, ids));
-    }),
+    selectFromEachInstanceTable(INSTANCE_KINDS, (t) =>
+      ctx.db.select({ id: t.id, name: t.name }).from(t).where(inArray(t.id, ids)),
+    ),
     ctx.db.select({ id: users.id, name: users.email }).from(users).where(inArray(users.id, ids)),
   ]);
   for (const list of lists) for (const r of list) out.set(r.id, r.name);
@@ -35,7 +34,7 @@ async function targetNames(
 }
 
 /** Newest first, paged by `(at, id)`. The actor filter is a substring match with literal wildcards. */
-export async function listAudit(ctx: ApiContext, q: AuditQuery): Promise<Page<AuditEntry>> {
+export async function listAudit(ctx: ReadDeps, q: AuditQuery): Promise<Page<AuditEntry>> {
   const where: SQL[] = [];
   if (q.scope) where.push(eq(auditLog.scope, q.scope));
   if (q.target) where.push(eq(auditLog.targetId, q.target));

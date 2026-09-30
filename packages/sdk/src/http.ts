@@ -6,7 +6,7 @@ export interface HttpRequest {
   url: string;
   headers?: Record<string, string>;
   query?: Record<string, string | number | boolean | undefined>;
-  /** Raw body. Mutually exclusive with `json`. */
+  /** Raw body. Mutually exclusive with `json`: setting both throws a `TransportError` (not sent). */
   body?: string | Uint8Array;
   /** Serialised as JSON with `content-type: application/json`. */
   json?: unknown;
@@ -20,6 +20,10 @@ export interface HttpResponse {
   headers: Record<string, string>;
   body: Buffer;
   text(): string;
+  /**
+   * The parsed body, unchecked. Call it without a type argument and narrow the `unknown` with
+   * `parseWith` / `tryParse`; the type argument is deprecated and goes away in SDK 3.
+   */
   json<T = unknown>(): T;
 }
 
@@ -104,6 +108,12 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
   const defaultTimeout = options.timeoutMs ?? 30_000;
 
   async function request(req: HttpRequest): Promise<HttpResponse> {
+    if (req.body !== undefined && req.json !== undefined) {
+      throw new TransportError('HttpRequest sets both body and json; pass one', {
+        sent: false,
+        code: 'ERR_BODY_AND_JSON',
+      });
+    }
     let url: URL;
     try {
       url = new URL(req.url);
@@ -226,7 +236,10 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
   };
 }
 
-/** Parse a `Retry-After` header (seconds or HTTP date) into seconds from `now`. */
+/**
+ * Parse a `Retry-After` header (seconds or HTTP date) into seconds from `now`. Pass `ctx.now()`:
+ * the wall-clock default ignores the test clock, is deprecated and becomes required in SDK 3.
+ */
 export function parseRetryAfter(
   value: string | undefined,
   now: Date = new Date(),

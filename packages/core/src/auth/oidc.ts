@@ -13,6 +13,8 @@ export interface OidcStart {
 export interface OidcIdentity {
   email: string;
   subject: string;
+  /** `email_verified: true` in the ID token. False only when `trustUnverifiedEmail` let it in. */
+  emailVerified: boolean;
 }
 
 export class OidcError extends Error {
@@ -116,11 +118,13 @@ export class OidcClient {
     if (!claims) throw new OidcError('the issuer returned no ID token');
     const email = typeof claims.email === 'string' ? claims.email.toLowerCase() : undefined;
     if (!email) throw new OidcError('the ID token has no email claim');
-    if (claims.email_verified === false) throw new OidcError('the email address is not verified');
+    const emailVerified = claims.email_verified === true;
+    if (!emailVerified && this.config.trustUnverifiedEmail !== true)
+      throw new OidcError('the email address is not verified');
     const domains = this.config.allowedDomains.map((d) => d.toLowerCase());
     if (domains.length > 0 && !domains.some((d) => email.endsWith(`@${d}`))) {
       throw new OidcError(`${email} is not in an allowed domain`);
     }
-    return { email, subject: claims.sub };
+    return { email, subject: claims.sub, emailVerified };
   }
 }
