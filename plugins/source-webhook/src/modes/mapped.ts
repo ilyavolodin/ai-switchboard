@@ -7,9 +7,9 @@ import {
   type EventTypeDefinition,
 } from '@ai-switchboard/sdk';
 
-import { draftFor, type Delivery, type Mapper } from './mapper.js';
-import { describeValue, readPath, scalarText } from './paths.js';
-import { SOURCE_ID, type MappedRule } from './settings.js';
+import { draftFor, type Delivery, type Mapper } from '../mapper.js';
+import { describeValue, readPath, scalarText } from '../paths.js';
+import { SOURCE_ID, type MappedRule } from '../settings.js';
 
 function ruleName(rule: MappedRule, index: number): string {
   return `Rule ${index + 1} (${rule.title || rule.type})`;

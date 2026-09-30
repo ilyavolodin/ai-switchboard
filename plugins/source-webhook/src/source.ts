@@ -1,4 +1,6 @@
 import {
+  checkHealth,
+  headerValue,
   verifyHmacHeader,
   verifySharedSecretHeader,
   type EventTypeSpec,
@@ -10,10 +12,10 @@ import {
   type VerifyResult,
 } from '@ai-switchboard/sdk';
 
-import { compileJsonata } from './jsonata-mode.js';
-import { compileMapped } from './mapped.js';
 import type { Delivery, Mapper } from './mapper.js';
-import { compileQuick } from './quick.js';
+import { compileJsonata } from './modes/jsonata.js';
+import { compileMapped } from './modes/mapped.js';
+import { compileQuick } from './modes/quick.js';
 import {
   mappingModeOf,
   readSettings,
@@ -83,14 +85,13 @@ function deliveryOf(req: RawRequest, s: WebhookSettings, hidden: Set<string>): D
   }
   const query: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.query)) if (v !== undefined) query[k] = v;
-  const headerDelivery = req.headers[s.deliveryIdHeader.toLowerCase()];
   return {
     body: parseBody(req),
     headers,
     query,
     raw: req.body,
     receivedAt: req.receivedAt,
-    deliveryId: headerDelivery !== undefined && headerDelivery !== '' ? headerDelivery : undefined,
+    deliveryId: headerValue(req, s.deliveryIdHeader),
   };
 }
 
@@ -105,11 +106,12 @@ function createWebhookSource(settings: Settings, ctx: PluginContext): Source {
     parse: async (req) => (await report(req)).events,
     parseWithNotes: report,
     health: () =>
-      Promise.resolve({
-        status: 'unknown',
-        message: 'A push-only webhook has nothing to check; see the instance’s recent events.',
-        checkedAt: ctx.now().toISOString(),
-      }),
+      checkHealth(ctx, () =>
+        Promise.resolve({
+          status: 'unknown',
+          message: 'A push-only webhook has nothing to check; see the instance’s recent events.',
+        }),
+      ),
   };
   // Leaving `verify` off (rather than a verify that always passes) is how the core knows the
   // instance is unauthenticated.
