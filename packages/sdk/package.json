@@ -45,6 +45,11 @@
       "@ai-switchboard/source": "./src/constants.ts",
       "types": "./dist/constants.d.ts",
       "default": "./dist/constants.js"
+    },
+    "./custom-events": {
+      "@ai-switchboard/source": "./src/custom-events.ts",
+      "types": "./dist/custom-events.d.ts",
+      "default": "./dist/custom-events.js"
     }
   },
   "scripts": {
