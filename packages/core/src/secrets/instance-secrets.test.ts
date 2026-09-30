@@ -11,7 +11,7 @@ import {
   instanceSecretName,
   referencedProviders,
 } from './instance-secrets.js';
-import { guardInstanceState } from './plugin-context.js';
+import { guardInstanceState } from '../plugins/plugin-context.js';
 
 function readOnly(values: Record<string, string> = {}): SecretProvider {
   return {

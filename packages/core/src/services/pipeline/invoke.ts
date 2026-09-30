@@ -62,7 +62,7 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
   const deadline = invokeAttemptDeadline(
     now,
     timeoutSeconds,
-    beforeStepBudgetSeconds(ctx, resolved.proc?.document.before.length ?? 0),
+    beforeStepBudgetSeconds(resolved.proc?.document.before.length ?? 0),
   );
   const [run] = await ctx.db
     .update(runs)
@@ -129,7 +129,7 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
     ({ value: input, secretValues } = await resolveForPluginCall(
       ctx,
       run.input,
-      live.secretValues ?? [],
+      live.secretValues,
     ));
   } catch (err) {
     await apply(

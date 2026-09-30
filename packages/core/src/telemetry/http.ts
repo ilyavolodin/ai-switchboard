@@ -22,6 +22,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import type { Telemetry } from './telemetry.js';
+import { SCOPE_NAME } from './trace-context.js';
 
 const TRACED_PREFIXES = ['/api/', '/hooks/', '/callbacks/'];
 
@@ -37,7 +38,7 @@ interface Inflight {
 export function registerHttpTelemetry(
   app: FastifyInstance,
   telemetry: Pick<Telemetry, 'httpServerDuration'>,
-  tracer: Tracer = trace.getTracer('switchboard'),
+  tracer: Tracer = trace.getTracer(SCOPE_NAME),
 ): void {
   const inflight = new WeakMap<FastifyRequest, Inflight>();
 

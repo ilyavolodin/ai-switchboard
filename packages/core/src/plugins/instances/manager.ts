@@ -3,28 +3,29 @@ import type { InstanceKind } from '../../domain/status.js';
 import type { CoreLogger } from '../../logger.js';
 import { referencesProvider } from '../../secrets/refs.js';
 import type { Telemetry } from '../../telemetry/telemetry.js';
-import { diffInstances } from '../reconcile.js';
 
 import { DISABLED, buildError, type InstanceBuilder } from './builder.js';
-import { BUILD_ORDER, KIND_SPECS } from './kind-specs.js';
+import { BUILD_ORDER, healthSeries, recordsResolution } from './kind-specs.js';
 import type { BuiltInstance, LiveSet } from './live-set.js';
+import { diffInstances } from './reconcile.js';
 import type { InstanceRowHead, InstanceStore } from './store.js';
 
-export interface ReconciledInstance {
-  kind: InstanceKind;
+export interface ReconciledInstance<K extends InstanceKind = InstanceKind> {
+  kind: K;
   id: string;
   name: string;
 }
+
+/** The kinds whose settings may reference a secret provider. */
+export type DependentKind = Exclude<InstanceKind, 'secret_provider'>;
 
 export interface ReconcileResult {
   built: ReconciledInstance[];
   rebuilt: ReconciledInstance[];
   dropped: ReconciledInstance[];
   /** Instances rebuilt because a secret provider they reference changed. */
-  dependents: ReconciledInstance[];
+  dependents: ReconciledInstance<DependentKind>[];
 }
-
-type DependentKind = Exclude<InstanceKind, 'secret_provider'>;
 
 const DEPENDENT_KINDS: readonly DependentKind[] = ['source', 'destination', 'notifier'];
 
@@ -36,7 +37,7 @@ export interface InstanceManagerDeps {
   store: InstanceStore;
   clock: Clock;
   logger: CoreLogger;
-  telemetry: Pick<Telemetry, 'counter'>;
+  telemetry: Pick<Telemetry, 'decision' | 'clearGauge'>;
   /** The row is gone: release what the instance kept outside Postgres. Never throws. */
   onDropped?(id: string): Promise<void>;
 }
@@ -62,13 +63,9 @@ export class InstanceManager {
         }
       : { error: buildError(built.stage, built.message) };
     const committed = live.commit(row.id, ticket, outcome, from);
-    if (!committed || !built.ok || !KIND_SPECS[kind].recordsResolution) return;
+    if (!committed || !built.ok || !recordsResolution(kind)) return;
     try {
-      await store.markSecretsResolved(
-        kind === 'source' ? 'source' : 'destination',
-        row.id,
-        clock.now(),
-      );
+      await store.markSecretsResolved(kind, row.id, clock.now());
     } catch (err) {
       // Only the "last resolved" time shown in the UI is lost; the instance is running.
       logger.warn({ err, instance_id: row.id }, 'could not record secret resolution');
@@ -102,7 +99,7 @@ export class InstanceManager {
     await live.withPending([id], async () => {
       const [row] = await store.rows(kind, { ids: [id] });
       if (row) await this.build(kind, row, ticket);
-      else if (live.commit(id, ticket, undefined, undefined)) await this.deps.onDropped?.(id);
+      else if (live.commit(id, ticket, undefined, undefined)) await this.dropped(kind, id);
     });
   }
 
@@ -113,7 +110,7 @@ export class InstanceManager {
    */
   async reloadDependentsOf(
     providerNames: string | readonly string[],
-  ): Promise<{ kind: DependentKind; id: string; name: string }[]> {
+  ): Promise<ReconciledInstance<DependentKind>[]> {
     const { live, store, logger } = this.deps;
     const names = new Set(typeof providerNames === 'string' ? [providerNames] : providerNames);
     if (names.size === 0) return [];
@@ -124,7 +121,7 @@ export class InstanceManager {
         if (referencesProvider(row.settings, names)) targets.push({ kind, row });
     const ids = targets.map((t) => t.row.id);
     for (const id of ids) live.claim(id, ticket);
-    const rebuilt: { kind: DependentKind; id: string; name: string }[] = [];
+    const rebuilt: ReconciledInstance<DependentKind>[] = [];
     await live.withPending(ids, async () => {
       for (const { kind, row } of targets) {
         await this.build(kind, row, ticket);
@@ -162,7 +159,7 @@ export class InstanceManager {
       }
       if (names.size > 0) {
         result.dependents = await this.reloadDependentsOf([...names]);
-        for (const d of result.dependents) this.countRebuild(d.kind, 'dependent');
+        for (const d of result.dependents) this.countRebuild(d.kind, 'dependent', d.id);
       }
       for (const kind of DEPENDENT_KINDS) await this.reconcileKind(kind, result);
     } catch (err) {
@@ -185,7 +182,7 @@ export class InstanceManager {
     kind: InstanceKind,
     result: ReconcileResult,
   ): Promise<(ReconciledInstance & { previousName?: string })[]> {
-    const { live, store, logger } = this.deps;
+    const { live, store } = this.deps;
     const ticket = live.ticket();
     const diff = diffInstances(await store.versions(kind), live.builtVersions(kind), (id) =>
       live.busy(id, ticket),
@@ -206,28 +203,33 @@ export class InstanceManager {
         ...entry,
         ...(before !== undefined && before !== row.name ? { previousName: before } : {}),
       });
-      this.countRebuild(kind, wasChanged ? 'changed' : 'created');
-      logger.debug(
-        { kind, instance_id: row.id, version: row.configVersion },
-        wasChanged
-          ? 'rebuilt an instance changed elsewhere'
-          : 'built an instance created elsewhere',
-      );
+      this.countRebuild(kind, wasChanged ? 'changed' : 'created', row.id);
     }
     for (const id of diff.removed) {
       const before = live.builtOf(id);
       if (!before || !live.commit(id, ticket, undefined, undefined)) continue;
-      await this.deps.onDropped?.(id);
+      await this.dropped(kind, id);
       const entry = { kind, id, name: before.name };
       result.dropped.push(entry);
       touched.push(entry);
-      this.countRebuild(kind, 'removed');
-      logger.debug({ kind, instance_id: id }, 'dropped an instance deleted elsewhere');
+      this.countRebuild(kind, 'removed', id);
     }
     return touched;
   }
 
-  private countRebuild(kind: InstanceKind, change: RebuildChange): void {
-    this.deps.telemetry.counter('switchboard.instance.rebuilds', { kind, change });
+  /** The row is gone: release what the instance kept outside Postgres and its gauge series. */
+  private async dropped(kind: InstanceKind, id: string): Promise<void> {
+    const series = healthSeries(kind, id);
+    if (series) this.deps.telemetry.clearGauge(series.name, series.attributes);
+    await this.deps.onDropped?.(id);
+  }
+
+  /** One decision per instance another replica changed: a metric and a log line. */
+  private countRebuild(kind: InstanceKind, change: RebuildChange, instanceId: string): void {
+    this.deps.telemetry.decision(
+      'switchboard.instance.rebuilds',
+      { kind, change },
+      { instance_id: instanceId },
+    );
   }
 }

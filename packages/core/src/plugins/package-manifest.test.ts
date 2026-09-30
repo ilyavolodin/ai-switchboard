@@ -1,26 +1,48 @@
 import { describe, expect, it } from 'vitest';
 
-import { isSdkCompatible, readSwitchboardField } from './package-manifest.js';
+import { isSdkCompatible, parseSwitchboardField } from './package-manifest.js';
 
-describe('readSwitchboardField', () => {
+describe('parseSwitchboardField', () => {
   const cases: { name: string; pkg: unknown; expected: unknown }[] = [
-    { name: 'no package', pkg: null, expected: undefined },
-    { name: 'no field', pkg: { name: 'x' }, expected: undefined },
-    { name: 'a non-object field', pkg: { switchboard: 'yes' }, expected: undefined },
+    {
+      name: 'no package',
+      pkg: null,
+      expected: { ok: false, reason: expect.stringMatching(/no "switchboard" field/) },
+    },
+    {
+      name: 'no field',
+      pkg: { name: 'x' },
+      expected: { ok: false, reason: expect.stringMatching(/no "switchboard" field/) },
+    },
+    {
+      name: 'a non-object field',
+      pkg: { switchboard: 'yes' },
+      expected: { ok: false, reason: expect.stringMatching(/no "switchboard" field/) },
+    },
     {
       name: 'every part',
       pkg: { switchboard: { entry: 'dist/p.js', source: 'src/p.ts', sdk: '^2.0.0' } },
-      expected: { entry: 'dist/p.js', source: 'src/p.ts', sdk: '^2.0.0' },
+      expected: { ok: true, field: { entry: 'dist/p.js', source: 'src/p.ts', sdk: '^2.0.0' } },
     },
     {
-      name: 'empty and non-string parts are absent',
-      pkg: { switchboard: { entry: '', source: 3, sdk: '^2.0.0' } },
-      expected: { entry: undefined, source: undefined, sdk: '^2.0.0' },
+      name: 'a non-string source is absent',
+      pkg: { switchboard: { entry: 'dist/p.js', source: 3, sdk: '^2.0.0' } },
+      expected: { ok: true, field: { entry: 'dist/p.js', source: undefined, sdk: '^2.0.0' } },
+    },
+    {
+      name: 'an empty entry is refused',
+      pkg: { switchboard: { entry: '', source: 'src/p.ts', sdk: '^2.0.0' } },
+      expected: { ok: false, reason: expect.stringMatching(/no "entry"/) },
+    },
+    {
+      name: 'a missing sdk range is refused',
+      pkg: { switchboard: { entry: 'dist/p.js' } },
+      expected: { ok: false, reason: expect.stringMatching(/no "sdk" range/) },
     },
   ];
   for (const c of cases) {
     it(c.name, () => {
-      expect(readSwitchboardField(c.pkg)).toEqual(c.expected);
+      expect(parseSwitchboardField(c.pkg)).toEqual(c.expected);
     });
   }
 });

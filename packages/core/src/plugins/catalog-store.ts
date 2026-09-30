@@ -19,6 +19,16 @@ export interface InstallRecord {
 
 export type PluginErrorCounts = Record<PluginErrorKind, number>;
 
+/** An install made through the API, which every replica converges on. */
+export interface RecordedInstall {
+  name: string;
+  spec: string;
+  version: string;
+  sdkRange: string;
+  /** npm's integrity for the installed tarball; null for a local directory install. */
+  integrity: string | null;
+}
+
 /** Every write to `plugins` and `plugin_types`. */
 export interface PluginCatalog {
   /** At boot: every evaluated package, and the types of the ones that loaded. */
@@ -35,10 +45,7 @@ export interface PluginCatalog {
     now: Date,
   ): Promise<void>;
   /** The row may not exist yet on this replica. Clears a removal tombstone. */
-  recordInstall(
-    install: { name: string; spec: string; version: string; sdkRange: string },
-    now: Date,
-  ): Promise<void>;
+  recordInstall(install: RecordedInstall, now: Date): Promise<void>;
   /** Every replica's sync pass removes its own copy. */
   tombstone(name: string, now: Date): Promise<void>;
   markRemoved(name: string, now: Date): Promise<void>;
@@ -123,10 +130,11 @@ export function createPluginCatalog(db: Db): PluginCatalog {
         await upsertPlugin(tx, plugin, sdkRange, now);
         await upsertTypes(tx, types, now);
       }),
-    recordInstall: async ({ name, spec, version, sdkRange }, now) => {
+    recordInstall: async ({ name, spec, version, sdkRange, integrity }, now) => {
       const install = {
         installSpec: spec,
         installVersion: version,
+        integrity,
         installedAt: now,
         removeRequestedAt: null,
       };
@@ -190,13 +198,15 @@ export function createPluginCatalog(db: Db): PluginCatalog {
   };
 }
 
-/** For a host that inspects without writing (`switchboard doctor`). */
-export const readOnlyPluginCatalog: PluginCatalog = {
-  replaceLoaded: () => Promise.resolve(),
-  upsertLoaded: () => Promise.resolve(),
-  recordInstall: () => Promise.resolve(),
-  tombstone: () => Promise.resolve(),
-  markRemoved: () => Promise.resolve(),
-  addErrorCounts: () => Promise.resolve(),
-  readInstallRecords: () => Promise.resolve([]),
-};
+/** Reads through; every write is dropped (`switchboard doctor`), like `readOnlyInstanceStore`. */
+export function readOnlyPluginCatalog(catalog: PluginCatalog): PluginCatalog {
+  return {
+    ...catalog,
+    replaceLoaded: () => Promise.resolve(),
+    upsertLoaded: () => Promise.resolve(),
+    recordInstall: () => Promise.resolve(),
+    tombstone: () => Promise.resolve(),
+    markRemoved: () => Promise.resolve(),
+    addErrorCounts: () => Promise.resolve(),
+  };
+}

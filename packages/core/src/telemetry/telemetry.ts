@@ -4,9 +4,7 @@ import {
   propagation,
   trace,
   SpanKind,
-  SpanStatusCode,
   type Attributes as OtelAttributes,
-  type Link,
   type Meter,
   type Span,
   type Tracer,
@@ -14,9 +12,14 @@ import {
 
 import type { CoreLogger } from '../logger.js';
 
-import { errorText } from '../util/errors.js';
 import { createTracedFetch } from './http-client.js';
-import { activeTraceparent, contextFromTraceparent, parseTraceparent } from './trace-context.js';
+import {
+  activeTraceparent,
+  contextFromTraceparent,
+  failSpan,
+  linksTo,
+  SCOPE_NAME,
+} from './trace-context.js';
 
 /** Signal names from the TDD's Observability table. */
 export const COUNTERS = [
@@ -89,7 +92,10 @@ export interface SpanHandle {
 export interface Telemetry {
   counter(name: CounterName, attributes: SignalAttributes, value?: number): void;
   histogram(name: HistogramName, value: number, attributes: SignalAttributes): void;
+  /** The last value per attribute set is reported until it is replaced or cleared. */
   gauge(name: GaugeName, value: number, attributes: SignalAttributes): void;
+  /** Stops reporting a series (a deleted instance), so it does not report its last value forever. */
+  clearGauge(name: GaugeName, attributes: SignalAttributes): void;
   /**
    * One metric and one structured log line per pipeline decision, with the same attributes.
    * `ids` (event_id, process_id, batch_id, run_id, external_url) go on the log line only.
@@ -130,10 +136,42 @@ function clean(attrs: SignalAttributes): OtelAttributes {
 }
 
 /** Telemetry over the global OpenTelemetry API (providers are registered in `telemetry/setup.ts`). */
+/** Ends `span` when `out` settles (or at once for a plain value), failing it on a rejection. */
+function endWith<T>(span: Span, out: T): T {
+  if (!(out instanceof Promise)) {
+    span.end();
+    return out;
+  }
+  return out.then(
+    (value: unknown) => {
+      span.end();
+      return value;
+    },
+    (err: unknown) => {
+      failSpan(span, err);
+      span.end();
+      throw err;
+    },
+  ) as T;
+}
+
+/** Runs `fn` in `span`: a throw fails and ends it, a result ends it when it settles. */
+function runInSpan<T>(span: Span, parent: ReturnType<typeof context.active>, fn: () => T): T {
+  let out: T;
+  try {
+    out = context.with(trace.setSpan(parent, span), fn);
+  } catch (err) {
+    failSpan(span, err);
+    span.end();
+    throw err;
+  }
+  return endWith(span, out);
+}
+
 export function createTelemetry(
   logger: CoreLogger,
-  meter: Meter = metrics.getMeter('switchboard'),
-  tracer: Tracer = trace.getTracer('switchboard'),
+  meter: Meter = metrics.getMeter(SCOPE_NAME),
+  tracer: Tracer = trace.getTracer(SCOPE_NAME),
 ): Telemetry {
   const counters = new Map(COUNTERS.map((n) => [n, meter.createCounter(n)]));
   const histograms = new Map(
@@ -167,20 +205,19 @@ export function createTelemetry(
       const attrs = clean(attributes);
       gaugeValues.get(name)?.set(JSON.stringify(attrs), { value, attrs });
     },
+    clearGauge: (name, attributes) => {
+      gaugeValues.get(name)?.delete(JSON.stringify(clean(attributes)));
+    },
     decision: (name, attributes, ids = {}) => {
       counters.get(name)?.add(1, clean(attributes));
       const fields: Record<string, unknown> = { signal: name, ...clean(attributes) };
       for (const [k, v] of Object.entries(ids)) if (v !== undefined) fields[k] = v;
       log.info(fields, name);
     },
-    span: async (name, attributes, fn, options = {}) => {
+    span: (name, attributes, fn, options = {}) => {
       const parent = contextFromTraceparent(options.parent) ?? context.active();
-      const links: Link[] = [];
-      for (const l of options.links ?? []) {
-        const sc = parseTraceparent(l);
-        if (sc) links.push({ context: sc });
-      }
-      return tracer.startActiveSpan(
+      const links = linksTo(options.links ?? []);
+      const span = tracer.startSpan(
         name,
         {
           kind: options.kind ?? SpanKind.INTERNAL,
@@ -188,53 +225,22 @@ export function createTelemetry(
           ...(links.length > 0 ? { links } : {}),
         },
         parent,
-        async (span) => {
-          try {
-            return await fn({
-              setAttributes: (a) => span.setAttributes(clean(a)),
-              addLinks: (list) => {
-                for (const l of list) {
-                  const sc = parseTraceparent(l);
-                  if (sc) span.addLink({ context: sc });
-                }
-              },
-            });
-          } catch (err) {
-            failSpan(span, err);
-            throw err;
-          } finally {
-            span.end();
-          }
-        },
+      );
+      return runInSpan(span, parent, () =>
+        fn({
+          setAttributes: (a) => span.setAttributes(clean(a)),
+          addLinks: (list) => span.addLinks(linksTo(list)),
+        }),
       );
     },
     childSpan: (name, attributes, fn) => {
       const active = context.active();
       if (!trace.getSpan(active)?.isRecording()) return fn();
-      const span = tracer.startSpan(name, { attributes: clean(attributes) }, active);
-      let out: ReturnType<typeof fn>;
-      try {
-        out = context.with(trace.setSpan(active, span), fn);
-      } catch (err) {
-        failSpan(span, err);
-        span.end();
-        throw err;
-      }
-      if (out instanceof Promise) {
-        return out.then(
-          (value: unknown) => {
-            span.end();
-            return value;
-          },
-          (err: unknown) => {
-            failSpan(span, err);
-            span.end();
-            throw err;
-          },
-        ) as typeof out;
-      }
-      span.end();
-      return out;
+      return runInSpan(
+        tracer.startSpan(name, { attributes: clean(attributes) }, active),
+        active,
+        fn,
+      );
     },
     traceHeaders: () => {
       const carrier: Record<string, string> = {};
@@ -252,16 +258,8 @@ export function createTelemetry(
   };
 }
 
-function failSpan(span: Span, err: unknown): void {
-  span.recordException(err instanceof Error ? err : new Error(String(err)));
-  span.setStatus({
-    code: SpanStatusCode.ERROR,
-    message: errorText(err),
-  });
-}
-
 export interface RecordedSignal {
-  kind: 'counter' | 'histogram' | 'gauge' | 'decision' | 'http';
+  kind: 'counter' | 'histogram' | 'gauge' | 'gauge_cleared' | 'decision' | 'http';
   name: string;
   value: number;
   attributes: SignalAttributes;
@@ -278,6 +276,8 @@ export function createRecordingTelemetry(): Telemetry & { signals: RecordedSigna
     histogram: (name, value, attributes) =>
       signals.push({ kind: 'histogram', name, value, attributes }),
     gauge: (name, value, attributes) => signals.push({ kind: 'gauge', name, value, attributes }),
+    clearGauge: (name, attributes) =>
+      signals.push({ kind: 'gauge_cleared', name, value: 0, attributes }),
     decision: (name, attributes, ids) =>
       signals.push({ kind: 'decision', name, value: 1, attributes, ...(ids ? { ids } : {}) }),
     span: (_name, _attributes, fn) =>

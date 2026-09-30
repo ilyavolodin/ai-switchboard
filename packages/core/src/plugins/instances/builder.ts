@@ -9,7 +9,7 @@ import { attribute } from '../attribution.js';
 import type { ContextTarget } from '../plugin-context.js';
 import type { TypeRegistry } from '../type-registry.js';
 
-import { KIND_SPECS } from './kind-specs.js';
+import { createObject, KIND_SPECS } from './kind-specs.js';
 import type { LiveByKind } from './live-set.js';
 import type { InstanceRowHead } from './store.js';
 
@@ -80,7 +80,7 @@ export class InstanceBuilder {
         settings: row.settings,
         secretValues: resolved.secrets,
       });
-      const created = spec.create(entry.type, resolved.settings, ctx);
+      const created = createObject(entry.type, resolved.settings, ctx);
       const object = options.attributed
         ? guardActions(
             attribute(
@@ -89,10 +89,12 @@ export class InstanceBuilder {
                 this.deps.onPluginError(entry.pluginName, err, { instanceId: row.id, method });
               },
               {
-                telemetry: this.deps.telemetry,
-                kind,
-                plugin: entry.pluginName,
-                instanceId: row.id,
+                spans: {
+                  telemetry: this.deps.telemetry,
+                  kind,
+                  plugin: entry.pluginName,
+                  instanceId: row.id,
+                },
               },
             ),
             spec.actions(entry.type),

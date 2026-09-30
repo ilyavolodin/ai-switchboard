@@ -10,13 +10,18 @@ export interface HomeLockOptions {
   pollMs?: number;
   /** A lock older than this is taken over even when its owner cannot be checked (another host). */
   staleMs?: number;
+  /** Epoch milliseconds (tests). */
+  now?: () => number;
 }
 
 export class HomeLockTimeoutError extends Error {
   override readonly name = 'HomeLockTimeoutError';
 }
 
-const DEFAULTS = { waitMs: 10 * 60_000, pollMs: 100, staleMs: 30 * 60_000 };
+const DEFAULTS = { waitMs: 10 * 60_000, pollMs: 100, staleMs: 30 * 60_000, now: Date.now };
+
+/** A takeover guard left by a crashed process is removed after this long. */
+const GUARD_STALE_MS = 10_000;
 
 export function homeLockPath(home: string): string {
   return join(resolve(home), 'plugins.npm-lock');
@@ -47,26 +52,63 @@ function alive(pid: number): boolean {
   }
 }
 
-async function isStale(dir: string, staleMs: number): Promise<boolean> {
-  const owner = await readOwner(dir);
-  if (owner?.host === hostname()) return !alive(owner.pid);
+/** Undefined when the directory is gone. */
+async function ageOf(dir: string, now: () => number): Promise<number | undefined> {
   try {
-    return Date.now() - (await stat(dir)).mtimeMs > staleMs;
+    return now() - (await stat(dir)).mtimeMs;
   } catch {
-    return true;
+    return undefined;
   }
 }
 
-async function tryAcquire(dir: string): Promise<boolean> {
+type LockState = 'gone' | 'stale' | 'held';
+
+async function lockState(dir: string, staleMs: number, now: () => number): Promise<LockState> {
+  const age = await ageOf(dir, now);
+  if (age === undefined) return 'gone';
+  const owner = await readOwner(dir);
+  if (owner?.host === hostname()) return alive(owner.pid) ? 'held' : 'stale';
+  return age > staleMs ? 'stale' : 'held';
+}
+
+async function tryMkdir(dir: string): Promise<boolean> {
   try {
     await mkdir(dir);
+    return true;
   } catch (err) {
     if (isRecord(err) && err.code === 'EEXIST') return false;
     throw err;
   }
+}
+
+async function tryAcquire(dir: string): Promise<boolean> {
+  if (!(await tryMkdir(dir))) return false;
   const owner: Owner = { pid: process.pid, host: hostname() };
   await writeFile(join(dir, 'owner.json'), JSON.stringify(owner), 'utf8');
   return true;
+}
+
+/**
+ * True when the lock is free to take again. A stale lock is removed holding a guard, and only if it
+ * is still stale then: two waiters that both saw it stale must not both remove it, or the second
+ * deletes the lock the first had just taken.
+ */
+async function freeIfStale(dir: string, staleMs: number, now: () => number): Promise<boolean> {
+  const seen = await lockState(dir, staleMs, now);
+  if (seen !== 'stale') return seen === 'gone';
+  const guard = `${dir}.takeover`;
+  if (!(await tryMkdir(guard))) {
+    if (((await ageOf(guard, now)) ?? 0) > GUARD_STALE_MS)
+      await rm(guard, { recursive: true, force: true });
+    return false;
+  }
+  try {
+    if ((await lockState(dir, staleMs, now)) === 'stale')
+      await rm(dir, { recursive: true, force: true });
+    return true;
+  } finally {
+    await rm(guard, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -80,16 +122,13 @@ export async function withHomeLock<T>(
   task: () => Promise<T>,
   options: HomeLockOptions = {},
 ): Promise<T> {
-  const { waitMs, pollMs, staleMs } = { ...DEFAULTS, ...options };
+  const { waitMs, pollMs, staleMs, now } = { ...DEFAULTS, ...options };
   await mkdir(resolve(home), { recursive: true });
   const dir = homeLockPath(home);
-  const deadline = Date.now() + waitMs;
+  const deadline = now() + waitMs;
   while (!(await tryAcquire(dir))) {
-    if (await isStale(dir, staleMs)) {
-      await rm(dir, { recursive: true, force: true });
-      continue;
-    }
-    if (Date.now() > deadline) {
+    if (await freeIfStale(dir, staleMs, now)) continue;
+    if (now() > deadline) {
       throw new HomeLockTimeoutError(
         `another plugin install is still running in ${resolve(home)} (lock ${dir})`,
       );

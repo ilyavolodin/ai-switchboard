@@ -5,7 +5,7 @@ import { INSTANCE_TABLES } from '../../db/instance-tables.js';
 import { secretProviders } from '../../db/schema.js';
 import { formatInstanceError, instanceErrorText } from '../../domain/instance-error.js';
 import { instanceStatus } from '../../domain/labels.js';
-import { instanceSecretPrefix } from '../../plugins/instance-secrets.js';
+import { instanceSecretPrefix } from '../../secrets/instance-secrets.js';
 import { collectSecretRefs, formatSecretRef, parseSecretRef } from '../../secrets/refs.js';
 import { secretUsersByName } from '../../services/secret-users.js';
 import { errorText } from '../../util/errors.js';

@@ -115,7 +115,7 @@ export async function readMeters(ctx: Ctx, destinationId: string): Promise<void>
   let reported: unknown[] = [];
   if (live.destination.readMeters) {
     const read = live.destination.readMeters.bind(live.destination);
-    const out = await callPlugin(ctx, live.pluginName, 'readMeters', read);
+    const out = await callPlugin('readMeters', read);
     if (out.ok) reported = Array.isArray(out.value) ? out.value : [];
     else ctx.log.warn({ err: out.error, destination_id: destinationId }, 'readMeters failed');
   }

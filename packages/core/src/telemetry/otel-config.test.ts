@@ -197,6 +197,25 @@ describe('parseOtelConfig', () => {
     }
   });
 
+  it('warns once about a bad generic OTLP value, not once per signal', () => {
+    const c = parseOtelConfig({
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318',
+      OTEL_EXPORTER_OTLP_PROTOCOL: 'thrift',
+      OTEL_EXPORTER_OTLP_TIMEOUT: 'soon',
+      OTEL_EXPORTER_OTLP_COMPRESSION: 'brotli',
+      OTEL_EXPORTER_OTLP_HEADERS: 'novalue',
+    });
+    expect(c.traces.otlp && c.metrics.otlp && c.logs.otlp).toBeTruthy();
+    for (const name of [
+      'OTEL_EXPORTER_OTLP_PROTOCOL',
+      'OTEL_EXPORTER_OTLP_TIMEOUT',
+      'OTEL_EXPORTER_OTLP_COMPRESSION',
+      'OTEL_EXPORTER_OTLP_HEADERS',
+    ]) {
+      expect(c.warnings.filter((w) => w.startsWith(name))).toHaveLength(1);
+    }
+  });
+
   it('empty values count as unset', () => {
     const c = parseOtelConfig({ OTEL_EXPORTER_OTLP_ENDPOINT: '', OTEL_SERVICE_NAME: '  ' });
     expect(c.traces.exporters).toEqual([]);

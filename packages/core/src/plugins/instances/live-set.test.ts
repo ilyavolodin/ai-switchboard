@@ -10,6 +10,7 @@ function notifier(id: string): LiveNotifier {
     id,
     name: id,
     typeId: 't',
+    pluginName: '@test/notifier',
     type: {} as LiveNotifier['type'],
     notifier: {} as LiveNotifier['notifier'],
   };
@@ -20,6 +21,7 @@ function provider(id: string, name: string): LiveSecretProvider {
     id,
     name,
     typeId: 'env',
+    pluginName: '@test/secrets',
     type: {} as LiveSecretProvider['type'],
     provider: {} as LiveSecretProvider['provider'],
   };

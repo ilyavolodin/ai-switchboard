@@ -220,10 +220,7 @@ async function runStepsInSpan(
     try {
       const resolved = await resolveForPluginCall(ctx, args.value, secretValues);
       secretValues = resolved.secretValues;
-      const plugin = source?.pluginName ?? destination?.pluginName ?? step.provider;
-      const out = await callPlugin(ctx, plugin, `act ${step.action}`, () =>
-        act(step.action, resolved.value),
-      );
+      const out = await callPlugin(`act ${step.action}`, () => act(step.action, resolved.value));
       if (!out.ok) {
         status = 'error';
         error = out.error;

@@ -193,6 +193,7 @@ describe('hot install and replica convergence', () => {
       version: '1.0.0',
       installSpec: ECHO,
       installVersion: '1.0.0',
+      integrity: `sha512-${ECHO}-1.0.0`,
       capabilities: { network: ['api.acme.test'] },
     });
     const [t] = await tdb.db
