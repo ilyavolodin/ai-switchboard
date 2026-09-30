@@ -1,15 +1,23 @@
-import { and, count, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, isNull, sql, type AnyColumn } from 'drizzle-orm';
 
-import { approvals, dispatches, events, plugins, processes, runs } from '../../db/schema.js';
-import { attentionItems } from '../../views/attention.js';
-import { getSettings } from '../../services/settings.js';
-import type { ApiContext } from '../context.js';
 import type { BoardEdge, BoardResponse, StatusStripResponse } from '../../contract/index.js';
+import { approvals, dispatches, events, plugins, processes, runs } from '../../db/schema.js';
+import { getSettings } from '../../services/settings.js';
+import { DAY_MS, MINUTE_MS, msAgo } from '../../util/time.js';
+import { attentionItems } from '../../views/attention.js';
+import type { ApiContext } from '../context.js';
+import type { ReadDeps } from './deps.js';
 import { destinationSummaries, sourceSummaries } from './instances.js';
 import { meterGauges } from './meters.js';
 import { processSummaries } from './processes.js';
 
-export async function statusStrip(ctx: ApiContext): Promise<StatusStripResponse> {
+/** Of the grouped rows, those at or after `since`: one query for a day and its last minutes. */
+const countSince = (col: AnyColumn, since: Date) =>
+  sql<number>`count(*) filter (where ${col} >= ${since})`.mapWith(Number);
+
+export async function statusStrip(
+  ctx: ReadDeps & Pick<ApiContext, 'oidc'>,
+): Promise<StatusStripResponse> {
   const [gauges, breakers, pending] = await Promise.all([
     meterGauges(ctx),
     ctx.db.select({ n: count() }).from(processes).where(eq(processes.breakerState, 'open')),
@@ -24,10 +32,10 @@ export async function statusStrip(ctx: ApiContext): Promise<StatusStripResponse>
   };
 }
 
-export async function board(ctx: ApiContext): Promise<BoardResponse> {
+export async function board(ctx: ReadDeps): Promise<BoardResponse> {
   const now = ctx.clock.now();
-  const day = new Date(now.getTime() - 86_400_000);
-  const recent = new Date(now.getTime() - 5 * 60_000);
+  const day = msAgo(now, DAY_MS);
+  const recent = msAgo(now, 5 * MINUTE_MS);
   const procRows = await ctx.db.select().from(processes).orderBy(processes.name);
   const [srcs, procs, exs, settings] = await Promise.all([
     sourceSummaries(ctx, undefined, procRows),
@@ -37,33 +45,33 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
   ]);
   const procIds = procRows.map((p) => p.id);
 
-  const [trig24, trigRecent, bind24, bindRecent] =
+  const [triggered, bound] =
     procIds.length === 0
-      ? [[], [], [], []]
+      ? [[], []]
       : await Promise.all([
           ctx.db
-            .select({ processId: dispatches.processId, sourceId: events.sourceId, n: count() })
+            .select({
+              processId: dispatches.processId,
+              sourceId: events.sourceId,
+              day: count(),
+              recent: countSince(dispatches.createdAt, recent),
+            })
             .from(dispatches)
             .innerJoin(events, eq(events.id, dispatches.eventId))
             .where(and(inArray(dispatches.processId, procIds), gte(dispatches.createdAt, day)))
             .groupBy(dispatches.processId, events.sourceId),
           ctx.db
-            .select({ processId: dispatches.processId, sourceId: events.sourceId, n: count() })
-            .from(dispatches)
-            .innerJoin(events, eq(events.id, dispatches.eventId))
-            .where(and(inArray(dispatches.processId, procIds), gte(dispatches.createdAt, recent)))
-            .groupBy(dispatches.processId, events.sourceId),
-          ctx.db
-            .select({ processId: runs.processId, n: count() })
+            .select({
+              processId: runs.processId,
+              day: count(),
+              recent: countSince(runs.createdAt, recent),
+            })
             .from(runs)
             .where(and(inArray(runs.processId, procIds), gte(runs.createdAt, day)))
             .groupBy(runs.processId),
-          ctx.db
-            .select({ processId: runs.processId, n: count() })
-            .from(runs)
-            .where(and(inArray(runs.processId, procIds), gte(runs.createdAt, recent)))
-            .groupBy(runs.processId),
         ]);
+  const triggerVolume = new Map(triggered.map((x) => [`${x.processId}:${x.sourceId}`, x]));
+  const bindingVolume = new Map(bound.map((x) => [x.processId, x]));
 
   const edges: BoardEdge[] = [];
   for (const p of procRows) {
@@ -84,6 +92,7 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
     }
     for (const [sourceId, e] of bySource) {
       const types = [...e.types];
+      const volume = triggerVolume.get(`${p.id}:${sourceId}`);
       edges.push({
         id: `t:${sourceId}:${p.id}`,
         kind: 'trigger',
@@ -91,8 +100,8 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
         to: p.id,
         eventTypes: types,
         label: types.length <= 2 ? types.join(', ') : `${types[0] ?? ''} +${types.length - 1}`,
-        volume24h: trig24.find((x) => x.processId === p.id && x.sourceId === sourceId)?.n ?? 0,
-        recent: trigRecent.find((x) => x.processId === p.id && x.sourceId === sourceId)?.n ?? 0,
+        volume24h: volume?.day ?? 0,
+        recent: volume?.recent ?? 0,
         enabled: e.enabled && p.enabled,
       });
     }
@@ -104,8 +113,8 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
         to: p.document.destination.instanceId,
         eventTypes: [],
         label: '',
-        volume24h: bind24.find((x) => x.processId === p.id)?.n ?? 0,
-        recent: bindRecent.find((x) => x.processId === p.id)?.n ?? 0,
+        volume24h: bindingVolume.get(p.id)?.day ?? 0,
+        recent: bindingVolume.get(p.id)?.recent ?? 0,
         enabled: p.enabled,
       });
     }
@@ -124,13 +133,13 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
       .from(plugins)
       .where(inArray(plugins.status, ['failed', 'incompatible'])),
   ]);
+  const openedAt = new Map(procRows.map((r) => [r.id, r.breakerOpenedAt]));
   const attention = attentionItems(
     {
       sourceSilenceMinutes: settings.sourceSilenceMinutes,
       processes: procs.map((p) => ({
         ...p,
-        breakerOpenedAt:
-          procRows.find((r) => r.id === p.id)?.breakerOpenedAt?.toISOString() ?? null,
+        breakerOpenedAt: openedAt.get(p.id)?.toISOString() ?? null,
       })),
       sources: srcs,
       destinations: exs,
@@ -189,7 +198,7 @@ export async function board(ctx: ApiContext): Promise<BoardResponse> {
  * created disabled and forgotten. One that ran before was paused on purpose, so it stays quiet.
  */
 async function turnedAwayByIdle(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   idle: { id: string; name: string }[],
   since: Date,
 ): Promise<{ processId: string; name: string; n: number }[]> {
@@ -215,9 +224,11 @@ async function turnedAwayByIdle(
         ),
       ),
   ]);
+  const idleById = new Map(idle.map((p) => [p.id, p]));
+  const hasRun = new Set(ran.map((r) => r.processId));
   return missed.rows.flatMap((m) => {
-    const p = idle.find((x) => x.id === m.process_id);
-    if (!p || ran.some((r) => r.processId === p.id)) return [];
+    const p = idleById.get(m.process_id);
+    if (!p || hasRun.has(p.id)) return [];
     return [{ processId: p.id, name: p.name, n: Number(m.n) }];
   });
 }
