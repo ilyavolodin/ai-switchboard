@@ -1,7 +1,5 @@
 import type { Role, UserDirectoryEntry, UserDTO } from '@ai-switchboard/core/contract';
-import { ROLES } from '@ai-switchboard/core/domain';
 
-import { roleLabel } from '../../app/session.js';
 import { Button } from '../../components/Button.js';
 import { Select } from '../../components/Select.js';
 import { StatusChip } from '../../components/StatusChip.js';
@@ -10,10 +8,7 @@ import { Time } from '../../components/Time.js';
 import { Tooltip } from '../../components/Tooltip.js';
 import styles from './Settings.module.css';
 import { UserIdentity } from './UserIdentity.js';
-
-export const ROLE_OPTIONS = ROLES.map((r) => ({ value: r, label: roleLabel(r) }));
-
-export const isRole = (v: string): v is Role => ROLES.some((r) => r === v);
+import { isRole, ROLE_OPTIONS } from './users.js';
 
 export interface UserRowActions {
   changeRole: (user: UserDTO, role: Role) => void;

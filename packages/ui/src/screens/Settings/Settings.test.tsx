@@ -95,6 +95,19 @@ describe('Settings', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true');
   });
 
+  it('discards unsaved general settings back to the saved ones', async () => {
+    const { user } = open('');
+    const staleness = await screen.findByRole('textbox', { name: /Meter staleness/ });
+    const saved = (staleness as HTMLInputElement).value;
+    await user.clear(staleness);
+    await user.type(staleness, 'soon');
+    expect(screen.getByText('unsaved changes')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.getByRole('textbox', { name: /Meter staleness/ })).toHaveValue(saved);
+    expect(screen.queryByText('unsaved changes')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true');
+  });
+
   it('lets a viewer read settings but not save them', async () => {
     open('', 'viewer');
     expect(await screen.findByRole('combobox', { name: /Timezone/ })).toBeDisabled();

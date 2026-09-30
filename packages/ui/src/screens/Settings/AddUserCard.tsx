@@ -2,7 +2,7 @@ import type { Role } from '@ai-switchboard/core/contract';
 import { type SubmitEvent, useState } from 'react';
 
 import { useCreateUser } from '../../api/index.js';
-import { roleLabel, useCan, useSession } from '../../app/session.js';
+import { useCan, useSession } from '../../app/session.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { Field } from '../../components/Field.js';
@@ -10,8 +10,8 @@ import { Select } from '../../components/Select.js';
 import { TextField } from '../../components/TextField.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import styles from './Settings.module.css';
-import { checkNewUser } from './settingsForm.js';
-import { isRole, ROLE_OPTIONS } from './userColumns.js';
+import { addUserPrompt } from './userPrompts.js';
+import { checkNewUser, isRole, ROLE_OPTIONS } from './users.js';
 
 export function AddUserCard() {
   const [email, setEmail] = useState('');
@@ -21,20 +21,9 @@ export function AddUserCard() {
   const [passwordErr, setPasswordErr] = useState<string | null>(null);
   const { oidcConfigured } = useSession();
   const isAdmin = useCan('admin');
-  const create = useReasonedMutation(
-    useCreateUser(),
-    (v) => ({
-      title: `Add ${v.email} as ${roleLabel(v.role)}?`,
-      consequence:
-        v.password !== undefined
-          ? 'They sign in with the temporary password and must choose their own at the first sign-in.'
-          : oidcConfigured
-            ? 'They can sign in with the configured issuer from now on.'
-            : 'They cannot sign in until you set a password (or configure OIDC).',
-      confirmLabel: 'Add user',
-    }),
-    { successMessage: 'User added' },
-  );
+  const create = useReasonedMutation(useCreateUser(), (v) => addUserPrompt(v, oidcConfigured), {
+    successMessage: 'User added',
+  });
   const onSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const check = checkNewUser(email, password);

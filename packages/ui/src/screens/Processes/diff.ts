@@ -1,11 +1,9 @@
+import { isPlainObject } from '../../lib/json.js';
+
 export interface Change {
   path: (string | number)[];
   before: unknown;
   after: unknown;
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 export function diffValues(

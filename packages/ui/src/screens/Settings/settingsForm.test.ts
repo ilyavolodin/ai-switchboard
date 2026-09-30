@@ -1,16 +1,73 @@
 import { describe, expect, it } from 'vitest';
 
+import { deleteInstancePrompt, enableInstancePrompt, INSTANCE_ROUTES } from './instancesModel.js';
 import {
   changedFields,
-  checkNewUser,
+  checkGeneral,
+  checkRetention,
+  checkSignIn,
   generalForm,
-  grantableRoles,
-  initials,
   parseDomains,
   parsePositiveInt,
   retentionForm,
+  signInForm,
 } from './settingsForm.js';
-import { deleteInstancePrompt, enableInstancePrompt, INSTANCE_ROUTES } from './instancesModel.js';
+import { checkNewUser, grantableRoles, initials } from './users.js';
+
+const general = {
+  timezone: 'UTC',
+  defaultQuietHours: null,
+  meterStalenessMinutes: 15,
+  sourceSilenceMinutes: 60,
+  systemNotifierId: null,
+  requireReasons: true,
+};
+const retention = {
+  eventsDays: 30,
+  rawBodiesDays: 7,
+  dispatchesDays: 30,
+  meterReadingsDays: 90,
+  statsHourlyDays: 400,
+};
+
+describe('section checks', () => {
+  it('saves nothing for an untouched or whitespace-only general form', () => {
+    expect(checkGeneral(general, generalForm(general))).toEqual({ patch: {}, errors: {} });
+    expect(checkGeneral(general, { ...generalForm(general), timezone: ' UTC ' }).patch).toEqual({});
+  });
+
+  it('sends only the changed general fields and names the bad ones', () => {
+    const form = { ...generalForm(general), staleness: '20', silence: 'soon' };
+    expect(checkGeneral(general, form)).toEqual({
+      patch: { meterStalenessMinutes: 20 },
+      errors: { silence: 'Enter a whole number of minutes' },
+    });
+  });
+
+  it('sends every retention limit when one changes', () => {
+    const form = { ...retentionForm(retention), rawBodiesDays: '3' };
+    expect(checkRetention(retention, form).patch).toEqual({
+      retention: { ...retention, rawBodiesDays: 3 },
+    });
+    expect(checkRetention(retention, { ...form, eventsDays: '0' }).errors).toEqual({
+      eventsDays: 'Enter a whole number of days',
+    });
+  });
+
+  it('turns OIDC off when issuer and client id are cleared, and wants both otherwise', () => {
+    const oidc = { issuer: 'https://a.test', clientId: 'c', allowedDomains: ['a.test'] };
+    expect(checkSignIn(oidc, { issuer: '', clientId: '', domains: '' }).patch).toEqual({
+      oidc: null,
+    });
+    expect(checkSignIn(oidc, signInForm(oidc))).toEqual({ patch: {}, errors: {} });
+    expect(
+      checkSignIn(null, { issuer: 'http://a.test', clientId: '', domains: '' }).errors,
+    ).toEqual({
+      issuer: 'The issuer must be an https:// URL',
+      clientId: 'A client id is required with an issuer',
+    });
+  });
+});
 
 describe('settingsForm', () => {
   it.each([
@@ -39,25 +96,8 @@ describe('settingsForm', () => {
   });
 
   it('turns saved numbers into editable text', () => {
-    expect(
-      retentionForm({
-        eventsDays: 30,
-        rawBodiesDays: 7,
-        dispatchesDays: 30,
-        meterReadingsDays: 90,
-        statsHourlyDays: 400,
-      }).rawBodiesDays,
-    ).toBe('7');
-    expect(
-      generalForm({
-        timezone: 'UTC',
-        defaultQuietHours: null,
-        meterStalenessMinutes: 15,
-        sourceSilenceMinutes: 60,
-        systemNotifierId: null,
-        requireReasons: true,
-      }),
-    ).toMatchObject({ staleness: '15', notifier: '' });
+    expect(retentionForm(retention).rawBodiesDays).toBe('7');
+    expect(generalForm(general)).toMatchObject({ staleness: '15', notifier: '' });
   });
 
   it.each([

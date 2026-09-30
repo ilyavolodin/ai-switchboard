@@ -1,7 +1,7 @@
 import styles from './Settings.module.css';
-import { initials } from './settingsForm.js';
+import { initials } from './users.js';
 
-export function UserIdentity({ email, you }: { email: string; you: boolean }) {
+export function UserIdentity({ email, you = false }: { email: string; you?: boolean }) {
   return (
     <span className={styles.who}>
       <span className={styles.avatar} aria-hidden="true">
