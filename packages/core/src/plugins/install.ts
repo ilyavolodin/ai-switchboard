@@ -10,7 +10,12 @@ import { isPluginDefinition } from '@ai-switchboard/sdk/host';
 import { isRecord, str } from '../util/guards.js';
 
 import { withHomeLock } from './home-lock.js';
-import { isSdkCompatible, readSwitchboardField } from './package-manifest.js';
+import {
+  isSdkCompatible,
+  parseSwitchboardField,
+  pluginEntry,
+  type SwitchboardField,
+} from './package-manifest.js';
 
 export type RunNpm = (args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>;
 
@@ -178,17 +183,6 @@ export function specPackageName(spec: string): string | undefined {
   return name.includes('/') ? undefined : name;
 }
 
-interface SwitchboardField {
-  entry: string | undefined;
-  source: string | undefined;
-  sdk: string;
-}
-
-function switchboardField(pkg: unknown): SwitchboardField | undefined {
-  const field = readSwitchboardField(pkg);
-  return field ? { ...field, sdk: field.sdk ?? '*' } : undefined;
-}
-
 /**
  * `--install-links` copies a local directory instead of symlinking it, so the plugins directory
  * stays self-contained when it is baked into an image or backed up.
@@ -244,11 +238,7 @@ async function readDeclared(
   importModule: ImportModule,
   warnings: string[],
 ): Promise<ReturnType<typeof summarise>> {
-  const rel = field.entry ?? (allowSource ? field.source : undefined);
-  if (rel === undefined) {
-    warnings.push('the package declares no switchboard.entry; capabilities could not be read');
-    return { capabilities: undefined, plugin: undefined };
-  }
+  const rel = await pluginEntry(packageDir, field, allowSource);
   try {
     const mod = await importModule(pathToFileURL(join(packageDir, rel)).href);
     const declared = isRecord(mod) ? mod.default : undefined;
@@ -367,9 +357,10 @@ async function install(options: InstallOptions, spec: string): Promise<InstallRe
   const packageDir = join(dir, 'node_modules', name);
   const manifestPath = join(packageDir, 'package.json');
   const pkg = await readJsonIfExists(manifestPath);
-  const field = switchboardField(pkg);
-  if (!isRecord(pkg) || field === undefined) {
-    const notPlugin = `${name} is not a Switchboard plugin: its package.json has no "switchboard" field.`;
+  const check = parseSwitchboardField(pkg);
+  if (!isRecord(pkg) || !check.ok) {
+    const reason = check.ok ? 'it has no package.json' : check.reason;
+    const notPlugin = `${name} is not a Switchboard plugin: ${reason}.`;
     const pinned = lock.plugins[name];
     if (pinned === undefined) {
       await runNpm(['uninstall', name, ...UNINSTALL_FLAGS], dir);
@@ -381,6 +372,7 @@ async function install(options: InstallOptions, spec: string): Promise<InstallRe
     throw new PluginInstallError(`${notPlugin} The installed ${pinned.version} was restored.`);
   }
 
+  const { field } = check;
   const version = str(pkg.version) ?? after[name] ?? '0.0.0';
   const integrity = await lockedIntegrity(dir, name);
   const warnings: string[] = [];
@@ -516,15 +508,13 @@ export async function inspectPlugin(options: InspectOptions): Promise<InspectRes
     const pkg = await readJsonIfExists(join(packageDir, 'package.json'));
     if (!isRecord(pkg)) throw new PluginInstallError(`${spec}: the tarball has no package.json`);
     const name = str(pkg.name) ?? spec;
-    const field = switchboardField(pkg);
-    if (field === undefined) {
-      throw new PluginInstallError(
-        `${name} is not a Switchboard plugin: its package.json has no "switchboard" field`,
-      );
-    }
+    const check = parseSwitchboardField(pkg);
+    if (!check.ok)
+      throw new PluginInstallError(`${name} is not a Switchboard plugin: ${check.reason}`);
+    const { field } = check;
     const warnings: string[] = [];
     let declared: ReturnType<typeof summarise> = { capabilities: undefined, plugin: undefined };
-    if (field.entry !== undefined && /\.(m?js)$/.test(field.entry)) {
+    if (/\.(m?js)$/.test(field.entry)) {
       await linkSdk(tmp);
       declared = await readDeclared(
         packageDir,
