@@ -1,6 +1,13 @@
 import type { Health } from '@ai-switchboard/sdk';
+import { isOneOf } from '@ai-switchboard/sdk/json';
 
-import type { PluginStatus, RunStatusValue, StatusTone } from './status.js';
+import type { InstanceError } from './instance-error.js';
+import {
+  FAILED_RUN_STATUSES,
+  type PluginStatus,
+  type RunStatusValue,
+  type StatusTone,
+} from './status.js';
 
 export interface StatusLabel {
   tone: StatusTone;
@@ -25,17 +32,15 @@ export function runStatusLabel(status: RunStatusValue): StatusLabel {
 export function instanceStatus(input: {
   enabled: boolean;
   health: Health | null;
-  instanceError: string | undefined;
+  instanceError: InstanceError | undefined;
   stale?: boolean;
   softHold?: boolean;
 }): StatusLabel {
-  if (input.instanceError === 'plugin_unavailable')
-    return { tone: 'warn', label: 'plugin unavailable' };
+  const code = input.instanceError?.code;
+  if (code === 'plugin_unavailable') return { tone: 'warn', label: 'plugin unavailable' };
   if (!input.enabled) return { tone: 'off', label: 'disabled' };
-  if (input.instanceError?.startsWith('secret_error'))
-    return { tone: 'error', label: 'secret error' };
-  if (input.instanceError?.startsWith('create_failed'))
-    return { tone: 'error', label: 'failed to start' };
+  if (code === 'secret_error') return { tone: 'error', label: 'secret error' };
+  if (code === 'create_failed') return { tone: 'error', label: 'failed to start' };
   if (input.health?.status === 'unhealthy') return { tone: 'error', label: 'unhealthy' };
   if (input.softHold) return { tone: 'warn', label: 'soft-hold' };
   if (input.stale) return { tone: 'warn', label: 'stale' };
@@ -55,7 +60,7 @@ export function processStatus(input: {
   if (input.awaitingApproval > 0) return { tone: 'warn', label: 'awaiting approval' };
   if (input.held) return { tone: 'warn', label: 'held' };
   if (input.lastRunStatus === null) return { tone: 'off', label: 'not yet run' };
-  if (input.lastRunStatus === 'error' || input.lastRunStatus === 'failed')
+  if (isOneOf(FAILED_RUN_STATUSES, input.lastRunStatus))
     return { tone: 'error', label: 'last run failed' };
   return { tone: 'ok', label: 'flowing' };
 }

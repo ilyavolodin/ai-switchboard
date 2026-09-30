@@ -5,6 +5,7 @@ import {
   type BreakerStateValue,
   type RunStatusValue,
 } from '../domain/status.js';
+import { addMinutes } from '../util/time.js';
 
 /**
  * Opens after `threshold` consecutive `error` or `unknown` runs; closes by hand or after
@@ -42,20 +43,25 @@ export function breakerHistoryLimit(threshold: number): number {
   return Math.max(threshold * 4, 50);
 }
 
+/** When the cooldown closes an open breaker; null when only a reset does. */
+export function breakerClosesAt(current: BreakerState, cooldownMinutes: number): Date | null {
+  if (current.state !== 'open' || current.openedAt === null || cooldownMinutes <= 0) return null;
+  return addMinutes(current.openedAt, cooldownMinutes);
+}
+
+/** `closesAt` is set while the breaker stays open and a cooldown will close it. */
 export function breakerAtGate(
   current: BreakerState,
   cooldownMinutes: number,
   now: Date,
-): { next: BreakerState; transition: BreakerTransition } {
-  if (current.state !== 'open') return { next: current, transition: null };
-  if (cooldownMinutes <= 0 || current.openedAt === null) return { next: current, transition: null };
-  if (now.getTime() >= current.openedAt.getTime() + cooldownMinutes * 60_000) {
-    return { next: { state: 'closed', openedAt: null }, transition: 'closed_cooldown' };
+): { next: BreakerState; transition: BreakerTransition; closesAt: Date | null } {
+  const closesAt = breakerClosesAt(current, cooldownMinutes);
+  if (closesAt !== null && now.getTime() >= closesAt.getTime()) {
+    return {
+      next: { state: 'closed', openedAt: null },
+      transition: 'closed_cooldown',
+      closesAt: null,
+    };
   }
-  return { next: current, transition: null };
-}
-
-export function breakerClosesAt(current: BreakerState, cooldownMinutes: number): Date | null {
-  if (current.state !== 'open' || current.openedAt === null || cooldownMinutes <= 0) return null;
-  return new Date(current.openedAt.getTime() + cooldownMinutes * 60_000);
+  return { next: current, transition: null, closesAt };
 }

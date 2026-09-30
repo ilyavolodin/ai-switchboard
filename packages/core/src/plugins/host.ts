@@ -5,6 +5,7 @@ import { isWritableSecretProvider, type Settings } from '@ai-switchboard/sdk';
 import type { Clock } from '../clock.js';
 import type { CoreConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import type { InstanceError } from '../domain/instance-error.js';
 import type { InstanceKind } from '../domain/status.js';
 import type { CoreLogger } from '../logger.js';
 import { parseSecretRef, resolveSecretRefs } from '../secrets/refs.js';
@@ -362,7 +363,7 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
     return this.live.get(kind, id);
   }
 
-  instanceError(id: string): string | undefined {
+  instanceError(id: string): InstanceError | undefined {
     return this.live.error(id);
   }
 

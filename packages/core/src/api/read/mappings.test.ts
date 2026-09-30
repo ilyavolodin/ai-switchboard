@@ -31,12 +31,19 @@ describe('status vocabulary', () => {
   it('orders instance status: plugin > disabled > secrets > health > soft-hold > stale', () => {
     const base = { enabled: true, health: null, instanceError: undefined };
     expect(
-      instanceStatus({ ...base, instanceError: 'plugin_unavailable', enabled: false }),
+      instanceStatus({
+        ...base,
+        instanceError: { code: 'plugin_unavailable', message: '' },
+        enabled: false,
+      }),
     ).toEqual({ tone: 'warn', label: 'plugin unavailable' });
     expect(instanceStatus({ ...base, enabled: false })).toEqual({ tone: 'off', label: 'disabled' });
-    expect(instanceStatus({ ...base, instanceError: 'secret_error: x' }).label).toBe(
-      'secret error',
-    );
+    expect(
+      instanceStatus({ ...base, instanceError: { code: 'secret_error', message: 'x' } }).label,
+    ).toBe('secret error');
+    expect(
+      instanceStatus({ ...base, instanceError: { code: 'create_failed', message: 'x' } }).label,
+    ).toBe('failed to start');
     expect(
       instanceStatus({ ...base, health: { status: 'unhealthy', checkedAt: '' }, softHold: true })
         .label,

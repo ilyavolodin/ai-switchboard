@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 
 import { INSTANCE_TABLES } from '../../db/instance-tables.js';
 import { secretProviders } from '../../db/schema.js';
+import { formatInstanceError, instanceErrorText } from '../../domain/instance-error.js';
 import { instanceStatus } from '../../domain/labels.js';
 import { instanceSecretPrefix } from '../../plugins/instance-secrets.js';
 import { collectSecretRefs, formatSecretRef, parseSecretRef } from '../../secrets/refs.js';
@@ -61,7 +62,7 @@ export async function providerDependents(
             health: row.health,
             instanceError: error,
           }),
-          instanceError: error ?? null,
+          instanceError: instanceErrorText(error),
         });
       }
     }
@@ -147,9 +148,9 @@ export async function providerSecrets(
   if (!live) {
     const why = ctx.runtime.instanceError(row.id);
     return unavailable(
-      why === 'disabled'
+      why?.code === 'disabled'
         ? 'The provider is disabled.'
-        : `The provider is not running${why ? ` (${why})` : ''}.`,
+        : `The provider is not running${why ? ` (${formatInstanceError(why)})` : ''}.`,
     );
   }
   const provider = live.provider;

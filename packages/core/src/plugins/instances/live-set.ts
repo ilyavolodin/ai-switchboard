@@ -1,3 +1,4 @@
+import type { InstanceError } from '../../domain/instance-error.js';
 import { INSTANCE_KINDS, type InstanceKind } from '../../domain/status.js';
 import type { LiveDestination, LiveNotifier, LiveSecretProvider, LiveSource } from '../runtime.js';
 
@@ -16,7 +17,7 @@ export interface BuiltInstance {
 }
 
 export type BuildOutcome<K extends InstanceKind = InstanceKind> =
-  { kind: K; live: LiveByKind[K]; error?: string } | { error: string } | undefined;
+  { kind: K; live: LiveByKind[K]; error?: InstanceError } | { error: InstanceError } | undefined;
 
 type Maps = { [K in InstanceKind]: Map<string, LiveByKind[K]> };
 
@@ -35,7 +36,7 @@ export class LiveSet {
     secret_provider: new Map(),
   };
   private readonly providersByName = new Map<string, LiveSecretProvider>();
-  private readonly errors = new Map<string, string>();
+  private readonly errors = new Map<string, InstanceError>();
   private readonly claims = new Map<string, number>();
   private readonly built = new Map<string, BuiltInstance>();
   /** Reloads in flight on this replica; a reconcile pass leaves them alone. */
@@ -54,7 +55,7 @@ export class LiveSet {
     return this.providersByName.get(name);
   }
 
-  error(id: string): string | undefined {
+  error(id: string): InstanceError | undefined {
     return this.errors.get(id);
   }
 

@@ -178,7 +178,7 @@ describe('hot install and replica convergence', () => {
     a = host(await prepareHome('a'), fakeNpm(registry));
     await a.boot();
     expect(a.notifierType('echo')).toBeUndefined();
-    expect(a.instanceError(notifierId)).toBe('plugin_unavailable');
+    expect(a.instanceError(notifierId)?.code).toBe('plugin_unavailable');
 
     const result = await a.installAndLoad(ECHO);
     expect(result.pendingRestart).toBe(false);

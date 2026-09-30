@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Health, InvokeResult, TrackingMode } from '@ai-switchboard/sdk';
 
 import { batches, destinations, runs } from '../../db/schema.js';
+import { instanceErrorText } from '../../domain/instance-error.js';
 import {
   classifyInvoke,
   effectiveInvokeTimeoutSeconds,
@@ -91,7 +92,7 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
         : {
             action: 'failed',
             reason: 'destination_unavailable',
-            errors: [ctx.runtime.instanceError(run.destinationId) ?? reason],
+            errors: [instanceErrorText(ctx.runtime.instanceError(run.destinationId)) ?? reason],
           };
     await apply(ctx, run, cls, 'none');
     return;

@@ -22,6 +22,7 @@ import {
   secretProviders,
   sources,
 } from '../../src/db/schema.js';
+import { instanceErrorText } from '../../src/domain/instance-error.js';
 import { silentLogger } from '../../src/logger.js';
 import { PluginHost } from '../../src/plugins/host.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
@@ -164,7 +165,7 @@ describe('plugin host', () => {
     const second = host();
     await second.boot();
     expect(second.source(src!.id)).toBeUndefined();
-    expect(second.instanceError(src!.id)).toBe('plugin_unavailable');
+    expect(second.instanceError(src!.id)?.code).toBe('plugin_unavailable');
     const [p] = await tdb.db.select().from(plugins).where(eq(plugins.name, 'test-plugin'));
     expect(p?.status).toBe('unavailable');
     const [t] = await tdb.db
@@ -336,8 +337,12 @@ describe('plugin host', () => {
       .returning();
     await h.reload('notifier', n!.id);
     await h.reload('secret_provider', p!.id);
-    expect(h.instanceError(n!.id)).toMatch(/^create_failed: notifier create exploded/);
-    expect(h.instanceError(p!.id)).toMatch(/^create_failed: provider create exploded/);
+    expect(instanceErrorText(h.instanceError(n!.id))).toMatch(
+      /^create_failed: notifier create exploded/,
+    );
+    expect(instanceErrorText(h.instanceError(p!.id))).toMatch(
+      /^create_failed: provider create exploded/,
+    );
     await h.stop();
     const errors = telemetry.signals.filter((s) => s.name === 'switchboard.plugin.errors');
     expect(errors.map((e) => e.attributes)).toEqual([

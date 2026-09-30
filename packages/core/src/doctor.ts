@@ -6,6 +6,7 @@ import { systemClock } from './clock.js';
 import type { CoreConfig } from './config.js';
 import { connect, migrationsFolder, type Db } from './db/client.js';
 import { INSTANCE_TABLES, type InstanceTable } from './db/instance-tables.js';
+import { instanceErrorText } from './domain/instance-error.js';
 import type { InstanceKind } from './domain/status.js';
 import { silentLogger } from './logger.js';
 import { probeHealth } from './plugins/health.js';
@@ -40,8 +41,8 @@ async function instanceChecks<K extends InstanceKind>(
     const name = `${KIND_LABELS[kind]} ${row.name}`;
     const error = host.instanceError(row.id);
     const live = host.instance(kind, row.id);
-    if (!live || (error !== undefined && error !== 'disabled')) {
-      checks.push({ name, ok: false, detail: error ?? 'not running' });
+    if (!live || (error !== undefined && error.code !== 'disabled')) {
+      checks.push({ name, ok: false, detail: instanceErrorText(error) ?? 'not running' });
       continue;
     }
     const object = KIND_SPECS[kind].objectOf(live);

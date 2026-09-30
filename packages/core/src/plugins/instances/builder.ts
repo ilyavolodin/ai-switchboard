@@ -1,5 +1,6 @@
 import type { PluginContext, Settings } from '@ai-switchboard/sdk';
 
+import type { InstanceError } from '../../domain/instance-error.js';
 import type { InstanceKind } from '../../domain/status.js';
 import type { Telemetry } from '../../telemetry/telemetry.js';
 import { errorText } from '../../util/errors.js';
@@ -120,15 +121,17 @@ export class InstanceBuilder {
 }
 
 /** The instance error the runtime reports for a failed build. */
-export function buildError(stage: BuildStage, message: string): string {
+export function buildError(stage: BuildStage, message: string): InstanceError {
   switch (stage) {
     case 'plugin':
-      return 'plugin_unavailable';
+      return { code: 'plugin_unavailable', message: '' };
     case 'disabled':
-      return 'disabled';
+      return DISABLED;
     case 'secret':
-      return `secret_error: ${message}`;
+      return { code: 'secret_error', message };
     case 'create':
-      return `create_failed: ${message}`;
+      return { code: 'create_failed', message };
   }
 }
+
+export const DISABLED: InstanceError = { code: 'disabled', message: '' };

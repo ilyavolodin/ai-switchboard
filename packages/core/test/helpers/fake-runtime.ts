@@ -29,6 +29,7 @@ import {
 } from '@ai-switchboard/sdk';
 import { rawRequest } from '@ai-switchboard/sdk/testing';
 
+import type { InstanceError } from '../../src/domain/instance-error.js';
 import { guardActions } from '../../src/plugins/actions.js';
 import { attribute } from '../../src/plugins/attribution.js';
 import type {
@@ -284,7 +285,7 @@ export class FakeRuntime implements PluginRuntime {
   readonly destinationStates = new Map<string, FakeDestinationState>();
   readonly notifierStates = new Map<string, FakeNotifierState>();
   readonly errors: { plugin: string; kind: string; detail?: string }[] = [];
-  readonly instanceErrors = new Map<string, string>();
+  readonly instanceErrors = new Map<string, InstanceError>();
   /** Types whose plugin is "uninstalled". */
   readonly unavailableTypes = new Set<string>();
 
@@ -338,9 +339,11 @@ export class FakeRuntime implements PluginRuntime {
       : undefined;
   }
 
-  instanceError(id: string): string | undefined {
+  instanceError(id: string): InstanceError | undefined {
     const live = this.sources.get(id) ?? this.destinations.get(id) ?? this.notifiers.get(id);
-    if (live && this.unavailableTypes.has(live.typeId)) return 'plugin_unavailable';
+    if (live && this.unavailableTypes.has(live.typeId)) {
+      return { code: 'plugin_unavailable', message: '' };
+    }
     return this.instanceErrors.get(id);
   }
 

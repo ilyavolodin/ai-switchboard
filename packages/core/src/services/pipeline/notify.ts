@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { Event, NotificationMessage } from '@ai-switchboard/sdk';
 
 import { notificationLog, systemAlerts } from '../../db/schema.js';
+import { instanceErrorText } from '../../domain/instance-error.js';
 import type { BatchKind, NotifyOn } from '../../domain/status.js';
 import { renderTemplate, templateContext } from '../../expr/index.js';
 import { getSettings } from '../settings.js';
@@ -103,7 +104,7 @@ async function notifyProcessInSpan(ctx: Ctx, n: ProcessNotification): Promise<vo
         ...(n.url ? { url: n.url } : {}),
         fields: { process: n.process.name, status: n.on },
       },
-      ctx.runtime.instanceError(target.notifierId) ?? 'notifier unavailable',
+      instanceErrorText(ctx.runtime.instanceError(target.notifierId)) ?? 'notifier unavailable',
     );
     const outcome = { text: text.slice(0, 4000), status, error };
     if (claimedId !== null) {

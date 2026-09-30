@@ -5,7 +5,7 @@ import { referencesProvider } from '../../secrets/refs.js';
 import type { Telemetry } from '../../telemetry/telemetry.js';
 import { diffInstances } from '../reconcile.js';
 
-import { buildError, type InstanceBuilder } from './builder.js';
+import { DISABLED, buildError, type InstanceBuilder } from './builder.js';
 import { BUILD_ORDER, KIND_SPECS } from './kind-specs.js';
 import type { BuiltInstance, LiveSet } from './live-set.js';
 import type { InstanceRowHead, InstanceStore } from './store.js';
@@ -58,7 +58,7 @@ export class InstanceManager {
       ? {
           kind,
           live: built.live,
-          ...(!row.enabled ? { error: 'disabled' } : {}),
+          ...(!row.enabled ? { error: DISABLED } : {}),
         }
       : { error: buildError(built.stage, built.message) };
     const committed = live.commit(row.id, ticket, outcome, from);

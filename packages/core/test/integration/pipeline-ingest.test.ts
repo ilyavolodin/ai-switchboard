@@ -251,8 +251,8 @@ describe('the door', () => {
   it('a disabled source with no live instance still answers 200; an enabled one answers 503', async () => {
     const off = await seedSource(h, { enabled: false });
     const on = await seedSource(h);
-    h.runtime.instanceErrors.set(off.id, 'secret_error: missing');
-    h.runtime.instanceErrors.set(on.id, 'secret_error: missing');
+    h.runtime.instanceErrors.set(off.id, { code: 'secret_error', message: 'missing' });
+    h.runtime.instanceErrors.set(on.id, { code: 'secret_error', message: 'missing' });
     expect(await deliver(h, off.id, [{ id: '1', version: 'a' }])).toBe(200);
     expect(await deliver(h, on.id, [{ id: '1', version: 'a' }])).toBe(503);
     expect(await eventsOf(h.db, off.id)).toHaveLength(0);

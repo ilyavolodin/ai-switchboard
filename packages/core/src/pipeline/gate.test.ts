@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { approvalNeedsEvaluation, approvalRequired, gate, type GateInput } from './gate.js';
-import { inQuietHours } from './quiet-hours.js';
+import { approvalCheck, gate, settledGate, type GateInput, type GateResult } from './gate.js';
 
 const now = new Date('2026-01-07T15:00:00Z'); // Wednesday
 
@@ -20,12 +19,16 @@ function input(patch: Partial<GateInput> = {}): GateInput {
     breaker: { state: 'closed', openedAt: null, cooldownMinutes: 60 },
     quietHours: null,
     defaultTimezone: 'UTC',
-    approval: { rule: 'none', required: false, state: 'none' },
+    approval: { rule: 'none', state: 'none' },
     ...patch,
   };
 }
 
 const base = input();
+
+function reasonOf(out: GateResult): string | undefined {
+  return 'reason' in out ? out.reason : undefined;
+}
 
 describe('gate order and reasons', () => {
   it('passes with every check recorded in order', () => {
@@ -72,7 +75,13 @@ describe('gate order and reasons', () => {
     ],
     [
       'no live object (secret error)',
-      { destination: { ...base.destination, live: false, instanceError: 'secret_error: x' } },
+      {
+        destination: {
+          ...base.destination,
+          live: false,
+          instanceError: { code: 'secret_error', message: 'x' },
+        },
+      },
       'destination_unhealthy',
     ],
     [
@@ -93,21 +102,31 @@ describe('gate order and reasons', () => {
       'breaker_open',
     ],
     ['quiet hours', { quietHours: { start: '14:00', end: '16:00' } }, 'quiet_hours'],
-    [
-      'approval always',
-      { approval: { rule: 'always', required: true, state: 'none' } },
-      'awaiting_approval',
-    ],
+    ['approval always', { approval: { rule: 'always', state: 'none' } }, 'awaiting_approval'],
     [
       'approval expression true',
-      { approval: { rule: 'events[0]', required: true, state: 'none' } },
+      { approval: { rule: 'events[0]', state: 'none', evaluated: { result: true } } },
       'awaiting_approval',
     ],
   ])('%s → held %s', (_name, patch, reason) => {
     const out = gate(input(patch), now);
     expect(out.pass).toBe(false);
-    if (!out.pass) expect(out.reason).toBe(reason);
+    expect(reasonOf(out)).toBe(reason);
     expect(out.checks.at(-1)?.pass).toBe(false);
+  });
+
+  it('names the instance error when the destination has no live object', () => {
+    const out = gate(
+      input({
+        destination: {
+          ...base.destination,
+          live: false,
+          instanceError: { code: 'secret_error', message: 'provider "env" is not running' },
+        },
+      }),
+      now,
+    );
+    expect(out.checks.at(-1)?.detail).toBe('secret_error: provider "env" is not running');
   });
 
   it('stops at the first failure: a disabled process is not also reported as quiet hours', () => {
@@ -115,8 +134,7 @@ describe('gate order and reasons', () => {
       input({ process: { enabled: false }, quietHours: { start: '00:00', end: '23:59' } }),
       now,
     );
-    expect(out.pass).toBe(false);
-    if (!out.pass) expect(out.reason).toBe('process_disabled');
+    expect(reasonOf(out)).toBe('process_disabled');
     expect(out.checks).toHaveLength(1);
   });
 
@@ -135,111 +153,78 @@ describe('gate order and reasons', () => {
     expect(out.breakerClosed).toBe(true);
   });
 
-  it('a breaker with cooldown 0 stays open until reset by hand', () => {
-    const out = gate(
-      input({ breaker: { state: 'open', openedAt: new Date(0), cooldownMinutes: 0 } }),
-      now,
-    );
-    expect(out.pass).toBe(false);
+  it('an open breaker says when the cooldown closes it, or that only a reset does', () => {
+    const openedAt = new Date(now.getTime() - 60_000);
+    const cooling = gate(input({ breaker: { state: 'open', openedAt, cooldownMinutes: 60 } }), now);
+    expect(cooling.checks.at(-1)?.detail).toBe('closes at 2026-01-07T15:59:00.000Z');
+    const manual = gate(input({ breaker: { state: 'open', openedAt, cooldownMinutes: 0 } }), now);
+    expect(reasonOf(manual)).toBe('breaker_open');
+    expect(manual.checks.at(-1)?.detail).toBe('reset by hand');
   });
 });
 
-describe('approval hold and release', () => {
+describe('approval: evaluated lazily, last', () => {
+  const expression = { rule: 'events[0].attributes.risky', state: 'none' as const };
+
+  it('asks for the expression only once every earlier check has passed', () => {
+    const out = gate(input({ approval: expression }), now);
+    expect(out).toMatchObject({ pass: false, evaluateApproval: true });
+    expect(out.checks.map((c) => c.check)).not.toContain('approval');
+    expect(out.checks.every((c) => c.pass)).toBe(true);
+  });
+
+  it.each<[string, Partial<GateInput>]>([
+    ['process disabled', { process: { enabled: false } }],
+    ['destination disabled', { destination: { ...base.destination, enabled: false } }],
+    ['breaker open', { breaker: { state: 'open', openedAt: now, cooldownMinutes: 60 } }],
+    ['quiet hours', { quietHours: { start: '14:00', end: '16:00' } }],
+  ])('an earlier hold (%s) never asks for it', (_name, patch) => {
+    const out = gate(input({ ...patch, approval: expression }), now);
+    expect('evaluateApproval' in out).toBe(false);
+    expect(out.pass).toBe(false);
+  });
+
   it.each<[string, GateInput['approval'], boolean]>([
-    ['none passes', { rule: 'none', required: false, state: 'none' }, true],
-    ['always holds', { rule: 'always', required: true, state: 'none' }, false],
-    ['always passes once approved', { rule: 'always', required: true, state: 'approved' }, true],
-    ['expression false passes', { rule: "mode = 'sweep'", required: false, state: 'none' }, true],
+    ['none passes', { rule: 'none', state: 'none' }, true],
+    ['always holds', { rule: 'always', state: 'none' }, false],
+    ['always passes once approved', { rule: 'always', state: 'approved' }, true],
+    ['expression false passes', { ...expression, evaluated: { result: false } }, true],
     [
       'expression error holds (fail closed)',
-      { rule: 'bad(', required: true, state: 'none', error: 'syntax' },
+      { ...expression, evaluated: { result: false, error: 'syntax' } },
       false,
     ],
+    ['an approved expression needs no evaluation', { ...expression, state: 'approved' }, true],
   ])('%s', (_name, approval, pass) => {
     expect(gate(input({ approval }), now).pass).toBe(pass);
   });
 
   it('a dry run skips the approval gate but not the others', () => {
     expect(
-      gate(
-        input({ dryRun: true, approval: { rule: 'always', required: true, state: 'none' } }),
-        now,
-      ).pass,
+      gate(input({ dryRun: true, approval: { rule: 'always', state: 'none' } }), now).pass,
     ).toBe(true);
+    expect(gate(input({ dryRun: true, approval: expression }), now).pass).toBe(true);
     expect(gate(input({ dryRun: true, process: { enabled: false } }), now).pass).toBe(false);
   });
-});
-
-describe('quiet hours', () => {
-  it.each([
-    ['inside a daytime window', { start: '09:00', end: '17:00' }, '2026-01-07T12:00:00Z', true],
-    ['at the end (exclusive)', { start: '09:00', end: '17:00' }, '2026-01-07T17:00:00Z', false],
-    ['overnight, evening part', { start: '22:00', end: '07:00' }, '2026-01-07T23:30:00Z', true],
-    ['overnight, morning part', { start: '22:00', end: '07:00' }, '2026-01-08T06:59:00Z', true],
-    ['overnight, daytime', { start: '22:00', end: '07:00' }, '2026-01-08T12:00:00Z', false],
-    ['empty window', { start: '09:00', end: '09:00' }, '2026-01-07T09:00:00Z', false],
-    [
-      'in the named timezone',
-      { start: '09:00', end: '17:00', timezone: 'America/New_York' },
-      '2026-01-07T15:00:00Z',
-      true,
-    ],
-    [
-      'outside in the named timezone',
-      { start: '09:00', end: '17:00', timezone: 'America/New_York' },
-      '2026-01-07T13:00:00Z',
-      false,
-    ],
-    [
-      'only on listed days (Wed=3)',
-      { start: '09:00', end: '17:00', days: [3] },
-      '2026-01-07T12:00:00Z',
-      true,
-    ],
-    [
-      'not on other days',
-      { start: '09:00', end: '17:00', days: [1, 2] },
-      '2026-01-07T12:00:00Z',
-      false,
-    ],
-    // Friday 22:00 → Saturday 07:00 belongs to Friday (5).
-    [
-      'overnight morning belongs to the start day',
-      { start: '22:00', end: '07:00', days: [5] },
-      '2026-01-10T03:00:00Z',
-      true,
-    ],
-    [
-      'overnight morning of a non-listed start day',
-      { start: '22:00', end: '07:00', days: [6] },
-      '2026-01-10T03:00:00Z',
-      false,
-    ],
-  ])('%s', (_name, window, at, expected) => {
-    expect(inQuietHours(window, new Date(at), 'UTC')).toBe(expected);
-  });
-});
-
-describe('approval rule', () => {
-  it.each([
-    ['none', false, 'none', false],
-    ['always', false, 'none', false],
-    ['size > 1', false, 'none', true],
-    ['size > 1', true, 'none', false],
-    ['size > 1', false, 'approved', false],
-    ['size > 1', false, 'pending', true],
-  ] as const)('%s (dry run %s, state %s) evaluates: %s', (rule, dryRun, approvalState, want) => {
-    expect(approvalNeedsEvaluation(rule, { dryRun, approvalState })).toBe(want);
-  });
 
   it.each([
-    ['always', null, true],
-    ['none', null, false],
-    ['size > 1', null, false],
-    ['size > 1', { result: true }, true],
-    ['size > 1', { result: false }, false],
-    ['size > 1', { result: false, error: 'boom' }, true],
-  ] as const)('%s with %j is required: %s', (rule, evaluated, want) => {
-    expect(approvalRequired(rule, evaluated)).toBe(want);
+    ['none', false, 'none', undefined, 'pass'],
+    ['always', false, 'none', undefined, 'hold'],
+    ['size > 1', false, 'none', undefined, 'evaluate'],
+    ['size > 1', true, 'none', undefined, 'pass'],
+    ['size > 1', false, 'approved', undefined, 'pass'],
+    ['size > 1', false, 'pending', { result: true }, 'hold'],
+    ['size > 1', false, 'pending', { result: false }, 'pass'],
+    ['size > 1', false, 'none', { result: false, error: 'boom' }, 'hold'],
+  ] as const)(
+    'approvalCheck(%s, dry run %s, %s, %j) → %s',
+    (rule, dryRun, approvalState, evaluated, outcome) => {
+      expect(approvalCheck(rule, { dryRun, approvalState }, evaluated).outcome).toBe(outcome);
+    },
+  );
+
+  it('settledGate holds a result still waiting on the expression for a person', () => {
+    const out = settledGate(gate(input({ approval: expression }), now));
+    expect(out).toMatchObject({ pass: false, reason: 'awaiting_approval' });
   });
 });

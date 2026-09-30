@@ -58,7 +58,10 @@ describe('secret provider lifecycle', () => {
   });
 
   it('a source waiting on a missing provider starts once the provider is created', async () => {
-    expect(h.ctx.runtime.instanceError(source.id)).toMatch(/^secret_error: .*"late"/);
+    expect(h.ctx.runtime.instanceError(source.id)).toMatchObject({
+      code: 'secret_error',
+      message: expect.stringMatching(/"late"/) as unknown,
+    });
     expect(h.ctx.runtime.source(source.id)).toBeUndefined();
 
     provider = await call<InstanceSummary>(
@@ -116,9 +119,10 @@ describe('secret provider lifecycle', () => {
       200,
     );
     expect(renamed.dependents).toEqual([]);
-    expect(h.ctx.runtime.instanceError(source.id)).toMatch(
-      /^secret_error: secret provider "late" is not configured/,
-    );
+    expect(h.ctx.runtime.instanceError(source.id)).toMatchObject({
+      code: 'secret_error',
+      message: expect.stringMatching(/^secret provider "late" is not configured/) as unknown,
+    });
     const back = await call<InstanceSummary>(
       'PUT',
       `/api/v1/secret-providers/${provider.id}`,

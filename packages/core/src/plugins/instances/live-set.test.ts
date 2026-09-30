@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { LiveNotifier, LiveSecretProvider } from '../runtime.js';
 
+import { DISABLED } from './builder.js';
 import { LiveSet } from './live-set.js';
 
 function notifier(id: string): LiveNotifier {
@@ -32,7 +33,9 @@ describe('LiveSet', () => {
     const older = set.ticket();
     const newer = set.ticket();
     expect(set.commit('n1', newer, { kind: 'notifier', live: notifier('n1') }, from(2))).toBe(true);
-    expect(set.commit('n1', older, { error: 'secret_error: stale' }, from(1))).toBe(false);
+    expect(
+      set.commit('n1', older, { error: { code: 'secret_error', message: 'stale' } }, from(1)),
+    ).toBe(false);
     expect(set.get('notifier', 'n1')?.id).toBe('n1');
     expect(set.error('n1')).toBeUndefined();
     expect(set.builtVersions('notifier').get('n1')).toBe(2);
@@ -47,9 +50,9 @@ describe('LiveSet', () => {
     expect(set.commit('n1', older, { kind: 'notifier', live: notifier('n1') }, from(1))).toBe(
       false,
     );
-    expect(set.commit('n1', reload, { error: 'disabled' }, from(2))).toBe(true);
+    expect(set.commit('n1', reload, { error: DISABLED }, from(2))).toBe(true);
     expect(set.get('notifier', 'n1')).toBeUndefined();
-    expect(set.error('n1')).toBe('disabled');
+    expect(set.error('n1')).toEqual(DISABLED);
   });
 
   it('keeps a live object and an error together (a disabled instance)', () => {
@@ -57,11 +60,11 @@ describe('LiveSet', () => {
     set.commit(
       'n1',
       set.ticket(),
-      { kind: 'notifier', live: notifier('n1'), error: 'disabled' },
+      { kind: 'notifier', live: notifier('n1'), error: DISABLED },
       from(1),
     );
     expect(set.get('notifier', 'n1')).toBeDefined();
-    expect(set.error('n1')).toBe('disabled');
+    expect(set.error('n1')).toEqual(DISABLED);
   });
 
   it('drops the instance when the row is gone', () => {

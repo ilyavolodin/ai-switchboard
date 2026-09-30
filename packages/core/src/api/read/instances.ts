@@ -3,6 +3,7 @@ import { and, count, eq, gte, inArray } from 'drizzle-orm';
 import { INSTANCE_TABLES } from '../../db/instance-tables.js';
 import { destinations, events, runs, sources, type notifiers } from '../../db/schema.js';
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
+import { instanceErrorText } from '../../domain/instance-error.js';
 import { instanceStatus } from '../../domain/labels.js';
 import { eventTypesFrom, processReferences } from '../../domain/process.js';
 import { collectSecretRefs } from '../../secrets/refs.js';
@@ -33,13 +34,13 @@ export function secretRefsOf(
   resolvedAt: Date | null,
 ): SecretRefDTO[] {
   const error = ctx.runtime.instanceError(instanceId);
-  const failed = error?.startsWith('secret_error') ?? false;
+  const failed = error?.code === 'secret_error' ? error : undefined;
   return collectSecretRefs(settings).map(({ path, ref }) => ({
     field: path,
     ref,
     lastResolvedAt: resolvedAt?.toISOString() ?? null,
-    ok: !failed,
-    ...(failed && error ? { error: error.replace(/^secret_error: /, '') } : {}),
+    ok: failed === undefined,
+    ...(failed ? { error: failed.message } : {}),
   }));
 }
 
@@ -120,7 +121,7 @@ export async function sourceDetail(ctx: ApiContext, id: string): Promise<SourceD
     actions: typeEntry?.type.actions ?? [],
     settingsSchema: typeEntry?.type.settingsSchema ?? { type: 'object' },
     lastVerifyFailureAt: row.lastVerifyFailureAt?.toISOString() ?? null,
-    instanceError: ctx.runtime.instanceError(row.id) ?? null,
+    instanceError: instanceErrorText(ctx.runtime.instanceError(row.id)),
     processes: procs
       .filter(triggeredBy(row.id))
       .map((p) => ({ id: p.id, name: p.name, eventTypes: eventTypesFrom(p.document, row.id) })),
@@ -200,7 +201,7 @@ export async function destinationDetail(ctx: ApiContext, id: string): Promise<De
     actions: type?.actions ?? [],
     callbackUrl: `${ctx.config.publicUrl}/callbacks/${row.id}`,
     secretRefs: secretRefsOf(ctx, row.id, row.settings, row.secretsResolvedAt),
-    instanceError: ctx.runtime.instanceError(row.id) ?? null,
+    instanceError: instanceErrorText(ctx.runtime.instanceError(row.id)),
     processes: procs.filter(boundTo(row.id)).map((p) => ({ id: p.id, name: p.name })),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -228,7 +229,7 @@ function simpleSummary(
     health: row.health,
     settings: row.settings,
     settingsSchema: type?.settingsSchema ?? { type: 'object' },
-    instanceError: error ?? null,
+    instanceError: instanceErrorText(error),
   };
 }
 

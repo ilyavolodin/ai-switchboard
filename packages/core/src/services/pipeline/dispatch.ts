@@ -27,12 +27,12 @@ import {
 } from '../../expr/index.js';
 import { budget, type BudgetResult } from '../../pipeline/budget.js';
 import {
-  approvalNeedsEvaluation,
-  approvalRequired,
   gate,
+  settledGate,
+  type ApprovalEvaluation,
   type GateCheck,
   type GateInput,
-  type GateResult,
+  type SettledGateResult,
 } from '../../pipeline/gate.js';
 import { runMode, type MappingMode } from '../../pipeline/run-mode.js';
 import { trackingDeadline } from '../../pipeline/tracking.js';
@@ -261,27 +261,33 @@ async function prepare(
   };
 }
 
-function gateStep(ctx: Ctx, d: Dispatch): Promise<GateResult> {
+/**
+ * The approval expression runs only once every earlier check has passed, so a held batch spends
+ * no `$resolve` lookups on it.
+ */
+function gateStep(ctx: Ctx, d: Dispatch): Promise<SettledGateResult> {
   const { batch, proc } = d;
   return ctx.telemetry.span(
     'switchboard.gate',
     { batch_id: batch.id, process_id: proc.id },
     async (gateSpan) => {
       const rule = proc.document.gates.approval;
-      const evaluated = approvalNeedsEvaluation(rule, batch)
-        ? await evaluateFilter(
-            ctx.engine,
-            rule,
-            approvalContext(d.mapping, { id: batch.id, kind: batch.kind, size: d.events.length }),
-            d.fns,
-          )
-        : null;
-      const result = gate(gateInput(ctx, d, rule, evaluated), d.now);
+      let result = gate(gateInput(ctx, d, rule, undefined), d.now);
+      if ('evaluateApproval' in result) {
+        const evaluated = await evaluateFilter(
+          ctx.engine,
+          rule,
+          approvalContext(d.mapping, { id: batch.id, kind: batch.kind, size: d.events.length }),
+          d.fns,
+        );
+        result = gate(gateInput(ctx, d, rule, evaluated), d.now);
+      }
+      const settled = settledGate(result);
       gateSpan.setAttributes({
-        'switchboard.gate.pass': result.pass,
-        'switchboard.gate.reason': result.pass ? undefined : result.reason,
+        'switchboard.gate.pass': settled.pass,
+        'switchboard.gate.reason': settled.pass ? undefined : settled.reason,
       });
-      return result;
+      return settled;
     },
   );
 }
@@ -290,7 +296,7 @@ function gateInput(
   ctx: Ctx,
   d: Dispatch,
   rule: string,
-  evaluated: { result: boolean; error?: string } | null,
+  evaluated: ApprovalEvaluation | undefined,
 ): GateInput {
   const { batch, proc, destinationRow: row } = d;
   const doc = proc.document;
@@ -313,12 +319,7 @@ function gateInput(
     },
     quietHours: doc.gates.quietHours ?? d.settings.defaultQuietHours,
     defaultTimezone: d.settings.timezone,
-    approval: {
-      rule,
-      required: approvalRequired(rule, evaluated),
-      state: batch.approvalState,
-      ...(evaluated?.error !== undefined ? { error: evaluated.error } : {}),
-    },
+    approval: { rule, state: batch.approvalState, evaluated },
   };
 }
 
