@@ -244,7 +244,7 @@ describe('ProcessEditor', () => {
       document: {
         name: 'Nightly digest',
         enabled: true,
-        destination: { instanceId: 'ex-routines' },
+        destination: { instanceId: 'dst-routines' },
       },
     });
   });

@@ -91,8 +91,8 @@ describe('list and key helpers', () => {
 
 describe('budget and destination transforms', () => {
   const doc = {
-    ...newProcessDocument('ex-routines'),
-    destination: { instanceId: 'ex-routines', target: { routineId: 'r1' } },
+    ...newProcessDocument('dst-routines'),
+    destination: { instanceId: 'dst-routines', target: { routineId: 'r1' } },
     budgets: {
       runsPerDay: 4,
       usagePerDay: { input_tokens: 400_000 },
@@ -117,8 +117,8 @@ describe('budget and destination transforms', () => {
   });
 
   it('resets the target, usage caps and ceilings on another destination', () => {
-    const next = withDestination(doc, 'ex-http');
-    expect(next.destination).toEqual({ instanceId: 'ex-http', target: {} });
+    const next = withDestination(doc, 'dst-http');
+    expect(next.destination).toEqual({ instanceId: 'dst-http', target: {} });
     expect(next.budgets).toEqual({ runsPerDay: 4, meterCeilings: {} });
   });
 

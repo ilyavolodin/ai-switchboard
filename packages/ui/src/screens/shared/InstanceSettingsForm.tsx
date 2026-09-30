@@ -12,6 +12,7 @@ import { SchemaForm } from '../../components/SchemaForm.js';
 import { TextField } from '../../components/TextField.js';
 import { useLeaveGuard } from '../../hooks/useLeaveGuard.js';
 import { useSchemaErrors } from '../../hooks/useSchemaErrors.js';
+import { useSettingsDraft } from '../../hooks/useSettingsDraft.js';
 import type { DeliverySample } from '../../lib/suggest.js';
 import styles from './forms.module.css';
 import {
@@ -63,45 +64,39 @@ export function InstanceSettingsForm<C extends object>({
   const navigate = useNavigate();
   const canEdit = useCan('operator');
   const secretFields = useSecretFieldProps(entity.settingsSchema);
-  const [name, setName] = useState(entity.name);
-  const [settings, setSettings] = useState(entity.settings);
-  const [caps, setCaps] = useState<C>(entity.caps);
   const [attempted, setAttempted] = useState(false);
-  // What the draft is compared against: the instance as last saved or loaded. The server
-  // normalises a save (schema defaults filled in, jsonb key order, derived caps), so after a
-  // save both the draft and this baseline are reset from its response, not kept from the form.
-  const [saved, setSaved] = useState<InstanceSettingsDraft<C>>(entity);
-  const [seen, setSeen] = useState(entity);
-
-  const changes = instanceChangeCount({ name, settings, caps }, saved);
-  const adopt = (next: InstanceSettingsDraft<C>) => {
-    setSaved({ name: next.name, settings: next.settings, caps: next.caps });
-    setName(next.name);
-    setSettings(next.settings);
-    setCaps(next.caps);
-    setAttempted(false);
+  const form = useSettingsDraft(entity, {
+    project: (e: InstanceSettingsEntity<C>): InstanceSettingsDraft<C> => ({
+      name: e.name,
+      settings: e.settings,
+      caps: e.caps,
+    }),
+    isDirty: (draft, base) => instanceChangeCount(draft, base) > 0,
+    keepBaseWhileDirty: true,
+    onAdopt: () => {
+      setAttempted(false);
+    },
+  });
+  const { name, settings, caps } = form.draft;
+  const saved = form.base;
+  const setCaps = (next: C) => {
+    form.set({ caps: next });
   };
-  // A refetch (another tab's save, a reload) replaces a clean form; unsaved edits are kept.
-  if (seen !== entity) {
-    setSeen(entity);
-    if (changes === 0) adopt(entity);
-  }
-  const leaveGuard = useLeaveGuard(changes > 0);
+
+  const changes = instanceChangeCount(form.draft, saved);
+  const leaveGuard = useLeaveGuard(form.dirty);
   const errors = useSchemaErrors(entity.settingsSchema, settings);
   const nameMissing = name.trim() === '';
   const invalid = Object.keys(errors).length > 0 || nameMissing;
   const disabled = !canEdit;
 
-  const discard = () => {
-    adopt(saved);
-  };
   const submit = async () => {
     if (invalid) {
       setAttempted(true);
       return;
     }
     const result = await onSave({ name: name.trim(), settings, caps: editableCaps(caps) });
-    if (result) adopt(result);
+    if (result) form.reset(result);
   };
   const remove = async () => {
     const result = await deletion.run();
@@ -128,7 +123,7 @@ export function InstanceSettingsForm<C extends object>({
               value={name}
               disabled={disabled}
               onChange={(e) => {
-                setName(e.target.value);
+                form.set({ name: e.target.value });
               }}
             />
           )}
@@ -136,7 +131,9 @@ export function InstanceSettingsForm<C extends object>({
         <SchemaForm
           schema={entity.settingsSchema}
           value={settings}
-          onChange={setSettings}
+          onChange={(next) => {
+            form.set({ settings: next });
+          }}
           baseline={saved.settings}
           secretStatus={entity.secretRefs}
           {...secretFields}
@@ -157,7 +154,7 @@ export function InstanceSettingsForm<C extends object>({
       <div className={styles.saveBar} role="region" aria-label="Save settings">
         <span>{unsavedLabel(changes)}</span>
         <span className={styles.spacer} />
-        <Button variant="ghost" disabled={changes === 0} onClick={discard}>
+        <Button variant="ghost" disabled={changes === 0} onClick={form.discard}>
           Discard
         </Button>
         <Button

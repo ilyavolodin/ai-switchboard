@@ -9,7 +9,7 @@ import { StepsFields } from './StepsFields.js';
 describe('StepsFields', () => {
   it('applies each edit to the latest document, so two edits before a re-render both land', async () => {
     const start: ProcessDocument = {
-      ...newProcessDocument('ex-routines'),
+      ...newProcessDocument('dst-routines'),
       before: [
         { provider: 'src-linear', action: '', args: '{}' },
         { provider: 'src-linear', action: '', args: '{}' },

@@ -86,7 +86,7 @@ export const IDS = {
     braintrust: 'src-braintrust',
     slack: 'src-slack',
   },
-  destinations: { routines: 'ex-routines', actions: 'ex-actions', http: 'ex-http' },
+  destinations: { routines: 'dst-routines', actions: 'dst-actions', http: 'dst-http' },
   processes: {
     triage: 'p-triage',
     sizer: 'p-sizer',

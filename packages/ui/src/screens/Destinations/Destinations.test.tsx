@@ -15,7 +15,7 @@ describe('Destinations', () => {
     });
     expect(
       within(routines).getByRole('link', { name: 'Claude Routines — automation seat' }),
-    ).toHaveAttribute('href', '/destinations/ex-routines');
+    ).toHaveAttribute('href', '/destinations/dst-routines');
     expect(within(routines).getByText('healthy')).toBeInTheDocument();
     const meters = within(routines).getByRole('list', {
       name: 'Claude Routines — automation seat meters',
