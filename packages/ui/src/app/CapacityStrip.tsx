@@ -6,6 +6,7 @@ import { MeterGauge } from '../components/MeterGauge.js';
 import { useNow } from '../hooks/useNow.js';
 import { cx } from '../lib/cx.js';
 import { destinationHref } from '../lib/hrefs.js';
+import { shortInstanceName } from '../lib/instanceNames.js';
 import {
   lowestEventCeiling,
   meterTimes,
@@ -15,8 +16,9 @@ import {
 } from '../lib/meter.js';
 import styles from './CapacityStrip.module.css';
 
+/** "Claude Routines — eng" → "Routines". */
 function destinationShortName(name: string): string {
-  const base = name.split(' — ')[0] ?? name;
+  const base = shortInstanceName(name);
   const words = base.split(/\s+/);
   return words[words.length - 1] ?? base;
 }

@@ -1,8 +1,6 @@
 import type { RunStatusValue, StatusTone, StepStatus } from '@ai-switchboard/core/contract';
 import { RUN_STATUS_LABELS, stepTone } from '@ai-switchboard/core/domain';
 
-export { toneRank } from '@ai-switchboard/core/domain';
-
 export function toneVars(tone: StatusTone): { fill: string; bg: string; fg: string } {
   const key = tone === 'error' ? 'err' : tone;
   return { fill: `var(--st-${key})`, bg: `var(--st-${key}-bg)`, fg: `var(--st-${key}-fg)` };

@@ -1,8 +1,8 @@
 import type { ProcessSummary } from '@ai-switchboard/core/contract';
+import { toneRank } from '@ai-switchboard/core/domain';
 
 import { toMs } from '../../lib/format.js';
 import { shortInstanceName } from '../../lib/instanceNames.js';
-import { toneRank } from '../../lib/tone.js';
 
 export const PROCESS_SORTS = ['activity', 'status', 'name'] as const;
 export type ProcessSort = (typeof PROCESS_SORTS)[number];

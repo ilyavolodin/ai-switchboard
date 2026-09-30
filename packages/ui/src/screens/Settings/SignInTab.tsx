@@ -11,7 +11,7 @@ import { StatusChip } from '../../components/StatusChip.js';
 import styles from './Settings.module.css';
 import { SettingsFormCard } from './SettingsFormCard.js';
 import { checkSignIn, parseDomains, signInForm } from './settingsForm.js';
-import { TextRow } from './TextRow.js';
+import { TextRow } from '../../components/TextRow.js';
 import { useSettingsSection } from './useSettingsSection.js';
 
 export function SignInTab() {

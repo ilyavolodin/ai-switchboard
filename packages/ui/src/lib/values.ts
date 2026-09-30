@@ -1,3 +1,5 @@
+import { isPlainObject } from './json.js';
+
 export function parseNumber(text: string): number | undefined {
   if (text.trim() === '') return undefined;
   const n = Number(text);
@@ -28,7 +30,5 @@ function normalize(v: unknown): unknown {
 }
 
 export function asRecord(v: unknown): Record<string, unknown> {
-  return v != null && typeof v === 'object' && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : {};
+  return isPlainObject(v) ? v : {};
 }

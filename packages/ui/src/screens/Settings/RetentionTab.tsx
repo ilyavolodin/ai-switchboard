@@ -7,7 +7,7 @@ import { Skeleton } from '../../components/Skeleton.js';
 import styles from './Settings.module.css';
 import { SettingsFormCard } from './SettingsFormCard.js';
 import { checkRetention, retentionForm } from './settingsForm.js';
-import { TextRow } from './TextRow.js';
+import { TextRow } from '../../components/TextRow.js';
 import { useSettingsSection } from './useSettingsSection.js';
 
 const ROWS: { key: keyof RetentionSettings; label: string; help: string }[] = [
