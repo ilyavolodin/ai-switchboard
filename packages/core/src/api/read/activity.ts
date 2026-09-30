@@ -157,12 +157,6 @@ export async function listActivity(deps: ReadDeps, q: ActivityQuery): Promise<Pa
   );
 }
 
-/** Whether an event row exists (a replay of a pruned or unknown event is a 404). */
-export async function eventExists(deps: ReadDeps, id: string): Promise<boolean> {
-  const rows = await deps.db.select({ id: events.id }).from(events).where(eq(events.id, id));
-  return rows.length > 0;
-}
-
 export async function eventDetail(deps: ReadDeps, id: string): Promise<EventDetail> {
   const [row] = await deps.db.select().from(events).where(eq(events.id, id));
   if (!row) throw notFound('Event');

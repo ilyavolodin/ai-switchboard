@@ -8,9 +8,9 @@ import { MINUTE_MS, SECOND_MS } from '../../util/time.js';
 import { getSettings } from '../settings.js';
 
 import type { Ctx } from './context.js';
-import { JOBS } from './jobs.js';
+import { JOBS, requeueJob } from './jobs.js';
 import { sendSystemAlert } from './notify.js';
-import { recoverRuns } from './runs.js';
+import { recoverRuns } from './runs/recover.js';
 
 /** Every step is safe to run on several replicas at once: claims are conditional updates. */
 
@@ -21,24 +21,7 @@ const STUCK_EVENT_SECONDS = 60;
 const OVERDUE_FIRE_SECONDS = 30;
 /** A closed batch not dispatched by then lost its dispatch job. */
 const UNDISPATCHED_SECONDS = 60;
-/** One re-enqueue per row in this window, however many replicas run maintenance. */
-const REQUEUE_SLOT_SECONDS = 300;
 const REQUEUE_LIMIT = 1000;
-
-async function requeue(
-  ctx: Ctx,
-  job: string,
-  key: 'eventId' | 'batchId',
-  ids: readonly { id: string }[],
-): Promise<void> {
-  for (const { id } of ids) {
-    await ctx.queue.send(
-      job,
-      { [key]: id },
-      { singletonKey: `requeue:${id}`, singletonSeconds: REQUEUE_SLOT_SECONDS },
-    );
-  }
-}
 
 export async function maintenance(ctx: Ctx): Promise<void> {
   const now = ctx.clock.now();
@@ -49,21 +32,23 @@ export async function maintenance(ctx: Ctx): Promise<void> {
     .from(events)
     .where(and(eq(events.stage, 'received'), lt(events.receivedAt, ago(STUCK_EVENT_SECONDS))))
     .limit(REQUEUE_LIMIT);
-  await requeue(ctx, JOBS.match, 'eventId', stuckEvents);
+  for (const { id } of stuckEvents) await requeueJob(ctx.queue, JOBS.match, { eventId: id }, id);
 
   const dueBatches = await ctx.db
     .select({ id: batches.id })
     .from(batches)
     .where(and(eq(batches.outcome, 'open'), lt(batches.fireAfter, ago(OVERDUE_FIRE_SECONDS))))
     .limit(REQUEUE_LIMIT);
-  await requeue(ctx, JOBS.fire, 'batchId', dueBatches);
+  for (const { id } of dueBatches) await requeueJob(ctx.queue, JOBS.fire, { batchId: id }, id);
 
   const undispatched = await ctx.db
     .select({ id: batches.id })
     .from(batches)
     .where(and(eq(batches.outcome, 'closed'), lt(batches.closedAt, ago(UNDISPATCHED_SECONDS))))
     .limit(REQUEUE_LIMIT);
-  await requeue(ctx, JOBS.dispatch, 'batchId', undispatched);
+  for (const { id } of undispatched) {
+    await requeueJob(ctx.queue, JOBS.dispatch, { batchId: id }, id);
+  }
 
   await recoverRuns(ctx);
   await claimSourcePolls(ctx, now);

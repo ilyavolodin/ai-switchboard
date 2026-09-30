@@ -6,7 +6,7 @@ import {
   packageSpec,
   searchPackages,
   uninstallPackage,
-  type PluginAdminDeps,
+  type InstalledOutcome,
 } from '../../services/plugin-admin.js';
 import { changeMeta } from '../change.js';
 import type { ApiContext } from '../context.js';
@@ -23,7 +23,7 @@ import {
   type PluginTypesQuery,
   type Reasoned,
 } from '../../contract/index.js';
-import { HttpError } from '../errors.js';
+import { DomainError } from '../errors.js';
 import {
   catalogue,
   pluginSummaries,
@@ -31,16 +31,26 @@ import {
   pluginTypeList,
   searchResults,
 } from '../read/plugins.js';
-import { allow } from './options.js';
+import { allow, pluginAdminDeps } from './options.js';
+
+/** The installed plugin's summary; the install warnings only when it did not load. */
+async function installedSummary(
+  ctx: ApiContext,
+  outcome: InstalledOutcome,
+): Promise<PluginSummary> {
+  const summary = await pluginSummary(ctx, outcome.name);
+  if (!summary) throw new DomainError('internal', 'the installed plugin has no row');
+  return {
+    ...summary,
+    pendingRestart: outcome.pendingRestart,
+    ...(outcome.warnings.length > 0 && !outcome.pendingRestart && !outcome.loaded
+      ? { statusMessage: outcome.warnings.join('; ') }
+      : {}),
+  };
+}
 
 export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): void {
-  const deps: PluginAdminDeps = {
-    db: ctx.db,
-    config: ctx.config,
-    host: ctx.host,
-    runNpm: ctx.runNpm,
-    registryFetch: ctx.registryFetch,
-  };
+  const deps = pluginAdminDeps(ctx);
 
   app.get<{ Querystring: PluginTypesQuery }>(
     '/api/v1/plugin-types',
@@ -77,15 +87,7 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): voi
         packageSpec(req.body.package, req.body.range),
         meta,
       );
-      const summary = await pluginSummary(ctx, outcome.name);
-      if (!summary) throw new HttpError(500, 'internal', 'the installed plugin has no row');
-      return reply.code(201).send({
-        ...summary,
-        pendingRestart: outcome.pendingRestart,
-        ...(outcome.warnings.length > 0 && !outcome.pendingRestart && !outcome.loaded
-          ? { statusMessage: outcome.warnings.join('; ') }
-          : {}),
-      } satisfies PluginSummary);
+      return reply.code(201).send(await installedSummary(ctx, outcome));
     },
   );
 

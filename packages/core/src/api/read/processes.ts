@@ -205,14 +205,6 @@ export async function processDetail(deps: ReadDeps, id: string): Promise<Process
   };
 }
 
-export async function processExists(deps: ReadDeps, id: string): Promise<boolean> {
-  const rows = await deps.db
-    .select({ id: processes.id })
-    .from(processes)
-    .where(eq(processes.id, id));
-  return rows.length > 0;
-}
-
 /** A process's saved versions, newest first. */
 export async function processVersionList(
   deps: ReadDeps,

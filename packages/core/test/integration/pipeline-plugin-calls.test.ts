@@ -6,7 +6,7 @@ import { processes, runs, sources } from '../../src/db/schema.js';
 import { createExpressionEngine } from '../../src/expr/index.js';
 import type { Ctx } from '../../src/services/pipeline/context.js';
 import { pollSource } from '../../src/services/pipeline/ingest.js';
-import { pollRun } from '../../src/services/pipeline/runs.js';
+import { pollRun } from '../../src/services/pipeline/runs/tracking.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import { EXEC_PLUGIN, HOOK_PLUGIN, callbackRequest } from '../helpers/fake-runtime.js';
 import {
@@ -141,7 +141,7 @@ describe('plugin calls', () => {
       ex.id,
       callbackRequest('callback-token', { runId: ex.id, state: 'ok' }),
     );
-    expect(res.status).toBe(401);
+    expect(res).toBe('rejected');
     expect(errorsOf(EXEC_PLUGIN)).toHaveLength(1);
   });
 });

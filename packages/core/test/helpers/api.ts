@@ -183,8 +183,8 @@ export function stubPipeline(calls: RecordedCall[]): PipelinePort {
       return Promise.resolve(value);
     };
   return {
-    ingestPush: rec('ingestPush', { status: 200 }),
-    handleCallback: rec('handleCallback', { status: 200 }),
+    ingestPush: rec('ingestPush', 'accepted' as const),
+    handleCallback: rec('handleCallback', 'accepted' as const),
     runNow: rec('runNow', { batchId: 'b', runId: 'r', outcome: 'invoked' }),
     approve: rec('approve', { runId: 'r', outcome: 'invoked' }),
     reject: rec('reject', undefined),

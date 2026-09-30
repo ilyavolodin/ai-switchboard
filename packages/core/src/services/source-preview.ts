@@ -12,13 +12,15 @@ import type {
 import { eventRaw, sources } from '../db/schema.js';
 import type { Deps } from '../deps.js';
 import { checkDraft } from '../pipeline/door.js';
+import type { PluginAdminPort } from '../plugins/admin-port.js';
 import type { LiveSource } from '../plugins/runtime.js';
 import { isSecretRef, REDACTED, redactSecretValues } from '../secrets/refs.js';
 import { errorText } from '../util/errors.js';
 import { withTimeout } from '../util/timeout.js';
 import { isUuid } from '../util/uuid.js';
-import { isServiceError, notFound, ServiceError, unprocessable } from './errors.js';
+import { DomainError, isDomainError, notFound, unprocessable } from './errors.js';
 import { validateSettings } from './instance-validation.js';
+import { hookPath } from './urls.js';
 
 /**
  * The sample runs through `parse`, never `verify`: the person is trying a mapping, not a
@@ -29,17 +31,7 @@ import { validateSettings } from './instance-validation.js';
 const PARSE_TIMEOUT_MS = 5_000;
 const PARSE_TIMEOUT_MESSAGE = `parse took longer than ${PARSE_TIMEOUT_MS / 1000} s`;
 
-export interface PreviewBuilder {
-  buildPreviewSource(
-    typeId: string,
-    settings: Record<string, unknown>,
-    instanceId: string,
-    name: string,
-  ): Promise<
-    | { ok: true; live: LiveSource }
-    | { ok: false; stage: 'plugin' | 'secret' | 'create'; message: string; secretValues: string[] }
-  >;
-}
+export type PreviewBuilder = Pick<PluginAdminPort, 'buildPreviewSource'>;
 
 /** Lower-cased headers and the body's exact bytes, as the plugin would receive them. */
 function sampleRequest(
@@ -56,7 +48,7 @@ function sampleRequest(
   for (const [k, v] of Object.entries(sample.query ?? {})) if (typeof v === 'string') query[k] = v;
   return {
     method: 'POST',
-    path: `/hooks/${sourceId}`,
+    path: hookPath(sourceId),
     headers,
     query,
     body: Buffer.from(sample.body, 'utf8'),
@@ -153,7 +145,7 @@ export async function previewSource(
   try {
     settings = validateSettings(entry.type.settingsSchema, draft);
   } catch (err) {
-    if (!isServiceError(err)) throw err;
+    if (!isDomainError(err)) throw err;
     // "must match \"then\" schema" only repeats the branch's own messages.
     const details = (err.details ?? [err.message]).filter(
       (d) => !/must match "(then|else)" schema$/.test(d),
@@ -272,6 +264,6 @@ export async function lastDeliveryOf(deps: Deps, sourceId: string): Promise<Last
   if (!isUuid(sourceId) || !(await sourceForPreview(deps, sourceId)))
     throw notFound(`Source ${sourceId}`);
   const last = await lastDelivery(deps, sourceId);
-  if (!last) throw new ServiceError(404, 'not_found', 'This source has no stored delivery yet.');
+  if (!last) throw new DomainError('not_found', 'This source has no stored delivery yet.');
   return last;
 }

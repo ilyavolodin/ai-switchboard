@@ -1,9 +1,10 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 
 import type { MeterSpec } from '@ai-switchboard/sdk';
 
-import type { DbOrTx } from '../../db/client.js';
-import { destinations, meterReadings, processes, type DestinationCaps } from '../../db/schema.js';
+import type { DbOrTx, Tx } from '../../db/client.js';
+import { destinations, meterReadings, type DestinationCaps } from '../../db/schema.js';
+import { withTx } from '../../db/tx.js';
 import type { MeterSnapshot } from '../../pipeline/budget.js';
 import {
   ceilingCrossed,
@@ -15,10 +16,12 @@ import {
   type StoredReading,
 } from '../../pipeline/meters.js';
 
+import { processesBoundTo } from '../process-refs.js';
+
 import type { Ctx } from './context.js';
-import { callPlugin } from './plugin-call.js';
 import { destinationRunsSince } from './counters.js';
 import { sendSystemAlert } from './notify.js';
+import { callPlugin } from './plugin-call.js';
 
 /** The newest reading per meter of each destination, keyed by destination id then meter id. */
 export async function latestReadings(
@@ -56,18 +59,37 @@ async function latestReadingsOf(
   return (await latestReadings(db, [destinationId])).get(destinationId) ?? new Map();
 }
 
-async function estimateNow(
+/**
+ * Readings estimated from counted runs, for the estimated meters `covered` does not already
+ * answer for.
+ */
+async function estimatedReadings(
   db: DbOrTx,
   destinationId: string,
-  spec: MeterSpec,
+  specs: readonly MeterSpec[],
   caps: DestinationCaps,
   now: Date,
-): Promise<StoredReading | null> {
-  const limit = estimatedLimit(spec, caps.estimatedLimits);
-  if (limit === undefined) return null;
-  const period = spec.estimate?.period ?? 'day';
-  const count = await destinationRunsSince(db, destinationId, periodBounds(period, now).start);
-  return estimateReading(spec.id, limit, count, period, now);
+  covered: (meterId: string) => boolean,
+): Promise<StoredReading[]> {
+  const out: StoredReading[] = [];
+  for (const spec of specs) {
+    if (!isEstimatedMeter(spec, caps.estimatedLimits) || covered(spec.id)) continue;
+    const limit = estimatedLimit(spec, caps.estimatedLimits);
+    if (limit === undefined) continue;
+    const period = spec.estimate?.period ?? 'day';
+    const count = await destinationRunsSince(db, destinationId, periodBounds(period, now).start);
+    out.push(estimateReading(spec.id, limit, count, period, now));
+  }
+  return out;
+}
+
+function toSnapshot(r: StoredReading): MeterSnapshot {
+  return {
+    utilization: r.utilization,
+    observedAt: r.observedAt,
+    estimated: r.estimated,
+    resetsAt: r.resetsAt,
+  };
 }
 
 export async function meterSnapshots(
@@ -78,33 +100,29 @@ export async function meterSnapshots(
   now: Date,
 ): Promise<Record<string, MeterSnapshot>> {
   const latest = await latestReadingsOf(db, destinationId);
-  const out: Record<string, MeterSnapshot> = {};
-  for (const [id, r] of latest) {
-    out[id] = {
-      utilization: r.utilization,
-      observedAt: r.observedAt,
-      estimated: r.estimated,
-      resetsAt: r.resetsAt,
-    };
-  }
-  for (const spec of specs) {
-    if (!isEstimatedMeter(spec, caps.estimatedLimits)) continue;
-    if (latest.get(spec.id)?.estimated === false) continue; // the backend reports it after all
-    const est = await estimateNow(db, destinationId, spec, caps, now);
-    if (est) {
-      out[spec.id] = {
-        utilization: est.utilization,
-        observedAt: est.observedAt,
-        estimated: true,
-        resetsAt: est.resetsAt,
-      };
-    }
-  }
-  return out;
+  // An estimate stands in unless the backend has reported the meter after all.
+  const estimates = await estimatedReadings(
+    db,
+    destinationId,
+    specs,
+    caps,
+    now,
+    (id) => latest.get(id)?.estimated === false,
+  );
+  return Object.fromEntries(
+    [...latest.values(), ...estimates].map((r) => [r.meterId, toSnapshot(r)]),
+  );
 }
 
-/** Also stores estimated readings for meters the backend does not report. */
-export async function readMeters(ctx: Ctx, destinationId: string): Promise<void> {
+/**
+ * Also stores estimated readings for meters the backend does not report. `inTx` writes in the
+ * same transaction as the readings (the audit row of a manual read).
+ */
+export async function readMeters(
+  ctx: Ctx,
+  destinationId: string,
+  inTx?: (tx: Tx) => Promise<void>,
+): Promise<void> {
   const now = ctx.clock.now();
   const [row] = await ctx.db.select().from(destinations).where(eq(destinations.id, destinationId));
   if (!row) return;
@@ -120,36 +138,33 @@ export async function readMeters(ctx: Ctx, destinationId: string): Promise<void>
     else ctx.log.warn({ err: out.error, destination_id: destinationId }, 'readMeters failed');
   }
   const previous = await latestReadingsOf(ctx.db, destinationId);
-  const readings: StoredReading[] = [];
-  for (const item of reported) {
-    const reading = readingFromReport(item, declared, now);
-    if (reading) readings.push(reading);
-  }
-  for (const spec of specs) {
-    if (readings.some((r) => r.meterId === spec.id)) continue;
-    if (!isEstimatedMeter(spec, row.caps.estimatedLimits)) continue;
-    const est = await estimateNow(ctx.db, destinationId, spec, row.caps, now);
-    if (est) readings.push(est);
-  }
-  if (readings.length > 0) {
-    await ctx.db.insert(meterReadings).values(
-      readings.map((r) => ({
-        destinationId,
-        meterId: r.meterId,
-        observedAt: r.observedAt,
-        used: r.used,
-        limit: r.limit,
-        utilization: r.utilization,
-        resetsAt: r.resetsAt,
-        estimated: r.estimated,
-      })),
-    );
-  }
-  await ctx.db
-    .update(destinations)
-    .set({ metersReadAt: now })
-    .where(eq(destinations.id, destinationId));
+  const readings = reported.flatMap((item) => readingFromReport(item, declared, now) ?? []);
+  readings.push(
+    ...(await estimatedReadings(ctx.db, destinationId, specs, row.caps, now, (id) =>
+      readings.some((r) => r.meterId === id),
+    )),
+  );
+  await withTx(ctx.db, async (tx) => {
+    if (readings.length > 0) {
+      await tx.insert(meterReadings).values(readings.map((r) => ({ destinationId, ...r })));
+    }
+    await tx
+      .update(destinations)
+      .set({ metersReadAt: now })
+      .where(eq(destinations.id, destinationId));
+    await inTx?.(tx);
+  });
 
+  emitMeterGauges(ctx, destinationId, readings, now);
+  await alertCrossedCeilings(ctx, row.name, destinationId, previous, readings);
+}
+
+function emitMeterGauges(
+  ctx: Ctx,
+  destinationId: string,
+  readings: readonly StoredReading[],
+  now: Date,
+): void {
   for (const r of readings) {
     ctx.telemetry.gauge('switchboard.meter.utilization', r.utilization, {
       destination: destinationId,
@@ -164,28 +179,30 @@ export async function readMeters(ctx: Ctx, destinationId: string): Promise<void>
       );
     }
   }
+}
 
-  const bound = await ctx.db
-    .select({ id: processes.id, name: processes.name, document: processes.document })
-    .from(processes)
-    .where(
-      and(
-        eq(processes.enabled, true),
-        sql`${processes.document}->'destination'->>'instanceId' = ${destinationId}`,
-      ),
-    );
+/** One alert per enabled process whose events ceiling a reading just crossed. */
+async function alertCrossedCeilings(
+  ctx: Ctx,
+  destinationName: string,
+  destinationId: string,
+  previous: ReadonlyMap<string, StoredReading>,
+  readings: readonly StoredReading[],
+): Promise<void> {
+  if (readings.length === 0) return;
+  const bound = await processesBoundTo(ctx.db, destinationId, { enabledOnly: true });
   for (const r of readings) {
     for (const p of bound) {
       const ceiling = p.document.budgets.meterCeilings[r.meterId];
       if (!ceiling) continue;
-      if (ceilingCrossed(previous.get(r.meterId)?.utilization, r.utilization, ceiling.events)) {
-        await sendSystemAlert(ctx, {
-          key: `meter_ceiling:${destinationId}:${r.meterId}:${p.id}`,
-          title: `Meter ceiling crossed: ${row.name} ${r.meterId}`,
-          text: `${r.meterId} on ${row.name} is at ${r.utilization}%, above the events ceiling ${ceiling.events}% of process ${p.name}; event-driven runs are throttled.`,
-          severity: 'warning',
-        });
-      }
+      if (!ceilingCrossed(previous.get(r.meterId)?.utilization, r.utilization, ceiling.events))
+        continue;
+      await sendSystemAlert(ctx, {
+        key: `meter_ceiling:${destinationId}:${r.meterId}:${p.id}`,
+        title: `Meter ceiling crossed: ${destinationName} ${r.meterId}`,
+        text: `${r.meterId} on ${destinationName} is at ${r.utilization}%, above the events ceiling ${ceiling.events}% of process ${p.name}; event-driven runs are throttled.`,
+        severity: 'warning',
+      });
     }
   }
 }

@@ -6,8 +6,10 @@ import { emailKey } from '../auth/throttle.js';
 import type { Db } from '../db/client.js';
 import { loginAttempts, users } from '../db/schema.js';
 import type { Role } from '../domain/status.js';
-import { recordAudit } from './audit.js';
-import { storePassword } from './users.js';
+import { closeEmails, isEmail, normaliseEmail } from '../util/emails.js';
+import { auditChange, type ChangeMeta } from './audit.js';
+import { DomainError, type ErrorKind } from './errors.js';
+import { storeTemporaryPassword } from './users.js';
 
 /**
  * Account recovery for `switchboard users ...`. It talks to Postgres directly, so it works when
@@ -25,17 +27,11 @@ export interface AccountSummary {
   createdAt: string;
 }
 
-export interface RecoveryAudit {
-  actor: string;
-  reason: string;
-  at: Date;
-}
-
 export interface SetTemporaryPasswordInput {
   email: string;
   /** Omitted, a password is generated. */
   password?: string;
-  audit: RecoveryAudit;
+  meta: ChangeMeta;
 }
 
 export interface TemporaryPasswordResult {
@@ -50,15 +46,24 @@ export interface TemporaryPasswordResult {
 
 export type RecoveryErrorCode = 'unknown_user' | 'invalid_password' | 'invalid_email' | 'no_reason';
 
+const KIND_OF: Readonly<Record<RecoveryErrorCode, ErrorKind>> = {
+  unknown_user: 'not_found',
+  invalid_password: 'bad_request',
+  invalid_email: 'bad_request',
+  no_reason: 'bad_request',
+};
+
 /** The CLI prints the message as is. `suggestions` are close existing emails for `unknown_user`. */
-export class RecoveryError extends Error {
+export class RecoveryError extends DomainError {
   override readonly name = 'RecoveryError';
+  declare readonly code: RecoveryErrorCode;
+
   constructor(
-    readonly code: RecoveryErrorCode,
+    code: RecoveryErrorCode,
     message: string,
     readonly suggestions: string[] = [],
   ) {
-    super(message);
+    super(KIND_OF[code], message, { code });
   }
 }
 
@@ -70,8 +75,6 @@ export function isRecoveryError(err: unknown): err is RecoveryError {
     typeof (err as { code?: unknown }).code === 'string'
   );
 }
-
-const normalise = (email: string): string => email.trim().toLowerCase();
 
 function toSummary(row: typeof users.$inferSelect): AccountSummary {
   return {
@@ -89,48 +92,8 @@ export async function listAccounts(db: Db): Promise<AccountSummary[]> {
   return (await db.select().from(users).orderBy(users.email)).map(toSummary);
 }
 
-/** Emails are short, so the quadratic table is fine. */
-export function levenshtein(a: string, b: string): number {
-  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= a.length; i++) {
-    const cur = [i];
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      cur[j] = Math.min((prev[j] ?? 0) + 1, (cur[j - 1] ?? 0) + 1, (prev[j - 1] ?? 0) + cost);
-    }
-    prev = cur;
-  }
-  return prev[b.length] ?? 0;
-}
-
-/**
- * Best first: a small edit distance on the whole address or its local part, the same local part
- * at another domain, or (when nothing is closer) the same domain.
- */
-export function closeEmails(email: string, candidates: readonly string[], limit = 5): string[] {
-  const wanted = normalise(email);
-  const [local = '', domain = ''] = wanted.split('@');
-  const scored: { email: string; score: number }[] = [];
-  for (const c of candidates) {
-    const [cLocal = '', cDomain = ''] = c.split('@');
-    const whole = levenshtein(wanted, c);
-    const localDistance = levenshtein(local, cLocal);
-    const tolerance = Math.max(2, Math.floor(wanted.length / 4));
-    let score: number | undefined;
-    if (whole <= tolerance) score = whole;
-    else if (local !== '' && localDistance <= Math.max(1, Math.floor(local.length / 4)))
-      score = 10 + localDistance;
-    else if (domain !== '' && cDomain === domain) score = 20 + localDistance;
-    if (score !== undefined) scored.push({ email: c, score });
-  }
-  return scored
-    .sort((a, b) => a.score - b.score || a.email.localeCompare(b.email))
-    .slice(0, limit)
-    .map((s) => s.email);
-}
-
-function checkReason(audit: RecoveryAudit): void {
-  if (audit.reason.trim() === '') throw new RecoveryError('no_reason', 'A reason is required.');
+function checkReason(meta: ChangeMeta): void {
+  if (meta.reason.trim() === '') throw new RecoveryError('no_reason', 'A reason is required.');
 }
 
 function choosePassword(email: string, password: string | undefined): [string, boolean] {
@@ -158,18 +121,12 @@ export async function resetPassword(
   db: Db,
   input: SetTemporaryPasswordInput,
 ): Promise<TemporaryPasswordResult> {
-  checkReason(input.audit);
-  const email = normalise(input.email);
+  checkReason(input.meta);
+  const email = normaliseEmail(input.email);
   const [row] = await db.select().from(users).where(eq(users.email, email));
   if (!row) throw await unknownUser(db, email);
   const [password, generated] = choosePassword(email, input.password);
-  await db.transaction(async (tx) => {
-    await storePassword(tx, row.id, password, {
-      temporary: true,
-      field: row.passwordHash === null ? 'password' : 'password_reset',
-      audit: input.audit,
-    });
-  });
+  await db.transaction((tx) => storeTemporaryPassword(tx, row, password, input.meta));
   await clearFailures(db, email, row.id);
   return { email, role: row.role, password, generated };
 }
@@ -179,18 +136,21 @@ export async function createAdmin(
   db: Db,
   input: SetTemporaryPasswordInput,
 ): Promise<TemporaryPasswordResult> {
-  checkReason(input.audit);
-  const email = normalise(input.email);
-  if (!/^[^@\s]+@[^@\s]+$/.test(email))
+  checkReason(input.meta);
+  const email = normaliseEmail(input.email);
+  if (!isEmail(email))
     throw new RecoveryError('invalid_email', `${input.email} is not a valid email.`);
   const [password, generated] = choosePassword(email, input.password);
-  const { actor, reason, at } = input.audit;
+  const { meta } = input;
   const { change, userId } = await db.transaction(async (tx) => {
     const [before] = await tx.select().from(users).where(eq(users.email, email)).for('update');
     let row = before;
     let change: 'created' | 'promoted' | 'unchanged' = 'unchanged';
     if (!row) {
-      [row] = await tx.insert(users).values({ email, role: 'admin', createdAt: at }).returning();
+      [row] = await tx
+        .insert(users)
+        .values({ email, role: 'admin', createdAt: meta.now })
+        .returning();
       if (!row) throw new Error('could not create the account');
       change = 'created';
     } else if (row.role !== 'admin') {
@@ -198,22 +158,15 @@ export async function createAdmin(
       change = 'promoted';
     }
     if (change !== 'unchanged') {
-      await recordAudit(tx, {
-        actor,
+      await auditChange(tx, meta, {
         scope: 'user',
         targetId: row.id,
         field: 'role',
         before: before?.role ?? null,
         after: 'admin',
-        reason,
-        at,
       });
     }
-    await storePassword(tx, row.id, password, {
-      temporary: true,
-      field: before?.passwordHash ? 'password_reset' : 'password',
-      audit: input.audit,
-    });
+    await storeTemporaryPassword(tx, row, password, meta);
     return { change, userId: row.id };
   });
   await clearFailures(db, email, userId);

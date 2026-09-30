@@ -1,17 +1,31 @@
 import type { FastifyError, FastifyInstance } from 'fastify';
 
-import { badRequest, isServiceError, type ServiceError } from '../services/errors.js';
-import { isPipelineError } from '../services/pipeline/errors.js';
 import type { ApiError } from '../contract/index.js';
+import { badRequest, isDomainError, type ErrorKind } from '../services/errors.js';
 
 export {
   badRequest,
   conflict,
+  DomainError,
   forbidden,
   notFound,
-  ServiceError as HttpError,
+  unauthenticated,
   unprocessable,
 } from '../services/errors.js';
+
+/** The one place a refusal's kind becomes an HTTP status. */
+export const STATUS_OF: Readonly<Record<ErrorKind, number>> = {
+  bad_request: 400,
+  unauthenticated: 401,
+  forbidden: 403,
+  not_found: 404,
+  conflict: 409,
+  unprocessable: 422,
+  too_many_attempts: 429,
+  internal: 500,
+  // Retry later, not an internal error.
+  unavailable: 503,
+};
 
 /**
  * When `requireReasons` is off, the `preValidation` hook in `reasons.ts` has already filled a
@@ -29,21 +43,15 @@ export function requireReason(body: unknown): string {
 }
 
 export function registerErrorHandler(app: FastifyInstance): void {
-  app.setErrorHandler((err: FastifyError | ServiceError | Error, req, reply) => {
-    if (isServiceError(err)) {
+  app.setErrorHandler((err: FastifyError | Error, req, reply) => {
+    if (isDomainError(err)) {
       const body: ApiError = {
         error: err.code,
         message: err.message,
         ...(err.details ? { details: err.details } : {}),
         ...(err.usedBy ? { usedBy: err.usedBy } : {}),
       };
-      return reply.code(err.status).send(body);
-    }
-    if (isPipelineError(err)) {
-      // `unavailable` is a 503 (retry later), not an internal error.
-      return reply
-        .code(err.status)
-        .send({ error: err.code, message: err.message } satisfies ApiError);
+      return reply.code(STATUS_OF[err.kind]).send(body);
     }
     const fe = err as FastifyError;
     if (fe.validation) {

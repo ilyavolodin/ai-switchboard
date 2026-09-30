@@ -20,7 +20,7 @@ import {
   type RegistryPackage,
 } from '../plugins/search.js';
 import { auditChange, type ChangeMeta } from './audit.js';
-import { badRequest, notFound, ServiceError, unprocessable } from './errors.js';
+import { badRequest, notFound, unavailable, unprocessable } from './errors.js';
 
 export interface PluginAdminDeps {
   db: Db;
@@ -147,10 +147,9 @@ export async function searchPackages(
     });
   } catch (err) {
     if (isRegistryUnavailableError(err))
-      throw new ServiceError(
-        503,
-        'registry_unavailable',
+      throw unavailable(
         `${err.message} Search needs the registry; install by name with Add plugin, or bake plugins into the image for offline installs.`,
+        'registry_unavailable',
       );
     throw err;
   }

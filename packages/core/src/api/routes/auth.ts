@@ -20,7 +20,7 @@ import {
   type ThrottleAttempt,
   type ThrottleLimit,
 } from '../../auth/throttle.js';
-import { isServiceError } from '../../services/errors.js';
+import { DomainError, isDomainError, unauthenticated } from '../../services/errors.js';
 import {
   changeOwnPassword,
   getUser,
@@ -36,7 +36,7 @@ import {
   type MeResponse,
   type WhoAmIResponse,
 } from '../../contract/index.js';
-import { forbidden, HttpError } from '../errors.js';
+import { forbidden } from '../errors.js';
 import { toUserDTO } from '../read/users.js';
 
 export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void {
@@ -89,7 +89,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       decision.retryAfterSeconds < 60
         ? `${decision.retryAfterSeconds} seconds`
         : `${Math.ceil(decision.retryAfterSeconds / 60)} minutes`;
-    throw new HttpError(429, 'too_many_attempts', `Too many attempts; try again in ${wait}.`);
+    throw new DomainError('too_many_attempts', `Too many attempts; try again in ${wait}.`);
   };
   let decoy: Promise<string> | undefined;
   const decoyHash = () => (decoy ??= hashPassword(generatePassword()));
@@ -106,7 +106,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
         { key: byEmail, max: MAX_FAILURES_PER_EMAIL },
       ]);
       const row = await passwordLogin(db, email, req.body.password, decoyHash);
-      if (!row) throw new HttpError(401, 'invalid_credentials', 'Email or password is incorrect.');
+      if (!row) throw unauthenticated('Email or password is incorrect.', 'invalid_credentials');
       // The account's counter resets; the address keeps its count, so one known password does
       // not buy an address fresh guesses at other accounts.
       await attempts.succeed(attempt, [byEmail]);
@@ -141,15 +141,17 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
     },
   );
 
+  const oidcMissing = () => new DomainError('not_found', 'OIDC is not configured.');
+
   app.get('/api/v1/auth/oidc/start', async (_req, reply) => {
-    if (!ctx.oidc) throw new HttpError(404, 'not_found', 'OIDC is not configured.');
+    if (!ctx.oidc) throw oidcMissing();
     const start = await ctx.oidc.start(clock.now());
     void reply.setCookie(OIDC_FLOW_COOKIE, start.cookie, { ...cookieOptions, maxAge: 600 });
     return reply.redirect(start.url);
   });
 
   app.get('/api/v1/auth/oidc/callback', async (req, reply) => {
-    if (!ctx.oidc) throw new HttpError(404, 'not_found', 'OIDC is not configured.');
+    if (!ctx.oidc) throw oidcMissing();
     const current = new URL(req.url, config.publicUrl);
     let target: string;
     try {
@@ -166,7 +168,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
     } catch (err) {
       req.log.warn({ err }, 'oidc callback failed');
       const message =
-        err instanceof OidcError || isServiceError(err) ? err.message : 'Sign-in failed.';
+        err instanceof OidcError || isDomainError(err) ? err.message : 'Sign-in failed.';
       target = `/login?error=${encodeURIComponent(message)}`;
     }
     return reply.redirect(target);

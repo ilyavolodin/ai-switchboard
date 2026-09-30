@@ -1,9 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import type { RawRequest } from '@ai-switchboard/sdk';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { databaseReachable } from '../../services/health.js';
+import type { IngressOutcome } from '../../services/pipeline/outcomes.js';
 import { isUuid } from '../../util/uuid.js';
 import type { ApiContext } from '../context.js';
 
@@ -28,6 +29,20 @@ export function toRawRequest(req: FastifyRequest, receivedAt: Date): RawRequest 
     receivedAt: receivedAt.toISOString(),
     remoteAddress: req.ip,
   };
+}
+
+/** 401 (rejected) and the other refusals carry no body, so a sender learns nothing from them. */
+export const INGRESS_STATUS: Readonly<Record<IngressOutcome, number>> = {
+  accepted: 200,
+  malformed: 400,
+  rejected: 401,
+  not_found: 404,
+  unavailable: 503,
+};
+
+function answer(reply: FastifyReply, outcome: IngressOutcome): FastifyReply {
+  const status = INGRESS_STATUS[outcome];
+  return outcome === 'accepted' ? reply.code(status).send({ ok: true }) : reply.code(status).send();
 }
 
 /**
@@ -70,16 +85,15 @@ export async function registerIngressRoutes(
       async (req, reply) => {
         if (!isUuid(req.params.sourceId)) return reply.code(404).send();
         // Any failure here (Postgres down) answers 503 so the sender retries.
-        const result = await ctx.pipeline
+        const outcome = await ctx.pipeline
           .ingestPush(req.params.sourceId, toRawRequest(req, ctx.clock.now()))
-          .catch((err: unknown) => {
+          .catch((err: unknown): IngressOutcome => {
             req.log.error({ err, source_id: req.params.sourceId }, 'ingress failed');
-            return { status: 503 };
+            return 'unavailable';
           });
-        if (result.status === 401)
+        if (outcome === 'rejected')
           req.log.warn({ source_id: req.params.sourceId, remote: req.ip }, 'hook rejected');
-        if (result.status >= 400) return reply.code(result.status).send();
-        return reply.code(result.status).send({ ok: true });
+        return answer(reply, outcome);
       },
     );
 
@@ -88,19 +102,18 @@ export async function registerIngressRoutes(
       rateLimit,
       async (req, reply) => {
         if (!isUuid(req.params.destinationId)) return reply.code(404).send();
-        const result = await ctx.pipeline
+        const outcome = await ctx.pipeline
           .handleCallback(req.params.destinationId, toRawRequest(req, ctx.clock.now()))
-          .catch((err: unknown) => {
+          .catch((err: unknown): IngressOutcome => {
             req.log.error({ err, destination_id: req.params.destinationId }, 'callback failed');
-            return { status: 503 };
+            return 'unavailable';
           });
-        if (result.status === 401)
+        if (outcome === 'rejected')
           req.log.warn(
             { destination_id: req.params.destinationId, remote: req.ip },
             'callback rejected',
           );
-        if (result.status >= 400) return reply.code(result.status).send();
-        return reply.code(result.status).send({ ok: true });
+        return answer(reply, outcome);
       },
     );
     return Promise.resolve();

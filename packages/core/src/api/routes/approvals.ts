@@ -1,7 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 
-import { actorOf } from '../../auth/fastify.js';
-import type { ApiContext } from '../context.js';
 import {
   approvalHistoryQuery,
   reasonedBody,
@@ -9,7 +7,8 @@ import {
   type ApproveResponse,
   type Reasoned,
 } from '../../contract/index.js';
-import { requireReason } from '../errors.js';
+import { changeMeta } from '../change.js';
+import type { ApiContext } from '../context.js';
 import { approvalHistory, approvalRules, pendingApprovals } from '../read/approvals.js';
 import { allow } from './options.js';
 
@@ -25,17 +24,14 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: ApiContext): v
   app.post<{ Params: { batchId: string }; Body: Reasoned }>(
     '/api/v1/approvals/:batchId/approve',
     allow('operator', reasonedBody),
-    async (req): Promise<ApproveResponse> => {
-      const reason = requireReason(req.body);
-      return ctx.pipeline.approve(req.params.batchId, actorOf(req), reason);
-    },
+    async (req): Promise<ApproveResponse> =>
+      ctx.pipeline.approve(req.params.batchId, changeMeta(req, ctx.clock)),
   );
   app.post<{ Params: { batchId: string }; Body: Reasoned }>(
     '/api/v1/approvals/:batchId/reject',
     allow('operator', reasonedBody),
     async (req, reply) => {
-      const reason = requireReason(req.body);
-      await ctx.pipeline.reject(req.params.batchId, actorOf(req), reason);
+      await ctx.pipeline.reject(req.params.batchId, changeMeta(req, ctx.clock));
       return reply.code(204).send();
     },
   );

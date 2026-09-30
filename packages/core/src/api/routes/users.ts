@@ -24,9 +24,8 @@ import {
   type SetPasswordRequest,
   type UpdateUserRequest,
 } from '../../contract/index.js';
-import { HttpError } from '../errors.js';
 import { toTokenDTO, toUserDTO, userDirectory, userList } from '../read/users.js';
-import { allow } from './options.js';
+import { allow, authedUser } from './options.js';
 
 export function registerUserRoutes(app: FastifyInstance, ctx: ApiContext): void {
   const { db, clock } = ctx;
@@ -90,7 +89,7 @@ export function registerUserRoutes(app: FastifyInstance, ctx: ApiContext): void 
   );
 
   app.get('/api/v1/tokens', allow('viewer'), async (req) =>
-    (await tokensOf(db, req.user?.id ?? '')).map(toTokenDTO),
+    (await tokensOf(db, authedUser(req).id)).map(toTokenDTO),
   );
 
   app.post<{ Body: CreateApiTokenRequest }>(
@@ -98,10 +97,9 @@ export function registerUserRoutes(app: FastifyInstance, ctx: ApiContext): void 
     allow('viewer', createApiTokenBody),
     async (req, reply): Promise<CreateApiTokenResponse> => {
       const meta = changeMeta(req, clock);
-      if (!req.user) throw new HttpError(401, 'unauthenticated', 'Sign in to continue.');
       const { row, secret } = await createToken(
         db,
-        req.user,
+        authedUser(req),
         { name: req.body.name, role: req.body.role },
         meta,
       );
@@ -114,7 +112,7 @@ export function registerUserRoutes(app: FastifyInstance, ctx: ApiContext): void 
     '/api/v1/tokens/:id',
     allow('viewer'),
     async (req, reply) => {
-      await revokeToken(db, req.params.id, req.user, changeMeta(req, clock));
+      await revokeToken(db, req.params.id, authedUser(req), changeMeta(req, clock));
       return reply.code(204).send();
     },
   );

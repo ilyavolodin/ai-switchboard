@@ -36,7 +36,7 @@ export function accountRecovery(clock: Clock = systemClock): AccountRecovery {
   const input = (r: RecoveryRequest) => ({
     email: r.email,
     ...(r.password !== undefined ? { password: r.password } : {}),
-    audit: { actor: r.actor, reason: r.reason, at: clock.now() },
+    meta: { actor: r.actor, reason: r.reason, now: clock.now() },
   });
   return {
     listUsers: (config) => withDb(config, listAccounts),

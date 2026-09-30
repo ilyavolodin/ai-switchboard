@@ -19,6 +19,7 @@ import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import { EXEC_TYPE, callbackRequest } from '../helpers/fake-runtime.js';
 import {
   batchesOf,
+  by,
   createHarness,
   deliver,
   resetDb,
@@ -63,7 +64,7 @@ describe('approval', () => {
     expect(pending?.input).toMatchObject({ mode: 'event', artifacts: ['1'] });
     expect(await runsOf(h.db, pid)).toHaveLength(0);
 
-    const out = await h.pipeline.approve(batch!.id, 'op@example.com', 'looks right');
+    const out = await h.pipeline.approve(batch!.id, by(h, 'op@example.com', 'looks right'));
     expect(out.outcome).toBe('ok');
     expect(await runsOf(h.db, pid)).toHaveLength(1);
     const [decided] = await h.db.select().from(approvals).where(eq(approvals.batchId, batch!.id));
@@ -74,7 +75,9 @@ describe('approval', () => {
     });
     const audit = await h.db.select().from(auditLog).where(eq(auditLog.scope, 'approval'));
     expect(audit).toHaveLength(1);
-    await expect(h.pipeline.approve(batch!.id, 'op@example.com', 'twice')).rejects.toMatchObject({
+    await expect(
+      h.pipeline.approve(batch!.id, by(h, 'op@example.com', 'twice')),
+    ).rejects.toMatchObject({
       code: 'conflict',
     });
   });
@@ -97,7 +100,7 @@ describe('approval', () => {
     const dev = batches.find((b) => b.batchKey === 'acme/dev');
     expect(prod?.outcome).toBe('awaiting_approval');
     expect(dev?.outcome).toBe('invoked');
-    await h.pipeline.reject(prod!.id, 'op@example.com', 'not now');
+    await h.pipeline.reject(prod!.id, by(h, 'op@example.com', 'not now'));
     const [after] = (await batchesOf(h.db, pid)).filter((b) => b.id === prod!.id);
     expect(after).toMatchObject({ outcome: 'rejected', approvalState: 'rejected' });
   });
@@ -109,21 +112,17 @@ describe('approval', () => {
       gates: { approval: 'always' },
       budgets: { runsPerDay: 1 },
     });
-    const out = await h.pipeline.runNow(pid, {
-      dryRun: true,
-      actor: 'op@example.com',
-      reason: 'test run',
-    });
+    const out = await h.pipeline.runNow(pid, { dryRun: true }, by(h, 'op@example.com', 'test run'));
     expect(out.outcome).toBe('ok');
     expect(ex.state.invocations[0]?.run.dryRun).toBe(true);
     expect(ex.state.invocations[0]?.run.mode).toBe('manual');
-    const again = await h.pipeline.runNow(pid, {
-      dryRun: true,
-      actor: 'op@example.com',
-      reason: 'test run',
-    });
+    const again = await h.pipeline.runNow(
+      pid,
+      { dryRun: true },
+      by(h, 'op@example.com', 'test run'),
+    );
     expect(again.outcome).toBe('ok');
-    const real = await h.pipeline.runNow(pid, { actor: 'op@example.com', reason: 'go' });
+    const real = await h.pipeline.runNow(pid, {}, by(h, 'op@example.com', 'go'));
     expect(real).toMatchObject({ outcome: 'awaiting_approval', runId: null });
   });
 
@@ -133,12 +132,11 @@ describe('approval', () => {
     const pid = await seedProcess(h, ex.id, src.id);
     await fireOne(src.id, '42');
     const [batch] = await batchesOf(h.db, pid);
-    const out = await h.pipeline.runNow(pid, {
-      dryRun: true,
-      batchId: batch!.id,
-      actor: 'op',
-      reason: 'test',
-    });
+    const out = await h.pipeline.runNow(
+      pid,
+      { dryRun: true, batchId: batch!.id },
+      by(h, 'op', 'test'),
+    );
     expect(out.outcome).toBe('ok');
     expect(ex.state.invocations.at(-1)?.input).toMatchObject({ mode: 'event', artifacts: ['42'] });
   });
@@ -172,7 +170,7 @@ describe('breaker', () => {
       outcomeReason: 'breaker_open',
     });
 
-    await h.pipeline.resetBreaker(pid, 'op@example.com', 'fixed the routine');
+    await h.pipeline.resetBreaker(pid, by(h, 'op@example.com', 'fixed the routine'));
     await fireOne(src.id, '4');
     expect((await batchesOf(h.db, pid)).at(-1)?.outcome).toBe('invoked');
     const run = (await runsOf(h.db, pid)).at(-1)!;
@@ -223,7 +221,7 @@ describe('other gates', () => {
   it('a disabled process holds a manual run', async () => {
     const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, null, {}, false);
-    const out = await h.pipeline.runNow(pid, { actor: 'op', reason: 'try' });
+    const out = await h.pipeline.runNow(pid, {}, by(h, 'op', 'try'));
     expect(out.outcome).toBe('held');
     expect((await batchesOf(h.db, pid))[0]?.outcomeReason).toBe('process_disabled');
   });
@@ -434,10 +432,11 @@ describe('manual actions retry a serialization failure', () => {
   it('run now', async () => {
     const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, null);
-    const out = await pipelineOver(serializationFailures(h.db, 1)).runNow(pid, {
-      actor: 'op@example.com',
-      reason: 'go',
-    });
+    const out = await pipelineOver(serializationFailures(h.db, 1)).runNow(
+      pid,
+      {},
+      by(h, 'op@example.com', 'go'),
+    );
     expect(out.outcome).toBe('ok');
     expect(await runsOf(h.db, pid)).toHaveLength(1);
   });
@@ -450,8 +449,7 @@ describe('manual actions retry a serialization failure', () => {
     const [batch] = await batchesOf(h.db, pid);
     const out = await pipelineOver(serializationFailures(h.db, 1)).approve(
       batch!.id,
-      'op@example.com',
-      'looks right',
+      by(h, 'op@example.com', 'looks right'),
     );
     expect(out.outcome).toBe('ok');
   });

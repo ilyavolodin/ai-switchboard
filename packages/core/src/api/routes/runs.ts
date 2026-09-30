@@ -1,14 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 
-import { actorOf } from '../../auth/fastify.js';
-import type { ApiContext } from '../context.js';
 import {
   closeRunBody,
   runsQuery,
   type CloseRunRequest,
   type RunsQuery,
 } from '../../contract/index.js';
-import { requireReason } from '../errors.js';
+import { changeMeta } from '../change.js';
+import type { ApiContext } from '../context.js';
 import { listRuns, runDetail } from '../read/runs.js';
 import { allow } from './options.js';
 
@@ -25,8 +24,7 @@ export function registerRunRoutes(app: FastifyInstance, ctx: ApiContext): void {
     '/api/v1/runs/:id/close',
     allow('operator', closeRunBody),
     async (req) => {
-      const reason = requireReason(req.body);
-      await ctx.pipeline.closeRun(req.params.id, req.body.status, actorOf(req), reason);
+      await ctx.pipeline.closeRun(req.params.id, req.body.status, changeMeta(req, ctx.clock));
       return runDetail(ctx, req.params.id);
     },
   );

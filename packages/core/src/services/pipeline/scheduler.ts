@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, eq, max } from 'drizzle-orm';
+import { and, eq, inArray, max } from 'drizzle-orm';
 
-import { batches, processes, scheduleTicks, type GateDecisionRecord } from '../../db/schema.js';
+import { batches, processes, scheduleTicks } from '../../db/schema.js';
+import { appendDecisions, withTx } from '../../db/tx.js';
 import type { Schedule } from '../../domain/process.js';
+import { batchRecord } from '../../pipeline/decisions.js';
 import { dueSweep, type DueSweep } from '../../scheduler/due.js';
 
 import type { Ctx } from './context.js';
 import { JOBS } from './jobs.js';
-import { appendDecisions, withTx } from './tx.js';
+import { insertClosedBatch } from './tx.js';
 import type { ProcessRow } from './views.js';
 
 /**
@@ -44,7 +46,6 @@ async function createSweep(
   due: DueSweep,
 ): Promise<string | null> {
   const now = ctx.clock.now();
-  const at = now.toISOString();
   const out = await withTx(ctx.db, async (tx) => {
     const inserted = await tx
       .insert(scheduleTicks)
@@ -66,44 +67,32 @@ async function createSweep(
         and(eq(batches.processId, proc.id), eq(batches.kind, 'event'), eq(batches.outcome, 'open')),
       )
       .for('update');
-    const record: GateDecisionRecord = {
-      stage: 'batch',
-      check: 'sweep',
-      pass: true,
-      detail: `${schedule.cron} ${schedule.timezone}${due.catchUp ? ' (catch-up for a missed tick)' : ''}; tick ${due.tickAt.toISOString()}`,
-      at,
-    };
-    await tx.insert(batches).values({
+    const detail = `${schedule.cron} ${schedule.timezone}${due.catchUp ? ' (catch-up for a missed tick)' : ''}; tick ${due.tickAt.toISOString()}`;
+    await insertClosedBatch(tx, now, {
       id: batchId,
       processId: proc.id,
       batchKey: `sweep:${schedule.id}`,
       kind: 'sweep',
-      openedAt: now,
-      fireAfter: now,
-      closedAt: now,
       size: open.reduce((n, b) => n + b.size, 0),
-      outcome: 'closed',
       scheduleId: schedule.id,
       tickAt: due.tickAt,
-      decisions: [record],
+      decisions: [batchRecord('sweep', now, detail)],
     });
-    for (const b of open) {
-      const merged: GateDecisionRecord = {
-        stage: 'batch',
-        check: 'merged',
-        pass: true,
-        detail: `merged into sweep ${batchId}`,
-        at,
-      };
+    if (open.length > 0) {
       await tx
         .update(batches)
         .set({
           outcome: 'merged',
           mergedInto: batchId,
           closedAt: now,
-          decisions: appendDecisions([merged]),
+          decisions: appendDecisions([batchRecord('merged', now, `merged into sweep ${batchId}`)]),
         })
-        .where(eq(batches.id, b.id));
+        .where(
+          inArray(
+            batches.id,
+            open.map((b) => b.id),
+          ),
+        );
     }
     await tx
       .update(scheduleTicks)

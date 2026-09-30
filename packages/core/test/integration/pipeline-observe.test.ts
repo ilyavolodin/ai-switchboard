@@ -21,6 +21,7 @@ import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import { PR_LABELED, callbackRequest } from '../helpers/fake-runtime.js';
 import {
   batchesOf,
+  by,
   createHarness,
   deliver,
   resetDb,
@@ -71,7 +72,7 @@ describe('trace', () => {
     await h.drain();
     await h.advance(31);
     const [batch] = await batchesOf(h.db, pid);
-    await h.pipeline.approve(batch!.id, 'op@example.com', 'ship it');
+    await h.pipeline.approve(batch!.id, by(h, 'op@example.com', 'ship it'));
     const [run] = await runsOf(h.db, pid);
     h.clock.advanceMinutes(3);
     await h.pipeline.handleCallback(
@@ -228,11 +229,11 @@ describe('previews', () => {
     await h.drain();
     await h.advance(31);
     const [eventBatch] = await batchesOf(h.db, pid);
-    const manual = await h.pipeline.runNow(pid, {
-      batchId: eventBatch!.id,
-      actor: 'op@example.com',
-      reason: 'replay',
-    });
+    const manual = await h.pipeline.runNow(
+      pid,
+      { batchId: eventBatch!.id },
+      by(h, 'op@example.com', 'replay'),
+    );
     const run = (await runsOf(h.db, pid)).find((r) => r.batchId === manual.batchId);
     const [proc] = await h.db.select().from(processes).where(eq(processes.id, pid));
     const preview = await inputPreview(h.deps, {
@@ -259,7 +260,7 @@ describe('stats, retention and maintenance', () => {
     ex.state.readings = [
       { id: 'five_hour', utilization: 42, observedAt: h.clock.now().toISOString() },
     ];
-    await h.pipeline.readMetersNow(ex.id);
+    await h.pipeline.readMetersNow(ex.id, by(h, 'op@example.com', 'read now'));
     const written = await materialiseStats(h.deps, new Date('2026-01-05T08:00:00Z'), h.clock.now());
     expect(written).toBeGreaterThan(0);
     const rows = await h.db.select().from(statsHourly);

@@ -1,6 +1,4 @@
-import { randomBytes } from 'node:crypto';
-
-import { eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
 import { buildApiContext, type ApiContext } from './api/context.js';
@@ -12,7 +10,6 @@ import { pruneLoginAttempts } from './auth/throttle.js';
 import { systemClock, type Clock } from './clock.js';
 import type { CoreConfig, OidcConfig } from './config.js';
 import { connect, runMigrations, type Database } from './db/client.js';
-import { settings as settingsTable } from './db/schema.js';
 import type { Deps } from './deps.js';
 import { loggerFor, type CoreLogger } from './logger.js';
 import { PluginHost, type PluginHostOptions } from './plugins/host.js';
@@ -20,7 +17,7 @@ import { PgBossQueue, type JobQueue } from './queue/queue.js';
 import { buildServer } from './server.js';
 import { createPipeline } from './services/pipeline/index.js';
 import { cronPreview, filterPreview, inputPreview } from './services/preview.js';
-import { getSettings } from './services/settings.js';
+import { getSettings, sharedCookieKey } from './services/settings.js';
 import { traceForArtifact, traceForEvent } from './services/trace.js';
 import { setupTelemetry, type TelemetryRuntime } from './telemetry/setup.js';
 import { createTelemetry, type Telemetry } from './telemetry/telemetry.js';
@@ -83,17 +80,6 @@ async function waitForDatabase(
       await new Promise((r) => setTimeout(r, wait.delayMs));
     }
   }
-}
-
-/** Shared by every replica so an OIDC flow can finish on any of them. */
-async function sharedCookieKey(database: Database, now: Date): Promise<string> {
-  const key = 'cookie_key';
-  await database.db
-    .insert(settingsTable)
-    .values({ key, value: randomBytes(32).toString('base64url'), updatedAt: now })
-    .onConflictDoNothing();
-  const [row] = await database.db.select().from(settingsTable).where(eq(settingsTable.key, key));
-  return String(row?.value);
 }
 
 /** An issuer from the environment, or one saved in Settings with the secret from the environment. */
@@ -183,7 +169,7 @@ export async function createSwitchboard(options: CreateOptions): Promise<Switchb
     clock.now(),
     adminPassword !== undefined ? { password: adminPassword } : {},
   );
-  const cookieKey = await sharedCookieKey(database, clock.now());
+  const cookieKey = await sharedCookieKey(database.db, clock.now());
   const ctx = buildApiContext({
     deps,
     host,

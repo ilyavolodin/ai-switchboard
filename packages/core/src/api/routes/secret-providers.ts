@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 
+import { providerSecrets } from '../../services/secret-providers.js';
 import type { ApiContext } from '../context.js';
-import { providerSecrets } from '../read/secrets.js';
 import { registerAdminInstanceRoutes } from './instance-lifecycle.js';
-import { allow } from './options.js';
+import { allow, secretProviderDeps } from './options.js';
 
 export function registerSecretProviderRoutes(app: FastifyInstance, ctx: ApiContext): void {
   registerAdminInstanceRoutes(app, ctx, 'secret_provider', '/api/v1/secret-providers');
@@ -12,6 +12,6 @@ export function registerSecretProviderRoutes(app: FastifyInstance, ctx: ApiConte
   app.get<{ Params: { id: string } }>(
     '/api/v1/secret-providers/:id/secrets',
     allow('admin'),
-    async (req) => providerSecrets(ctx, req.params.id),
+    async (req) => providerSecrets(secretProviderDeps(ctx), req.params.id),
   );
 }

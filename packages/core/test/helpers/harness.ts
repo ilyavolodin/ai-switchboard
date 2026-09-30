@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { and, asc, eq, sql } from 'drizzle-orm';
 
+import { INGRESS_STATUS } from '../../src/api/routes/ingress.js';
 import { FakeClock } from '../../src/clock.js';
 import { testConfig } from '../../src/config.js';
 import type { Db } from '../../src/db/client.js';
@@ -20,6 +21,7 @@ import type { Deps } from '../../src/deps.js';
 import { defaultProcessDocument, type ProcessDocument } from '../../src/domain/process.js';
 import { silentLogger } from '../../src/logger.js';
 import { MemoryQueue } from './memory-queue.js';
+import type { ChangeMeta } from '../../src/services/audit.js';
 import { putSettings, DEFAULT_SETTINGS } from '../../src/services/settings.js';
 import { createPipeline, type Pipeline } from '../../src/services/pipeline/index.js';
 import { createRecordingTelemetry } from '../../src/telemetry/telemetry.js';
@@ -53,6 +55,11 @@ export interface Harness extends Replica {
   replica(): Promise<Replica>;
   drain(): Promise<number>;
   advance(seconds: number): Promise<void>;
+}
+
+/** Who makes a manual change, and why, at the harness's current time. */
+export function by(h: { clock: FakeClock }, actor: string, reason: string): ChangeMeta {
+  return { actor, reason, now: h.clock.now() };
 }
 
 export async function createHarness(db: Db, start = '2026-01-05T09:00:00Z'): Promise<Harness> {
@@ -241,11 +248,11 @@ export async function deliver(
       occurredAt: clock.now().toISOString(),
     })),
   };
-  const res = await h.pipeline.ingestPush(
+  const outcome = await h.pipeline.ingestPush(
     sourceId,
     signedDelivery(options.secret ?? SECRET, body, clock.now()),
   );
-  return res.status;
+  return INGRESS_STATUS[outcome];
 }
 
 export async function runsOf(db: Db, processId: string) {
