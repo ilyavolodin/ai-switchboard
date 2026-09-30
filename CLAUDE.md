@@ -116,7 +116,7 @@ Relative imports use the `.js` extension (NodeNext): `import { x } from './batch
 - Tests sit next to the code: `foo.ts` → `foo.test.ts`. Integration tests go in
   `packages/*/test/integration/`.
 - Every reference plugin runs the SDK conformance kit in its own `src/plugin.test.ts`.
-- The API contract (`packages/core/src/api/contract.ts`) and `docs/api.md` change together with
+- The API contract (`packages/core/src/contract/`) and `docs/api.md` change together with
   the routes.
 - Changing `packages/sdk` public types is a semver decision: additive = minor, any change to an
   interface method = major. Say so in the commit message.

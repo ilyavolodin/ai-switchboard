@@ -30,7 +30,7 @@ telemetry, config }`). No module-level singletons except constant tables.
     "(no reason given)" for such routes (and for bodiless DELETEs).
   - Role checks use `requireRole('operator')` style preHandlers. A viewer gets 403, with a message
     that names the role.
-  - Keep `api/contract.ts` and `docs/api.md` in sync with the routes.
+  - Keep `src/contract/` and `docs/api.md` in sync with the routes.
 - Logs are pino JSON with `event_id`, `process_id`, `batch_id`, `run_id`, `external_url` where
   they exist. Never log secret values or raw bodies.
 - Metrics use the names in the TDD's Observability table (`switchboard.events`,
