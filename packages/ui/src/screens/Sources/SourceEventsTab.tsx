@@ -11,18 +11,19 @@ import { EmptyState } from '../../components/EmptyState.js';
 import { Icon } from '../../components/Icon.js';
 import { KeyValueList } from '../../components/KeyValueList.js';
 import { LoadMore } from '../../components/LoadMore.js';
+import { ProcessOutcomes } from '../../components/ProcessOutcomes.js';
+import { QueryBoundary } from '../../components/QueryBoundary.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { StageIndicator } from '../../components/StageIndicator.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
 import { WhyNothingRan } from '../../components/WhyNothingRan.js';
-import { QueryError } from '../../components/QueryError.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { useFlatPages } from '../../hooks/useFlatPages.js';
-import { traceHref } from '../../lib/artifact.js';
 import { cx } from '../../lib/cx.js';
-import { whyFromExplanations } from '../../lib/why.js';
+import { processHref, traceHref } from '../../lib/hrefs.js';
+import { whyFromExplanations, whyTitle } from '../../lib/why.js';
 import styles from '../shared/detail.module.css';
 
 export function SourceEventsTab({ source }: { source: SourceDetail }) {
@@ -58,30 +59,34 @@ export function SourceEventsTab({ source }: { source: SourceDetail }) {
           Newest first · events are kept per the retention setting.
         </span>
       </div>
-      {events.isPending ? (
-        <Skeleton lines={6} height={28} label="Loading events" />
-      ) : events.isError ? (
-        <QueryError query={events} title="Events could not load" />
-      ) : rows.length === 0 ? (
-        <EmptyState title="No events yet" compact>
-          {type
-            ? `No ${type} events from this source.`
-            : 'Events appear here as deliveries arrive. Send a test event to see one.'}
-        </EmptyState>
-      ) : (
-        <ul className={styles.events} aria-label={`Events from ${source.name}`}>
-          {rows.map((row) => (
-            <EventItem
-              key={row.eventId}
-              row={row}
-              open={open === row.eventId}
-              onToggle={() => {
-                setOpen((o) => (o === row.eventId ? null : row.eventId));
-              }}
-            />
-          ))}
-        </ul>
-      )}
+      <QueryBoundary
+        query={events}
+        errorTitle="Events could not load"
+        pending={<Skeleton lines={6} height={28} label="Loading events" />}
+        isEmpty={() => rows.length === 0}
+        empty={
+          <EmptyState title="No events yet" compact>
+            {type
+              ? `No ${type} events from this source.`
+              : 'Events appear here as deliveries arrive. Send a test event to see one.'}
+          </EmptyState>
+        }
+      >
+        {() => (
+          <ul className={styles.events} aria-label={`Events from ${source.name}`}>
+            {rows.map((row) => (
+              <EventItem
+                key={row.eventId}
+                row={row}
+                open={open === row.eventId}
+                onToggle={() => {
+                  setOpen((o) => (o === row.eventId ? null : row.eventId));
+                }}
+              />
+            ))}
+          </ul>
+        )}
+      </QueryBoundary>
       <LoadMore
         hasMore={events.hasNextPage}
         loading={events.isFetchingNextPage}
@@ -125,14 +130,7 @@ function EventItem({
           {row.processes.length === 0 ? (
             <StageIndicator indicator={row.indicator} compact />
           ) : (
-            row.processes.map((p) => (
-              <StatusChip
-                key={p.id}
-                size="sm"
-                tone={p.statusLabel?.tone ?? 'off'}
-                label={`${p.name} · ${p.statusLabel ? `run ${p.statusLabel.label}` : p.outcome}`}
-              />
-            ))
+            <ProcessOutcomes processes={row.processes} />
           )}
         </span>
       </div>
@@ -188,15 +186,13 @@ function EventPanel({ id, row }: { id: string; row: ActivityRow }) {
         )}
         {why.length > 0 && (
           <>
-            <p className={styles.detailTitle} style={{ marginTop: 12 }}>
-              {row.processes.length === 0 ? 'Why nothing ran' : 'Processes that did not take it'}
+            <p className={cx(styles.detailTitle, styles.spaced)}>
+              {whyTitle(row.processes.length)}
             </p>
-            <WhyNothingRan items={why} label="Why nothing ran" />
+            <WhyNothingRan items={why} label={whyTitle(row.processes.length)} />
           </>
         )}
-        <p className={styles.detailTitle} style={{ marginTop: 12 }}>
-          Processes matched
-        </p>
+        <p className={cx(styles.detailTitle, styles.spaced)}>Processes matched</p>
         {row.processes.length === 0 ? (
           <span className={styles.caption}>
             {detail.data && why.length === 0 && detail.data.stage === 'unmatched'
@@ -207,7 +203,7 @@ function EventPanel({ id, row }: { id: string; row: ActivityRow }) {
           <ul className={styles.list}>
             {row.processes.map((p) => (
               <li key={p.id} className={styles.listRow}>
-                <Link to={`/processes/${p.id}`} className={styles.grow}>
+                <Link to={processHref(p.id)} className={styles.grow}>
                   {p.name}
                 </Link>
                 <span className="t-caption">{p.outcome}</span>

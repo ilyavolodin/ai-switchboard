@@ -8,8 +8,9 @@ import type {
 
 import type { BarSeries } from '../../components/BarChart.js';
 import type { ReasonPromptOptions } from '../../hooks/reason.js';
-import { formatClock, toMs } from '../../lib/format.js';
-import { seriesColor } from '../../lib/instances.js';
+import { seriesColor } from '../../lib/colors.js';
+import { formatClock, plural, toMs } from '../../lib/format.js';
+import { STAGE_SERIES } from '../../lib/stages.js';
 
 export function hourlyTotals(stats: SourceStatsResponse | undefined): {
   total: number;
@@ -20,16 +21,6 @@ export function hourlyTotals(stats: SourceStatsResponse | undefined): {
     throttled: b.byStage.source_throttled ?? 0,
   }));
 }
-
-export const STAGE_SERIES: { stage: EventStage; label: string; color: string }[] = [
-  { stage: 'matched', label: 'matched', color: 'var(--st-ok)' },
-  { stage: 'unmatched', label: 'no process matched', color: 'var(--border-4)' },
-  { stage: 'source_throttled', label: 'source-throttled', color: 'var(--st-warn)' },
-  { stage: 'type_muted', label: 'type muted', color: 'var(--sun)' },
-  { stage: 'source_disabled', label: 'source disabled', color: 'var(--accent-3)' },
-  { stage: 'event_invalid', label: 'invalid', color: 'var(--st-err)' },
-  { stage: 'received', label: 'received', color: 'var(--primary)' },
-];
 
 interface Bucket {
   label: string;
@@ -78,10 +69,8 @@ export function typeSeries(buckets: Bucket[]): BarSeries[] {
 
 export function stageSeries(buckets: Bucket[]): BarSeries[] {
   return STAGE_SERIES.map((s) => ({
-    id: s.stage,
-    label: s.label,
-    color: s.color,
-    values: buckets.map((b) => b.byStage[s.stage] ?? 0),
+    ...s,
+    values: buckets.map((b) => b.byStage[s.id] ?? 0),
   })).filter((s) => s.values.some((v) => v > 0));
 }
 
@@ -97,7 +86,7 @@ export function enableSourcePrompt(
   source: Pick<SourceSummary, 'name' | 'processCount'>,
   enabled: boolean,
 ): ReasonPromptOptions {
-  const processes = `${source.processCount} process${source.processCount === 1 ? '' : 'es'}`;
+  const processes = plural(source.processCount, 'process', 'processes');
   return enabled
     ? {
         title: `Enable ${source.name}?`,
@@ -120,7 +109,7 @@ export function describeSourceType(t: PluginTypeDTO): string {
   const n = t.eventTypes?.length ?? 0;
   return [
     t.mode === 'both' ? 'push and pull' : (t.mode ?? 'push'),
-    t.dynamicEventTypes ? 'dynamic event types' : `${n} event type${n === 1 ? '' : 's'}`,
+    t.dynamicEventTypes ? 'dynamic event types' : plural(n, 'event type'),
     t.provisionSupported ? 'registers its webhook' : null,
   ]
     .filter(Boolean)

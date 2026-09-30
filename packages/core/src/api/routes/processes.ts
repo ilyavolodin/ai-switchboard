@@ -10,14 +10,17 @@ import {
 import { changeMeta } from '../change.js';
 import type { ApiContext } from '../context.js';
 import {
+  activityQuery,
   createProcessBody,
   cronPreviewBody,
   enableBody,
   filterPreviewBody,
   inputPreviewBody,
+  limitQuery,
   reasonedBody,
   runNowBody,
   updateProcessBody,
+  windowQuery,
   type ActivityQuery,
   type CreateProcessRequest,
   type CronPreviewRequest,
@@ -39,7 +42,7 @@ import {
   processVersionList,
   recentBatches,
 } from '../read/processes.js';
-import { parseWindow, processFunnel, processStats } from '../read/stats.js';
+import { processFunnel, processStats } from '../read/stats.js';
 import { allow } from './options.js';
 
 export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): void {
@@ -141,22 +144,22 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
 
   app.get<{ Params: { id: string }; Querystring: LimitQuery }>(
     '/api/v1/processes/:id/batches',
-    allow('viewer'),
+    allow('viewer', { querystring: limitQuery }),
     async (req) => recentBatches(ctx, req.params.id, req.query.limit),
   );
   app.get<{ Params: { id: string }; Querystring: WindowQuery }>(
     '/api/v1/processes/:id/funnel',
-    allow('viewer'),
-    async (req) => processFunnel(ctx, req.params.id, parseWindow(req.query.window)),
+    allow('viewer', { querystring: windowQuery }),
+    async (req) => processFunnel(ctx, req.params.id, req.query.window),
   );
   app.get<{ Params: { id: string }; Querystring: WindowQuery }>(
     '/api/v1/processes/:id/stats',
-    allow('viewer'),
-    async (req) => processStats(ctx, req.params.id, parseWindow(req.query.window, '7d')),
+    allow('viewer', { querystring: windowQuery }),
+    async (req) => processStats(ctx, req.params.id, req.query.window),
   );
   app.get<{ Params: { id: string }; Querystring: ActivityQuery }>(
     '/api/v1/processes/:id/activity',
-    allow('viewer'),
+    allow('viewer', { querystring: activityQuery }),
     async (req) => listActivity(ctx, { ...req.query, process: req.params.id }),
   );
 

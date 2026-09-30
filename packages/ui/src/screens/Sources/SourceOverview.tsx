@@ -5,11 +5,12 @@ import { Link } from 'react-router';
 import { useSourceStats } from '../../api/index.js';
 import { BarChart } from '../../components/BarChart.js';
 import { Card } from '../../components/Card.js';
+import { QueryBoundary } from '../../components/QueryBoundary.js';
 import { SegmentedControl } from '../../components/SegmentedControl.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { Time } from '../../components/Time.js';
-import { QueryError } from '../../components/QueryError.js';
 import { formatCount } from '../../lib/format.js';
+import { processHref } from '../../lib/hrefs.js';
 import styles from '../shared/detail.module.css';
 import { WINDOW_LABEL, WINDOW_OPTIONS } from '../shared/statsWindow.js';
 import { stageSeries, statBuckets, typeSeries, typeSplit } from './sourceModel.js';
@@ -40,34 +41,36 @@ export function SourceOverview({ source }: { source: SourceDetail }) {
         />
       </div>
       <div className={styles.twoUp}>
-        {stats.isPending ? (
-          <Skeleton shape="card" height={360} label="Loading source stats" />
-        ) : stats.isError ? (
-          <QueryError query={stats} title="Stats could not load" />
-        ) : (
-          <>
-            <Card title={`Events per ${unit} by type · ${label}`}>
-              <BarChart
-                stacked
-                labels={labels}
-                series={typeSeries(buckets)}
-                labelEvery={range === '24h' ? 3 : range === '30d' ? 5 : 1}
-                ariaLabel={`Events per ${unit} by type over ${label}`}
-                formatValue={formatCount}
-              />
-            </Card>
-            <Card title={`Events per ${unit} by stage · ${label}`}>
-              <BarChart
-                stacked
-                labels={labels}
-                series={stageSeries(buckets)}
-                labelEvery={range === '24h' ? 3 : range === '30d' ? 5 : 1}
-                ariaLabel={`Events per ${unit} by pipeline stage over ${label}`}
-                formatValue={formatCount}
-              />
-            </Card>
-          </>
-        )}
+        <QueryBoundary
+          query={stats}
+          errorTitle="Stats could not load"
+          pending={<Skeleton shape="card" height={360} label="Loading source stats" />}
+        >
+          {() => (
+            <>
+              <Card title={`Events per ${unit} by type · ${label}`}>
+                <BarChart
+                  stacked
+                  labels={labels}
+                  series={typeSeries(buckets)}
+                  labelEvery={range === '24h' ? 3 : range === '30d' ? 5 : 1}
+                  ariaLabel={`Events per ${unit} by type over ${label}`}
+                  formatValue={formatCount}
+                />
+              </Card>
+              <Card title={`Events per ${unit} by stage · ${label}`}>
+                <BarChart
+                  stacked
+                  labels={labels}
+                  series={stageSeries(buckets)}
+                  labelEvery={range === '24h' ? 3 : range === '30d' ? 5 : 1}
+                  ariaLabel={`Events per ${unit} by pipeline stage over ${label}`}
+                  formatValue={formatCount}
+                />
+              </Card>
+            </>
+          )}
+        </QueryBoundary>
       </div>
       <div className={styles.threeUp}>
         <Card title="By type · 24 h">
@@ -97,7 +100,7 @@ export function SourceOverview({ source }: { source: SourceDetail }) {
             <ul className={styles.list}>
               {source.processes.map((p) => (
                 <li key={p.id} className={styles.listRow}>
-                  <Link to={`/processes/${p.id}`} className={styles.grow}>
+                  <Link to={processHref(p.id)} className={styles.grow}>
                     {p.name}
                   </Link>
                   <span className="mono t-caption">{p.eventTypes.join(', ')}</span>

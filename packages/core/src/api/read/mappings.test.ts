@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { instanceStatus, processStatus, runStatusLabel } from '../../domain/labels.js';
 import { RUN_STATUSES } from '../../domain/status.js';
-import { indicatorFor, safeHeaders } from './activity.js';
-import { dotsFrom } from './processes.js';
+import { indicatorFor, safeHeaders } from './activity.shape.js';
+import { dotsFrom } from './processes.shape.js';
 import { defaultProcessDocument } from '../../domain/process.js';
 import { nextSweepAt } from '../../scheduler/due.js';
 

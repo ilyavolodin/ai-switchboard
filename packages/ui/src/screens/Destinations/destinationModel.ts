@@ -3,25 +3,19 @@ import type {
   MeterGaugeDTO,
   MeterSpec,
   PluginTypeDTO,
-  RunStatusValue,
   UsageHistoryResponse,
 } from '@ai-switchboard/core/contract';
 
 import type { BarSeries } from '../../components/BarChart.js';
 import type { ReasonPromptOptions } from '../../hooks/reason.js';
-import { toMs } from '../../lib/format.js';
-
-export const DEFAULT_METER_POLL_SECONDS = 300;
-export const MIN_METER_POLL_SECONDS = 30;
-
-export const DEFAULT_INVOKE_TIMEOUT_SECONDS = 300;
-export const MAX_INVOKE_TIMEOUT_SECONDS = 3600;
+import { plural, toMs } from '../../lib/format.js';
+import { RUN_STATUS_SERIES } from '../../lib/stages.js';
 
 export function describeDestinationType(t: PluginTypeDTO): string {
   const meters = t.meters?.length ?? 0;
   return [
     t.tracking ? `${t.tracking} tracking` : null,
-    meters ? `${meters} meter${meters === 1 ? '' : 's'}` : 'no meters',
+    meters ? plural(meters, 'meter') : 'no meters',
     t.idempotentInvoke ? 'idempotent' : 'not idempotent',
   ]
     .filter(Boolean)
@@ -32,7 +26,7 @@ export function enableDestinationPrompt(
   x: Pick<DestinationSummary, 'name' | 'processCount'>,
   enabled: boolean,
 ): ReasonPromptOptions {
-  const processes = `${x.processCount} process${x.processCount === 1 ? '' : 'es'}`;
+  const processes = plural(x.processCount, 'process', 'processes');
   return enabled
     ? {
         title: `Enable ${x.name}?`,
@@ -47,17 +41,6 @@ export function enableDestinationPrompt(
       };
 }
 
-export const RUN_STATUS_SERIES: { status: RunStatusValue; label: string; color: string }[] = [
-  { status: 'ok', label: 'ok', color: 'var(--st-ok)' },
-  { status: 'error', label: 'error', color: 'var(--st-err)' },
-  { status: 'failed', label: 'failed', color: 'var(--coral-ink)' },
-  { status: 'unknown', label: 'unknown · deadline passed', color: 'var(--st-warn)' },
-  { status: 'uncertain', label: 'uncertain · never retried', color: 'var(--sun)' },
-  { status: 'held', label: 'held', color: 'var(--tangerine-soft)' },
-  { status: 'running', label: 'running', color: 'var(--sky)' },
-  { status: 'invoking', label: 'invoking', color: 'var(--border-4)' },
-];
-
 export function dayLabel(iso: string): string {
   return new Date(toMs(iso) ?? 0).toLocaleDateString(undefined, {
     month: 'short',
@@ -67,10 +50,8 @@ export function dayLabel(iso: string): string {
 
 export function runStatusSeries(usage: UsageHistoryResponse): BarSeries[] {
   return RUN_STATUS_SERIES.map((s) => ({
-    id: s.status,
-    label: s.label,
-    color: s.color,
-    values: usage.runsByStatus.map((d) => d.counts[s.status] ?? 0),
+    ...s,
+    values: usage.runsByStatus.map((d) => d.counts[s.id] ?? 0),
   })).filter((s) => s.values.some((v) => v > 0));
 }
 

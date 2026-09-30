@@ -1,12 +1,10 @@
-import type { Attributes, EventTypeSpec, JSONSchema } from '@ai-switchboard/sdk';
+import type { Attributes, EventTypeSpec } from '@ai-switchboard/sdk';
+import { attr, flatAttributesSchema } from '@ai-switchboard/sdk/schema';
 
-const S = (description: string): JSONSchema => ({ type: 'string', description });
+const S = attr.string;
 
-const attributes: JSONSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['monitorId', 'title', 'transition', 'tags'],
-  properties: {
+const attributes = flatAttributesSchema(
+  {
     monitorId: S('The monitor id ($ALERT_ID).'),
     title: S('Alert title ($ALERT_TITLE).'),
     transition: S(
@@ -14,17 +12,14 @@ const attributes: JSONSchema = {
     ),
     alertType: S('`error`, `warning`, `success` or `info` ($ALERT_TYPE).'),
     priority: S('Monitor priority, e.g. `P1` … `P5`, or `Normal` ($PRIORITY).'),
-    tags: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'Monitor and group tags ($TAGS), e.g. `env:prod`.',
-    },
+    tags: attr.strings('Monitor and group tags ($TAGS), e.g. `env:prod`.'),
     hostname: S('Host that triggered, when there is one ($HOSTNAME).'),
     metric: S('Metric the monitor evaluates ($ALERT_METRIC).'),
     scope: S('The group (scope) that transitioned, e.g. `service:api,env:prod` ($ALERT_SCOPE).'),
     orgId: S('Datadog organization id ($ORG_ID).'),
   },
-};
+  ['monitorId', 'title', 'transition', 'tags'],
+);
 
 const example: Attributes = {
   monitorId: '148275309',

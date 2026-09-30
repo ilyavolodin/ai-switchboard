@@ -266,11 +266,12 @@ export class OidcIdentityMismatchError extends DomainError {
 
 /**
  * The account for an OIDC sign-in, bound to the issuer's subject on first use (audited). An email
- * already bound to another subject is refused, never re-bound silently. Undefined: no account.
+ * already bound to another subject is refused, never re-bound silently, and an unverified email
+ * never binds an account that has a password. Undefined: no account.
  */
 export async function userForOidcIdentity(
   db: Db,
-  identity: { email: string; subject: string },
+  identity: { email: string; subject: string; emailVerified: boolean },
   now: Date,
 ): Promise<UserRow | undefined> {
   const [row] = await db.select().from(users).where(eq(users.email, identity.email));
@@ -278,6 +279,10 @@ export async function userForOidcIdentity(
   if (row.oidcSubject !== null && row.oidcSubject !== identity.subject)
     throw new OidcIdentityMismatchError();
   if (row.oidcSubject !== null) return row;
+  if (!identity.emailVerified && row.passwordHash !== null)
+    throw conflict(
+      'This account has a password and the issuer did not verify your email; sign in with the password.',
+    );
   return db.transaction(async (tx) => {
     const [bound] = await tx
       .update(users)

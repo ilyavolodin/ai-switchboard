@@ -27,7 +27,6 @@ type Step = ProcessRow['document']['before'][number];
 
 /** A source or destination instance that can run a step's action. */
 interface ActionProvider {
-  pluginName: string;
   actions: readonly ActionSpec[];
   secretValues: readonly string[];
   act: ((action: string, args: unknown) => Promise<ActionResult>) | undefined;
@@ -37,7 +36,6 @@ function actionProvider(ctx: Ctx, id: string): ActionProvider | undefined {
   const source = ctx.runtime.source(id);
   if (source) {
     return {
-      pluginName: source.pluginName,
       actions: source.type.actions ?? [],
       secretValues: source.secretValues,
       act: source.source.act?.bind(source.source),
@@ -46,9 +44,8 @@ function actionProvider(ctx: Ctx, id: string): ActionProvider | undefined {
   const destination = ctx.runtime.destination(id);
   if (!destination) return undefined;
   return {
-    pluginName: destination.pluginName,
     actions: destination.type.actions ?? [],
-    secretValues: destination.secretValues ?? [],
+    secretValues: destination.secretValues,
     act: destination.destination.act?.bind(destination.destination),
   };
 }
@@ -204,9 +201,7 @@ async function runStep(
   try {
     const resolved = await resolveForPluginCall(ctx, args.value, secretValues);
     secretValues = resolved.secretValues;
-    const out = await callPlugin(ctx, provider.pluginName, `act ${step.action}`, () =>
-      act(step.action, resolved.value),
-    );
+    const out = await callPlugin(`act ${step.action}`, () => act(step.action, resolved.value));
     if (!out.ok) error = out.error;
     else if (!out.value.ok) error = out.value.message ?? 'action failed';
   } catch (err) {

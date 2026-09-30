@@ -1,6 +1,7 @@
 import { definePlugin } from '@ai-switchboard/sdk';
 
-import { API_HOSTS, datadogSource } from './source.js';
+import { API_HOSTS } from './settings.js';
+import { datadogSource } from './source.js';
 
 export { datadogSource } from './source.js';
 

@@ -46,10 +46,13 @@ export class PluginErrorCounter {
     };
     counts[kind]++;
     this.queue.set(pluginName, counts);
-    this.timer ??= setTimeout(() => {
+    if (this.timer) return;
+    this.timer = setTimeout(() => {
       this.timer = undefined;
       void this.flush();
     }, this.deps.flushDelayMs ?? 250);
+    // `stop()` flushes what is queued; the timer alone must not keep the process alive.
+    this.timer.unref();
   }
 
   async flush(): Promise<void> {

@@ -11,6 +11,11 @@ export interface WhyItem {
   basis: 'recorded' | 'now';
 }
 
+/** When some process took the event, the rest "did not take it"; otherwise nothing ran. */
+export function whyTitle(processesThatTookIt: number): string {
+  return processesThatTookIt === 0 ? 'Why nothing ran' : 'Processes that did not take it';
+}
+
 export function whyFromExplanations(list: readonly EventExplanation[]): WhyItem[] {
   return list
     .filter((x) => !x.taken)

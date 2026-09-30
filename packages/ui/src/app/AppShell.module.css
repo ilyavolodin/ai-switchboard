@@ -28,6 +28,11 @@
   margin: var(--space-3) var(--space-6) 0;
 }
 
+.bannerLink {
+  font-weight: 500;
+  font-size: 12px;
+}
+
 .skip {
   position: absolute;
   left: 8px;

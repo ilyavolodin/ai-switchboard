@@ -1,4 +1,5 @@
 import {
+  checkHealth,
   SecretNotFoundError,
   withSettings,
   type Health,
@@ -122,8 +123,7 @@ function createEnvProvider(settings: EnvSecretSettings, ctx: PluginContext): Sec
       }
       return Promise.resolve(names.sort().map((name) => ({ name })));
     },
-    health: (): Promise<Health> =>
-      Promise.resolve({ status: 'healthy', checkedAt: ctx.now().toISOString() }),
+    health: (): Promise<Health> => checkHealth(ctx, () => Promise.resolve({ status: 'healthy' })),
   };
 }
 

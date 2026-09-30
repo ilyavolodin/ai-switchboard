@@ -316,8 +316,10 @@ interval to every instance; don't put them in your schema.
 
 ```typescript
 import {
+  asObject,
   checkHealth,
   dedupeKey,
+  tryJson,
   verifyHmacHeader,
   withSettings,
   type EventDraft,
@@ -392,7 +394,7 @@ function createDeploysSource(settings: DeploysSettings, ctx: PluginContext): Sou
         headers: { authorization: `Bearer ${settings.apiToken}` },
       });
       if (res.status === 404) return null;
-      return { ref, ...res.json<Record<string, unknown>>() };
+      return { ref, ...asObject(tryJson(res)) };
     },
 
     // checkHealth stamps checkedAt and turns a throw into `unhealthy`.
@@ -565,6 +567,7 @@ Keep your own request timeouts **below** the invoke timeout, so a slow backend s
 ```typescript
 import {
   checkHealth,
+  parseWith,
   pickDeclaredUsage,
   readSignedJson,
   refusalFor,
@@ -619,6 +622,22 @@ const callbackSchema = {
   },
 };
 
+const jobSchema = {
+  type: 'object',
+  required: ['id', 'url'],
+  properties: { id: { type: 'string' }, url: { type: 'string' } },
+};
+
+const quotaSchema = {
+  type: 'object',
+  required: ['used', 'limit', 'resetsAt'],
+  properties: {
+    used: { type: 'number' },
+    limit: { type: 'number' },
+    resetsAt: { type: 'string', format: 'date-time' },
+  },
+};
+
 const DECLARED = new Set(['tokens']);
 
 function createJobsDestination(s: JobsSettings, ctx: PluginContext) {
@@ -635,7 +654,7 @@ function createJobsDestination(s: JobsSettings, ctx: PluginContext) {
       // 429 → failed with retryAfterSeconds; 503 may be retried; another 4xx is definitive.
       if (!res.ok)
         return refusalFor(res, ctx.now(), { message: (r) => `jobs answered ${r.status}` });
-      const body = res.json<{ id: string; url: string }>();
+      const body = parseWith<{ id: string; url: string }>(jobSchema, res.json(), 'jobs answer');
       return { status: 'started' as const, externalId: body.id, externalUrl: body.url };
     },
 
@@ -656,7 +675,11 @@ function createJobsDestination(s: JobsSettings, ctx: PluginContext) {
 
     async readMeters() {
       const res = await ctx.http.get(`${s.baseUrl}/quota`, { headers: auth });
-      const q = res.json<{ used: number; limit: number; resetsAt: string }>();
+      const q = parseWith<{ used: number; limit: number; resetsAt: string }>(
+        quotaSchema,
+        res.json(),
+        'quota answer',
+      );
       return [
         {
           id: 'daily_jobs',
@@ -791,7 +814,14 @@ checks.
 Responses are narrowed from `unknown` with the SDK's JSON helpers (2.1, also browser-safe at
 `@ai-switchboard/sdk/json`): `tryJson(res)` (the body, or `undefined` when it is empty or not
 JSON), `isRecord`, `asObject`, `asString`, `asNumber` (finite only), `asBoolean`, `asArray` (`[]`
-for a non-array), `getPath(value, ...keys)` and `parseJsonObject(text)`.
+for a non-array), `getPath(value, ...keys)` and `parseJsonObject(text)`. For a body with a known
+shape, validate it: `parseWith(schema, res.json(), 'acme answer')` throws a named error and
+`tryParse(schema, res.json())` returns `null`. Call `res.json()` and `ctx.state.get(key)` without a
+type argument: the argument is an unchecked cast, deprecated since 2.4 and removed in 3.0. Pass
+`ctx.now()` to `parseRetryAfter(value, now)` too; its wall-clock default is deprecated.
+
+`HttpRequest.body` and `json` are mutually exclusive: setting both throws a `TransportError` with
+`sent: false` (2.4) instead of silently sending the JSON.
 
 The Switchboard wire protocol has helpers too: `SWITCHBOARD_SIGNATURE_HEADER`
 (`x-switchboard-signature: sha256=<hex>`), `signSwitchboardBody(secret, body)`,
@@ -800,7 +830,11 @@ or `undefined`), `pickDeclaredUsage(usage, declaredIds)` and `SWITCHBOARD_RUN_ID
 (`x-switchboard-run-id`).
 
 `createHttpClient`, `hostMatches`, `makeResponse` and `isPluginDefinition` are for the plugin host
-and live at `@ai-switchboard/sdk/host` since 2.1; their root exports are deprecated.
+and live at `@ai-switchboard/sdk/host` since 2.1; their root exports are deprecated, and so is the
+root export of `secretPaths` since 2.4 (`/host` or `/schema`). The readers the settings form uses
+(`xSecret`, `xWidget`, `xGroup`, `xOrder`, `xPlaceholder`, `xHelp`, `xWarnings`, `xEnumLabels`,
+`xEffectiveDefaults`, `xDocs`, `isXWidget`) live on `@ai-switchboard/sdk/schema`; their root exports
+are deprecated since 2.4. `SchemaUiExtensions`, `UI_KEYWORDS` and `X_WIDGETS` stay on the root.
 
 Also on `ctx`: `logger` (structured, never log secrets), `now()` (use it instead of `Date.now()`),
 `publicUrl`, `instanceId`, `instanceName`, `state` and `secrets`.
@@ -921,10 +955,12 @@ The checks encode the contracts above:
 - **Notifier** (`notifierConformanceChecks(type, { settings, http?, message? })`, 2.1): manifest
   validates; `health()` resolves; `send` makes at least one request for a message; `send` rejects
   when the backend answers 500, so the core records the failure.
-- **Secret provider** (`secretProviderConformanceChecks(type, { settings, expectNames?, secrets? })`):
-  manifest validates; `health()` resolves; `list()`, when implemented, returns unique non-empty
-  names with only `name` / `description` / `updatedAt`; and no value `resolve` returns for a
-  listed name (or any value in `secrets`) appears anywhere in the listing.
+- **Secret provider** (`secretProviderConformanceChecks(type, fixtures)` with `settings`,
+  `expectNames?`, `secrets?`, `http?`, `allowedHosts?`): manifest validates; `health()` resolves; `list()`, when implemented,
+  returns unique non-empty names with only `name` / `description` / `updatedAt`; and no value
+  `resolve` returns for a listed name (or any value in `secrets`) appears anywhere in the listing.
+  A provider with a backend (a vault) stubs it with `http` (2.4); `pluginConformanceChecks` runs it
+  with `capabilities.network` enforced like the other kinds.
 
 ```typescript
 // src/plugin.test.ts
@@ -1018,7 +1054,8 @@ describe('acme-jobs destination', () => {
 
 Fixture secrets are obviously fake (`fixture-secret`), and fixtures live in `src/__fixtures__/`.
 `createStubHttp`, `createTestContext`, `rawRequest` and `runHandle` from the testing kit help
-with plugin-specific tests.
+with plugin-specific tests. Give them your test clock (2.4): `createTestContext({ now })`,
+`rawRequest({ now })` for `receivedAt`, and `runHandle(overrides, { now })` for the deadline.
 
 ### Recording fixtures
 
@@ -1108,6 +1145,21 @@ with a real token.
   subpath, which also carries `MAX_INVOKE_TIMEOUT_SECONDS`) with the unions `SourceMode`,
   `InvokeStatus` and `RunState` derived from them, and `isOneOf` and `errorText` on the root and
   `/json`.
+- SDK 2.4.0 is additive: `schemaFields` and `SchemaField` (the settings-field walker; `secretPaths`
+  now also finds an `x-secret` field under a nested object without `type: 'object'`), the
+  browser-safe `/custom-events` subpath, `SecretProviderFixtures.http` and `allowedHosts`, and the
+  optional clock for `rawRequest` and `runHandle`. The conformance kit is split into one module per
+  kind; `@ai-switchboard/sdk/testing` exports the same names. Deprecated (still exported until
+  3.0): the root exports of `secretPaths` and of the settings-form readers (`xSecret`, `xWidget`,
+  `xGroup`, `xOrder`, `xPlaceholder`, `xHelp`, `xWarnings`, `xEnumLabels`, `xEffectiveDefaults`,
+  `xDocs`, `isXWidget`), the type argument of `HttpResponse.json` and `InstanceState.get`, and
+  `parseRetryAfter`'s wall-clock default. `HttpClient` now refuses a request with both `body` and
+  `json`. Plugin helpers, also new in 2.4.0: `verifySwitchboardCallback`, `callbackBodySchema` and
+  `CALLBACK_BODY_PROPERTIES` for completion callbacks, `parseDefinitive` for targets and inputs,
+  `dispatchAction` for `act`, `headerValue`, `responseSnippet`, `lowerCaseHeaders`, `meterReading`,
+  `attr` and `flatAttributesSchema` on `/schema`, and the `/jsonata` subpath (`compileExpression`,
+  `asList`, `MappingError`: the 2 s, deterministic expression sandbox; list `jsonata` in your own
+  dependencies to use it).
 - Your plugin's own version is yours, but treat event type ids, attribute names and action ids as
   public API: people's filters and processes depend on them. Removing or renaming one is a major.
 - SDK majors are announced through the `switchboard-plugin` topic on the repository.

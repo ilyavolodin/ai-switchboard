@@ -26,7 +26,7 @@ import {
   timing,
   workflowRun,
 } from './__fixtures__/github.js';
-import { pendingKey, type PendingDispatch } from './destination.js';
+import { pendingKey, type PendingDispatch } from './correlation.js';
 import plugin, { githubActionsDestinationType } from './plugin.js';
 
 const PAT = 'fixture-secret-pat';

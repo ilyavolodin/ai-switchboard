@@ -8,9 +8,14 @@ import type {
   UsageDimension,
 } from '@ai-switchboard/sdk';
 
-import type { InstanceKind, PluginOrigin, PluginStatus } from '../domain/status.js';
+import {
+  INSTANCE_KINDS,
+  type InstanceKind,
+  type PluginOrigin,
+  type PluginStatus,
+} from '../domain/status.js';
 import type { Iso, Reasoned, StatusLabel } from './common.js';
-import { bodySchema } from './schema.js';
+import { bodySchema, querySchema } from './schema.js';
 
 export type PluginKind = InstanceKind;
 
@@ -47,6 +52,11 @@ export interface PluginTypeDTO {
 export interface PluginTypesQuery {
   kind?: PluginKind;
 }
+
+export const pluginTypesQuery = querySchema<PluginTypesQuery>()({
+  type: 'object',
+  properties: { kind: { type: 'string', enum: INSTANCE_KINDS } },
+});
 
 export interface PluginSummary {
   name: string;
@@ -103,12 +113,18 @@ export const installPluginBody = bodySchema<InstallPluginRequest>()({
 });
 
 /** The `{kind}` in the plugin naming convention `ai-switchboard-{kind}-{name}`. */
-export type PluginSearchKind = 'source' | 'destination' | 'notifier' | 'secrets';
+export const PLUGIN_SEARCH_KINDS = ['source', 'destination', 'notifier', 'secrets'] as const;
+export type PluginSearchKind = (typeof PLUGIN_SEARCH_KINDS)[number];
 
 export interface PluginSearchQuery {
   kind?: PluginSearchKind;
   q?: string;
 }
+
+export const pluginSearchQuery = querySchema<PluginSearchQuery>()({
+  type: 'object',
+  properties: { kind: { type: 'string', enum: PLUGIN_SEARCH_KINDS }, q: { type: 'string' } },
+});
 
 export interface PluginSearchResult {
   package: string;

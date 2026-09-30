@@ -8,6 +8,11 @@
   color: var(--muted-foreground);
 }
 
+.bareList {
+  margin: 0;
+  padding: 0;
+}
+
 .fact {
   display: inline-flex;
   align-items: center;
@@ -202,6 +207,10 @@
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--foreground-tertiary);
+}
+
+.detailTitle.spaced {
+  margin-top: 12px;
 }
 
 .replay {

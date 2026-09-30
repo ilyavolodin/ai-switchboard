@@ -71,40 +71,50 @@ export interface TelemetryRuntime {
   shutdown(): Promise<void>;
 }
 
-function httpOptions(c: OtlpExporterConfig) {
+/**
+ * The exporter options shared by every protocol. gRPC gets no headers: its exporters take them as
+ * grpc-js `Metadata` and read `OTEL_EXPORTER_OTLP_[SIGNAL_]HEADERS` from the environment
+ * themselves.
+ */
+function exporterOptions(c: OtlpExporterConfig) {
   return {
     url: c.url,
-    headers: c.headers,
+    ...(c.protocol === 'grpc' ? {} : { headers: c.headers }),
     timeoutMillis: c.timeoutMillis,
+    // The exporters' own CompressionAlgorithm enum has these same string values.
     compression: c.compression as never,
   };
 }
 
-/**
- * No headers: gRPC exporters take them as grpc-js `Metadata` and read
- * `OTEL_EXPORTER_OTLP_[SIGNAL_]HEADERS` from the environment themselves.
- */
-function grpcOptions(c: OtlpExporterConfig) {
-  return { url: c.url, timeoutMillis: c.timeoutMillis, compression: c.compression as never };
+type ExporterClass<T> = new (options: ReturnType<typeof exporterOptions>) => T;
+
+function otlpExporter<T>(
+  c: OtlpExporterConfig,
+  classes: Record<OtlpExporterConfig['protocol'], ExporterClass<T>>,
+): T {
+  return new classes[c.protocol](exporterOptions(c));
 }
 
-function spanExporter(c: OtlpExporterConfig): SpanExporter {
-  if (c.protocol === 'grpc') return new OTLPTraceExporterGrpc(grpcOptions(c));
-  if (c.protocol === 'http/json') return new OTLPTraceExporterJson(httpOptions(c));
-  return new OTLPTraceExporterProto(httpOptions(c));
-}
+const SPAN_EXPORTERS: Record<OtlpExporterConfig['protocol'], ExporterClass<SpanExporter>> = {
+  grpc: OTLPTraceExporterGrpc,
+  'http/json': OTLPTraceExporterJson,
+  'http/protobuf': OTLPTraceExporterProto,
+};
 
-function metricExporter(c: OtlpExporterConfig): PushMetricExporter {
-  if (c.protocol === 'grpc') return new OTLPMetricExporterGrpc(grpcOptions(c));
-  if (c.protocol === 'http/json') return new OTLPMetricExporterJson(httpOptions(c));
-  return new OTLPMetricExporterProto(httpOptions(c));
-}
+const METRIC_EXPORTERS: Record<
+  OtlpExporterConfig['protocol'],
+  ExporterClass<PushMetricExporter>
+> = {
+  grpc: OTLPMetricExporterGrpc,
+  'http/json': OTLPMetricExporterJson,
+  'http/protobuf': OTLPMetricExporterProto,
+};
 
-function logExporter(c: OtlpExporterConfig): LogRecordExporter {
-  if (c.protocol === 'grpc') return new OTLPLogExporterGrpc(grpcOptions(c));
-  if (c.protocol === 'http/json') return new OTLPLogExporterJson(httpOptions(c));
-  return new OTLPLogExporterProto(httpOptions(c));
-}
+const LOG_EXPORTERS: Record<OtlpExporterConfig['protocol'], ExporterClass<LogRecordExporter>> = {
+  grpc: OTLPLogExporterGrpc,
+  'http/json': OTLPLogExporterJson,
+  'http/protobuf': OTLPLogExporterProto,
+};
 
 function sampler(t: OtelConfig['traces']): Sampler {
   const ratio = new TraceIdRatioBasedSampler(t.samplerRatio);
@@ -149,8 +159,8 @@ const DIAG_LOG_LEVELS: Record<DiagLevel, DiagLogLevel> = {
   all: DiagLogLevel.ALL,
 };
 
-function exporterList(exporters: readonly string[] | undefined): string {
-  return exporters && exporters.length > 0 ? exporters.join(',') : 'none';
+function exporterList(exporters: readonly string[]): string {
+  return exporters.length > 0 ? exporters.join(',') : 'none';
 }
 
 /** So a later `setupTelemetry` in the same process starts clean (tests). */
@@ -192,7 +202,8 @@ export function setupTelemetry(config: CoreConfig, logger?: CoreLogger): Telemet
   });
 
   const spanProcessors: SpanProcessor[] = [];
-  if (t.traces.otlp) spanProcessors.push(new BatchSpanProcessor(spanExporter(t.traces.otlp)));
+  if (t.traces.otlp)
+    spanProcessors.push(new BatchSpanProcessor(otlpExporter(t.traces.otlp, SPAN_EXPORTERS)));
   if (t.traces.exporters.includes('console'))
     spanProcessors.push(new SimpleSpanProcessor(new ConsoleSpanExporter()));
   const tracerProvider = new NodeTracerProvider({
@@ -216,14 +227,16 @@ export function setupTelemetry(config: CoreConfig, logger?: CoreLogger): Telemet
       exportIntervalMillis: t.metrics.exportIntervalMillis,
       exportTimeoutMillis: Math.min(t.metrics.exportTimeoutMillis, t.metrics.exportIntervalMillis),
     });
-  if (t.metrics.otlp) readers.push(periodic(metricExporter(t.metrics.otlp)));
+  if (t.metrics.otlp) readers.push(periodic(otlpExporter(t.metrics.otlp, METRIC_EXPORTERS)));
   if (t.metrics.exporters.includes('console')) readers.push(periodic(new ConsoleMetricExporter()));
   const meterProvider = new MeterProvider({ resource, readers });
   metrics.setGlobalMeterProvider(meterProvider);
 
   const logProcessors: LogRecordProcessor[] = [];
   if (t.logs.otlp)
-    logProcessors.push(new BatchLogRecordProcessor({ exporter: logExporter(t.logs.otlp) }));
+    logProcessors.push(
+      new BatchLogRecordProcessor({ exporter: otlpExporter(t.logs.otlp, LOG_EXPORTERS) }),
+    );
   if (t.logs.exporters.includes('console'))
     logProcessors.push(new SimpleLogRecordProcessor({ exporter: new ConsoleLogRecordExporter() }));
   const loggerProvider =
@@ -234,9 +247,9 @@ export function setupTelemetry(config: CoreConfig, logger?: CoreLogger): Telemet
 
   log?.info(
     {
-      traces: exporterList(status.signals[0]?.exporters),
-      metrics: exporterList(status.signals[1]?.exporters),
-      logs: exporterList(status.signals[2]?.exporters),
+      traces: exporterList(t.traces.exporters),
+      metrics: exporterList(t.metrics.exporters),
+      logs: exporterList(t.logs.exporters),
       prometheus: t.metrics.prometheus,
     },
     'telemetry configured',

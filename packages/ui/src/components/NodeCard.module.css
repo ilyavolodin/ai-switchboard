@@ -73,6 +73,11 @@ a.card:focus-visible,
   min-width: 0;
 }
 
+/* Used by the node bodies (SourceNode, ProcessNode) to push the last item right. */
+.grow {
+  flex-grow: 1;
+}
+
 .ghost {
   border-style: dashed;
   box-shadow: none;

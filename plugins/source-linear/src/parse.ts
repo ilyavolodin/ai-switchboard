@@ -1,16 +1,19 @@
 import {
-  dedupeKey,
-  type ArtifactRef,
-  type Attributes,
-  type EventDraft,
-  type RawRequest,
   asArray,
   asNumber,
   asObject,
-  parseJsonObject,
-  getPath,
   asString,
+  draftFromMapped,
+  getPath,
+  headerValue,
+  parseJsonObject,
+  toIsoTime,
+  type ArtifactRef,
+  type Attributes,
+  type EventDraft,
   type JsonObject,
+  type MappedEvent,
+  type RawRequest,
 } from '@ai-switchboard/sdk';
 
 /** `updatedFrom` keys that are bookkeeping, not a change a person would filter on. */
@@ -38,11 +41,14 @@ function strings(value: unknown): string[] {
   return asArray(value).filter((v): v is string => typeof v === 'string');
 }
 
-function iso(value: unknown): string | undefined {
-  const s = asString(value);
-  if (s === undefined) return undefined;
-  const ms = Date.parse(s);
-  return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
+const iso = toIsoTime;
+
+/** Names of a label list (`[{ id, name }]`). */
+export function labelNames(value: unknown): string[] {
+  return asArray(value).flatMap((l) => {
+    const name = asString(asObject(l)?.name);
+    return name === undefined ? [] : [name];
+  });
 }
 
 /** Team key from the payload, or the identifier's prefix (`LOL-1712` → `LOL`). */
@@ -73,10 +79,7 @@ function issueAttributes(data: JsonObject, actor: string): Attributes {
     team: teamKey(data) ?? '',
     identifier: asString(data.identifier) ?? '',
     title: asString(data.title) ?? '',
-    labels: asArray(data.labels).flatMap((l) => {
-      const name = asString(asObject(l)?.name);
-      return name === undefined ? [] : [name];
-    }),
+    labels: labelNames(data.labels),
     actor,
   };
   const state = asString(getPath(data, 'state', 'name'));
@@ -230,14 +233,14 @@ export function parseDelivery(req: RawRequest, teamKeys: string[]): EventDraft[]
   const type = asString(body.type);
   const scope = type === 'Comment' ? (asObject(data.issue) ?? {}) : data;
   if (!teamAllowed(teamKey(scope), teamKeys)) return [];
-  const header = req.headers['linear-delivery'];
-  const deliveryId = header === undefined || header === '' ? undefined : header;
+  const deliveryId = headerValue(req, 'linear-delivery');
   let drafts: Draft[] = [];
   if (type === 'Issue') drafts = issueEvents(body, data, req.receivedAt);
   else if (type === 'Comment') drafts = commentEvents(body, data, req.receivedAt);
-  return drafts.map((d) => ({
-    ...d,
-    dedupeKey: dedupeKey(d.type, d.artifact, deliveryId),
-    ...(deliveryId !== undefined ? { deliveryId } : {}),
-  }));
+  return drafts.map((d) =>
+    draftFromMapped({ ...d, deliveryId: undefined } satisfies MappedEvent, {
+      occurredAt: d.occurredAt,
+      deliveryId,
+    }),
+  );
 }

@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatAmount, formatCount, formatSeconds } from './format.js';
+import { formatAmount, formatCount, formatSeconds, plural, pluralWord } from './format.js';
+
+describe('plural', () => {
+  it.each([
+    [0, 'run', undefined, '0 runs'],
+    [1, 'run', undefined, '1 run'],
+    [2, 'process', 'processes', '2 processes'],
+  ] as const)('%s %s', (n, one, many, text) => {
+    expect(plural(n, one, many)).toBe(text);
+  });
+
+  it('gives the word alone', () => {
+    expect(pluralWord(1, 'breaker')).toBe('breaker');
+    expect(pluralWord(3, 'breaker')).toBe('breakers');
+  });
+});
 
 describe('formatAmount', () => {
   it.each([

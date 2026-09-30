@@ -150,6 +150,8 @@ export interface TestContextOptions {
   secrets?: InstanceSecrets;
 }
 
+const wallClock = (): Date => new Date();
+
 export function createTestContext(
   options: TestContextOptions = {},
 ): PluginContext & { logs: MemoryLogEntry[] } {
@@ -160,7 +162,7 @@ export function createTestContext(
     logger,
     logs: logger.entries,
     http: options.http ?? createStubHttp().client,
-    now: options.now ?? (() => new Date()),
+    now: options.now ?? wallClock,
     publicUrl: options.publicUrl ?? 'https://switchboard.test',
     state: options.state ?? createMemoryState(),
     secrets: options.secrets ?? createMemorySecrets(),
@@ -174,6 +176,8 @@ export interface RawRequestInit {
   query?: Record<string, string | undefined>;
   body?: string | Buffer | object;
   receivedAt?: string;
+  /** Stamps `receivedAt` when it is not given; defaults to the wall clock. */
+  now?: () => Date;
 }
 
 /** Objects are JSON-encoded; header names are lower-cased. */
@@ -192,11 +196,16 @@ export function rawRequest(init: RawRequestInit = {}): RawRequest {
     headers,
     query: init.query ?? {},
     body,
-    receivedAt: init.receivedAt ?? new Date().toISOString(),
+    receivedAt: init.receivedAt ?? (init.now ?? wallClock)().toISOString(),
   };
 }
 
-export function runHandle(overrides: Partial<RunHandle> = {}): RunHandle {
+/** The deadline is an hour after `options.now` (default the wall clock) unless overridden. */
+export function runHandle(
+  overrides: Partial<RunHandle> = {},
+  options: { now?: () => Date } = {},
+): RunHandle {
+  const now = (options.now ?? wallClock)();
   return {
     id: '00000000-0000-4000-8000-000000000001',
     processId: 'process-1',
@@ -204,7 +213,7 @@ export function runHandle(overrides: Partial<RunHandle> = {}): RunHandle {
     mode: 'event',
     dryRun: false,
     callbackUrl: 'https://switchboard.test/callbacks/test-instance',
-    deadline: new Date(Date.now() + 3_600_000).toISOString(),
+    deadline: new Date(now.getTime() + 3_600_000).toISOString(),
     ...overrides,
   };
 }

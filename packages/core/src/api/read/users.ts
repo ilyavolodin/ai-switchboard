@@ -1,7 +1,7 @@
 import { users } from '../../db/schema.js';
 import type { TokenRow } from '../../services/tokens.js';
 import type { UserRow } from '../../services/users.js';
-import type { ApiContext } from '../context.js';
+import type { ReadDeps } from './deps.js';
 import type { ApiTokenDTO, UserDirectoryEntry, UserDTO } from '../../contract/index.js';
 
 export function toUserDTO(row: UserRow): UserDTO {
@@ -28,12 +28,12 @@ export function toTokenDTO(row: TokenRow): ApiTokenDTO {
   };
 }
 
-export async function userList(ctx: ApiContext): Promise<UserDTO[]> {
+export async function userList(ctx: ReadDeps): Promise<UserDTO[]> {
   return (await ctx.db.select().from(users).orderBy(users.email)).map(toUserDTO);
 }
 
 /** Who has access and with which role, for every role; how and when they sign in is admin-only. */
-export async function userDirectory(ctx: ApiContext): Promise<UserDirectoryEntry[]> {
+export async function userDirectory(ctx: ReadDeps): Promise<UserDirectoryEntry[]> {
   return ctx.db
     .select({ id: users.id, email: users.email, role: users.role })
     .from(users)

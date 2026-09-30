@@ -1,16 +1,15 @@
 import type { InstanceState, PluginContext, SecretProvider } from '@ai-switchboard/sdk';
 import { createHttpClient } from '@ai-switchboard/sdk/host';
-import { and, eq } from 'drizzle-orm';
 
 import type { Clock } from '../clock.js';
 import type { CoreConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { instanceState } from '../db/schema.js';
 import { toPluginLogger, type CoreLogger } from '../logger.js';
+import { createInstanceSecrets } from '../secrets/instance-secrets.js';
 import { matchableSecrets } from '../secrets/refs.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
 
-import { createInstanceSecrets } from './instance-secrets.js';
+import { createInstanceStateStore } from './instances/store.js';
 
 export interface PluginContextDeps {
   db: Db;
@@ -57,27 +56,6 @@ export function guardInstanceState(
           );
       }
       await state.set(key, value);
-    },
-  };
-}
-
-export function createInstanceStateStore(db: Db, clock: Clock, instanceId: string): InstanceState {
-  return {
-    get: async <T>(key: string) => {
-      const rows = await db
-        .select({ value: instanceState.value })
-        .from(instanceState)
-        .where(and(eq(instanceState.instanceId, instanceId), eq(instanceState.key, key)));
-      return rows[0]?.value as T | undefined;
-    },
-    set: async (key: string, value: unknown) => {
-      await db
-        .insert(instanceState)
-        .values({ instanceId, key, value, updatedAt: clock.now() })
-        .onConflictDoUpdate({
-          target: [instanceState.instanceId, instanceState.key],
-          set: { value, updatedAt: clock.now() },
-        });
     },
   };
 }

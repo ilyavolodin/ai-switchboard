@@ -57,6 +57,7 @@ export async function handleCallback(
         live.pluginName,
         'exception',
         `verifyCallback: ${checked.problem}`,
+        { instanceId: live.id, method: 'verifyCallback' },
       );
       return 'malformed';
     }

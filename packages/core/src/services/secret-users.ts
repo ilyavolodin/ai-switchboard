@@ -2,7 +2,7 @@ import type { Health } from '@ai-switchboard/sdk';
 
 import type { SecretUserDTO } from '../contract/index.js';
 import type { DbOrTx } from '../db/client.js';
-import { INSTANCE_TABLES } from '../db/instance-tables.js';
+import { selectFromEachInstanceTable } from '../db/instance-tables.js';
 import { INSTANCE_KINDS, type InstanceKind } from '../domain/status.js';
 import { collectDocumentSecretRefs, collectSecretRefs, parseSecretRef } from '../secrets/refs.js';
 import { loadProcessRefs } from './process-refs.js';
@@ -34,10 +34,8 @@ export async function secretRefIndex(db: DbOrTx): Promise<SecretHolder[]> {
       const parsed = parseSecretRef(ref);
       return parsed ? [{ path, provider: parsed.provider, name: parsed.name }] : [];
     });
-  const out: SecretHolder[] = [];
-  for (const kind of INSTANCE_KINDS) {
-    const table = INSTANCE_TABLES[kind];
-    const rows = await db
+  const rows = await selectFromEachInstanceTable(INSTANCE_KINDS, (table) =>
+    db
       .select({
         id: table.id,
         name: table.name,
@@ -46,18 +44,16 @@ export async function secretRefIndex(db: DbOrTx): Promise<SecretHolder[]> {
         settings: table.settings,
       })
       .from(table)
-      .orderBy(table.name);
-    for (const r of rows) {
-      out.push({
-        kind,
-        id: r.id,
-        name: r.name,
-        enabled: r.enabled,
-        health: r.health,
-        refs: parse(collectSecretRefs(r.settings)),
-      });
-    }
-  }
+      .orderBy(table.name),
+  );
+  const out: SecretHolder[] = rows.map((r) => ({
+    kind: r.kind,
+    id: r.id,
+    name: r.name,
+    enabled: r.enabled,
+    health: r.health,
+    refs: parse(collectSecretRefs(r.settings)),
+  }));
   for (const p of await loadProcessRefs(db)) {
     out.push({
       kind: 'process',

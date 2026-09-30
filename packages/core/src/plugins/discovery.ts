@@ -3,13 +3,7 @@ import { join } from 'node:path';
 
 import type { PluginOrigin } from '../domain/status.js';
 
-import { readSwitchboardField } from './package-manifest.js';
-
-export interface SwitchboardField {
-  entry: string;
-  source?: string;
-  sdk: string;
-}
+import { parseSwitchboardField, type SwitchboardField } from './package-manifest.js';
 
 export interface DiscoveredPackage {
   name: string;
@@ -33,16 +27,6 @@ async function readPackage(dir: string): Promise<Record<string, unknown> | null>
   } catch {
     return null;
   }
-}
-
-function switchboardField(pkg: Record<string, unknown>): SwitchboardField | null {
-  const field = readSwitchboardField(pkg);
-  if (!field?.entry || !field.sdk) return null;
-  return {
-    entry: field.entry,
-    sdk: field.sdk,
-    ...(field.source !== undefined ? { source: field.source } : {}),
-  };
 }
 
 async function packageDirs(nodeModules: string): Promise<string[]> {
@@ -82,13 +66,13 @@ export async function discoverPlugins(
       seenReal.add(real);
       const pkg = await readPackage(real);
       if (!pkg || typeof pkg.name !== 'string') continue;
-      const field = switchboardField(pkg);
-      if (!field || found.has(pkg.name)) continue;
+      const check = parseSwitchboardField(pkg);
+      if (!check.ok || found.has(pkg.name)) continue;
       found.set(pkg.name, {
         name: pkg.name,
         version: typeof pkg.version === 'string' ? pkg.version : '0.0.0',
         dir: real,
-        switchboard: field,
+        switchboard: check.field,
         origin,
       });
     }

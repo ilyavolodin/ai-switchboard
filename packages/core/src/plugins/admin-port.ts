@@ -1,7 +1,6 @@
-import type { InstanceKind } from '../domain/status.js';
-
 import type { InstallResult, RunNpm } from './install.js';
-import type { HotLoadResult } from './install-sync.js';
+import type { DependentKind, ReconciledInstance } from './instances/manager.js';
+import type { HotLoadResult } from './plugin-set.js';
 import type { LiveSecretProvider, LiveSource } from './runtime.js';
 
 export type PreviewSourceResult =
@@ -10,11 +9,9 @@ export type PreviewSourceResult =
 
 /** What the API may ask of the plugin host beyond `PluginRuntime`. */
 export interface PluginAdminPort {
-  /** Prefer `PluginRuntime.reload`; kept here while routes move over. */
-  reload(kind: InstanceKind, id: string): Promise<void>;
   reloadDependentsOf(
     providerNames: string | readonly string[],
-  ): Promise<{ kind: Exclude<InstanceKind, 'secret_provider'>; id: string; name: string }[]>;
+  ): Promise<ReconciledInstance<DependentKind>[]>;
   instantiateAll(): Promise<void>;
   installAndLoad(
     spec: string,

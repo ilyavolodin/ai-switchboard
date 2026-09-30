@@ -283,3 +283,30 @@ export const ATTENTION_ACTIONS = [
   'enable_process',
 ] as const;
 export type AttentionAction = (typeof ATTENTION_ACTIONS)[number];
+
+/** Where a run's tracking update came from (`run_updates.source`). */
+export const RUN_UPDATE_SOURCES = [
+  'invoke',
+  'poll',
+  'callback',
+  'deadline',
+  'manual',
+  'recovery',
+] as const;
+export type RunUpdateSource = (typeof RUN_UPDATE_SOURCES)[number];
+
+/** How a session signed in (`sessions.method`). */
+export const SESSION_METHODS = ['password', 'oidc'] as const;
+export type SessionMethodValue = (typeof SESSION_METHODS)[number];
+
+/** What a notification was about (`notification_log.on`): a run outcome or a system alert. */
+export const NOTIFICATION_TOPICS = [...NOTIFY_ON, 'system'] as const;
+export type NotificationTopic = (typeof NOTIFICATION_TOPICS)[number];
+
+/** `sending` is claimed before the send, so a crash never sends twice. */
+export const NOTIFICATION_STATUSES = ['sending', 'sent', 'error'] as const;
+export type NotificationStatus = (typeof NOTIFICATION_STATUSES)[number];
+
+/** The stage a recorded gate decision belongs to (`batches.decisions[].stage`). */
+export const DECISION_STAGES = ['gate', 'budget', 'batch', 'approval'] as const;
+export type DecisionStage = (typeof DECISION_STAGES)[number];

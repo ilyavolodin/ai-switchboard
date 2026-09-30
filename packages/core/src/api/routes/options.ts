@@ -10,14 +10,22 @@ import type { PluginAdminDeps } from '../../services/plugin-admin.js';
 import type { SecretProviderDeps } from '../../services/secret-providers.js';
 import type { ApiContext } from '../context.js';
 
-/** Route options: the role a route needs and, for a route with a body, its JSON Schema. */
+export interface RouteSchemas {
+  body?: object;
+  querystring?: object;
+}
+
+/**
+ * Route options: the role a route needs and its JSON Schemas. The second argument is a body schema
+ * (`allow('operator', reasonedBody)`) or both kinds (`allow('viewer', { querystring: runsQuery })`).
+ */
 export function allow(
   role: Role,
-  body?: object,
-): { preHandler: preHandlerHookHandler; schema?: { body: object } } {
-  return body
-    ? { preHandler: requireRole(role), schema: { body } }
-    : { preHandler: requireRole(role) };
+  schemas?: { readonly type: 'object' } | RouteSchemas,
+): { preHandler: preHandlerHookHandler; schema?: RouteSchemas } {
+  const preHandler = requireRole(role);
+  if (!schemas) return { preHandler };
+  return { preHandler, schema: 'type' in schemas ? { body: schemas } : schemas };
 }
 
 /** The signed-in user; a 401 for a route reached without one. */

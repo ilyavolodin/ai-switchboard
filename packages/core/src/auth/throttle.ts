@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
-
-import { and, gt, inArray, lt } from 'drizzle-orm';
+import { and, gt, inArray, lt, or, sql } from 'drizzle-orm';
 
 import type { Clock } from '../clock.js';
-import type { DbOrTx } from '../db/client.js';
+import type { Db, DbOrTx } from '../db/client.js';
 import { loginAttempts } from '../db/schema.js';
+import { groupBy } from '../util/collections.js';
+import { sha256 } from './crypto.js';
 
 export interface ThrottleLimit {
   key: string;
@@ -54,50 +54,74 @@ export function throttleDecision(
 
 /** Hashed so the table never holds an address. */
 export function emailKey(email: string): string {
-  return `email:${createHash('sha256').update(email.trim().toLowerCase()).digest('hex')}`;
+  return `email:${sha256(email.trim().toLowerCase())}`;
 }
 
 export const ipKey = (ip: string): string => `ip:${ip}`;
 
+/** An allowed attempt, already counted as a failure until `succeed` withdraws it. */
+export interface ThrottleAttempt extends ThrottleDecision {
+  attemptIds: number[];
+}
+
 /** Counted in Postgres so a client spreading attempts over replicas gains nothing. */
 export class AttemptThrottle {
   constructor(
-    private readonly db: DbOrTx,
+    private readonly db: Db,
     private readonly clock: Clock,
     private readonly windowMs: number = THROTTLE_WINDOW_MS,
   ) {}
 
-  async check(limits: readonly ThrottleLimit[]): Promise<ThrottleDecision> {
-    const now = this.clock.now();
-    if (limits.length === 0) return { allowed: true, retryAfterSeconds: 0 };
-    const rows = await this.db
-      .select({ key: loginAttempts.key, at: loginAttempts.at })
-      .from(loginAttempts)
-      .where(
-        and(
-          inArray(
-            loginAttempts.key,
-            limits.map((l) => l.key),
+  /**
+   * Checks the limits and, when allowed, records the attempt as a failure in the same transaction,
+   * under an advisory lock per key: concurrent guesses are counted one after another, so a burst
+   * gets no more tries than the same guesses sent in turn. A refused attempt is not recorded.
+   */
+  async attempt(limits: readonly ThrottleLimit[]): Promise<ThrottleAttempt> {
+    if (limits.length === 0) return { allowed: true, retryAfterSeconds: 0, attemptIds: [] };
+    const keys = [...new Set(limits.map((l) => l.key))].sort();
+    return this.db.transaction(async (tx) => {
+      for (const key of keys) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+      }
+      const now = this.clock.now();
+      const rows = await tx
+        .select({ key: loginAttempts.key, at: loginAttempts.at })
+        .from(loginAttempts)
+        .where(
+          and(
+            inArray(loginAttempts.key, keys),
+            gt(loginAttempts.at, new Date(now.getTime() - this.windowMs)),
           ),
-          gt(loginAttempts.at, new Date(now.getTime() - this.windowMs)),
-        ),
-      );
-    const failures = new Map<string, Date[]>();
-    for (const r of rows) failures.set(r.key, [...(failures.get(r.key) ?? []), r.at]);
-    return throttleDecision(limits, failures, now, this.windowMs);
+        );
+      const decision = throttleDecision(limits, groupDates(rows), now, this.windowMs);
+      if (!decision.allowed) return { ...decision, attemptIds: [] };
+      const inserted = await tx
+        .insert(loginAttempts)
+        .values(keys.map((key) => ({ key, at: now })))
+        .returning({ id: loginAttempts.id });
+      return { ...decision, attemptIds: inserted.map((r) => r.id) };
+    });
   }
 
-  async fail(keys: readonly string[]): Promise<void> {
-    if (keys.length === 0) return;
-    const at = this.clock.now();
-    await this.db.insert(loginAttempts).values(keys.map((key) => ({ key, at })));
+  /**
+   * Withdraws the attempt's own failures and clears the keys given: a sign-in clears its email
+   * key, not its address.
+   */
+  async succeed(attempt: ThrottleAttempt, clearKeys: readonly string[]): Promise<void> {
+    const where = [
+      ...(attempt.attemptIds.length > 0 ? [inArray(loginAttempts.id, attempt.attemptIds)] : []),
+      ...(clearKeys.length > 0 ? [inArray(loginAttempts.key, [...clearKeys])] : []),
+    ];
+    if (where.length === 0) return;
+    await this.db.delete(loginAttempts).where(or(...where));
   }
+}
 
-  /** A successful sign-in clears its email key, not its IP. */
-  async succeed(keys: readonly string[]): Promise<void> {
-    if (keys.length === 0) return;
-    await this.db.delete(loginAttempts).where(inArray(loginAttempts.key, [...keys]));
-  }
+function groupDates(rows: readonly { key: string; at: Date }[]): Map<string, Date[]> {
+  return new Map(
+    [...groupBy(rows, (r) => r.key)].map(([key, list]) => [key, list.map((r) => r.at)]),
+  );
 }
 
 export async function pruneLoginAttempts(db: DbOrTx, now: Date): Promise<void> {

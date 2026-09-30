@@ -1,0 +1,19 @@
+.page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--background);
+}
+
+.card {
+  width: 440px;
+  max-width: 100%;
+}
+
+.logo {
+  display: flex;
+  justify-content: center;
+  padding-bottom: 8px;
+}

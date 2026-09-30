@@ -4,6 +4,7 @@ import { getSettings, updateSettings } from '../../services/settings.js';
 import { changeMeta } from '../change.js';
 import type { ApiContext } from '../context.js';
 import {
+  auditQuery,
   updateSettingsBody,
   type AuditQuery,
   type UpdateSettingsRequest,
@@ -26,8 +27,10 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: ApiContext): v
     },
   );
 
-  app.get<{ Querystring: AuditQuery }>('/api/v1/audit', allow('viewer'), async (req) =>
-    listAudit(ctx, req.query),
+  app.get<{ Querystring: AuditQuery }>(
+    '/api/v1/audit',
+    allow('viewer', { querystring: auditQuery }),
+    async (req) => listAudit(ctx, req.query),
   );
 
   app.get('/api/v1/about', allow('viewer'), async () => about(ctx));

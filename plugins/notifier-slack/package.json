@@ -16,7 +16,7 @@
   "switchboard": {
     "entry": "./dist/plugin.js",
     "source": "./src/plugin.ts",
-    "sdk": "^2.1.0"
+    "sdk": "^2.4.0"
   },
   "exports": {
     ".": {
@@ -36,7 +36,7 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@ai-switchboard/sdk": "^2.1.0"
+    "@ai-switchboard/sdk": "^2.4.0"
   },
   "devDependencies": {
     "@ai-switchboard/sdk": "workspace:^"

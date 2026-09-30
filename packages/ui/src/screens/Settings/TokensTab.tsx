@@ -1,92 +1,53 @@
-import type { ApiTokenDTO, CreateApiTokenResponse, Role } from '@ai-switchboard/core/contract';
+import type { CreateApiTokenResponse, Role } from '@ai-switchboard/core/contract';
 import { type SubmitEvent, useState } from 'react';
 
 import { useCreateToken, useDeleteToken, useTokens } from '../../api/index.js';
-import { roleLabel, useSession } from '../../app/session.js';
+import { useSession } from '../../app/session.js';
 import { Button } from '../../components/Button.js';
 import { Card } from '../../components/Card.js';
 import { CopyButton } from '../../components/CopyButton.js';
 import { Dialog } from '../../components/Dialog.js';
 import { Field } from '../../components/Field.js';
+import { QueryBoundary } from '../../components/QueryBoundary.js';
 import { Select } from '../../components/Select.js';
 import { Skeleton } from '../../components/Skeleton.js';
-import { StatusChip } from '../../components/StatusChip.js';
-import { Table, type TableColumn } from '../../components/Table.js';
+import { Table } from '../../components/Table.js';
 import { TextField } from '../../components/TextField.js';
-import { Time } from '../../components/Time.js';
-import { QueryError } from '../../components/QueryError.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import styles from './Settings.module.css';
-import { grantableRoles } from './settingsForm.js';
+import { tokenColumns } from './tokenColumns.js';
+import { createTokenPrompt, revokeTokenPrompt } from './userPrompts.js';
+import { grantableRoles, roleOptions } from './users.js';
 
 export function TokensTab() {
   const tokens = useTokens();
   const [created, setCreated] = useState<CreateApiTokenResponse | null>(null);
   const revoke = useReasonedMutation(
     useDeleteToken(),
-    (v) => ({
-      title: `Revoke “${tokens.data?.find((t) => t.id === v.id)?.name ?? 'this token'}”?`,
-      consequence: 'Anything using it (the CLI, a CI job) gets 401 from its next request.',
-      confirmLabel: 'Revoke token',
-      danger: true,
-    }),
+    (v) => revokeTokenPrompt(tokens.data?.find((t) => t.id === v.id)?.name),
     { successMessage: 'Token revoked' },
   );
-
-  const columns: TableColumn<ApiTokenDTO>[] = [
-    { key: 'name', header: 'name', cell: (t) => <span className={styles.itemName}>{t.name}</span> },
-    { key: 'role', header: 'role', cell: (t) => roleLabel(t.role) },
-    { key: 'created', header: 'created', cell: (t) => <Time value={t.createdAt} /> },
-    {
-      key: 'used',
-      header: 'last used',
-      cell: (t) => <Time value={t.lastUsedAt} fallback="never" />,
-    },
-    {
-      key: 'status',
-      header: 'status',
-      cell: (t) =>
-        t.revokedAt ? (
-          <StatusChip size="sm" tone="off" label="revoked" />
-        ) : (
-          <StatusChip size="sm" tone="ok" label="active" />
-        ),
-    },
-    {
-      key: 'actions',
-      header: <span className="visually-hidden">actions</span>,
-      align: 'right',
-      cell: (t) =>
-        t.revokedAt ? null : (
-          <Button
-            size="sm"
-            variant="danger-outline"
-            aria-label={`Revoke ${t.name}`}
-            onClick={() => void revoke.run({ id: t.id })}
-          >
-            Revoke
-          </Button>
-        ),
-    },
-  ];
+  const columns = tokenColumns((t) => void revoke.run({ id: t.id }));
 
   return (
     <div className={styles.stack}>
       <CreateToken onCreated={setCreated} />
       <Card title="Your API tokens" subtitle="send as Authorization: Bearer <token>">
-        {tokens.isPending ? (
-          <Skeleton lines={3} height={24} label="Loading tokens" />
-        ) : tokens.isError ? (
-          <QueryError query={tokens} title="Tokens could not load" />
-        ) : (
-          <Table
-            caption="API tokens"
-            columns={columns}
-            rows={tokens.data}
-            rowKey={(t) => t.id}
-            empty="No tokens yet. Create one for the CLI or a CI job that applies configuration."
-          />
-        )}
+        <QueryBoundary
+          query={tokens}
+          errorTitle="Tokens could not load"
+          pending={<Skeleton lines={3} height={24} label="Loading tokens" />}
+        >
+          {(rows) => (
+            <Table
+              caption="API tokens"
+              columns={columns}
+              rows={rows}
+              rowKey={(t) => t.id}
+              empty="No tokens yet. Create one for the CLI or a CI pipeline that applies configuration."
+            />
+          )}
+        </QueryBoundary>
       </Card>
       <SecretDialog
         created={created}
@@ -104,11 +65,7 @@ function CreateToken({ onCreated }: { onCreated: (res: CreateApiTokenResponse) =
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('viewer');
   const [error, setError] = useState<string | null>(null);
-  const create = useReasonedMutation(useCreateToken(), (v) => ({
-    title: `Create the token “${v.name}”?`,
-    consequence: `It can do anything the ${roleLabel(v.role)} role can until you revoke it.`,
-    confirmLabel: 'Create token',
-  }));
+  const create = useReasonedMutation(useCreateToken(), (v) => createTokenPrompt(v.name, v.role));
   const onSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!name.trim()) {
@@ -144,7 +101,7 @@ function CreateToken({ onCreated }: { onCreated: (res: CreateApiTokenResponse) =
             <Select
               id={id}
               value={role}
-              options={roles.map((r) => ({ value: r, label: roleLabel(r) }))}
+              options={roleOptions(roles)}
               onChange={(e) => {
                 const next = roles.find((r) => r === e.target.value);
                 if (next) setRole(next);

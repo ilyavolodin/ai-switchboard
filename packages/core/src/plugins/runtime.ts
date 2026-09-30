@@ -16,12 +16,19 @@ import type {
 import type { InstanceError } from '../domain/instance-error.js';
 import type { InstanceKind, PluginErrorKind } from '../domain/status.js';
 
-export interface LiveSource {
+import type { PluginErrorContext } from './error-counter.js';
+import type { TypeEntry } from './type-registry.js';
+
+/** What every live instance carries: its row's identity and the plugin type it was built from. */
+export interface LiveBase<T> {
   id: string;
   name: string;
   typeId: string;
   pluginName: string;
-  type: SourceType;
+  type: T;
+}
+
+export interface LiveSource extends LiveBase<SourceType> {
   source: Source;
   /** The type's list, or the webhook's per-instance definitions. */
   eventTypes: EventTypeSpec[];
@@ -29,12 +36,7 @@ export interface LiveSource {
   secretValues: string[];
 }
 
-export interface LiveDestination {
-  id: string;
-  name: string;
-  typeId: string;
-  pluginName: string;
-  type: DestinationType;
+export interface LiveDestination extends LiveBase<DestinationType> {
   destination: Destination;
   usage: UsageDimension[];
   meters: MeterSpec[];
@@ -43,31 +45,23 @@ export interface LiveDestination {
   /** Seconds; undefined means the core applies the instance cap or its default. */
   invokeTimeoutFor(target: unknown): number | undefined;
   /** Resolved secret values of the instance's settings, redacted from what the backend returns. */
-  secretValues?: string[];
+  secretValues: string[];
 }
 
-export interface LiveNotifier {
-  id: string;
-  name: string;
-  typeId: string;
-  type: NotifierType;
+export interface LiveNotifier extends LiveBase<NotifierType> {
   notifier: Notifier;
 }
 
-export interface LiveSecretProvider {
-  id: string;
-  name: string;
-  typeId: string;
-  type: SecretProviderType;
+export interface LiveSecretProvider extends LiveBase<SecretProviderType> {
   provider: SecretProvider;
 }
 
 /** The pipeline and the API read instances through this and never touch plugin modules directly. */
 export interface PluginRuntime {
-  sourceType(typeId: string): { type: SourceType; pluginName: string } | undefined;
-  destinationType(typeId: string): { type: DestinationType; pluginName: string } | undefined;
-  notifierType(typeId: string): { type: NotifierType; pluginName: string } | undefined;
-  secretProviderType(typeId: string): { type: SecretProviderType; pluginName: string } | undefined;
+  sourceType(typeId: string): TypeEntry<SourceType> | undefined;
+  destinationType(typeId: string): TypeEntry<DestinationType> | undefined;
+  notifierType(typeId: string): TypeEntry<NotifierType> | undefined;
+  secretProviderType(typeId: string): TypeEntry<SecretProviderType> | undefined;
 
   /**
    * Undefined when the instance is missing, failed to build or its plugin is unavailable. Disabled
@@ -83,7 +77,13 @@ export interface PluginRuntime {
 
   reload(kind: InstanceKind, id: string): Promise<void>;
 
-  recordPluginError(pluginName: string, kind: PluginErrorKind, detail?: string): void;
+  /** `context` names the instance and method on the decision's log line when they are known. */
+  recordPluginError(
+    pluginName: string,
+    kind: PluginErrorKind,
+    detail?: string,
+    context?: PluginErrorContext,
+  ): void;
 }
 
 function positiveSeconds(n: unknown): number | undefined {

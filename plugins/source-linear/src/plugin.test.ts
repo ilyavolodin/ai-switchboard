@@ -437,7 +437,7 @@ describe('linear resolve', () => {
 describe('linear act', () => {
   const artifact = { kind: 'linear.issue', id: 'LOL-1712' };
 
-  it('addLabel resolves the label by name, preferring the team label, and keeps existing labels', async () => {
+  it('addLabel resolves the label by name, preferring the team label, and sends only the addition', async () => {
     let update: Record<string, unknown> | undefined;
     const { source } = make(
       baseSettings,
@@ -472,15 +472,10 @@ describe('linear act', () => {
       ok: true,
       message: 'Added label Needs QA to LOL-1712',
     });
+    // Not the full label list: a label someone adds between the fetch and the update must stay.
     expect(update).toEqual({
       id: 'f1e2d3c4-b5a6-4978-8a6b-5c4d3e2f1a0b',
-      input: {
-        labelIds: [
-          'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
-          '3f0b8a52-8a7e-4d3c-9d7e-1f2a3b4c5d6e',
-          'lbl-team',
-        ],
-      },
+      input: { addedLabelIds: ['lbl-team'] },
     });
   });
 

@@ -17,6 +17,7 @@ import {
   MAX_FAILURES_PER_EMAIL,
   MAX_FAILURES_PER_IP,
   MAX_FAILURES_PER_PASSWORD_CHANGE,
+  type ThrottleAttempt,
   type ThrottleLimit,
 } from '../../auth/throttle.js';
 import { DomainError, isDomainError, unauthenticated } from '../../services/errors.js';
@@ -77,9 +78,12 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
 
   // Counted in Postgres, so the limits hold across replicas (a client cannot spread its guesses).
   const attempts = new AttemptThrottle(db, clock);
-  const throttled = async (reply: FastifyReply, limits: ThrottleLimit[]): Promise<void> => {
-    const decision = await attempts.check(limits);
-    if (decision.allowed) return;
+  const throttled = async (
+    reply: FastifyReply,
+    limits: ThrottleLimit[],
+  ): Promise<ThrottleAttempt> => {
+    const decision = await attempts.attempt(limits);
+    if (decision.allowed) return decision;
     void reply.header('Retry-After', String(decision.retryAfterSeconds));
     const wait =
       decision.retryAfterSeconds < 60
@@ -97,18 +101,15 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       const email = req.body.email.trim().toLowerCase();
       const byIp = ipKey(req.ip);
       const byEmail = emailKey(email);
-      await throttled(reply, [
+      const attempt = await throttled(reply, [
         { key: byIp, max: MAX_FAILURES_PER_IP },
         { key: byEmail, max: MAX_FAILURES_PER_EMAIL },
       ]);
       const row = await passwordLogin(db, email, req.body.password, decoyHash);
-      if (!row) {
-        await attempts.fail([byIp, byEmail]);
-        throw unauthenticated('Email or password is incorrect.', 'invalid_credentials');
-      }
+      if (!row) throw unauthenticated('Email or password is incorrect.', 'invalid_credentials');
       // The account's counter resets; the address keeps its count, so one known password does
       // not buy an address fresh guesses at other accounts.
-      await attempts.succeed([byEmail]);
+      await attempts.succeed(attempt, [byEmail]);
       const token = await createSession(db, row.id, 'password', clock.now());
       void reply.setCookie(SESSION_COOKIE, token, cookieOptions);
       return me(row.id, row.mustChangePassword);
@@ -124,7 +125,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       if (user?.via !== 'session' || !token)
         throw forbidden('Change a password from a signed-in session.');
       const key = `password:${user.id}`;
-      await throttled(reply, [{ key, max: MAX_FAILURES_PER_PASSWORD_CHANGE }]);
+      const attempt = await throttled(reply, [{ key, max: MAX_FAILURES_PER_PASSWORD_CHANGE }]);
       const row = await changeOwnPassword(
         db,
         user.id,
@@ -134,7 +135,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
           keepToken: token,
         },
         { actor: actorOf(req), reason: 'changed own password', now: clock.now() },
-        (ok) => (ok ? attempts.succeed([key]) : attempts.fail([key])),
+        (ok) => (ok ? attempts.succeed(attempt, [key]) : Promise.resolve()),
       );
       return me(row.id, false);
     },

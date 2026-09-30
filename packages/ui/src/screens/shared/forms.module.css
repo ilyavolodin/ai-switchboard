@@ -85,6 +85,10 @@
   min-width: 0;
 }
 
+.stack.tight {
+  gap: 6px;
+}
+
 .iconTile {
   display: inline-flex;
   flex-shrink: 0;

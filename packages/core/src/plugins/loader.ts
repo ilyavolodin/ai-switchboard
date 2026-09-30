@@ -8,10 +8,10 @@ import type { CoreConfig } from '../config.js';
 import type { PluginOrigin, PluginStatus } from '../domain/status.js';
 import type { CoreLogger } from '../logger.js';
 import { errorText } from '../util/errors.js';
-import { exists } from '../util/fs.js';
 
 import type { DiscoveredPackage } from './discovery.js';
-import { isSdkCompatible } from './package-manifest.js';
+import { isSdkCompatible, pluginEntry } from './package-manifest.js';
+import { installedModulesDir } from './plugin-paths.js';
 import type { TypeRegistry } from './type-registry.js';
 
 export interface LoadedPlugin {
@@ -77,7 +77,7 @@ export function checkDefinition(
 export function defaultScanDirs(config: Pick<CoreConfig, 'home' | 'pluginDirs'>): ScanDir[] {
   const coreNodeModules = fileURLToPath(new URL('../../node_modules', import.meta.url));
   return [
-    { path: join(config.home, 'plugins', 'node_modules'), origin: 'installed' },
+    { path: installedModulesDir(config.home), origin: 'installed' },
     ...config.pluginDirs.map((path) => ({ path, origin: 'installed' as const })),
     { path: coreNodeModules, origin: 'baked' },
     { path: join(process.cwd(), 'node_modules'), origin: 'baked' },
@@ -155,11 +155,10 @@ export class PluginLoader {
   }
 
   private async importDefinition(pkg: DiscoveredPackage, query: string): Promise<unknown> {
-    const entry = join(pkg.dir, pkg.switchboard.entry);
-    const source = pkg.switchboard.source ? join(pkg.dir, pkg.switchboard.source) : undefined;
-    const useSource =
-      source !== undefined && (this.deps.config.devSource || !(await exists(entry)));
-    const file = useSource ? source : entry;
+    const file = join(
+      pkg.dir,
+      await pluginEntry(pkg.dir, pkg.switchboard, this.deps.config.devSource),
+    );
     const mod = (await import(`${pathToFileURL(file).href}${query}`)) as { default?: unknown };
     return mod.default;
   }

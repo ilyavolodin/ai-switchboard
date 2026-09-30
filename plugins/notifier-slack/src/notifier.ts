@@ -1,6 +1,5 @@
 import {
   checkHealth,
-  tryJson,
   withSettings,
   type Health,
   type NotificationMessage,
@@ -9,13 +8,8 @@ import {
   type PluginContext,
 } from '@ai-switchboard/sdk';
 
+import { createApi } from './api.js';
 import { settingsSchema, type SlackSettings } from './settings.js';
-
-export const SLACK_API = 'https://slack.com/api';
-
-export class SlackError extends Error {
-  override readonly name = 'SlackError';
-}
 
 const HEADER_MAX = 150;
 const SECTION_MAX = 3000;
@@ -83,43 +77,20 @@ export function buildMessage(message: NotificationMessage): { text: string; bloc
 }
 
 function createSlackNotifier(settings: SlackSettings, ctx: PluginContext): Notifier {
-  async function postApi(method: string, body: unknown): Promise<Record<string, unknown>> {
-    const res = await ctx.http.post(`${SLACK_API}/${method}`, {
-      headers: { authorization: `Bearer ${settings.botToken ?? ''}` },
-      json: body,
-    });
-    if (!res.ok) {
-      const retry = res.headers['retry-after'];
-      throw new SlackError(
-        `Slack ${method} answered ${res.status}${retry !== undefined ? ` (retry after ${retry}s)` : ''}`,
-      );
-    }
-    const parsed = tryJson(res);
-    if (parsed === undefined) throw new SlackError(`Slack ${method} returned a non-JSON body`);
-    const record = (parsed ?? {}) as Record<string, unknown>;
-    if (record.ok !== true) {
-      const error = typeof record.error === 'string' ? record.error : 'unknown_error';
-      throw new SlackError(`Slack ${method} failed: ${error}`);
-    }
-    return record;
-  }
+  const api = createApi(ctx.http, settings.botToken);
 
   return {
     async send(message: NotificationMessage): Promise<void> {
       const payload = buildMessage(message);
       if (settings.mode === 'bot') {
-        await postApi('chat.postMessage', {
+        await api.call('chat.postMessage', {
           channel: settings.channel,
           ...payload,
           unfurl_links: false,
         });
         return;
       }
-      const res = await ctx.http.post(settings.webhookUrl ?? '', { json: payload });
-      if (!res.ok) {
-        // Incoming webhooks answer with a plain-text reason such as `no_service` or `invalid_blocks`.
-        throw new SlackError(`Slack webhook answered ${res.status}: ${res.text().slice(0, 200)}`);
-      }
+      await api.postWebhook(settings.webhookUrl ?? '', payload);
     },
 
     health: (): Promise<Health> =>
@@ -130,7 +101,7 @@ function createSlackNotifier(settings: SlackSettings, ctx: PluginContext): Notif
             message: 'An incoming webhook cannot be checked without posting a message.',
           };
         }
-        const auth = await postApi('auth.test', {});
+        const auth = await api.call('auth.test', {});
         const team = typeof auth.team === 'string' ? ` (${auth.team})` : '';
         return { status: 'healthy', message: `Bot token valid${team}` };
       }),

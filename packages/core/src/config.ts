@@ -10,6 +10,11 @@ export interface OidcConfig {
   clientId: string;
   clientSecret: string;
   allowedDomains: string[];
+  /**
+   * `SWITCHBOARD_OIDC_TRUST_UNVERIFIED_EMAIL`: accept an ID token whose email is not marked
+   * verified. Such a sign-in never links to an account that has a password. Off by default.
+   */
+  trustUnverifiedEmail?: boolean;
 }
 
 export interface CoreConfig {
@@ -83,6 +88,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
           clientId: env.SWITCHBOARD_OIDC_CLIENT_ID ?? '',
           clientSecret: env.SWITCHBOARD_OIDC_CLIENT_SECRET ?? '',
           allowedDomains: list(env.SWITCHBOARD_OIDC_ALLOWED_DOMAINS),
+          trustUnverifiedEmail: bool(env.SWITCHBOARD_OIDC_TRUST_UNVERIFIED_EMAIL, false),
         }
       : undefined;
   return {

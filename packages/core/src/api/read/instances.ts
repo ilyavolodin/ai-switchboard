@@ -12,6 +12,7 @@ import { instanceType } from '../../services/instance-validation.js';
 import { LABELS } from '../../services/instances.js';
 import { loadProcessRefs, type ProcessRef } from '../../services/process-refs.js';
 import type { ApiContext } from '../context.js';
+import type { ReadDeps } from './deps.js';
 import type {
   DestinationDetail,
   DestinationSummary,
@@ -28,7 +29,7 @@ type SourceRow = typeof sources.$inferSelect;
 type DestinationRow = typeof destinations.$inferSelect;
 
 export function secretRefsOf(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   instanceId: string,
   settings: Record<string, unknown>,
   resolvedAt: Date | null,
@@ -50,7 +51,7 @@ const boundTo = (destinationId: string) => (p: ProcessRef) =>
   p.document.destination.instanceId === destinationId;
 
 export async function sourceSummaries(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   rows?: SourceRow[],
   processList?: ProcessRef[],
 ): Promise<SourceSummary[]> {
@@ -99,7 +100,7 @@ export async function sourceSummaries(
   });
 }
 
-export async function sourceDetail(ctx: ApiContext, id: string): Promise<SourceDetail> {
+export async function sourceDetail(ctx: ReadDeps, id: string): Promise<SourceDetail> {
   const [row] = await ctx.db.select().from(sources).where(eq(sources.id, id));
   if (!row) throw notFound('Source');
   const procs = await loadProcessRefs(ctx.db);
@@ -131,7 +132,7 @@ export async function sourceDetail(ctx: ApiContext, id: string): Promise<SourceD
 }
 
 export async function destinationSummaries(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   rows?: DestinationRow[],
   processList?: ProcessRef[],
 ): Promise<DestinationSummary[]> {
@@ -177,7 +178,7 @@ export async function destinationSummaries(
   });
 }
 
-export async function destinationDetail(ctx: ApiContext, id: string): Promise<DestinationDetail> {
+export async function destinationDetail(ctx: ReadDeps, id: string): Promise<DestinationDetail> {
   const [row] = await ctx.db.select().from(destinations).where(eq(destinations.id, id));
   if (!row) throw notFound('Destination');
   const procs = await loadProcessRefs(ctx.db);
@@ -211,7 +212,7 @@ export async function destinationDetail(ctx: ApiContext, id: string): Promise<De
 type SimpleKind = 'notifier' | 'secret_provider';
 
 function simpleSummary(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   kind: SimpleKind,
   row: typeof notifiers.$inferSelect,
 ): InstanceSummary {

@@ -87,6 +87,8 @@ export const qk = {
 
   settings: ['settings'] as const,
   users: ['users'] as const,
+  /** Under the users key, so invalidating `users` refreshes it. */
+  userDirectory: ['users', 'directory'] as const,
   tokens: ['tokens'] as const,
   audit: (q: AuditQuery) => ['audit', q] as const,
   about: ['about'] as const,

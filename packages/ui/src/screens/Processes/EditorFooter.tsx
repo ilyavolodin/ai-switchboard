@@ -1,12 +1,11 @@
-import type { RecentBatchDTO } from '@ai-switchboard/core/contract';
-
 import { Button } from '../../components/Button.js';
 import { Checkbox } from '../../components/Checkbox.js';
 import { Select } from '../../components/Select.js';
+import { unsavedLabel } from '../shared/unsavedLabel.js';
 import { batchOptions } from './batches.js';
 import { type Change, describeChange } from './diff.js';
-import { unsavedLabel } from '../shared/unsavedLabel.js';
 import styles from './ProcessEditor.module.css';
+import type { TestRunControls } from './useTestRun.js';
 
 export interface EditorFooterProps {
   changes: Change[];
@@ -14,15 +13,7 @@ export interface EditorFooterProps {
   saving: boolean;
   onDiscard: () => void;
   onSave: () => void;
-  testRun?: {
-    batches: RecentBatchDTO[];
-    batchId: string;
-    onBatchChange: (id: string) => void;
-    dryRun: boolean;
-    onDryRunChange: (dryRun: boolean) => void;
-    pending: boolean;
-    onRun: () => void;
-  };
+  testRun?: TestRunControls;
 }
 
 export function EditorFooter({

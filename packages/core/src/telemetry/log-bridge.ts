@@ -1,6 +1,8 @@
 import { context } from '@opentelemetry/api';
 import { logs, SeverityNumber, type AnyValue, type LogAttributes } from '@opentelemetry/api-logs';
 
+import { SCOPE_NAME } from './trace-context.js';
+
 const SEVERITY: Record<string, { number: SeverityNumber; text: string }> = {
   trace: { number: SeverityNumber.TRACE, text: 'TRACE' },
   debug: { number: SeverityNumber.DEBUG, text: 'DEBUG' },
@@ -81,7 +83,7 @@ export function toLogRecord(line: Record<string, unknown>): {
  * Lines arrive after pino has redacted them. pino writes to its streams synchronously, so the
  * active context is the log call's and the record carries its trace and span ids.
  */
-export function createOtelLogStream(scope = 'switchboard'): { write(line: string): void } {
+export function createOtelLogStream(scope = SCOPE_NAME): { write(line: string): void } {
   return {
     write(line: string) {
       let parsed: unknown;

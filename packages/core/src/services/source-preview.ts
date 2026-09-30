@@ -1,4 +1,5 @@
-import { secretPaths, type RawRequest } from '@ai-switchboard/sdk';
+import type { RawRequest } from '@ai-switchboard/sdk';
+import { secretPaths } from '@ai-switchboard/sdk/host';
 import { and, desc, eq } from 'drizzle-orm';
 
 import type {

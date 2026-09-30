@@ -2,6 +2,7 @@ import { isRouteErrorResponse, useRouteError } from 'react-router';
 
 import { Banner } from '../components/Banner.js';
 import { LinkButton } from '../components/LinkButton.js';
+import styles from './RouteError.module.css';
 
 export function RouteError() {
   const error = useRouteError();
@@ -11,15 +12,7 @@ export function RouteError() {
       ? error.message
       : 'Unexpected error';
   return (
-    <div
-      style={{
-        padding: 24,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        alignItems: 'flex-start',
-      }}
-    >
+    <div className={styles.page}>
       <Banner tone="error" title="This screen failed to render">
         {message}
       </Banner>

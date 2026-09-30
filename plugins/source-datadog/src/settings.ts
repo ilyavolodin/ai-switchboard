@@ -13,6 +13,9 @@ export function apiHost(site: Site): string {
   return `api.${site}`;
 }
 
+/** Every host the plugin may call, for `capabilities.network`. */
+export const API_HOSTS = SITES.map(apiHost);
+
 /** US1 and EU use `app.`; the others do not. */
 export function appHost(site: Site): string {
   return site === 'datadoghq.com' || site === 'datadoghq.eu' ? `app.${site}` : site;

@@ -79,9 +79,9 @@ function ApplyCard() {
   const [preview, setPreview] = useState<{ yaml: string; result: ApplyResponse } | null>(null);
   const [applied, setApplied] = useState<ApplyResponse | null>(null);
   const toast = useToast();
-  const apply = useApply();
+  const dryRun = useApply();
   const confirmApply = useReasonedMutation(
-    apply,
+    useApply(),
     {
       title: 'Apply this configuration?',
       consequence: preview ? applySummary(preview.result) : undefined,
@@ -97,7 +97,7 @@ function ApplyCard() {
 
   const onPreview = () => {
     setApplied(null);
-    apply.mutate(
+    dryRun.mutate(
       { yaml, dryRun: true, reason: 'dry run from Settings · Export' },
       {
         onSuccess: (result) => {
@@ -145,7 +145,7 @@ function ApplyCard() {
           requires="admin"
           disabled={yaml.trim() === ''}
           disabledReason="Paste a configuration first"
-          loading={apply.isPending && !confirmApply.pending}
+          loading={dryRun.isPending}
           onClick={onPreview}
         >
           Preview changes

@@ -1,47 +1,33 @@
 import type { DestinationSummary } from '@ai-switchboard/core/contract';
-import { Link } from 'react-router';
 
-import { useEnableDestination } from '../../api/index.js';
 import { Countdown } from '../../components/Countdown.js';
-import { TypeIcon } from '../../components/TypeIcon.js';
 import { MeterGauge } from '../../components/MeterGauge.js';
 import { StatusChip } from '../../components/StatusChip.js';
-import { Toggle } from '../../components/Toggle.js';
-import { useReasonedMutation } from '../../hooks/reason.js';
+import { pluralWord } from '../../lib/format.js';
+import { destinationHref } from '../../lib/hrefs.js';
 import { cardTone } from '../../lib/instances.js';
+import { InstanceCardHeader } from '../shared/InstanceCardHeader.js';
 import styles from '../shared/instanceCard.module.css';
-import { enableDestinationPrompt } from './destinationModel.js';
+import { useDestinationActions } from './useDestinationActions.js';
 
 export function DestinationCard({ destination }: { destination: DestinationSummary }) {
-  const enable = useReasonedMutation(
-    useEnableDestination(),
-    (v: { id: string; enabled: boolean }) => enableDestinationPrompt(destination, v.enabled),
-  );
+  const actions = useDestinationActions(destination);
   const tone = cardTone(destination.enabled, destination.status.tone);
   return (
     <article className={styles.card} data-tone={tone ?? undefined} aria-label={destination.name}>
-      <div className={styles.head}>
-        <span className={styles.iconTile}>
-          <TypeIcon icon={destination.typeIcon} kind="destination" />
-        </span>
-        <span className={styles.titles}>
-          <Link to={`/destinations/${destination.id}`} className={styles.name}>
-            {destination.name}
-          </Link>
-          <span className={styles.meta}>
+      <InstanceCardHeader
+        kind="destination"
+        name={destination.name}
+        icon={destination.typeIcon}
+        href={destinationHref(destination.id)}
+        meta={
+          <>
             <span className="mono">{destination.typeId}</span> · {destination.typeName}
-          </span>
-        </span>
-        <span className={styles.above}>
-          <Toggle
-            size="sm"
-            ariaLabel={`${destination.name} enabled`}
-            value={destination.enabled}
-            requires="operator"
-            onChange={(next) => void enable.run({ id: destination.id, enabled: next })}
-          />
-        </span>
-      </div>
+          </>
+        }
+        enabled={destination.enabled}
+        onEnabledChange={actions.setEnabled}
+      />
 
       <div className={styles.statusLine}>
         <StatusChip tone={destination.status.tone} label={destination.status.label} size="sm" />
@@ -77,8 +63,8 @@ export function DestinationCard({ destination }: { destination: DestinationSumma
 
       <div className={styles.footer}>
         <span>
-          <span className="mono">{destination.processCount}</span> process
-          {destination.processCount === 1 ? '' : 'es'}
+          <span className="mono">{destination.processCount}</span>{' '}
+          {pluralWord(destination.processCount, 'process', 'processes')}
         </span>
         <span>·</span>
         <span>

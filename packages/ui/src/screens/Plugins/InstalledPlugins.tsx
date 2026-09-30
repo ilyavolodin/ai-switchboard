@@ -8,8 +8,9 @@ import { EmptyState } from '../../components/EmptyState.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Table, type TableColumn } from '../../components/Table.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
-import styles from './Plugins.module.css';
+import { plural, pluralWord } from '../../lib/format.js';
 import { kindLabel, networkText, secretsText } from '../shared/pluginModel.js';
+import styles from './Plugins.module.css';
 
 function instanceCount(p: PluginSummary): number {
   return p.types.reduce((s, t) => s + t.instanceCount, 0);
@@ -25,7 +26,7 @@ export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
         title: `Remove ${v.name}?`,
         consequence: `It is unloaded now, and every replica removes its copy within a minute.${
           n > 0
-            ? ` Its ${n} instance${n === 1 ? '' : 's'} stay configured but are held until it is back.`
+            ? ` Its ${plural(n, 'instance')} stay configured but are held until it is back.`
             : ''
         }`,
         confirmLabel: 'Remove plugin',
@@ -48,7 +49,7 @@ export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
           <span className={styles.pkg}>
             <span className={styles.pkgName}>{p.name}</span>
             <span className={styles.sub}>
-              {p.displayName} · {n} instance{n === 1 ? '' : 's'}
+              {p.displayName} · {plural(n, 'instance')}
             </span>
           </span>
         );
@@ -97,8 +98,8 @@ export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
           />
           {(p.errorCount > 0 || p.invalidEventCount > 0) && (
             <span className={styles.sub}>
-              {p.errorCount} error{p.errorCount === 1 ? '' : 's'} · {p.invalidEventCount} invalid
-              event{p.invalidEventCount === 1 ? '' : 's'} · 24 h
+              {plural(p.errorCount, 'error')} · {plural(p.invalidEventCount, 'invalid event')} · 24
+              h
             </span>
           )}
           {p.pendingRestart && <StatusChip size="sm" tone="warn" label="pending restart" />}
@@ -127,7 +128,7 @@ export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
   if (plugins.length === 0) {
     return (
       <EmptyState title="No plugins installed">
-        Everything but the wiring is a plugin. Add one from the Catalogue tab.
+        Everything but the wiring is a plugin. Find one in the Browse npm tab.
       </EmptyState>
     );
   }
@@ -142,8 +143,8 @@ export function InstalledPlugins({ plugins }: { plugins: PluginSummary[] }) {
       ))}
       {pending.length > 0 && (
         <Banner tone="info" title="A restart applies pending changes">
-          {pending.map((p) => p.name).join(', ')} change{pending.length === 1 ? 's' : ''} on the
-          next restart.
+          {pending.map((p) => p.name).join(', ')} {pluralWord(pending.length, 'changes', 'change')}{' '}
+          on the next restart.
         </Banner>
       )}
       <Card padding="flush">

@@ -3,13 +3,13 @@ import { desc, eq, sql } from 'drizzle-orm';
 
 import { plugins, replicas } from '../../db/schema.js';
 import { telemetryStatus } from '../../telemetry/otel-config.js';
-import type { ApiContext } from '../context.js';
+import type { ReadDeps } from './deps.js';
 import type { AboutResponse } from '../../contract/index.js';
 
 /** A replica whose heartbeat is older than this is shown as gone. */
 const LIVE_HEARTBEAT_MS = 90_000;
 
-export async function about(ctx: ApiContext): Promise<AboutResponse> {
+export async function about(ctx: ReadDeps): Promise<AboutResponse> {
   const { db, config } = ctx;
   const now = ctx.clock.now().getTime();
   const [reps, pluginRows, version] = await Promise.all([

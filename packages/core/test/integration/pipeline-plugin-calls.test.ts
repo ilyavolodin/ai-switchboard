@@ -34,13 +34,12 @@ beforeEach(async () => {
   h = await createHarness(tdb.db);
 });
 
-function directCtx(pluginCallTimeoutMs?: number): Ctx {
+function directCtx(): Ctx {
   return {
     ...h.deps,
     secrets: { resolve: () => Promise.resolve('') },
     engine: createExpressionEngine(),
     log: h.deps.logger,
-    ...(pluginCallTimeoutMs !== undefined ? { pluginCallTimeoutMs } : {}),
   };
 }
 
@@ -63,7 +62,8 @@ describe('plugin calls', () => {
     await fireOne(src.id, '1');
     const [run] = await runsOf(h.db, pid);
     h.clock.advanceSeconds(30);
-    await pollRun(directCtx(50), run!.id);
+    h.runtime.pluginCallTimeoutMs = 50;
+    await pollRun(directCtx(), run!.id);
     expect(errorsOf(EXEC_PLUGIN)).toEqual([
       expect.objectContaining({ detail: expect.stringContaining('timed out') as unknown }),
     ]);

@@ -13,6 +13,8 @@ import type { ApiContext } from '../context.js';
 import {
   inspectPluginBody,
   installPluginBody,
+  pluginSearchQuery,
+  pluginTypesQuery,
   type InspectPluginRequest,
   type InstallPluginRequest,
   type PluginSearchQuery,
@@ -50,15 +52,17 @@ async function installedSummary(
 export function registerPluginRoutes(app: FastifyInstance, ctx: ApiContext): void {
   const deps = pluginAdminDeps(ctx);
 
-  app.get<{ Querystring: PluginTypesQuery }>('/api/v1/plugin-types', allow('viewer'), async (req) =>
-    pluginTypeList(ctx, req.query.kind),
+  app.get<{ Querystring: PluginTypesQuery }>(
+    '/api/v1/plugin-types',
+    allow('viewer', { querystring: pluginTypesQuery }),
+    async (req) => pluginTypeList(ctx, req.query.kind),
   );
 
   app.get('/api/v1/plugins', allow('viewer'), async () => pluginSummaries(ctx));
 
   app.get<{ Querystring: PluginSearchQuery }>(
     '/api/v1/plugins/search',
-    allow('viewer'),
+    allow('viewer', { querystring: pluginSearchQuery }),
     async (req): Promise<PluginSearchResponse> => {
       const found = await searchPackages(deps, req.query.kind, req.query.q);
       return { registry: ctx.config.npmRegistry, results: await searchResults(ctx, found) };

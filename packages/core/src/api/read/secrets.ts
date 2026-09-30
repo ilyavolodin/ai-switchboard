@@ -1,17 +1,10 @@
-import type { ProviderSecretsResponse, SecretProviderDependentDTO } from '../../contract/index.js';
-import {
-  providerDependents as dependentsOf,
-  providerSecrets as secretsOf,
-} from '../../services/secret-providers.js';
-import type { ApiContext } from '../context.js';
+import type { SecretProviderDependentDTO } from '../../contract/index.js';
+import { providerDependents as dependentsOf } from '../../services/secret-providers.js';
+import type { ReadDeps } from './deps.js';
 
 export function providerDependents(
-  ctx: ApiContext,
+  deps: ReadDeps,
   providerNames: readonly string[],
 ): Promise<Map<string, SecretProviderDependentDTO[]>> {
-  return dependentsOf(ctx, providerNames);
-}
-
-export function providerSecrets(ctx: ApiContext, id: string): Promise<ProviderSecretsResponse> {
-  return secretsOf(ctx, id);
+  return dependentsOf(deps, providerNames);
 }

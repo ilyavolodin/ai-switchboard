@@ -189,21 +189,42 @@ describe('installPlugin', () => {
     ]);
   });
 
-  it('uses switchboard.source only when allowSource is set', async () => {
-    const sourceOnly: FakePackage = {
-      ...jira,
-      switchboard: { source: './dist/plugin.js', sdk: '^2.0.0' },
-    };
-    const without = await installPlugin({ home, spec: 'x', runNpm: fakeNpm({ x: sourceOnly }) });
-    expect(without.capabilities).toBeUndefined();
-    expect(without.warnings.join()).toMatch(/no switchboard.entry/);
+  it('refuses what the host would never load: a field without an entry or an sdk range', async () => {
+    const fields: Record<string, string>[] = [
+      { source: './dist/plugin.js', sdk: '^2.0.0' },
+      { entry: './dist/plugin.js' },
+    ];
+    for (const switchboard of fields) {
+      const runNpm = fakeNpm({ x: { ...jira, switchboard } });
+      const err: unknown = await installPlugin({ home, spec: 'x', runNpm }).catch(
+        (e: unknown) => e,
+      );
+      expect(isPluginInstallError(err)).toBe(true);
+      expect((err as Error).message).toMatch(/not a Switchboard plugin: .*(entry|sdk)/);
+      expect(runNpm.calls.map((c) => c[0])).toEqual(['install', 'uninstall']);
+      expect(await listInstalled(home)).toEqual([]);
+    }
+  });
 
-    const withSource = await installPlugin({
+  it('reads capabilities from the file the host loads: the source in dev or when the entry is not built', async () => {
+    const devOnly: FakePackage = {
+      ...jira,
+      switchboard: { entry: './dist/plugin.js', source: './src/missing.ts', sdk: '^2.0.0' },
+    };
+    const dev = await installPlugin({
       home,
-      spec: 'x',
-      runNpm: fakeNpm({ x: sourceOnly }),
+      spec: 'd',
+      runNpm: fakeNpm({ d: devOnly }),
       allowSource: true,
     });
+    expect(dev.warnings.join()).toMatch(/could not import \.\/src\/missing\.ts/);
+
+    const unbuilt: FakePackage = {
+      ...jira,
+      name: '@acme/switchboard-source-unbuilt',
+      switchboard: { entry: './dist/missing.js', source: './dist/plugin.js', sdk: '^2.0.0' },
+    };
+    const withSource = await installPlugin({ home, spec: 'x', runNpm: fakeNpm({ x: unbuilt }) });
     expect(withSource.capabilities).toEqual({
       network: ['*.atlassian.net'],
       secrets: ['api-token'],

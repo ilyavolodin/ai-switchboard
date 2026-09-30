@@ -156,14 +156,16 @@ async function pollRunInSpan(ctx: Ctx, runId: string): Promise<void> {
     .returning({ id: runs.id });
   if (claimed.length === 0) return;
 
-  const out = await callPlugin(ctx, live.pluginName, 'poll', () =>
-    poll(runHandle(ctx, run, proc.name)),
-  );
+  const out = await callPlugin('poll', () => poll(runHandle(ctx, run, proc.name)));
   let status: RunStatus | null = null;
   if (out.ok) {
     const checked = checkRunStatus(out.value);
     if (checked.ok) status = checked.value;
-    else ctx.runtime.recordPluginError(live.pluginName, 'exception', `poll: ${checked.problem}`);
+    else
+      ctx.runtime.recordPluginError(live.pluginName, 'exception', `poll: ${checked.problem}`, {
+        instanceId: live.id,
+        method: 'poll',
+      });
   } else {
     ctx.log.warn({ run_id: runId, err: out.error }, 'poll failed; will poll again');
   }

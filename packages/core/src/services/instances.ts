@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { ProvisionResult } from '@ai-switchboard/sdk';
 import { eq, sql, type SQL } from 'drizzle-orm';
 
 import type { ResultResponse } from '../contract/index.js';
@@ -46,7 +47,6 @@ export interface InstanceDeps {
   db: Db;
   runtime: PluginRuntime;
   host: InstanceHost;
-  pluginCallTimeoutMs?: number;
 }
 
 export interface InstanceDraft {
@@ -490,7 +490,7 @@ export async function deleteInstance(
 
 /** Asks a push source's plugin to register its webhook at `url`. */
 export async function provisionSource(
-  deps: Pick<InstanceDeps, 'db' | 'runtime' | 'pluginCallTimeoutMs'>,
+  deps: Pick<InstanceDeps, 'db' | 'runtime'>,
   id: string,
   url: string,
   meta: ChangeMeta,
@@ -499,8 +499,8 @@ export async function provisionSource(
   if (!live) throw notFound('Running source');
   const provision = live.source.provision?.bind(live.source);
   if (!provision) throw unprocessable(`${live.type.displayName} cannot register webhooks itself.`);
-  const out = await callPlugin(deps, live.pluginName, 'provision', () => provision(url));
-  const result = out.ok ? out.value : { ok: false, message: out.error };
+  const out = await callPlugin('provision', () => provision(url));
+  const result: ProvisionResult = out.ok ? out.value : { ok: false, message: out.error };
   await deps.db.transaction(async (tx) => {
     if (result.ok)
       await tx.update(sources).set({ provisionedAt: meta.now }).where(eq(sources.id, live.id));
@@ -520,15 +520,14 @@ export async function provisionSource(
 
 /** The attempt is audited before the send, so a notifier that hangs still leaves a trace. */
 export async function sendTestNotification(
-  deps: Pick<InstanceDeps, 'db' | 'runtime' | 'pluginCallTimeoutMs'>,
+  deps: Pick<InstanceDeps, 'db' | 'runtime'>,
   id: string,
   meta: ChangeMeta,
 ): Promise<ResultResponse> {
   const live = deps.runtime.notifier(id);
   if (!live) throw notFound('Running notifier');
   await auditChange(deps.db, meta, { scope: 'notifier', targetId: live.id, field: 'test_sent' });
-  const plugin = deps.runtime.notifierType(live.typeId)?.pluginName ?? live.typeId;
-  const out = await callPlugin(deps, plugin, 'send', () =>
+  const out = await callPlugin('send', () =>
     live.notifier.send({
       on: 'system',
       severity: 'info',

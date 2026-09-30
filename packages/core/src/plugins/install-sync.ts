@@ -12,13 +12,9 @@ import {
   type InstallResult,
   type RunNpm,
 } from './install.js';
-import type { LoadedPlugin } from './loader.js';
+import type { HotLoadResult, PluginSet } from './plugin-set.js';
 
-export interface HotLoadResult {
-  plugin: LoadedPlugin;
-  /** Another version is loaded (the ES module cache keeps its code); a restart applies it. */
-  pendingRestart: boolean;
-}
+export type { HotLoadResult } from './plugin-set.js';
 
 export interface InstallSyncDeps {
   config: Pick<CoreConfig, 'home' | 'devSource' | 'pluginSyncSeconds'>;
@@ -26,9 +22,7 @@ export interface InstallSyncDeps {
   logger: CoreLogger;
   catalog: PluginCatalog;
   runNpm: RunNpm | undefined;
-  loaded(name: string): LoadedPlugin | undefined;
-  loadInstalled(name: string): Promise<HotLoadResult>;
-  unregister(name: string): Promise<void>;
+  plugins: Pick<PluginSet, 'get' | 'hotLoad' | 'unregister'>;
 }
 
 /**
@@ -60,10 +54,16 @@ export class InstallSync {
         locked: true,
       });
       await catalog.recordInstall(
-        { name: install.name, spec, version: install.version, sdkRange: install.sdkRange },
+        {
+          name: install.name,
+          spec,
+          version: install.version,
+          sdkRange: install.sdkRange,
+          integrity: install.integrity,
+        },
         clock.now(),
       );
-      const loaded = await this.deps.loadInstalled(install.name);
+      const loaded = await this.deps.plugins.hotLoad(install.name);
       return { install, ...loaded };
     });
   }
@@ -74,7 +74,7 @@ export class InstallSync {
    */
   async forgetInstall(name: string): Promise<void> {
     await this.deps.catalog.tombstone(name, this.deps.clock.now());
-    await this.deps.unregister(name);
+    await this.deps.plugins.unregister(name);
   }
 
   /**
@@ -122,9 +122,9 @@ export class InstallSync {
         logger.info({ plugin: row.name }, 'removing a plugin an admin removed on another replica');
         await removePlugin({ home: config.home, name: row.name, ...this.npm(), locked: true });
       }
-      const current = this.deps.loaded(row.name);
+      const current = this.deps.plugins.get(row.name);
       if (current?.origin === 'installed' && current.status !== 'removed')
-        await this.deps.unregister(row.name);
+        await this.deps.plugins.unregister(row.name);
     } catch (err) {
       logger.error({ err, plugin: row.name }, 'could not remove a removed plugin');
     }
@@ -158,12 +158,12 @@ export class InstallSync {
       }
       // Load it unless this process already tried this version (a refused package is not
       // re-imported every pass; a new version is).
-      const current = this.deps.loaded(row.name);
+      const current = this.deps.plugins.get(row.name);
       const tried =
         current !== undefined &&
         current.status !== 'removed' &&
         (current.status === 'loaded' || current.version === (wanted ?? current.version));
-      if (load && !tried) await this.deps.loadInstalled(row.name);
+      if (load && !tried) await this.deps.plugins.hotLoad(row.name);
     } catch (err) {
       logger.error({ err, plugin: row.name }, 'could not install a recorded plugin');
     }

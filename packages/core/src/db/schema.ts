@@ -18,58 +18,59 @@ import {
 
 import type { ArtifactRef, Attributes, Health, UsageReport } from '@ai-switchboard/sdk';
 
+import type { GateDecisionRecord, MatchDecisionRecord } from '../domain/decisions.js';
+import type { DestinationCaps, SourceCaps } from '../domain/instance-caps.js';
 import type { ProcessDocument } from '../domain/process.js';
 import type {
   ApprovalDecision,
   ApprovalState,
   BatchKind,
   BatchOutcome,
+  BreakerStateValue,
   DispatchOutcome,
   EventStage,
   InstanceKind,
-  MatchSkip,
+  NotificationStatus,
+  NotificationTopic,
   PluginOrigin,
   PluginStatus,
   RawOrigin,
   Role,
   RunStatusValue,
+  RunUpdateSource,
+  SessionMethodValue,
   StepPhase,
   StepStatus,
 } from '../domain/status.js';
+
+/** Kept for existing importers; new code imports these from `domain/`. */
+export type { DestinationCaps, GateDecisionRecord, MatchDecisionRecord, SourceCaps };
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const createdAt = () => ts('created_at').notNull().defaultNow();
+const updatedAt = () => ts('updated_at').notNull().defaultNow();
 const id = () => uuid('id').primaryKey().defaultRandom();
+
 /**
- * Incremented by every write to name, settings or enabled and by every explicit reload, so each
- * replica can tell which instances it must rebuild. Caps and target defaults need no rebuild.
+ * The columns every instance table (sources, destinations, notifiers, secret providers) has.
+ * `config_version` is incremented by every write to name, settings or enabled and by every
+ * explicit reload, so each replica can tell which instances it must rebuild; caps and target
+ * defaults need no rebuild.
  */
-const configVersion = () => integer('config_version').notNull().default(1);
-
-/** Core-added per-instance caps for sources. */
-export interface SourceCaps {
-  eventCapPerHour?: number;
-  eventCapPerDay?: number;
-  eventTypesEnabled?: string[];
-  pollIntervalSeconds?: number;
-  /** Only for `webhook` instances explicitly marked unauthenticated (evaluation). */
-  unauthenticated?: boolean;
-}
-
-/** Core-added per-instance caps for destinations. */
-export interface DestinationCaps {
-  runsPerHour?: number;
-  runsPerDay?: number;
-  usagePerDay?: Record<string, number>;
-  meterPollSeconds?: number;
-  meterStalenessMinutes?: number;
-  /** Typed-in limits for estimated meters, keyed by meter id. */
-  estimatedLimits?: Record<string, number>;
-  /** 1–3600 s; overrides the destination type's per-target and default timeouts. */
-  invokeTimeoutSeconds?: number;
-}
+const instanceColumns = () => ({
+  id: id(),
+  typeId: text('type_id').notNull(),
+  name: text('name').notNull(),
+  /** Plugin settings; secret fields hold `secret://` references, never values. */
+  settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
+  enabled: boolean('enabled').notNull().default(true),
+  health: jsonb('health').$type<Health>(),
+  configVersion: integer('config_version').notNull().default(1),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
 
 export const plugins = pgTable('plugins', {
   name: text('name').primaryKey(),
@@ -100,7 +101,7 @@ export const plugins = pgTable('plugins', {
   errorCount: integer('error_count').notNull().default(0),
   invalidEventCount: integer('invalid_event_count').notNull().default(0),
   loadedAt: ts('loaded_at'),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
+  updatedAt: updatedAt(),
 });
 
 export const pluginTypes = pgTable(
@@ -113,21 +114,15 @@ export const pluginTypes = pgTable(
     /** `json`, not `jsonb`: jsonb reorders object keys, and a settings form must keep field order. */
     manifest: json('manifest').$type<Record<string, unknown>>().notNull(),
     available: boolean('available').notNull().default(true),
-    updatedAt: ts('updated_at').notNull().defaultNow(),
+    updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.kind, t.typeId] })],
 );
 
 export const sources = pgTable('sources', {
-  id: id(),
-  typeId: text('type_id').notNull(),
-  name: text('name').notNull(),
-  /** Plugin settings; secret fields hold `secret://` references, never values. */
-  settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
-  enabled: boolean('enabled').notNull().default(true),
+  ...instanceColumns(),
   caps: jsonb('caps').$type<SourceCaps>().notNull().default({}),
   watermark: text('watermark'),
-  health: jsonb('health').$type<Health>(),
   lastEventAt: ts('last_event_at'),
   lastVerifyFailureAt: ts('last_verify_failure_at'),
   /** Pull sources: when the poller last claimed this instance. */
@@ -136,27 +131,16 @@ export const sources = pgTable('sources', {
   silenceAlertedAt: ts('silence_alerted_at'),
   secretsResolvedAt: ts('secrets_resolved_at'),
   provisionedAt: ts('provisioned_at'),
-  configVersion: configVersion(),
-  createdAt: createdAt(),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
 });
 
 export const destinations = pgTable('destinations', {
-  id: id(),
-  typeId: text('type_id').notNull(),
-  name: text('name').notNull(),
-  settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
+  ...instanceColumns(),
   targetDefaults: jsonb('target_defaults').$type<Record<string, unknown>>().notNull().default({}),
-  enabled: boolean('enabled').notNull().default(true),
   caps: jsonb('caps').$type<DestinationCaps>().notNull().default({}),
   softHoldUntil: ts('soft_hold_until'),
   softHoldReason: text('soft_hold_reason'),
-  health: jsonb('health').$type<Health>(),
   secretsResolvedAt: ts('secrets_resolved_at'),
   metersReadAt: ts('meters_read_at'),
-  configVersion: configVersion(),
-  createdAt: createdAt(),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
 });
 
 export const meterReadings = pgTable(
@@ -175,34 +159,12 @@ export const meterReadings = pgTable(
   (t) => [index('meter_readings_latest').on(t.destinationId, t.meterId, t.observedAt.desc())],
 );
 
-export const notifiers = pgTable('notifiers', {
-  id: id(),
-  typeId: text('type_id').notNull(),
-  name: text('name').notNull(),
-  settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
-  enabled: boolean('enabled').notNull().default(true),
-  health: jsonb('health').$type<Health>(),
-  configVersion: configVersion(),
-  createdAt: createdAt(),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
-});
+export const notifiers = pgTable('notifiers', instanceColumns());
 
-export const secretProviders = pgTable(
-  'secret_providers',
-  {
-    id: id(),
-    typeId: text('type_id').notNull(),
-    /** The `<provider>` segment of `secret://<provider>/<name>`. */
-    name: text('name').notNull(),
-    settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
-    enabled: boolean('enabled').notNull().default(true),
-    health: jsonb('health').$type<Health>(),
-    configVersion: configVersion(),
-    createdAt: createdAt(),
-    updatedAt: ts('updated_at').notNull().defaultNow(),
-  },
-  (t) => [uniqueIndex('secret_providers_name').on(t.name)],
-);
+/** `name` is the `<provider>` segment of `secret://<provider>/<name>`. */
+export const secretProviders = pgTable('secret_providers', instanceColumns(), (t) => [
+  uniqueIndex('secret_providers_name').on(t.name),
+]);
 
 /** Plugin `InstanceState` key/values (e.g. a rotated OAuth refresh token). */
 export const instanceState = pgTable(
@@ -211,7 +173,7 @@ export const instanceState = pgTable(
     instanceId: uuid('instance_id').notNull(),
     key: text('key').notNull(),
     value: jsonb('value').notNull(),
-    updatedAt: ts('updated_at').notNull().defaultNow(),
+    updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.instanceId, t.key] })],
 );
@@ -221,13 +183,13 @@ export const processes = pgTable('processes', {
   name: text('name').notNull(),
   document: jsonb('document').$type<ProcessDocument>().notNull(),
   enabled: boolean('enabled').notNull().default(false),
-  breakerState: text('breaker_state').$type<'closed' | 'open'>().notNull().default('closed'),
+  breakerState: text('breaker_state').$type<BreakerStateValue>().notNull().default('closed'),
   breakerOpenedAt: ts('breaker_opened_at'),
   /** Runs finished before this are ignored by the breaker (set on reset by hand or cooldown). */
   breakerResetAt: ts('breaker_reset_at'),
   version: integer('version').notNull().default(1),
   createdAt: createdAt(),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
+  updatedAt: updatedAt(),
 });
 
 export const processVersions = pgTable(
@@ -348,34 +310,6 @@ export const batches = pgTable(
   ],
 );
 
-/**
- * A trigger on the event's source that was never evaluated is recorded too, with `skip` naming
- * why and `result: false`.
- */
-export interface MatchDecisionRecord {
-  processId: string;
-  triggerId: string;
-  expr?: string;
-  result: boolean;
-  error?: string;
-  /** Set when the trigger was not evaluated at all; absent on events matched before it existed. */
-  skip?: MatchSkip;
-  /** The batch key the group-by expression produced (when it matched). */
-  batchKey?: string;
-  at: string;
-}
-
-export interface GateDecisionRecord {
-  /** `batch` records open/close, `approval` the decision, `gate`/`budget` the checks. */
-  stage: 'gate' | 'budget' | 'batch' | 'approval';
-  check: string;
-  pass: boolean;
-  detail?: string;
-  at: string;
-  /** Budget stage: counters and meter readings at that moment. */
-  data?: Record<string, unknown>;
-}
-
 export const dispatches = pgTable(
   'dispatches',
   {
@@ -491,9 +425,7 @@ export const runUpdates = pgTable(
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     runId: uuid('run_id').notNull(),
     at: ts('at').notNull(),
-    source: text('source')
-      .$type<'invoke' | 'poll' | 'callback' | 'deadline' | 'manual' | 'recovery'>()
-      .notNull(),
+    source: text('source').$type<RunUpdateSource>().notNull(),
     status: text('status').$type<RunStatusValue>().notNull(),
     detail: jsonb('detail'),
   },
@@ -521,7 +453,7 @@ export const sessions = pgTable(
     userId: uuid('user_id').notNull(),
     expiresAt: ts('expires_at').notNull(),
     /** How the session signed in; a `password` session is restricted while the user must change it. */
-    method: text('method').$type<'password' | 'oidc'>().notNull().default('password'),
+    method: text('method').$type<SessionMethodValue>().notNull().default('password'),
     createdAt: createdAt(),
     lastSeenAt: ts('last_seen_at').notNull().defaultNow(),
   },
@@ -557,7 +489,7 @@ export const auditLog = pgTable(
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     actor: text('actor').notNull(),
     at: ts('at').notNull().defaultNow(),
-    /** `process` | `source` | `destination` | `plugin` | `user` | `settings` | `approval` | `run` | ... */
+    /** An `AuditScope`; untyped here so the API can filter by whatever a caller asks for. */
     scope: text('scope').notNull(),
     targetId: text('target_id'),
     field: text('field'),
@@ -571,7 +503,7 @@ export const auditLog = pgTable(
 export const settings = pgTable('settings', {
   key: text('key').primaryKey(),
   value: jsonb('value').notNull(),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
+  updatedAt: updatedAt(),
 });
 
 export const statsHourly = pgTable(
@@ -592,15 +524,13 @@ export const notificationLog = pgTable(
   {
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     notifierId: text('notifier_id').notNull(),
-    /** `ok` | `error` | `held` | `throttled` | `system` */
-    on: text('on').notNull(),
+    on: text('on').$type<NotificationTopic>().notNull(),
     processId: uuid('process_id'),
     batchId: uuid('batch_id'),
     runId: uuid('run_id'),
     title: text('title').notNull(),
     text: text('text').notNull(),
-    /** `sending`: claimed before the send (a crash leaves it; it is never sent twice). */
-    status: text('status').$type<'sending' | 'sent' | 'error'>().notNull(),
+    status: text('status').$type<NotificationStatus>().notNull(),
     error: text('error'),
     at: ts('at').notNull(),
   },

@@ -12,7 +12,7 @@ import { secretProviders } from '../db/schema.js';
 import { formatInstanceError, instanceErrorText } from '../domain/instance-error.js';
 import { instanceStatus } from '../domain/labels.js';
 import type { PluginAdminPort } from '../plugins/admin-port.js';
-import { instanceSecretPrefix } from '../plugins/instance-secrets.js';
+import { instanceSecretPrefix } from '../secrets/instance-secrets.js';
 import type { PluginRuntime } from '../plugins/runtime.js';
 import { formatSecretRef } from '../secrets/refs.js';
 import { errorText } from '../util/errors.js';

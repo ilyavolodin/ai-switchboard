@@ -17,7 +17,8 @@ const CLIENT_SECRET = 'fixture-client-secret';
 interface FakeIssuer {
   server: Server;
   setBase(url: string): void;
-  authorize(params: URLSearchParams, email: string): string;
+  /** `emailVerified: undefined` leaves the claim out of the ID token. */
+  authorize(params: URLSearchParams, email: string, emailVerified?: boolean): string;
 }
 
 function fakeIssuer(): FakeIssuer {
@@ -25,7 +26,13 @@ function fakeIssuer(): FakeIssuer {
   const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256', use: 'sig' };
   const codes = new Map<
     string,
-    { challenge: string; nonce: string; email: string; redirectUri: string }
+    {
+      challenge: string;
+      nonce: string;
+      email: string;
+      emailVerified: boolean | undefined;
+      redirectUri: string;
+    }
   >();
   let base = '';
   const b64 = (v: object | Buffer): string =>
@@ -85,7 +92,7 @@ function fakeIssuer(): FakeIssuer {
             exp: now + 300,
             nonce: entry.nonce,
             email: entry.email,
-            email_verified: true,
+            ...(entry.emailVerified === undefined ? {} : { email_verified: entry.emailVerified }),
           }),
         });
       });
@@ -98,12 +105,13 @@ function fakeIssuer(): FakeIssuer {
     setBase: (url) => {
       base = url;
     },
-    authorize: (params, email) => {
+    authorize: (params, email, emailVerified) => {
       const code = randomBytes(12).toString('hex');
       codes.set(code, {
         challenge: params.get('code_challenge') ?? '',
         nonce: params.get('nonce') ?? '',
         email,
+        emailVerified,
         redirectUri: params.get('redirect_uri') ?? '',
       });
       return code;
@@ -114,6 +122,7 @@ function fakeIssuer(): FakeIssuer {
 let tdb: TestDatabase;
 let h: ApiHarness;
 let issuer: FakeIssuer;
+let issuerBase = '';
 
 beforeAll(async () => {
   tdb = await createTestDatabase();
@@ -122,17 +131,8 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => issuer.server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${(issuer.server.address() as AddressInfo).port}`;
   issuer.setBase(base);
-  h.ctx.oidc = new OidcClient(
-    {
-      issuer: base,
-      clientId: CLIENT_ID,
-      clientSecret: CLIENT_SECRET,
-      allowedDomains: ['acme.test'],
-    },
-    'http://switchboard.test/api/v1/auth/oidc/callback',
-    'cookie-key',
-    { allowInsecure: true },
-  );
+  issuerBase = base;
+  h.ctx.oidc = oidcClient(base);
   await tdb.db.insert(users).values({ email: 'alice@acme.test', role: 'operator' });
 });
 
@@ -142,13 +142,35 @@ afterAll(async () => {
   await tdb.destroy();
 });
 
-async function signIn(email: string): Promise<{ location: string; cookie: string | undefined }> {
+function oidcClient(base: string, options: { trustUnverifiedEmail?: boolean } = {}): OidcClient {
+  return new OidcClient(
+    {
+      issuer: base,
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      allowedDomains: ['acme.test'],
+      ...options,
+    },
+    'http://switchboard.test/api/v1/auth/oidc/callback',
+    'cookie-key',
+    { allowInsecure: true },
+  );
+}
+
+async function signIn(
+  email: string,
+  emailVerified: boolean | 'absent' = true,
+): Promise<{ location: string; cookie: string | undefined }> {
   const start = await h.app.inject({ method: 'GET', url: '/api/v1/auth/oidc/start' });
   expect(start.statusCode).toBe(302);
   const authUrl = new URL(start.headers.location!);
   expect(authUrl.searchParams.get('code_challenge_method')).toBe('S256');
   const flowCookie = String(start.headers['set-cookie']).split(';')[0] ?? '';
-  const code = issuer.authorize(authUrl.searchParams, email);
+  const code = issuer.authorize(
+    authUrl.searchParams,
+    email,
+    emailVerified === 'absent' ? undefined : emailVerified,
+  );
   const cb = await h.app.inject({
     method: 'GET',
     url: `/api/v1/auth/oidc/callback?code=${code}&state=${authUrl.searchParams.get('state') ?? ''}`,
@@ -218,6 +240,41 @@ describe('OIDC sign-in', () => {
     const { location, cookie } = await signIn('mallory@evil.test');
     expect(location).toMatch(/^\/login\?error=.*allowed%20domain/);
     expect(cookie).toBeUndefined();
+  });
+
+  it('refuses an email the issuer does not say is verified', async () => {
+    await tdb.db.insert(users).values({ email: 'dave@acme.test', role: 'viewer' });
+    for (const verified of [false, 'absent'] as const) {
+      const { location, cookie } = await signIn('dave@acme.test', verified);
+      expect(decodeURIComponent(location), String(verified)).toMatch(/not verified/);
+      expect(cookie).toBeUndefined();
+    }
+    const [dave] = await tdb.db.select().from(users).where(eq(users.email, 'dave@acme.test'));
+    expect(dave?.oidcSubject).toBeNull();
+  });
+
+  it('with trustUnverifiedEmail, signs in an unverified email but never links a password account', async () => {
+    const strict = h.ctx.oidc;
+    h.ctx.oidc = oidcClient(issuerBase, { trustUnverifiedEmail: true });
+    try {
+      const open = await signIn('dave@acme.test', 'absent');
+      expect(open.location).toBe('/');
+      expect(open.cookie).toBeDefined();
+
+      await tdb.db
+        .insert(users)
+        .values({ email: 'erin@acme.test', role: 'admin', passwordHash: 'scrypt$1$1$1$x$y' });
+      const refused = await signIn('erin@acme.test', 'absent');
+      expect(decodeURIComponent(refused.location)).toMatch(/password/);
+      expect(refused.cookie).toBeUndefined();
+      const [erin] = await tdb.db.select().from(users).where(eq(users.email, 'erin@acme.test'));
+      expect(erin?.oidcSubject).toBeNull();
+
+      const verified = await signIn('erin@acme.test', true);
+      expect(verified.location).toBe('/');
+    } finally {
+      h.ctx.oidc = strict;
+    }
   });
 
   it('rejects a callback without the signed flow cookie', async () => {

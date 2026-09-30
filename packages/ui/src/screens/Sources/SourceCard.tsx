@@ -1,23 +1,21 @@
 import type { SourceSummary } from '@ai-switchboard/core/contract';
-import { Link } from 'react-router';
 
-import { useEnableSource, useSourceStats } from '../../api/index.js';
-import { TypeIcon } from '../../components/TypeIcon.js';
+import { useSourceStats } from '../../api/index.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { Time } from '../../components/Time.js';
-import { Toggle } from '../../components/Toggle.js';
-import { useReasonedMutation } from '../../hooks/reason.js';
 import { cx } from '../../lib/cx.js';
 import { formatCount } from '../../lib/format.js';
+import { sourceHref } from '../../lib/hrefs.js';
 import { cardTone } from '../../lib/instances.js';
+import { InstanceCardHeader } from '../shared/InstanceCardHeader.js';
 import styles from '../shared/instanceCard.module.css';
-import { enableSourcePrompt, hourlyTotals, modeLabel, typeSplit } from './sourceModel.js';
+import { hourlyTotals, modeLabel, typeSplit } from './sourceModel.js';
+import { useSourceActions } from './useSourceActions.js';
 
 export function SourceCard({ source }: { source: SourceSummary }) {
+  // One stats request per enabled card: the list response has no hourly buckets.
   const stats = useSourceStats(source.enabled ? source.id : undefined, '24h');
-  const enable = useReasonedMutation(useEnableSource(), (v: { id: string; enabled: boolean }) =>
-    enableSourcePrompt(source, v.enabled),
-  );
+  const actions = useSourceActions(source);
   const { total, parts } = typeSplit(source);
   const hours = hourlyTotals(stats.data);
   const peak = Math.max(1, ...hours.map((h) => h.total));
@@ -25,28 +23,15 @@ export function SourceCard({ source }: { source: SourceSummary }) {
 
   return (
     <article className={styles.card} data-tone={tone ?? undefined} aria-label={source.name}>
-      <div className={styles.head}>
-        <span className={styles.iconTile}>
-          <TypeIcon icon={source.typeIcon} kind="source" />
-        </span>
-        <span className={styles.titles}>
-          <Link to={`/sources/${source.id}`} className={styles.name}>
-            {source.name}
-          </Link>
-          <span className={styles.meta}>
-            {source.typeName} · {modeLabel(source.mode)}
-          </span>
-        </span>
-        <span className={styles.above}>
-          <Toggle
-            size="sm"
-            ariaLabel={`${source.name} enabled`}
-            value={source.enabled}
-            requires="operator"
-            onChange={(next) => void enable.run({ id: source.id, enabled: next })}
-          />
-        </span>
-      </div>
+      <InstanceCardHeader
+        kind="source"
+        name={source.name}
+        icon={source.typeIcon}
+        href={sourceHref(source.id)}
+        meta={`${source.typeName} · ${modeLabel(source.mode)}`}
+        enabled={source.enabled}
+        onEnabledChange={actions.setEnabled}
+      />
 
       <div className={styles.statusLine}>
         <StatusChip tone={source.status.tone} label={source.status.label} size="sm" />

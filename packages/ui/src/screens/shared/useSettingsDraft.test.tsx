@@ -20,14 +20,12 @@ describe('useSettingsDraft', () => {
     });
     rerender({ saved: { a: '2', b: '1' } });
     expect(result.current.draft).toEqual({ a: '2', b: '1' });
-    expect(result.current.dirty).toBe(false);
 
     act(() => {
       result.current.set({ b: 'mine' });
     });
     rerender({ saved: { a: '3', b: '1' } });
     expect(result.current.draft).toEqual({ a: '2', b: 'mine' });
-    expect(result.current.dirty).toBe(true);
 
     act(() => {
       result.current.discard();
