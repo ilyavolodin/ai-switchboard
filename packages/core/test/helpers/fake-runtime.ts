@@ -472,6 +472,7 @@ export class FakeRuntime implements PluginRuntime {
       typeId: EXEC_TYPE,
       pluginName: EXEC_PLUGIN,
       type,
+      secretValues: [],
       usage: usageDimensions,
       meters: meterSpecs,
       trackingFor: () => state.tracking,
@@ -512,12 +513,14 @@ export class FakeRuntime implements PluginRuntime {
 
   addNotifier(id: string, name: string): FakeNotifierState {
     const state: FakeNotifierState = { messages: [] };
-    const type = this.notifierType(NOTIFIER_TYPE)?.type;
-    if (!type) throw new Error('no notifier type');
+    const entry = this.notifierType(NOTIFIER_TYPE);
+    if (!entry) throw new Error('no notifier type');
+    const { type, pluginName } = entry;
     this.notifiers.set(id, {
       id,
       name,
       typeId: NOTIFIER_TYPE,
+      pluginName,
       type,
       notifier: attributed<Notifier>(
         {

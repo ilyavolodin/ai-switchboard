@@ -6,7 +6,7 @@ import type { Telemetry } from '../../telemetry/telemetry.js';
 import { diffInstances } from '../reconcile.js';
 
 import { DISABLED, buildError, type InstanceBuilder } from './builder.js';
-import { BUILD_ORDER, KIND_SPECS } from './kind-specs.js';
+import { BUILD_ORDER, recordsResolution } from './kind-specs.js';
 import type { BuiltInstance, LiveSet } from './live-set.js';
 import type { InstanceRowHead, InstanceStore } from './store.js';
 
@@ -62,13 +62,9 @@ export class InstanceManager {
         }
       : { error: buildError(built.stage, built.message) };
     const committed = live.commit(row.id, ticket, outcome, from);
-    if (!committed || !built.ok || !KIND_SPECS[kind].recordsResolution) return;
+    if (!committed || !built.ok || !recordsResolution(kind)) return;
     try {
-      await store.markSecretsResolved(
-        kind === 'source' ? 'source' : 'destination',
-        row.id,
-        clock.now(),
-      );
+      await store.markSecretsResolved(kind, row.id, clock.now());
     } catch (err) {
       // Only the "last resolved" time shown in the UI is lost; the instance is running.
       logger.warn({ err, instance_id: row.id }, 'could not record secret resolution');

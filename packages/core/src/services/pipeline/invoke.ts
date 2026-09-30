@@ -129,7 +129,7 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
     ({ value: input, secretValues } = await resolveForPluginCall(
       ctx,
       run.input,
-      live.secretValues ?? [],
+      live.secretValues,
     ));
   } catch (err) {
     await apply(

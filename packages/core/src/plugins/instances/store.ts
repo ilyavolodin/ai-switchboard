@@ -6,6 +6,8 @@ import { INSTANCE_TABLES } from '../../db/instance-tables.js';
 import { destinations, secretProviders, sources } from '../../db/schema.js';
 import type { InstanceKind } from '../../domain/status.js';
 
+import type { ResolutionKind } from './kind-specs.js';
+
 /** The columns every instance table has, which is all a build reads. */
 export interface InstanceRowHead {
   id: string;
@@ -27,7 +29,7 @@ export interface InstanceStore {
   versions(kind: InstanceKind): Promise<{ id: string; version: number }[]>;
   health(kind: InstanceKind, id: string): Promise<Health | null>;
   saveHealth(kind: InstanceKind, id: string, health: Health): Promise<void>;
-  markSecretsResolved(kind: 'source' | 'destination', id: string, now: Date): Promise<void>;
+  markSecretsResolved(kind: ResolutionKind, id: string, now: Date): Promise<void>;
   hasSecretProviders(): Promise<boolean>;
   addSecretProvider(typeId: string, now: Date): Promise<void>;
 }

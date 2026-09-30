@@ -2,12 +2,15 @@ import type { Health } from '@ai-switchboard/sdk';
 
 import type { Clock } from '../clock.js';
 import { INSTANCE_KINDS, type InstanceKind } from '../domain/status.js';
-import type { GaugeName, Telemetry } from '../telemetry/telemetry.js';
+import type { Telemetry } from '../telemetry/telemetry.js';
 import { errorText } from '../util/errors.js';
 
 import { KIND_SPECS } from './instances/kind-specs.js';
-import type { LiveSet } from './instances/live-set.js';
+import type { LiveByKind, LiveSet } from './instances/live-set.js';
 import type { InstanceStore } from './instances/store.js';
+
+/** Probes in flight at once, so one hanging backend does not hold up every other check. */
+export const HEALTH_CONCURRENCY = 8;
 
 /**
  * Never throws: a thrown or timed-out check is `unhealthy` with the reason. The limit comes from
@@ -22,35 +25,52 @@ export async function probeHealth(check: () => Promise<Health>, clock: Clock): P
   }
 }
 
-const HEALTH_GAUGES: Partial<Record<InstanceKind, GaugeName>> = {
-  source: 'switchboard.source.health',
-  destination: 'switchboard.destination.health',
-};
-
 export interface HealthDeps {
   live: LiveSet;
   store: InstanceStore;
   clock: Clock;
   telemetry: Pick<Telemetry, 'gauge'>;
+  concurrency?: number;
 }
 
-/**
- * Probes every live instance and stores the result. A destination keeps an `unhealthy` the
- * pipeline set (401/403) when the probe cannot tell.
- */
+async function forEachLimited<T>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const item = items[next++];
+      if (item !== undefined) await fn(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+/** Probes every live instance, a few at a time, and stores the result. */
 export async function checkAllHealth(deps: HealthDeps): Promise<void> {
-  for (const kind of INSTANCE_KINDS) await checkKind(kind, deps);
+  const checks = INSTANCE_KINDS.flatMap((kind) => checksOf(kind, deps));
+  await forEachLimited(checks, deps.concurrency ?? HEALTH_CONCURRENCY, (check) => check());
 }
 
-async function checkKind<K extends InstanceKind>(kind: K, deps: HealthDeps): Promise<void> {
-  for (const live of deps.live.values(kind)) {
-    const object = KIND_SPECS[kind].objectOf(live);
-    const stored = kind === 'destination' ? await deps.store.health(kind, live.id) : null;
-    const health = await probeHealth(() => object.health(), deps.clock);
-    if (stored?.status === 'unhealthy' && health.status === 'unknown') continue;
-    await deps.store.saveHealth(kind, live.id, health);
-    const gauge = HEALTH_GAUGES[kind];
-    if (gauge)
-      deps.telemetry.gauge(gauge, health.status === 'healthy' ? 1 : 0, { instance: live.name });
-  }
+function checksOf<K extends InstanceKind>(kind: K, deps: HealthDeps): (() => Promise<void>)[] {
+  return deps.live.values(kind).map((live) => () => checkOne(kind, live, deps));
+}
+
+async function checkOne<K extends InstanceKind>(
+  kind: K,
+  live: LiveByKind[K],
+  deps: HealthDeps,
+): Promise<void> {
+  const spec = KIND_SPECS[kind];
+  const object = spec.objectOf(live);
+  const stored = spec.keepsStoredUnhealthy ? await deps.store.health(kind, live.id) : null;
+  const health = await probeHealth(() => object.health(), deps.clock);
+  if (stored?.status === 'unhealthy' && health.status === 'unknown') return;
+  await deps.store.saveHealth(kind, live.id, health);
+  if (spec.healthGauge)
+    deps.telemetry.gauge(spec.healthGauge, health.status === 'healthy' ? 1 : 0, {
+      instance: live.name,
+    });
 }
