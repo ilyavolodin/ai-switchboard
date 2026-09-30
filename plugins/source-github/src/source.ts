@@ -5,8 +5,8 @@ import {
   asObject,
   asString,
   checkHealth,
+  dispatchAction,
   tryJson,
-  validateAgainst,
   verifyHmacHeader,
   withSettings,
   type ActionResult,
@@ -20,18 +20,18 @@ import {
   type SourceType,
 } from '@ai-switchboard/sdk';
 
+import { actions, itemPath, numberedOrThrow, type GitHubActionArgs } from './actions.js';
 import {
-  actions,
-  actionsById,
-  itemPath,
-  labelNames,
+  createApi,
+  createAuth,
+  errorMessage,
+  GitHubApiError,
   MARK_READY,
-  numberedOrThrow,
-} from './actions.js';
-import { createApi, createAuth, errorMessage, type GitHubApi } from './api.js';
+  type GitHubApi,
+} from './api.js';
 import { WEBHOOK_EVENTS, eventTypes } from './events.js';
 import { extractLinks } from './links.js';
-import { parseDelivery } from './parse.js';
+import { labelNames, parseDelivery } from './parse.js';
 import { GitHubSettingsError, settingsSchema, type GitHubSettings } from './settings.js';
 
 function refusal(what: string, res: { status: number }, message: string): ActionResult {
@@ -61,68 +61,64 @@ function createGitHubSource(s: GitHubSettings, ctx: PluginContext): Source {
     const res = await api.request('GET', itemPath(n, ref.kind));
     if (res.status === 404 || res.status === 410) return null;
     if (!res.ok)
-      throw new Error(`GitHub answered ${res.status} for ${ref.id}: ${errorMessage(res)}`);
+      throw new GitHubApiError(`GitHub answered ${res.status} for ${ref.id}: ${errorMessage(res)}`);
     return asObject(res.json()) ?? null;
   }
 
-  async function act(action: string, args: unknown): Promise<ActionResult> {
-    const spec = actionsById.get(action);
-    if (!spec) return { ok: false, message: `Unknown action "${action}"` };
-    const check = validateAgainst(spec.argsSchema, args);
-    if (!check.valid) return { ok: false, message: `Invalid args: ${check.errors.join('; ')}` };
-    const a = args as { artifact: ArtifactRef; label?: string; body?: string };
-    const n = numberedOrThrow(a.artifact);
-    const issuePath = `/repos/${n.owner}/${n.repo}/issues/${n.number}`;
-    switch (action) {
-      case 'addLabel': {
-        const res = await api.request('POST', `${issuePath}/labels`, { labels: [a.label] });
-        return res.ok
-          ? {
-              ok: true,
-              message: `Added label ${a.label ?? ''} to ${a.artifact.id}`,
-              data: { labels: labelNames(tryJson(res)) },
-            }
-          : refusal('addLabel', res, errorMessage(res));
+  const issuePath = (artifact: ArtifactRef): string => {
+    const n = numberedOrThrow(artifact);
+    return `/repos/${n.owner}/${n.repo}/issues/${n.number}`;
+  };
+
+  const handlers = {
+    async addLabel(a: GitHubActionArgs): Promise<ActionResult> {
+      const res = await api.request('POST', `${issuePath(a.artifact)}/labels`, {
+        labels: [a.label],
+      });
+      return res.ok
+        ? {
+            ok: true,
+            message: `Added label ${a.label ?? ''} to ${a.artifact.id}`,
+            data: { labels: labelNames(tryJson(res)) },
+          }
+        : refusal('addLabel', res, errorMessage(res));
+    },
+    async removeLabel(a: GitHubActionArgs): Promise<ActionResult> {
+      const res = await api.request(
+        'DELETE',
+        `${issuePath(a.artifact)}/labels/${encodeURIComponent(a.label ?? '')}`,
+      );
+      if (res.status === 404)
+        return { ok: true, message: `${a.artifact.id} did not have label ${a.label ?? ''}` };
+      return res.ok
+        ? { ok: true, message: `Removed label ${a.label ?? ''} from ${a.artifact.id}` }
+        : refusal('removeLabel', res, errorMessage(res));
+    },
+    async comment(a: GitHubActionArgs): Promise<ActionResult> {
+      const res = await api.request('POST', `${issuePath(a.artifact)}/comments`, { body: a.body });
+      if (!res.ok) return refusal('comment', res, errorMessage(res));
+      const comment = asObject(tryJson(res));
+      return {
+        ok: true,
+        message: `Commented on ${a.artifact.id}`,
+        data: { id: asNumber(comment?.id), url: asString(comment?.html_url) },
+      };
+    },
+    async markReady(a: GitHubActionArgs): Promise<ActionResult> {
+      const pr = await fetchItem(a.artifact);
+      if (!pr) return { ok: false, message: `${a.artifact.id} was not found` };
+      if (asBoolean(pr.draft) !== true)
+        return { ok: true, message: `${a.artifact.id} is already ready for review` };
+      const res = await api.graphql(MARK_READY, { id: asString(pr.node_id) ?? '' });
+      const body = res.ok ? asObject(tryJson(res)) : undefined;
+      const errors = asArray(body?.errors);
+      if (!res.ok || errors.length > 0) {
+        const message = asString(asObject(errors[0])?.message) ?? errorMessage(res);
+        return refusal('markReady', res, message);
       }
-      case 'removeLabel': {
-        const res = await api.request(
-          'DELETE',
-          `${issuePath}/labels/${encodeURIComponent(a.label ?? '')}`,
-        );
-        if (res.status === 404)
-          return { ok: true, message: `${a.artifact.id} did not have label ${a.label ?? ''}` };
-        return res.ok
-          ? { ok: true, message: `Removed label ${a.label ?? ''} from ${a.artifact.id}` }
-          : refusal('removeLabel', res, errorMessage(res));
-      }
-      case 'comment': {
-        const res = await api.request('POST', `${issuePath}/comments`, { body: a.body });
-        if (!res.ok) return refusal('comment', res, errorMessage(res));
-        const comment = asObject(tryJson(res));
-        return {
-          ok: true,
-          message: `Commented on ${a.artifact.id}`,
-          data: { id: asNumber(comment?.id), url: asString(comment?.html_url) },
-        };
-      }
-      case 'markReady': {
-        const pr = await fetchItem(a.artifact);
-        if (!pr) return { ok: false, message: `${a.artifact.id} was not found` };
-        if (asBoolean(pr.draft) !== true)
-          return { ok: true, message: `${a.artifact.id} is already ready for review` };
-        const res = await api.graphql(MARK_READY, { id: asString(pr.node_id) ?? '' });
-        const body = res.ok ? asObject(tryJson(res)) : undefined;
-        const errors = asArray(body?.errors);
-        if (!res.ok || errors.length > 0) {
-          const message = asString(asObject(errors[0])?.message) ?? errorMessage(res);
-          return refusal('markReady', res, message);
-        }
-        return { ok: true, message: `Marked ${a.artifact.id} ready for review` };
-      }
-      default:
-        return { ok: false, message: `Unknown action "${action}"` };
-    }
-  }
+      return { ok: true, message: `Marked ${a.artifact.id} ready for review` };
+    },
+  };
 
   async function provision(webhookUrl: string): Promise<ProvisionResult> {
     const hook = {
@@ -188,7 +184,7 @@ function createGitHubSource(s: GitHubSettings, ctx: PluginContext): Source {
       const text = `${asString(item.title) ?? ''}\n${asString(item.body) ?? ''}`;
       return extractLinks(text, `${n.owner}/${n.repo}`, ref.id);
     },
-    act,
+    act: (action, args) => dispatchAction(actions, handlers, action, args),
     health,
   };
 }
