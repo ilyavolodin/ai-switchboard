@@ -1,4 +1,5 @@
 import type { AuditEntry } from '@ai-switchboard/core/contract';
+import { AUDIT_SCOPES } from '@ai-switchboard/core/domain';
 import type { SubmitEvent } from 'react';
 import { useSearchParams } from 'react-router';
 
@@ -12,11 +13,11 @@ import { Table, type TableColumn } from '../../components/Table.js';
 import { TextField } from '../../components/TextField.js';
 import { Time } from '../../components/Time.js';
 import { QueryError } from '../../components/QueryError.js';
-import { AUDIT_SCOPES, changeLines } from './audit.js';
 import { useFlatPages } from '../../hooks/useFlatPages.js';
-import { useSearchParamState } from '../../hooks/useSearchParamState.js';
+import { useSearchParamState, withParam } from '../../hooks/useSearchParamState.js';
+import { changeLines } from './audit.js';
 import styles from './Settings.module.css';
-import { initials } from './settingsForm.js';
+import { UserIdentity } from './UserIdentity.js';
 
 function Change({ entry }: { entry: AuditEntry }) {
   const lines = changeLines(entry.before, entry.after);
@@ -42,14 +43,7 @@ const COLUMNS: TableColumn<AuditEntry>[] = [
   {
     key: 'actor',
     header: 'actor',
-    cell: (e) => (
-      <span className={styles.who}>
-        <span className={styles.avatar} aria-hidden="true">
-          {initials(e.actor)}
-        </span>
-        {e.actor}
-      </span>
-    ),
+    cell: (e) => <UserIdentity email={e.actor} />,
   },
   { key: 'scope', header: 'scope', cell: (e) => <span className="t-caption">{e.scope}</span> },
   {
@@ -111,7 +105,9 @@ export function AuditTab() {
             variant="ghost"
             icon="close"
             onClick={() => {
-              setParams({}, { replace: true });
+              setParams((prev) => withParam(withParam(prev, 'scope', null), 'actor', null), {
+                replace: true,
+              });
             }}
           >
             Clear filters

@@ -18,7 +18,12 @@ import { useReasonedMutation } from '../../hooks/reason.js';
 import { reloadedMessage, reloadPrompt } from '../shared/actionPrompts.js';
 import { InstanceEditorDrawer, type InstanceEditing } from './InstanceEditorDrawer.js';
 import { InstanceRow } from './InstanceRow.js';
-import { deleteInstancePrompt, enableInstancePrompt, INSTANCE_ROUTES } from './instancesModel.js';
+import {
+  deleteInstancePrompt,
+  enableInstancePrompt,
+  INSTANCE_ROUTES,
+  testNotifierPrompt,
+} from './instancesModel.js';
 import styles from './Settings.module.css';
 
 export function InstancesTab({ route }: { route: InstanceRoute }) {
@@ -36,14 +41,9 @@ export function InstancesTab({ route }: { route: InstanceRoute }) {
     (v) => reloadPrompt(copy.one, nameOf(v.id)),
     { successMessage: reloadedMessage(copy.one) },
   );
-  const test = useReasonedMutation(
-    useTestNotifier(),
-    (v) => ({
-      title: `Send a test notification to ${nameOf(v.id)}?`,
-      confirmLabel: 'Send test',
-    }),
-    { successMessage: 'Test notification sent' },
-  );
+  const test = useReasonedMutation(useTestNotifier(), (v) => testNotifierPrompt(nameOf(v.id)), {
+    successMessage: 'Test notification sent',
+  });
   const remove = useReasonedMutation(
     useDeleteInstance(route),
     (v) => deleteInstancePrompt(route, nameOf(v.id)),

@@ -18,7 +18,7 @@ import { TextField } from '../../components/TextField.js';
 import { useReasonedMutation } from '../../hooks/reason.js';
 import { asRecord, secretProviderIds } from '../../lib/instances.js';
 import { schemaDefaults, validateAgainstSchema } from '../../lib/schema.js';
-import { INSTANCE_ROUTES } from './instancesModel.js';
+import { addInstancePrompt, INSTANCE_ROUTES, saveInstancePrompt } from './instancesModel.js';
 import styles from './Settings.module.css';
 
 export type InstanceEditing = { mode: 'create' } | { mode: 'edit'; instance: InstanceSummary };
@@ -49,19 +49,12 @@ export function InstanceEditorDrawer({
 
   const create = useReasonedMutation(
     useCreateInstance(route),
-    (v) => ({
-      title: `Add the ${copy.one} “${v.name}”?`,
-      confirmLabel: `Add ${copy.one}`,
-    }),
+    (v) => addInstancePrompt(route, v.name),
     { successMessage: 'Added' },
   );
   const update = useReasonedMutation(
     useUpdateInstance(route),
-    {
-      title: `Save ${existing?.name ?? copy.one}?`,
-      consequence: 'The instance reloads with the new settings.',
-      confirmLabel: 'Save',
-    },
+    saveInstancePrompt(route, existing?.name),
     { successMessage: 'Saved' },
   );
 

@@ -1,8 +1,4 @@
-import type {
-  DestinationDetail,
-  MeterCeiling,
-  ProcessDocument,
-} from '@ai-switchboard/core/contract';
+import type { DestinationDetail } from '@ai-switchboard/core/contract';
 import { useState } from 'react';
 
 import { Field } from '../../components/Field.js';
@@ -10,66 +6,33 @@ import { MeterGauge } from '../../components/MeterGauge.js';
 import { Skeleton } from '../../components/Skeleton.js';
 import { Toggle } from '../../components/Toggle.js';
 import { formatCount } from '../../lib/format.js';
-import { budgetsOn, setOptionalKey, withBudgets } from './editorModel.js';
+import {
+  budgetsOn,
+  draftMeterCeilings,
+  NO_CEILING,
+  setOptionalKey,
+  withBudgets,
+  withCeiling,
+  withUsageCap,
+} from './editorModel.js';
 import { NumberField } from './NumberField.js';
 import { NumberRow } from './NumberRow.js';
 import styles from './ProcessEditor.module.css';
 import type { SectionProps } from './sectionProps.js';
 import { useRestorableSwitch } from './useRestorableSwitch.js';
 
-/** A ceiling of 100% throttles nothing; the inputs show it as empty. */
-const NONE = 100;
+const shown = (v: number | undefined) => (v == null || v === NO_CEILING ? undefined : v);
 
-function withCeiling(
-  doc: ProcessDocument,
-  meterId: string,
-  kind: keyof MeterCeiling,
-  value: number | undefined,
-): ProcessDocument {
-  const current = doc.budgets.meterCeilings[meterId] ?? { events: NONE, sweeps: NONE };
-  const next = { ...current, [kind]: value ?? NONE };
-  const { [meterId]: _drop, ...others } = doc.budgets.meterCeilings;
-  return {
-    ...doc,
-    budgets: {
-      ...doc.budgets,
-      meterCeilings:
-        next.events === NONE && next.sweeps === NONE ? others : { ...others, [meterId]: next },
-    },
-  };
-}
-
-function withUsageCap(
-  doc: ProcessDocument,
-  dimension: string,
-  value: number | undefined,
-): ProcessDocument {
-  const { [dimension]: _drop, ...others } = doc.budgets.usagePerDay ?? {};
-  const usagePerDay = value == null ? others : { ...others, [dimension]: value };
-  const { usagePerDay: _old, ...budgets } = doc.budgets;
-  return {
-    ...doc,
-    budgets: Object.keys(usagePerDay).length > 0 ? { ...budgets, usagePerDay } : budgets,
-  };
-}
-
-/** On each meter's gauge the dark tick is the event ceiling, the light one the sweep ceiling. */
-export function BudgetsFields({
-  doc,
-  baseline,
-  set,
-  errors,
-  disabled,
-  destination,
-  destinationLoading,
-  processId,
-}: SectionProps & {
+interface BudgetExtras {
   destination: DestinationDetail | undefined;
   destinationLoading: boolean;
   processId: string;
-}) {
+}
+
+/** On each meter's gauge the dark tick is the event ceiling, the light one the sweep ceiling. */
+export function BudgetsFields(props: SectionProps & BudgetExtras) {
+  const { doc, baseline, set, disabled, destination } = props;
   const b = doc.budgets;
-  const dims = destination?.usage.filter((u) => u.budgetable) ?? [];
   // The switch is derived from the document (`budgetsOn`); `keepOpen` holds it on while every
   // field is being cleared in this visit, so emptying the last cap does not hide the fields.
   const [keepOpen, setKeepOpen] = useState(false);
@@ -103,21 +66,7 @@ export function BudgetsFields({
           />
         )}
       </Field>
-      {on && (
-        <BudgetLimits
-          {...{
-            doc,
-            baseline,
-            set,
-            errors,
-            disabled,
-            destination,
-            destinationLoading,
-            processId,
-            dims,
-          }}
-        />
-      )}
+      {on && <BudgetLimits {...props} />}
     </div>
   );
 }
@@ -131,14 +80,9 @@ function BudgetLimits({
   destination,
   destinationLoading,
   processId,
-  dims,
-}: SectionProps & {
-  destination: DestinationDetail | undefined;
-  destinationLoading: boolean;
-  processId: string;
-  dims: DestinationDetail['usage'];
-}) {
+}: SectionProps & BudgetExtras) {
   const b = doc.budgets;
+  const dims = destination?.usage.filter((u) => u.budgetable) ?? [];
   return (
     <div className={styles.twoCol}>
       <div className={styles.stack}>
@@ -209,18 +153,11 @@ function BudgetLimits({
           <span className="t-caption">The bound destination reports no meters.</span>
         ) : (
           <ul className={styles.meters} aria-label="Meter ceilings">
-            {destination.meters.map((m) => {
+            {draftMeterCeilings(destination.meters, doc, processId).map((m) => {
               const c = b.meterCeilings[m.meterId];
-              const gauge = {
-                ...m,
-                ceilings: c
-                  ? [{ processId, processName: doc.name, events: c.events, sweeps: c.sweeps }]
-                  : [],
-              };
-              const shown = (v: number | undefined) => (v == null || v === NONE ? undefined : v);
               return (
                 <li key={m.meterId} className={styles.meterRow}>
-                  <MeterGauge meter={gauge} size="md" label="none" showSweepCeilings />
+                  <MeterGauge meter={m} size="md" label="none" showSweepCeilings />
                   <span className={styles.meterTitle}>
                     {m.title}
                     {m.estimated && <span className="t-caption"> · estimated</span>}

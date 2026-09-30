@@ -3,6 +3,7 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildFixtures } from '../../api/fixtures.js';
+import { mockStatus } from '../../api/mockApi.js';
 import { TEST_NOW } from '../../test/constants.js';
 import { renderWithProviders } from '../../test/render.js';
 import { ProcessDetail } from './ProcessDetail.js';
@@ -34,6 +35,38 @@ describe('ProcessDetail', () => {
     expect(screen.getByText('Pipeline · 7 d')).toBeInTheDocument();
     expect(
       await screen.findByRole('img', { name: /Runs and throttles per day/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('says so when the charts cannot load', async () => {
+    renderWithProviders(<ProcessDetail />, {
+      ...at(),
+      overrides: {
+        'GET /processes/:id/stats': () => mockStatus(500, { error: 'boom', message: 'down' }),
+      },
+    });
+    expect(await screen.findByText('The charts could not load')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Loading charts')).not.toBeInTheDocument();
+  });
+
+  it('names a destination step provider in the definition', async () => {
+    const f = buildFixtures(TEST_NOW);
+    const summary = f.processes.find((p) => p.id === 'p-autofix');
+    if (!summary) throw new Error('fixture');
+    const detail = f.processDetail(summary);
+    const withDestinationStep = {
+      ...detail,
+      document: {
+        ...detail.document,
+        after: [{ provider: 'ex-routines', action: 'archive', args: '{}' }],
+      },
+    };
+    renderWithProviders(<ProcessDetail />, {
+      ...at('definition'),
+      overrides: { 'GET /processes/:id': () => withDestinationStep },
+    });
+    expect(
+      await screen.findByText('Claude Routines — automation seat · archive'),
     ).toBeInTheDocument();
   });
 
