@@ -137,6 +137,31 @@ describe('Settings', () => {
     });
   });
 
+  it('saves the unverified-email trust with the sign-in settings', async () => {
+    const { user, api } = open('sign-in');
+    await user.type(
+      await screen.findByRole('textbox', { name: /Issuer/ }),
+      'https://idp.example.test',
+    );
+    await user.type(screen.getByRole('textbox', { name: /Client id/ }), 'client-123');
+    await user.click(screen.getByRole('switch', { name: /Trust unverified emails/ }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await giveReason(user, 'issuer sends no email_verified', 'Save sign-in');
+    await vi.waitFor(() => {
+      expect(api.callsTo('PUT /settings')[0]?.body).toEqual({
+        settings: {
+          oidc: {
+            issuer: 'https://idp.example.test',
+            clientId: 'client-123',
+            allowedDomains: [],
+            trustUnverifiedEmail: true,
+          },
+        },
+        reason: 'issuer sends no email_verified',
+      });
+    });
+  });
+
   describe('Users', () => {
     it('shows an operator the users read-only, every control disabled and naming the role', async () => {
       const { api } = open('users', 'operator');

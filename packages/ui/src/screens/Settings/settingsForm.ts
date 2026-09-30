@@ -135,6 +135,7 @@ export interface SignInForm {
   issuer: string;
   clientId: string;
   domains: string;
+  trustUnverifiedEmail: boolean;
 }
 
 type Oidc = GlobalSettings['oidc'];
@@ -144,15 +145,17 @@ export function signInForm(oidc: Oidc): SignInForm {
     issuer: oidc?.issuer ?? '',
     clientId: oidc?.clientId ?? '',
     domains: (oidc?.allowedDomains ?? []).join(', '),
+    trustUnverifiedEmail: oidc?.trustUnverifiedEmail === true,
   };
 }
 
-/** Clearing both the issuer and the client id turns OIDC off. */
+/** Clearing both the issuer and the client id turns OIDC off. An absent trust flag means off. */
 export function signInSettings(form: SignInForm): Oidc {
   const issuer = form.issuer.trim();
   const clientId = form.clientId.trim();
   if (issuer === '' && clientId === '') return null;
-  return { issuer, clientId, allowedDomains: parseDomains(form.domains) };
+  const settings = { issuer, clientId, allowedDomains: parseDomains(form.domains) };
+  return form.trustUnverifiedEmail ? { ...settings, trustUnverifiedEmail: true } : settings;
 }
 
 export function checkSignIn(saved: Oidc, form: SignInForm): SectionCheck<SignInForm> {
@@ -165,6 +168,7 @@ export function checkSignIn(saved: Oidc, form: SignInForm): SectionCheck<SignInF
   if (next?.issuer && next.clientId === '') {
     errors.clientId = 'A client id is required with an issuer';
   }
-  const changed = JSON.stringify(next) !== JSON.stringify(saved);
+  const changed =
+    JSON.stringify(next) !== JSON.stringify(saved && signInSettings(signInForm(saved)));
   return { patch: changed ? { oidc: next } : {}, errors };
 }

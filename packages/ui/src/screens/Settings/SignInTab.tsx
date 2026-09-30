@@ -12,6 +12,7 @@ import styles from './Settings.module.css';
 import { SettingsFormCard } from './SettingsFormCard.js';
 import { checkSignIn, parseDomains, signInForm } from './settingsForm.js';
 import { TextRow } from '../../components/TextRow.js';
+import { Toggle } from '../../components/Toggle.js';
 import { useSettingsSection } from './useSettingsSection.js';
 
 export function SignInTab() {
@@ -118,6 +119,28 @@ function SignInForm({ oidc }: { oidc: GlobalSettings['oidc'] }) {
             set({ domains });
           }}
         />
+        <Field
+          label="Trust unverified emails"
+          layout="row"
+          help={
+            draft.trustUnverifiedEmail
+              ? 'An ID token without email_verified can still sign in, but never links to an account that has a password. Only turn this on for an issuer that does not send the claim.'
+              : 'Sign-in requires the issuer to mark the email as verified (email_verified).'
+          }
+          changed={draft.trustUnverifiedEmail !== (oidc?.trustUnverifiedEmail === true)}
+        >
+          {({ id, describedBy }) => (
+            <Toggle
+              id={id}
+              describedBy={describedBy}
+              value={draft.trustUnverifiedEmail}
+              requires="admin"
+              onChange={(trustUnverifiedEmail) => {
+                set({ trustUnverifiedEmail });
+              }}
+            />
+          )}
+        </Field>
       </SettingsFormCard>
     </div>
   );

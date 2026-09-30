@@ -56,15 +56,28 @@ describe('section checks', () => {
 
   it('turns OIDC off when issuer and client id are cleared, and wants both otherwise', () => {
     const oidc = { issuer: 'https://a.test', clientId: 'c', allowedDomains: ['a.test'] };
-    expect(checkSignIn(oidc, { issuer: '', clientId: '', domains: '' }).patch).toEqual({
-      oidc: null,
-    });
+    const cleared = { issuer: '', clientId: '', domains: '', trustUnverifiedEmail: false };
+    expect(checkSignIn(oidc, cleared).patch).toEqual({ oidc: null });
     expect(checkSignIn(oidc, signInForm(oidc))).toEqual({ patch: {}, errors: {} });
-    expect(
-      checkSignIn(null, { issuer: 'http://a.test', clientId: '', domains: '' }).errors,
-    ).toEqual({
+    expect(checkSignIn(null, { ...cleared, issuer: 'http://a.test' }).errors).toEqual({
       issuer: 'The issuer must be an https:// URL',
       clientId: 'A client id is required with an issuer',
+    });
+  });
+
+  it('sends trustUnverifiedEmail only when it is on, and treats a stored false as off', () => {
+    const oidc = { issuer: 'https://a.test', clientId: 'c', allowedDomains: [] };
+    expect(checkSignIn(oidc, { ...signInForm(oidc), trustUnverifiedEmail: true }).patch).toEqual({
+      oidc: { ...oidc, trustUnverifiedEmail: true },
+    });
+    const storedOff = { ...oidc, trustUnverifiedEmail: false };
+    expect(signInForm(storedOff).trustUnverifiedEmail).toBe(false);
+    expect(checkSignIn(storedOff, signInForm(storedOff)).patch).toEqual({});
+    const storedOn = { ...oidc, trustUnverifiedEmail: true };
+    expect(
+      checkSignIn(storedOn, { ...signInForm(storedOn), trustUnverifiedEmail: false }).patch,
+    ).toEqual({
+      oidc,
     });
   });
 });
