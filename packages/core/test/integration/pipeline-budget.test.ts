@@ -5,6 +5,7 @@ import { destinations, meterReadings } from '../../src/db/schema.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import {
   batchesOf,
+  by,
   createHarness,
   deliver,
   resetDb,
@@ -71,7 +72,7 @@ describe('budget and meters', () => {
     ex.state.readings = [
       { id: 'five_hour', utilization: 90, observedAt: h.clock.now().toISOString() },
     ];
-    await h.pipeline.readMetersNow(ex.id);
+    await h.pipeline.readMetersNow(ex.id, by(h, 'op@example.com', 'read now'));
 
     await fireOne(src.id, '1');
     const [eventBatch] = await batchesOf(h.db, pid);
@@ -85,7 +86,7 @@ describe('budget and meters', () => {
 
     // 09:10 sweep: 90 % is under the sweeps ceiling of 95 %.
     h.clock.set('2026-01-05T09:10:00Z');
-    await h.pipeline.readMetersNow(ex.id);
+    await h.pipeline.readMetersNow(ex.id, by(h, 'op@example.com', 'read now'));
     await h.queue.tick('scheduler.tick');
     await h.drain();
     const runs = await runsOf(h.db, pid);
@@ -103,7 +104,7 @@ describe('budget and meters', () => {
     ex.state.readings = [
       { id: 'five_hour', utilization: 99, observedAt: h.clock.now().toISOString() },
     ];
-    await h.pipeline.readMetersNow(ex.id);
+    await h.pipeline.readMetersNow(ex.id, by(h, 'op@example.com', 'read now'));
     h.clock.advanceMinutes(45); // default staleness is 30 minutes
     await fireOne(src.id, '1');
     await fireOne(src.id, '2');
@@ -128,7 +129,7 @@ describe('budget and meters', () => {
       null,
       'meter:daily_runs',
     ]);
-    await h.pipeline.readMetersNow(ex.id);
+    await h.pipeline.readMetersNow(ex.id, by(h, 'op@example.com', 'read now'));
     const readings = await h.db
       .select()
       .from(meterReadings)

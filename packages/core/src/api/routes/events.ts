@@ -1,7 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 
-import { actorOf } from '../../auth/fastify.js';
-import type { ApiContext } from '../context.js';
 import {
   reasonedBody,
   type ActivityQuery,
@@ -9,8 +7,10 @@ import {
   type Reasoned,
   type TraceQuery,
 } from '../../contract/index.js';
-import { badRequest, notFound, requireReason } from '../errors.js';
-import { eventDetail, eventExists, listActivity } from '../read/activity.js';
+import { changeMeta } from '../change.js';
+import type { ApiContext } from '../context.js';
+import { badRequest } from '../errors.js';
+import { eventDetail, listActivity } from '../read/activity.js';
 import { allow } from './options.js';
 
 export function registerEventRoutes(app: FastifyInstance, ctx: ApiContext): void {
@@ -23,11 +23,8 @@ export function registerEventRoutes(app: FastifyInstance, ctx: ApiContext): void
   app.post<{ Params: { id: string }; Body: Reasoned }>(
     '/api/v1/events/:id/replay',
     allow('operator', reasonedBody),
-    async (req): Promise<EventIdsResponse> => {
-      const reason = requireReason(req.body);
-      if (!(await eventExists(ctx, req.params.id))) throw notFound('Event');
-      return ctx.pipeline.replay(req.params.id, actorOf(req), reason);
-    },
+    async (req): Promise<EventIdsResponse> =>
+      ctx.pipeline.replay(req.params.id, changeMeta(req, ctx.clock)),
   );
   app.get<{ Params: { id: string } }>('/api/v1/events/:id/trace', allow('viewer'), async (req) =>
     ctx.preview.traceForEvent(req.params.id),

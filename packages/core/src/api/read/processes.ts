@@ -248,14 +248,6 @@ export async function processDetail(ctx: ApiContext, id: string): Promise<Proces
   };
 }
 
-export async function processExists(ctx: ApiContext, id: string): Promise<boolean> {
-  const rows = await ctx.db
-    .select({ id: processes.id })
-    .from(processes)
-    .where(eq(processes.id, id));
-  return rows.length > 0;
-}
-
 /** A process's saved versions, newest first. */
 export async function processVersionList(
   ctx: ApiContext,

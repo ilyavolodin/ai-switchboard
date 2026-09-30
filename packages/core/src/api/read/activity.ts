@@ -252,12 +252,6 @@ export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<P
   );
 }
 
-/** Whether an event row exists (a replay of a pruned or unknown event is a 404). */
-export async function eventExists(ctx: ApiContext, id: string): Promise<boolean> {
-  const rows = await ctx.db.select({ id: events.id }).from(events).where(eq(events.id, id));
-  return rows.length > 0;
-}
-
 const RAW_LIMIT = 64 * 1024;
 
 /** Header names that can carry a credential: API keys, passwords, tokens, signatures, cookies. */

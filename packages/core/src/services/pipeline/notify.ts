@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { Event, NotificationMessage } from '@ai-switchboard/sdk';
 
 import { notificationLog, systemAlerts } from '../../db/schema.js';
+import { withTx } from '../../db/tx.js';
 import { instanceErrorText } from '../../domain/instance-error.js';
 import type { BatchKind, BindingLimit, NotifyOn } from '../../domain/status.js';
 import { renderTemplate, templateContext } from '../../expr/index.js';
@@ -11,7 +12,6 @@ import { getSettings } from '../settings.js';
 import type { Ctx } from './context.js';
 import { evalFunctions } from './eval.js';
 import { callPlugin } from './plugin-call.js';
-import { withTx } from './tx.js';
 import { processView, type ProcessRow } from './views.js';
 
 /** Every send is logged in `notification_log` for the trace. */

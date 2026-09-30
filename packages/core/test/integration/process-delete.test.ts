@@ -103,7 +103,7 @@ describe('deleting a process', () => {
     expect(await h.db.select().from(processes).where(eq(processes.id, pid))).toEqual([]);
   });
 
-  it('leaves other processes alone and returns null for an unknown process', async () => {
+  it('leaves other processes alone and refuses an unknown process', async () => {
     const src = await seedSource(h);
     const ex = await seedDestination(h);
     const gone = await seedProcess(h, ex.id, src.id);
@@ -118,7 +118,7 @@ describe('deleting a process', () => {
     expect(open?.outcome).toBe('open');
     await h.advance(31);
     expect(await runsOf(h.db, kept)).toHaveLength(1);
-    expect(await deleteProcess(h.db, gone, meta())).toBeNull();
+    await expect(deleteProcess(h.db, gone, meta())).rejects.toMatchObject({ kind: 'not_found' });
     const audits = await h.db
       .select()
       .from(auditLog)

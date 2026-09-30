@@ -69,6 +69,22 @@ export function sendJob<N extends JobName>(
   return queue.send(name, { ...data }, options);
 }
 
+/** One re-enqueue per row in this window, however many replicas run maintenance. */
+export const REQUEUE_SLOT_SECONDS = 300;
+
+/** A job re-sent for a row that lost its own; duplicates within the slot are dropped. */
+export function requeueJob<N extends JobName>(
+  queue: JobQueue,
+  name: N,
+  data: JobPayloads[N],
+  rowId: string,
+): Promise<string | null> {
+  return sendJob(queue, name, data, {
+    singletonKey: `requeue:${rowId}`,
+    singletonSeconds: REQUEUE_SLOT_SECONDS,
+  });
+}
+
 /** The job continues the run's trace (`queue/traced.ts`). */
 export function runJob(run: { id: string; traceContext: string | null }): RunJob {
   return {

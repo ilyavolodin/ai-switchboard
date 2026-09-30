@@ -20,7 +20,7 @@ import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
 let tdb: TestDatabase;
 const clock = new FakeClock(new Date('2026-09-28T09:00:00Z'));
-const audit = { actor: 'cli@box-1', reason: 'locked out', at: clock.now() };
+const meta = { actor: 'cli@box-1', reason: 'locked out', now: clock.now() };
 
 async function addUser(
   email: string,
@@ -80,7 +80,7 @@ describe('account recovery', () => {
       .insert(loginAttempts)
       .values([1, 2, 3, 4, 5].map(() => ({ key: emailKey('carol@acme.test'), at: clock.now() })));
 
-    const result = await resetPassword(tdb.db, { email: ' Carol@ACME.test ', audit });
+    const result = await resetPassword(tdb.db, { email: ' Carol@ACME.test ', meta });
     expect(result).toMatchObject({ email: 'carol@acme.test', role: 'operator', generated: true });
 
     const [after] = await tdb.db.select().from(users).where(eq(users.id, carol.id));
@@ -106,20 +106,20 @@ describe('account recovery', () => {
 
   it('applies the password rules to a given password', async () => {
     const err = await refusal(
-      resetPassword(tdb.db, { email: 'carol@acme.test', password: 'short', audit }),
+      resetPassword(tdb.db, { email: 'carol@acme.test', password: 'short', meta }),
     );
     expect(err.code).toBe('invalid_password');
     const ok = await resetPassword(tdb.db, {
       email: 'carol@acme.test',
       password: 'a-chosen-temporary-9',
-      audit,
+      meta,
     });
     expect(ok.generated).toBe(false);
   });
 
   it('refuses an unknown email with close matches and changes nothing', async () => {
     const before = await tdb.db.select().from(auditLog);
-    const err = await refusal(resetPassword(tdb.db, { email: 'admin@switchboard.lokal', audit }));
+    const err = await refusal(resetPassword(tdb.db, { email: 'admin@switchboard.lokal', meta }));
     expect(err.code).toBe('unknown_user');
     expect(err.suggestions).toEqual([LOCAL_ADMIN_EMAIL]);
     expect(await tdb.db.select().from(auditLog)).toHaveLength(before.length);
@@ -127,17 +127,17 @@ describe('account recovery', () => {
 
   it('refuses an empty reason', async () => {
     const err = await refusal(
-      resetPassword(tdb.db, { email: 'carol@acme.test', audit: { ...audit, reason: ' ' } }),
+      resetPassword(tdb.db, { email: 'carol@acme.test', meta: { ...meta, reason: ' ' } }),
     );
     expect(err.code).toBe('no_reason');
   });
 
   it('creates a break-glass admin, or promotes an existing account', async () => {
-    const created = await createAdmin(tdb.db, { email: 'ops@acme.test', audit });
+    const created = await createAdmin(tdb.db, { email: 'ops@acme.test', meta });
     expect(created).toMatchObject({ change: 'created', role: 'admin', generated: true });
-    const promoted = await createAdmin(tdb.db, { email: 'dave@acme.test', audit });
+    const promoted = await createAdmin(tdb.db, { email: 'dave@acme.test', meta });
     expect(promoted.change).toBe('promoted');
-    const again = await createAdmin(tdb.db, { email: 'dave@acme.test', audit });
+    const again = await createAdmin(tdb.db, { email: 'dave@acme.test', meta });
     expect(again.change).toBe('unchanged');
 
     const [dave] = await tdb.db.select().from(users).where(eq(users.email, 'dave@acme.test'));
@@ -150,7 +150,7 @@ describe('account recovery', () => {
     expect(roleRows).toEqual([
       expect.objectContaining({ before: 'viewer', after: 'admin', actor: 'cli@box-1' }),
     ]);
-    const err = await refusal(createAdmin(tdb.db, { email: 'not-an-email', audit }));
+    const err = await refusal(createAdmin(tdb.db, { email: 'not-an-email', meta }));
     expect(err.code).toBe('invalid_email');
   });
 

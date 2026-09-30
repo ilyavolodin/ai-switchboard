@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import type { Health, InvokeResult, TrackingMode } from '@ai-switchboard/sdk';
+import type { Health, TrackingMode } from '@ai-switchboard/sdk';
 
 import { batches, destinations, runs } from '../../db/schema.js';
 import { instanceErrorText } from '../../domain/instance-error.js';
@@ -14,6 +14,7 @@ import {
   type InvokeClassification,
   type InvokeOutcome,
 } from '../../pipeline/invoke.js';
+import { checkInvokeResult } from '../../pipeline/plugin-results.js';
 import { redactSecretValues } from '../../secrets/refs.js';
 import { errorText } from '../../util/errors.js';
 import { addSeconds } from '../../util/time.js';
@@ -23,7 +24,8 @@ import { JOBS } from './jobs.js';
 import { batchEvents } from './load.js';
 import { sendSystemAlert } from './notify.js';
 import { beforeStepBudgetSeconds, resolveForPluginCall, timedCall } from './plugin-call.js';
-import { closeRun, markUncertain, recordUpdate, runHandle, scheduleTracking } from './runs.js';
+import { closeRun, recordUpdate, runHandle } from './runs/close.js';
+import { markUncertain, scheduleTracking } from './runs/tracking.js';
 import { runSteps } from './steps.js';
 import { runTarget } from './target.js';
 import type { RunRow } from './views.js';
@@ -32,14 +34,6 @@ import type { RunRow } from './views.js';
  * The attempt is claimed with a conditional update, so two replicas never invoke the same run.
  * Secret references in the input are resolved immediately before the call and never stored.
  */
-
-function isInvokeResult(value: unknown): value is InvokeResult {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof (value as { status?: unknown }).status === 'string'
-  );
-}
 
 export function attemptInvoke(ctx: Ctx, runId: string): Promise<void> {
   return ctx.telemetry.span('switchboard.invoke', { run_id: runId }, () =>
@@ -110,14 +104,11 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
     const steps = await runSteps(ctx, 'before', run, proc, events);
     if (!steps.ok) {
       // Nothing was sent: the run does not count toward budgets and has no after phase.
-      await ctx.db
-        .update(runs)
-        .set({ attempts: 0 })
-        .where(and(eq(runs.id, run.id), eq(runs.status, 'invoking')));
       await closeRun(ctx, run.id, {
         status: 'failed',
         source: 'invoke',
         reason: steps.reason,
+        attempts: 0,
       });
       return;
     }
@@ -152,10 +143,13 @@ async function attemptInvokeInSpan(ctx: Ctx, runId: string): Promise<void> {
     if (answered.timedOut) {
       outcome = { kind: 'timeout', seconds: timeoutSeconds };
     } else {
-      const result: unknown = answered.value;
-      outcome = isInvokeResult(result)
-        ? { kind: 'result', result }
-        : { kind: 'error', error: new Error('invoke returned a malformed InvokeResult') };
+      const checked = checkInvokeResult(answered.value);
+      outcome = checked.ok
+        ? { kind: 'result', result: checked.value }
+        : {
+            kind: 'error',
+            error: new Error(`invoke returned a malformed result: ${checked.problem}`),
+          };
     }
   } catch (err) {
     outcome = { kind: 'error', error: err };

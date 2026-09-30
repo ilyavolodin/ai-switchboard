@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 
-import { actorOf } from '../../auth/fastify.js';
 import {
   createProcessFrom,
   deleteProcess,
@@ -32,11 +31,9 @@ import {
   type UpdateProcessRequest,
   type WindowQuery,
 } from '../../contract/index.js';
-import { notFound, requireReason } from '../errors.js';
 import { listActivity } from '../read/activity.js';
 import {
   processDetail,
-  processExists,
   processSummaries,
   processVersion,
   processVersionList,
@@ -87,7 +84,6 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
     allow('operator'),
     async (req, reply) => {
       const deleted = await deleteProcess(ctx.db, req.params.id, changeMeta(req, ctx.clock));
-      if (!deleted) throw notFound('Process');
       req.log.info(
         {
           process_id: req.params.id,
@@ -103,24 +99,22 @@ export function registerProcessRoutes(app: FastifyInstance, ctx: ApiContext): vo
   app.post<{ Params: { id: string }; Body: RunNowRequest }>(
     '/api/v1/processes/:id/run',
     allow('operator', runNowBody),
-    async (req): Promise<RunNowResponse> => {
-      const reason = requireReason(req.body);
-      if (!(await processExists(ctx, req.params.id))) throw notFound('Process');
-      return ctx.pipeline.runNow(req.params.id, {
-        ...(req.body.dryRun !== undefined ? { dryRun: req.body.dryRun } : {}),
-        ...(req.body.batchId !== undefined ? { batchId: req.body.batchId } : {}),
-        actor: actorOf(req),
-        reason,
-      });
-    },
+    async (req): Promise<RunNowResponse> =>
+      ctx.pipeline.runNow(
+        req.params.id,
+        {
+          ...(req.body.dryRun !== undefined ? { dryRun: req.body.dryRun } : {}),
+          ...(req.body.batchId !== undefined ? { batchId: req.body.batchId } : {}),
+        },
+        changeMeta(req, ctx.clock),
+      ),
   );
 
   app.post<{ Params: { id: string }; Body: Reasoned }>(
     '/api/v1/processes/:id/breaker/reset',
     allow('operator', reasonedBody),
     async (req) => {
-      const reason = requireReason(req.body);
-      await ctx.pipeline.resetBreaker(req.params.id, actorOf(req), reason);
+      await ctx.pipeline.resetBreaker(req.params.id, changeMeta(req, ctx.clock));
       return view(req.params.id);
     },
   );

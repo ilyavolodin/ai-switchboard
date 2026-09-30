@@ -12,7 +12,9 @@ import { heartbeat, maintenance } from './maintenance.js';
 import { fireBatch, matchEvent } from './match.js';
 import { readMeters } from './meters.js';
 import { prune } from './retention.js';
-import { deadlineRun, finishRun, pollRun, recoverRuns } from './runs.js';
+import { finishRun } from './runs/close.js';
+import { recoverRuns } from './runs/recover.js';
+import { deadlineRun, pollRun } from './runs/tracking.js';
 import { schedulerTick } from './scheduler.js';
 import { materialiseStats } from './stats.js';
 

@@ -1,35 +1,46 @@
 import { and, eq, gt } from 'drizzle-orm';
 
+import type { Event } from '@ai-switchboard/sdk';
+
 import type { Tx } from '../../db/client.js';
 import {
   batches,
   dispatches,
   events,
   processes,
-  type GateDecisionRecord,
   type MatchDecisionRecord,
 } from '../../db/schema.js';
+import { appendDecisions, lockKey, withTx } from '../../db/tx.js';
 import type { DispatchOutcome } from '../../domain/status.js';
-import { evaluateBatchKey, evaluateFilter, filterContext } from '../../expr/index.js';
+import {
+  evaluateBatchKey,
+  evaluateFilter,
+  filterContext,
+  type EvalFunctions,
+  type KeyOutcome,
+} from '../../expr/index.js';
 import {
   closeCheck,
   joinBatch,
   type BatchingConfig,
   type OpenBatchState,
 } from '../../pipeline/batch.js';
+import { batchRecord } from '../../pipeline/decisions.js';
 import { dedupe, dedupeWindowStart } from '../../pipeline/dedupe.js';
+import { matchRecords } from '../../pipeline/match-records.js';
 import {
   candidateTriggers,
   decideMatches,
   eventStageAfterMatch,
   skippedTriggers,
   type FilterEvaluation,
+  type ProcessMatch,
 } from '../../pipeline/match.js';
 
 import type { Ctx } from './context.js';
 import { evalFunctions } from './eval.js';
 import { JOBS } from './jobs.js';
-import { appendDecisions, lockBatch, lockKey, withTx } from './tx.js';
+import { lockBatch } from './tx.js';
 import { processView, toEvent, type BatchRow, type ProcessRow } from './views.js';
 
 /**
@@ -43,15 +54,23 @@ interface PendingJob {
   startAfter?: Date;
 }
 
+interface DispatchSignal {
+  processId: string;
+  outcome: string;
+  batchId?: string;
+}
+
+interface Evaluated {
+  matches: ProcessMatch[];
+  keys: Map<string, KeyOutcome>;
+  records: MatchDecisionRecord[];
+}
+
 /** A batch whose process is gone closes at once and is held at the gate. */
 const CLOSE_AT_ONCE: BatchingConfig = { debounceSeconds: 0, maxSize: 1, maxAgeSeconds: 0 };
 
 function openBatchState(row: BatchRow): OpenBatchState {
   return { id: row.id, openedAt: row.openedAt, fireAfter: row.fireAfter, size: row.size };
-}
-
-function closeRecord(reason: string, at: string): GateDecisionRecord {
-  return { stage: 'batch', check: 'close', pass: true, detail: reason, at };
 }
 
 async function insertDispatch(
@@ -78,13 +97,42 @@ async function matchEventInSpan(ctx: Ctx, eventId: string): Promise<void> {
   // processes are read too, only so the event records why they did not take it.
   const procRows = await ctx.db.select().from(processes).orderBy(processes.id);
   const byId = new Map(procRows.map((p) => [p.id, p]));
-  const matchable = procRows.map((p) => ({ id: p.id, enabled: p.enabled, document: p.document }));
-  const candidates = candidateTriggers(event, matchable);
-  const skipped = skippedTriggers(event, matchable);
-  const fns = evalFunctions(ctx, [event], now);
+  const evaluated = await evaluateTriggers(ctx, event, byId, now);
+  const stored = await storeMatches(ctx, event, byId, evaluated, now);
+  if (!stored) return;
 
+  ctx.telemetry.decision(
+    'switchboard.events',
+    { source: event.sourceId, type: event.type, stage: eventStageAfterMatch(evaluated.matches) },
+    { event_id: eventId },
+  );
+  for (const s of stored.signals) {
+    ctx.telemetry.decision(
+      'switchboard.dispatches',
+      { process: s.processId, source: event.sourceId, outcome: s.outcome },
+      { event_id: eventId, process_id: s.processId, batch_id: s.batchId },
+    );
+  }
+  for (const j of stored.jobs) {
+    await ctx.queue.send(j.name, j.data, j.startAfter ? { startAfter: j.startAfter } : {});
+  }
+}
+
+/** Every candidate trigger's filter, then the batch key of each process that matched. */
+async function evaluateTriggers(
+  ctx: Ctx,
+  event: Event,
+  byId: ReadonlyMap<string, ProcessRow>,
+  now: Date,
+): Promise<Evaluated> {
+  const matchable = [...byId.values()].map((p) => ({
+    id: p.id,
+    enabled: p.enabled,
+    document: p.document,
+  }));
+  const fns: EvalFunctions = evalFunctions(ctx, [event], now);
   const evaluations: FilterEvaluation[] = [];
-  for (const c of candidates) {
+  for (const c of candidateTriggers(event, matchable)) {
     const proc = byId.get(c.processId);
     const out = await evaluateFilter(
       ctx.engine,
@@ -99,7 +147,7 @@ async function matchEventInSpan(ctx: Ctx, eventId: string): Promise<void> {
     });
   }
   const matches = decideMatches(evaluations);
-  const keys = new Map<string, { key: string; error?: string }>();
+  const keys = new Map<string, KeyOutcome>();
   for (const m of matches) {
     const proc = byId.get(m.processId);
     if (m.outcome !== 'matched' || !proc) continue;
@@ -113,57 +161,40 @@ async function matchEventInSpan(ctx: Ctx, eventId: string): Promise<void> {
       ),
     );
   }
-  const records: MatchDecisionRecord[] = evaluations.map((e) => {
-    const key = e.result ? keys.get(e.processId) : undefined;
-    return {
-      processId: e.processId,
-      triggerId: e.triggerId,
-      ...(e.filter !== undefined ? { expr: e.filter } : {}),
-      result: e.result,
-      ...(e.error !== undefined
-        ? { error: e.error }
-        : key?.error !== undefined
-          ? { error: `groupBy: ${key.error}` }
-          : {}),
-      ...(key ? { batchKey: key.key } : {}),
-      at: now.toISOString(),
-    };
-  });
-  for (const k of skipped) {
-    records.push({
-      processId: k.processId,
-      triggerId: k.triggerId,
-      result: false,
-      skip: k.skip,
-      at: now.toISOString(),
-    });
-  }
+  const records = matchRecords(evaluations, keys, skippedTriggers(event, matchable), now);
+  return { matches, keys, records };
+}
 
-  const signals: { processId: string; outcome: string; batchId?: string }[] = [];
-  const jobs: PendingJob[] = [];
-  const done = await withTx(ctx.db, async (tx) => {
-    signals.length = 0;
-    jobs.length = 0;
-    const [locked] = await tx.select().from(events).where(eq(events.id, eventId)).for('update');
-    if (locked?.stage !== 'received') return false;
+/** Dedupe and batch every match in one transaction; `null` when another worker took the event. */
+function storeMatches(
+  ctx: Ctx,
+  event: Event,
+  byId: ReadonlyMap<string, ProcessRow>,
+  { matches, keys, records }: Evaluated,
+  now: Date,
+): Promise<{ signals: DispatchSignal[]; jobs: PendingJob[] } | null> {
+  return withTx(ctx.db, async (tx) => {
+    const signals: DispatchSignal[] = [];
+    const jobs: PendingJob[] = [];
+    const [locked] = await tx.select().from(events).where(eq(events.id, event.id)).for('update');
+    if (locked?.stage !== 'received') return null;
     for (const m of matches) {
       const proc = byId.get(m.processId);
       if (!proc) continue;
-      const filter = {
-        ...(m.filter !== undefined ? { expr: m.filter } : {}),
-        result: m.outcome === 'matched',
-        ...(m.error !== undefined ? { error: m.error } : {}),
-      };
       if (m.outcome === 'filtered') {
         signals.push({ processId: m.processId, outcome: 'filtered' });
         continue;
       }
       const base = {
-        eventId,
+        eventId: event.id,
         processId: m.processId,
         triggerId: m.triggerId,
         dedupeKey: event.dedupeKey,
-        filter,
+        filter: {
+          ...(m.filter !== undefined ? { expr: m.filter } : {}),
+          result: m.outcome === 'matched',
+          ...(m.error !== undefined ? { error: m.error } : {}),
+        },
         createdAt: now,
       };
       if (m.outcome === 'filter_error') {
@@ -171,52 +202,42 @@ async function matchEventInSpan(ctx: Ctx, eventId: string): Promise<void> {
         signals.push({ processId: m.processId, outcome: 'filter_error' });
         continue;
       }
-      await lockKey(tx, `dedupe:${m.processId}:${event.dedupeKey}`);
-      const prior = await tx
-        .select({ id: dispatches.id, createdAt: dispatches.createdAt })
-        .from(dispatches)
-        .where(
-          and(
-            eq(dispatches.processId, m.processId),
-            eq(dispatches.dedupeKey, event.dedupeKey),
-            eq(dispatches.outcome, 'batched'),
-            gt(dispatches.createdAt, dedupeWindowStart(now)),
-          ),
-        );
-      const dd = dedupe(prior, now);
-      if (dd.outcome === 'deduped') {
+      if (await isDuplicate(tx, m.processId, event.dedupeKey, now)) {
         await insertDispatch(tx, base, 'deduped');
         signals.push({ processId: m.processId, outcome: 'deduped' });
         continue;
       }
-      const batchKey = keys.get(m.processId)?.key ?? '';
-      const batchId = await joinOrOpen(tx, proc, batchKey, now, jobs);
+      const batchId = await joinOrOpen(tx, proc, keys.get(m.processId)?.key ?? '', now, jobs);
       await insertDispatch(tx, base, 'batched', batchId);
       signals.push({ processId: m.processId, outcome: 'batched', batchId });
     }
     await tx
       .update(events)
       .set({ stage: eventStageAfterMatch(matches), matchDecisions: records })
-      .where(eq(events.id, eventId));
-    return true;
+      .where(eq(events.id, event.id));
+    return { signals, jobs };
   });
-  if (!done) return;
+}
 
-  ctx.telemetry.decision(
-    'switchboard.events',
-    { source: event.sourceId, type: event.type, stage: eventStageAfterMatch(matches) },
-    { event_id: eventId },
-  );
-  for (const s of signals) {
-    ctx.telemetry.decision(
-      'switchboard.dispatches',
-      { process: s.processId, source: event.sourceId, outcome: s.outcome },
-      { event_id: eventId, process_id: s.processId, batch_id: s.batchId },
+async function isDuplicate(
+  tx: Tx,
+  processId: string,
+  dedupeKey: string,
+  now: Date,
+): Promise<boolean> {
+  await lockKey(tx, `dedupe:${processId}:${dedupeKey}`);
+  const prior = await tx
+    .select({ id: dispatches.id, createdAt: dispatches.createdAt })
+    .from(dispatches)
+    .where(
+      and(
+        eq(dispatches.processId, processId),
+        eq(dispatches.dedupeKey, dedupeKey),
+        eq(dispatches.outcome, 'batched'),
+        gt(dispatches.createdAt, dedupeWindowStart(now)),
+      ),
     );
-  }
-  for (const j of jobs) {
-    await ctx.queue.send(j.name, j.data, j.startAfter ? { startAfter: j.startAfter } : {});
-  }
+  return dedupe(prior, now).outcome === 'deduped';
 }
 
 async function joinOrOpen(
@@ -239,38 +260,28 @@ async function joinOrOpen(
       ),
     )
     .for('update');
-  const at = now.toISOString();
   const decision = joinBatch(open ? openBatchState(open) : null, config, now);
+  const closeReason = decision.closeNow;
   if (open) {
-    const closing = decision.closeNow !== null;
     await tx
       .update(batches)
       .set({
         size: decision.size,
-        fireAfter: closing ? now : decision.fireAfter,
-        ...(closing
+        fireAfter: closeReason !== null ? now : decision.fireAfter,
+        ...(closeReason !== null
           ? {
               outcome: 'closed' as const,
               closedAt: now,
-              decisions: appendDecisions([closeRecord(decision.closeNow ?? '', at)]),
+              decisions: appendDecisions([batchRecord('close', now, closeReason)]),
             }
           : {}),
       })
       .where(eq(batches.id, open.id));
-    if (closing) jobs.push({ name: JOBS.dispatch, data: { batchId: open.id } });
+    if (closeReason !== null) jobs.push({ name: JOBS.dispatch, data: { batchId: open.id } });
     return open.id;
   }
-  const closing = decision.closeNow !== null;
-  const decisions: GateDecisionRecord[] = [
-    {
-      stage: 'batch',
-      check: 'open',
-      pass: true,
-      ...(batchKey !== '' ? { detail: `key ${batchKey}` } : {}),
-      at,
-    },
-  ];
-  if (closing) decisions.push(closeRecord(decision.closeNow ?? '', at));
+  const decisions = [batchRecord('open', now, batchKey !== '' ? `key ${batchKey}` : undefined)];
+  if (closeReason !== null) decisions.push(batchRecord('close', now, closeReason));
   // A racing replica may open the same (process, key) batch: the partial unique index rejects
   // the second insert and `withTx` retries, which then joins the winner's batch.
   const [created] = await tx
@@ -280,16 +291,16 @@ async function joinOrOpen(
       batchKey,
       kind: 'event',
       openedAt: now,
-      fireAfter: closing ? now : decision.fireAfter,
-      closedAt: closing ? now : null,
+      fireAfter: closeReason !== null ? now : decision.fireAfter,
+      closedAt: closeReason !== null ? now : null,
       size: 1,
-      outcome: closing ? 'closed' : 'open',
+      outcome: closeReason !== null ? 'closed' : 'open',
       decisions,
     })
     .returning({ id: batches.id });
   if (!created) throw new Error('batch insert returned no row');
   jobs.push(
-    closing
+    closeReason !== null
       ? { name: JOBS.dispatch, data: { batchId: created.id } }
       : { name: JOBS.fire, data: { batchId: created.id }, startAfter: decision.fireAfter },
   );
@@ -310,13 +321,12 @@ async function fireBatchInSpan(ctx: Ctx, batchId: string): Promise<void> {
     const [proc] = await tx.select().from(processes).where(eq(processes.id, b.processId));
     const check = closeCheck(openBatchState(b), proc?.document.batching ?? CLOSE_AT_ONCE, now);
     if (!check.close) return { later: check.checkAt };
-    const record = closeRecord(check.reason, now.toISOString());
     await tx
       .update(batches)
       .set({
         outcome: 'closed',
         closedAt: now,
-        decisions: appendDecisions([record]),
+        decisions: appendDecisions([batchRecord('close', now, check.reason)]),
       })
       .where(eq(batches.id, batchId));
     return { later: null };

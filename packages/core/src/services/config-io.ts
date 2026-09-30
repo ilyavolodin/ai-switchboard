@@ -5,17 +5,19 @@ import { parse, stringify } from 'yaml';
 
 import type { ApplyResponse } from '../contract/index.js';
 import type { Clock } from '../clock.js';
-import type { Db, DbOrTx } from '../db/client.js';
+import type { Db, DbOrTx, Tx } from '../db/client.js';
 import { INSTANCE_TABLES, type InstanceTable } from '../db/instance-tables.js';
 import { destinations, notifiers, processes, secretProviders, sources } from '../db/schema.js';
 import type { ProcessDocument } from '../domain/process.js';
 import { mergeSettings, type GlobalSettings } from '../domain/settings.js';
 import type { InstanceKind } from '../domain/status.js';
+import type { PluginAdminPort } from '../plugins/admin-port.js';
 import type { PluginRuntime } from '../plugins/runtime.js';
+import { canonical } from '../util/canonical.js';
 import { errorText } from '../util/errors.js';
-import { auditChange, type ChangeMeta } from './audit.js';
+import type { ChangeMeta } from './audit.js';
 import { problemsOf } from './errors.js';
-import { instanceType, type SourceProbe } from './instance-validation.js';
+import { instanceType } from './instance-validation.js';
 import {
   checkInstanceChange,
   checkNewInstance,
@@ -23,11 +25,12 @@ import {
   loadInstance,
   writeInstanceChange,
   type InstanceDraft,
+  type InstanceHost,
   type InstanceRecord,
 } from './instances.js';
 import { validateProcessDocument } from './process-validation.js';
 import { insertProcess, saveProcessVersionIn } from './processes.js';
-import { getSettings, putSettings } from './settings.js';
+import { getSettings, writeSettings } from './settings.js';
 
 /**
  * Instances are referenced by name inside processes so a file moves between installations.
@@ -93,23 +96,6 @@ const fileSchema: JSONSchema = {
   },
 };
 
-/** Key-order-independent JSON, because jsonb does not preserve key order. */
-export function canonical(value: unknown): string {
-  const norm = (v: unknown): unknown => {
-    if (Array.isArray(v)) return v.map(norm);
-    if (v !== null && typeof v === 'object') {
-      return Object.fromEntries(
-        Object.entries(v as Record<string, unknown>)
-          .filter(([, x]) => x !== undefined)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([k, x]) => [k, norm(x)]),
-      );
-    }
-    return v;
-  };
-  return JSON.stringify(norm(value));
-}
-
 /**
  * Accepts the pre-SDK-2.0 `executors:` list and process `executor:` binding; export writes only
  * the new names. Remove in a future major.
@@ -138,6 +124,120 @@ export function upgradeLegacyConfiguration(file: unknown): { file: unknown; erro
   return { file: out, errors };
 }
 
+/** Parses and checks the file's shape; `errors` when it cannot be applied at all. */
+export function parseConfiguration(
+  yamlText: string,
+): { ok: true; file: ConfigurationFile } | { ok: false; errors: string[] } {
+  let raw: unknown;
+  try {
+    raw = parse(yamlText);
+  } catch (err) {
+    return { ok: false, errors: [`YAML: ${errorText(err)}`] };
+  }
+  const upgraded = upgradeLegacyConfiguration(raw);
+  if (upgraded.errors.length > 0) return { ok: false, errors: upgraded.errors };
+  const check = validateAgainst(fileSchema, upgraded.file);
+  if (!check.valid) return { ok: false, errors: check.errors };
+  return { ok: true, file: upgraded.file as ConfigurationFile };
+}
+
+/** A process document with instance ids replaced by names. */
+export function toPortableProcess(
+  d: ProcessDocument,
+  nameOf: (id: string) => string,
+): PortableProcess {
+  return {
+    ...d,
+    triggers: d.triggers.map(({ sourceId, ...t }) => ({ ...t, source: nameOf(sourceId) })),
+    destination: { instance: nameOf(d.destination.instanceId), target: d.destination.target },
+    before: d.before.map((s) => ({ ...s, provider: nameOf(s.provider) })),
+    after: d.after.map((s) => ({ ...s, provider: nameOf(s.provider) })),
+    notify: d.notify.map(({ notifierId, ...n }) => ({ ...n, notifier: nameOf(notifierId) })),
+  };
+}
+
+export interface NameResolver {
+  source(name: string): string;
+  destination(name: string): string;
+  notifier(name: string): string;
+  /** A step's provider: a source or a destination. */
+  provider(name: string): string;
+}
+
+/** The inverse of `toPortableProcess`. YAML is untrusted input: every nested list may be missing. */
+export function fromPortableProcess(
+  p: Partial<PortableProcess> & { name: string },
+  ids: NameResolver,
+): unknown {
+  return {
+    ...p,
+    triggers: (p.triggers ?? []).map(({ source, ...t }) => ({
+      ...t,
+      sourceId: ids.source(source),
+    })),
+    destination: {
+      instanceId: ids.destination(p.destination?.instance ?? ''),
+      target: p.destination?.target ?? {},
+    },
+    before: (p.before ?? []).map((s) => ({ ...s, provider: ids.provider(s.provider) })),
+    after: (p.after ?? []).map((s) => ({ ...s, provider: ids.provider(s.provider) })),
+    notify: (p.notify ?? []).map(({ notifier, ...n }) => ({
+      ...n,
+      notifierId: ids.notifier(notifier),
+    })),
+  };
+}
+
+interface InstanceRowLike {
+  id: string;
+  name: string;
+  typeId: string;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+}
+
+function specOf(r: InstanceRowLike): InstanceSpec {
+  return { name: r.name, type: r.typeId, enabled: r.enabled, settings: r.settings };
+}
+
+export interface ConfigurationSnapshot {
+  settings: GlobalSettings;
+  secretProviders: InstanceRowLike[];
+  sources: (InstanceRowLike & { caps: object })[];
+  destinations: (InstanceRowLike & { caps: object; targetDefaults: Record<string, unknown> })[];
+  notifiers: InstanceRowLike[];
+  processes: { document: ProcessDocument }[];
+}
+
+/** The portable file for what is stored; OIDC settings stay behind. */
+export function toConfigurationFile(s: ConfigurationSnapshot): ConfigurationFile {
+  const names = new Map<string, string>();
+  for (const r of [...s.sources, ...s.destinations, ...s.notifiers]) names.set(r.id, r.name);
+  const nameOf = (id: string): string => names.get(id) ?? id;
+  const { oidc: _oidc, ...portable } = s.settings;
+  return {
+    apiVersion: 'switchboard/v1',
+    kind: 'Configuration',
+    settings: {
+      ...portable,
+      systemNotifierId: portable.systemNotifierId ? nameOf(portable.systemNotifierId) : null,
+      export: {
+        ...portable.export,
+        sourceId: portable.export.sourceId ? nameOf(portable.export.sourceId) : null,
+      },
+    },
+    secretProviders: s.secretProviders.map(specOf),
+    sources: s.sources.map((r) => ({ ...specOf(r), caps: { ...r.caps } })),
+    destinations: s.destinations.map((r) => ({
+      ...specOf(r),
+      caps: { ...r.caps },
+      targetDefaults: r.targetDefaults,
+    })),
+    notifiers: s.notifiers.map(specOf),
+    processes: s.processes.map((p) => toPortableProcess(p.document, nameOf)),
+  };
+}
+
 export async function exportConfiguration(db: DbOrTx): Promise<string> {
   const [settings, sp, src, ex, nt, procs] = await Promise.all([
     getSettings(db),
@@ -147,77 +247,22 @@ export async function exportConfiguration(db: DbOrTx): Promise<string> {
     db.select().from(notifiers).orderBy(notifiers.name),
     db.select().from(processes).orderBy(processes.name),
   ]);
-  const nameOf = new Map<string, string>();
-  for (const r of [...src, ...ex, ...nt]) nameOf.set(r.id, r.name);
-  const name = (id: string): string => nameOf.get(id) ?? id;
-  const { oidc: _oidc, ...portableSettings } = settings;
-  const file: ConfigurationFile = {
-    apiVersion: 'switchboard/v1',
-    kind: 'Configuration',
-    settings: {
-      ...portableSettings,
-      systemNotifierId: portableSettings.systemNotifierId
-        ? name(portableSettings.systemNotifierId)
-        : null,
-      export: {
-        ...portableSettings.export,
-        sourceId: portableSettings.export.sourceId ? name(portableSettings.export.sourceId) : null,
-      },
-    },
-    secretProviders: sp.map((r) => ({
-      name: r.name,
-      type: r.typeId,
-      enabled: r.enabled,
-      settings: r.settings,
-    })),
-    sources: src.map((r) => ({
-      name: r.name,
-      type: r.typeId,
-      enabled: r.enabled,
-      settings: r.settings,
-      caps: r.caps as Record<string, unknown>,
-    })),
-    destinations: ex.map((r) => ({
-      name: r.name,
-      type: r.typeId,
-      enabled: r.enabled,
-      settings: r.settings,
-      caps: r.caps as Record<string, unknown>,
-      targetDefaults: r.targetDefaults,
-    })),
-    notifiers: nt.map((r) => ({
-      name: r.name,
-      type: r.typeId,
-      enabled: r.enabled,
-      settings: r.settings,
-    })),
-    processes: procs.map((p) => {
-      const d = p.document;
-      return {
-        ...d,
-        triggers: d.triggers.map(({ sourceId, ...t }) => ({ ...t, source: name(sourceId) })),
-        destination: { instance: name(d.destination.instanceId), target: d.destination.target },
-        before: d.before.map((s) => ({ ...s, provider: name(s.provider) })),
-        after: d.after.map((s) => ({ ...s, provider: name(s.provider) })),
-        notify: d.notify.map(({ notifierId, ...n }) => ({ ...n, notifier: name(notifierId) })),
-      };
-    }),
-  };
+  const file = toConfigurationFile({
+    settings,
+    secretProviders: sp,
+    sources: src,
+    destinations: ex,
+    notifiers: nt,
+    processes: procs,
+  });
   return stringify(file, { lineWidth: 120 });
-}
-
-export interface ApplyOptions {
-  actor: string;
-  reason: string;
-  now: Date;
-  dryRun: boolean;
 }
 
 export interface ApplyDeps {
   db: Db;
   runtime: PluginRuntime;
   clock: Clock;
-  probe: SourceProbe;
+  host: InstanceHost & Pick<PluginAdminPort, 'instantiateAll'>;
 }
 
 type Change = ApplyResponse['changes'][number];
@@ -250,180 +295,191 @@ function comparable(r: InstanceRecord) {
   };
 }
 
+/** Collects what one apply changed and refused. */
+interface ApplyLog {
+  changes: Change[];
+  errors: string[];
+}
+
+async function applyInstances<K extends InstanceKind>(
+  deps: ApplyDeps,
+  tx: Tx,
+  meta: ChangeMeta,
+  log: ApplyLog,
+  kind: K,
+  specs: SpecOf<K>[] | undefined,
+): Promise<void> {
+  const table: InstanceTable = INSTANCE_TABLES[kind];
+  const existing = await tx.select({ id: table.id, name: table.name }).from(table);
+  for (const spec of specs ?? []) {
+    const where = `${kind} "${spec.name}"`;
+    if (!instanceType(deps.runtime, kind, spec.type)) {
+      log.errors.push(`${where}: no installed plugin provides type ${spec.type}`);
+      continue;
+    }
+    const draft = draftOf(spec);
+    const row = existing.find((r) => r.name === spec.name);
+    try {
+      if (!row) {
+        const record = await checkNewInstance(deps, kind, randomUUID(), draft);
+        await insertInstance(tx, kind, record, meta);
+        log.changes.push({ kind, name: spec.name, action: 'create' });
+        continue;
+      }
+      const before = await loadInstance(tx, kind, row.id);
+      if (before.typeId !== spec.type) {
+        log.errors.push(`${where} exists with type ${before.typeId}; a type cannot change`);
+        continue;
+      }
+      const checked = await checkInstanceChange(deps, kind, before, draft);
+      const after = { ...checked, enabled: draft.enabled ?? true };
+      if (canonical(comparable(before)) === canonical(comparable(after))) {
+        log.changes.push({ kind, name: spec.name, action: 'unchanged' });
+        continue;
+      }
+      await writeInstanceChange(tx, kind, before, after, meta);
+      log.changes.push({ kind, name: spec.name, action: 'update' });
+    } catch (err) {
+      log.errors.push(...problemsOf(err).map((p) => `${where}: ${p}`));
+    }
+  }
+}
+
+/** Instance ids by kind and name, including the ones this apply created. */
+async function nameResolver(tx: Tx, log: ApplyLog): Promise<NameResolver> {
+  const ids = new Map<string, string>();
+  for (const kind of ['source', 'destination', 'notifier'] as const) {
+    const table = INSTANCE_TABLES[kind];
+    for (const r of await tx.select({ id: table.id, name: table.name }).from(table))
+      ids.set(`${kind}:${r.name}`, r.id);
+  }
+  const idOf = (kind: string, name: string): string => {
+    const id = ids.get(`${kind}:${name}`);
+    if (id) return id;
+    log.errors.push(`no ${kind} named "${name}"`);
+    return '';
+  };
+  return {
+    source: (name) => idOf('source', name),
+    destination: (name) => idOf('destination', name),
+    notifier: (name) => idOf('notifier', name),
+    provider: (name) =>
+      ids.get(`source:${name}`) ??
+      ids.get(`destination:${name}`) ??
+      idOf('source or destination', name),
+  };
+}
+
+/** Errors a resolver logged while `fn` ran are prefixed with `where`. */
+function within<T>(log: ApplyLog, where: string, fn: () => T): T {
+  const from = log.errors.length;
+  const out = fn();
+  for (let i = from; i < log.errors.length; i++) log.errors[i] = `${where}: ${log.errors[i]}`;
+  return out;
+}
+
+async function applySettings(
+  tx: Tx,
+  meta: ChangeMeta,
+  log: ApplyLog,
+  s: NonNullable<ConfigurationFile['settings']>,
+  ids: NameResolver,
+): Promise<void> {
+  const current = await getSettings(tx);
+  const next: GlobalSettings = {
+    ...mergeSettings(current, s),
+    oidc: current.oidc,
+    export: {
+      ...current.export,
+      ...s.export,
+      sourceId: s.export?.sourceId
+        ? within(log, 'settings.export.sourceId', () => ids.source(s.export?.sourceId ?? ''))
+        : current.export.sourceId,
+    },
+    systemNotifierId: s.systemNotifierId
+      ? within(log, 'settings.systemNotifierId', () => ids.notifier(s.systemNotifierId ?? ''))
+      : 'systemNotifierId' in s
+        ? null
+        : current.systemNotifierId,
+  };
+  if (canonical(next) === canonical(current)) {
+    log.changes.push({ kind: 'settings', name: 'global', action: 'unchanged' });
+    return;
+  }
+  await writeSettings(tx, current, next, meta);
+  log.changes.push({ kind: 'settings', name: 'global', action: 'update' });
+}
+
+async function applyProcesses(
+  deps: ApplyDeps,
+  tx: Tx,
+  meta: ChangeMeta,
+  log: ApplyLog,
+  list: (Partial<PortableProcess> & { name: string })[],
+  ids: NameResolver,
+): Promise<void> {
+  const existing = await tx.select().from(processes);
+  for (const p of list) {
+    const where = `process "${p.name}"`;
+    const draft = within(log, where, () => fromPortableProcess(p, ids));
+    let doc: ProcessDocument;
+    try {
+      doc = await validateProcessDocument(deps, tx, draft);
+    } catch (err) {
+      log.errors.push(...problemsOf(err).map((m) => `${where}: ${m}`));
+      continue;
+    }
+    const row = existing.find((r) => r.name === p.name);
+    if (!row) {
+      await insertProcess(tx, doc, meta);
+      log.changes.push({ kind: 'process', name: p.name, action: 'create' });
+    } else if (canonical(row.document) === canonical(doc)) {
+      log.changes.push({ kind: 'process', name: p.name, action: 'unchanged' });
+    } else {
+      await saveProcessVersionIn(tx, row.id, meta, () => ({
+        document: doc,
+        audit: { field: 'applied', after: doc },
+      }));
+      log.changes.push({ kind: 'process', name: p.name, action: 'update' });
+    }
+  }
+}
+
+class Rollback extends Error {
+  override readonly name = 'Rollback';
+}
+
 /**
  * One transaction, matched by name. Additive: nothing missing from the file is deleted. A dry run
- * rolls back. Instances and processes go through the same checks and writes as the API.
+ * rolls back. Instances and processes go through the same checks and writes as the API; after a
+ * real apply every instance is rebuilt.
  */
 export async function applyConfiguration(
   deps: ApplyDeps,
   yamlText: string,
-  opts: ApplyOptions,
+  meta: ChangeMeta,
+  dryRun: boolean,
 ): Promise<ApplyResponse> {
-  let file: ConfigurationFile;
-  try {
-    file = parse(yamlText) as ConfigurationFile;
-  } catch (err) {
-    return { dryRun: opts.dryRun, changes: [], errors: [`YAML: ${errorText(err)}`] };
-  }
-  const upgraded = upgradeLegacyConfiguration(file);
-  if (upgraded.errors.length > 0) {
-    return { dryRun: opts.dryRun, changes: [], errors: upgraded.errors };
-  }
-  file = upgraded.file as ConfigurationFile;
-  const check = validateAgainst(fileSchema, file);
-  if (!check.valid) return { dryRun: opts.dryRun, changes: [], errors: check.errors };
-
-  const changes: Change[] = [];
-  const errors: string[] = [];
-  const rollback = new Error('rollback');
-  const meta: ChangeMeta = { actor: opts.actor, reason: `apply: ${opts.reason}`, now: opts.now };
+  const parsed = parseConfiguration(yamlText);
+  if (!parsed.ok) return { dryRun, changes: [], errors: parsed.errors };
+  const { file } = parsed;
+  const log: ApplyLog = { changes: [], errors: [] };
+  const applied: ChangeMeta = { ...meta, reason: `apply: ${meta.reason}` };
 
   try {
     await deps.db.transaction(async (tx) => {
-      const upsert = async <K extends InstanceKind>(
-        kind: K,
-        specs: SpecOf<K>[] | undefined,
-      ): Promise<void> => {
-        const table: InstanceTable = INSTANCE_TABLES[kind];
-        const existing = await tx.select({ id: table.id, name: table.name }).from(table);
-        for (const spec of specs ?? []) {
-          const where = `${kind} "${spec.name}"`;
-          if (!instanceType(deps.runtime, kind, spec.type)) {
-            errors.push(`${where}: no installed plugin provides type ${spec.type}`);
-            continue;
-          }
-          const draft = draftOf(spec);
-          const row = existing.find((r) => r.name === spec.name);
-          try {
-            if (!row) {
-              const record = await checkNewInstance(deps, kind, randomUUID(), draft);
-              await insertInstance(tx, kind, record, meta);
-              changes.push({ kind, name: spec.name, action: 'create' });
-              continue;
-            }
-            const before = await loadInstance(tx, kind, row.id);
-            if (before.typeId !== spec.type) {
-              errors.push(`${where} exists with type ${before.typeId}; a type cannot change`);
-              continue;
-            }
-            const checked = await checkInstanceChange(deps, kind, before, draft);
-            const after = { ...checked, enabled: draft.enabled ?? true };
-            if (canonical(comparable(before)) === canonical(comparable(after))) {
-              changes.push({ kind, name: spec.name, action: 'unchanged' });
-              continue;
-            }
-            await writeInstanceChange(tx, kind, before, after, meta);
-            changes.push({ kind, name: spec.name, action: 'update' });
-          } catch (err) {
-            errors.push(...problemsOf(err).map((p) => `${where}: ${p}`));
-          }
-        }
-      };
-
-      await upsert('secret_provider', file.secretProviders);
-      await upsert('source', file.sources);
-      await upsert('destination', file.destinations);
-      await upsert('notifier', file.notifiers);
-
-      const ids = new Map<string, string>();
-      for (const kind of ['source', 'destination', 'notifier'] as const) {
-        const table = INSTANCE_TABLES[kind];
-        for (const r of await tx.select({ id: table.id, name: table.name }).from(table))
-          ids.set(`${kind}:${r.name}`, r.id);
-      }
-      const idOf = (kind: string, name: string, where: string): string => {
-        const id = ids.get(`${kind}:${name}`);
-        if (!id) {
-          errors.push(`${where}: no ${kind} named "${name}"`);
-          return '';
-        }
-        return id;
-      };
-      const providerId = (name: string, where: string): string =>
-        ids.get(`source:${name}`) ??
-        ids.get(`destination:${name}`) ??
-        idOf('source or destination', name, where);
-
-      if (file.settings) {
-        const current = await getSettings(tx);
-        const s = file.settings;
-        const next: GlobalSettings = {
-          ...mergeSettings(current, s),
-          oidc: current.oidc,
-          export: {
-            ...current.export,
-            ...s.export,
-            sourceId: s.export?.sourceId
-              ? idOf('source', s.export.sourceId, 'settings.export.sourceId')
-              : current.export.sourceId,
-          },
-          systemNotifierId: s.systemNotifierId
-            ? idOf('notifier', s.systemNotifierId, 'settings.systemNotifierId')
-            : 'systemNotifierId' in s
-              ? null
-              : current.systemNotifierId,
-        };
-        if (canonical(next) !== canonical(current)) {
-          await putSettings(tx, next, opts.now);
-          changes.push({ kind: 'settings', name: 'global', action: 'update' });
-          await auditChange(tx, meta, {
-            scope: 'settings',
-            targetId: 'global',
-            field: 'applied',
-            after: next,
-          });
-        } else {
-          changes.push({ kind: 'settings', name: 'global', action: 'unchanged' });
-        }
-      }
-
-      const existingProcs = await tx.select().from(processes);
-      // YAML is untrusted input: every nested list may be missing.
-      for (const p of (file.processes ?? []) as (Partial<PortableProcess> & { name: string })[]) {
-        const where = `process "${p.name}"`;
-        const draft = {
-          ...p,
-          triggers: (p.triggers ?? []).map(({ source, ...t }) => ({
-            ...t,
-            sourceId: idOf('source', source, where),
-          })),
-          destination: {
-            instanceId: idOf('destination', p.destination?.instance ?? '', where),
-            target: p.destination?.target ?? {},
-          },
-          before: (p.before ?? []).map((s) => ({ ...s, provider: providerId(s.provider, where) })),
-          after: (p.after ?? []).map((s) => ({ ...s, provider: providerId(s.provider, where) })),
-          notify: (p.notify ?? []).map(({ notifier, ...n }) => ({
-            ...n,
-            notifierId: idOf('notifier', notifier, where),
-          })),
-        };
-        let doc: ProcessDocument;
-        try {
-          doc = await validateProcessDocument(deps, tx, draft);
-        } catch (err) {
-          errors.push(...problemsOf(err).map((m) => `${where}: ${m}`));
-          continue;
-        }
-        const row = existingProcs.find((r) => r.name === p.name);
-        if (!row) {
-          await insertProcess(tx, doc, meta);
-          changes.push({ kind: 'process', name: p.name, action: 'create' });
-        } else if (canonical(row.document) === canonical(doc)) {
-          changes.push({ kind: 'process', name: p.name, action: 'unchanged' });
-        } else {
-          await saveProcessVersionIn(tx, row.id, meta, () => ({
-            document: doc,
-            audit: { field: 'applied', after: doc },
-          }));
-          changes.push({ kind: 'process', name: p.name, action: 'update' });
-        }
-      }
-
-      if (opts.dryRun || errors.length > 0) throw rollback;
+      await applyInstances(deps, tx, applied, log, 'secret_provider', file.secretProviders);
+      await applyInstances(deps, tx, applied, log, 'source', file.sources);
+      await applyInstances(deps, tx, applied, log, 'destination', file.destinations);
+      await applyInstances(deps, tx, applied, log, 'notifier', file.notifiers);
+      const ids = await nameResolver(tx, log);
+      if (file.settings) await applySettings(tx, applied, log, file.settings, ids);
+      await applyProcesses(deps, tx, applied, log, file.processes ?? [], ids);
+      if (dryRun || log.errors.length > 0) throw new Rollback();
     });
   } catch (err) {
-    if (err !== rollback) throw err;
+    if (!(err instanceof Rollback)) throw err;
   }
-  return { dryRun: opts.dryRun, changes, errors };
+  if (!dryRun && log.errors.length === 0) await deps.host.instantiateAll();
+  return { dryRun, changes: log.changes, errors: log.errors };
 }

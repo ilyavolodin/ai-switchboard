@@ -16,6 +16,7 @@ import {
 import {
   SECRET,
   batchesOf,
+  by,
   createHarness,
   deliver,
   dispatchesOf,
@@ -286,7 +287,7 @@ describe('the door', () => {
       ],
     };
     const res = await h.pipeline.ingestPush(src.id, signedDelivery(SECRET, body, h.clock.now()));
-    expect(res.status).toBe(200);
+    expect(res).toBe('accepted');
     await h.drain();
     await h.advance(31);
     const evs = await eventsOf(h.db, src.id);
@@ -307,16 +308,12 @@ describe('the door', () => {
     const src = await seedSource(h);
     expect(await deliver(h, src.id, [{ id: '1' }], { secret: 'wrong-secret' })).toBe(401);
     expect(
-      (
-        await h.pipeline.ingestPush(
-          '00000000-0000-4000-8000-000000000099',
-          rawRequest({ body: '{}' }),
-        )
-      ).status,
-    ).toBe(404);
-    expect((await h.pipeline.ingestPush('not-a-uuid', rawRequest({ body: '{}' }))).status).toBe(
-      404,
-    );
+      await h.pipeline.ingestPush(
+        '00000000-0000-4000-8000-000000000099',
+        rawRequest({ body: '{}' }),
+      ),
+    ).toBe('not_found');
+    expect(await h.pipeline.ingestPush('not-a-uuid', rawRequest({ body: '{}' }))).toBe('not_found');
     const raws = await h.db.select().from(eventRaw).where(eq(eventRaw.sourceId, src.id));
     expect(raws).toHaveLength(1);
     expect(raws[0]?.verify).toMatch(/^rejected/);
@@ -359,7 +356,7 @@ describe('the door', () => {
       src.id,
       signedDelivery(SECRET, { events: [] }, h.clock.now()),
     );
-    expect(res.status).toBe(503);
+    expect(res).toBe('unavailable');
     await broken.close();
   });
 
@@ -371,7 +368,7 @@ describe('the door', () => {
     await h.drain();
     await h.advance(31);
     const [original] = await eventsOf(h.db, src.id);
-    const out = await h.pipeline.replay(original!.id, 'op@example.com', 'check the trace');
+    const out = await h.pipeline.replay(original!.id, by(h, 'op@example.com', 'check the trace'));
     expect(out.eventIds).toHaveLength(1);
     await h.drain();
     await h.advance(31);
@@ -385,7 +382,11 @@ describe('the door', () => {
     const src = await seedSource(h);
     const ex = await seedDestination(h);
     const pid = await seedProcess(h, ex.id, src.id);
-    const out = await h.pipeline.injectTestEvent(src.id, undefined, 'op@example.com', 'smoke test');
+    const out = await h.pipeline.injectTestEvent(
+      src.id,
+      undefined,
+      by(h, 'op@example.com', 'smoke test'),
+    );
     expect(out.eventIds).toHaveLength(1);
     await h.drain();
     await h.advance(31);

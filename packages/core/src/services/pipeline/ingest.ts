@@ -1,34 +1,33 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import type { EventDraft, RawRequest } from '@ai-switchboard/sdk';
 
 import type { Tx } from '../../db/client.js';
 import { eventRaw, events, sources } from '../../db/schema.js';
+import { lockKey, withTx } from '../../db/tx.js';
 import { acceptsUnauthenticated } from '../../domain/authentication.js';
 import { ACCEPTED_STAGES, type EventStage, type RawOrigin } from '../../domain/status.js';
 import {
   capsApply,
   checkDraft,
   doorStage,
-  sourceNotes,
   storedHeaders,
   type DoorCounts,
 } from '../../pipeline/door.js';
+import { checkPollResult } from '../../pipeline/plugin-results.js';
 import type { LiveSource } from '../../plugins/runtime.js';
-import { DAY_MS, HOUR_MS } from '../../util/time.js';
-import { isUuid } from '../../util/uuid.js';
-import { recordAudit } from '../audit.js';
+import { auditChange, type ChangeMeta } from '../audit.js';
+import { DomainError, invalid, unavailable } from '../errors.js';
+import { findById, requireById } from '../lookup.js';
+import { hookPath } from '../urls.js';
 
 import type { Ctx } from './context.js';
-import { PipelineError, findOrThrow } from './errors.js';
+import { hourDayCounts } from './counters.js';
 import { JOBS } from './jobs.js';
+import type { IngressOutcome } from './outcomes.js';
 import { callPlugin } from './plugin-call.js';
-import { lockKey, withTx } from './tx.js';
-
-/** Kept for `services/source-preview.ts`; new code imports it from `pipeline/door.js`. */
-export { checkDraft } from '../../pipeline/door.js';
 
 type SourceRow = typeof sources.$inferSelect;
 
@@ -37,8 +36,8 @@ export interface StoreOptions {
   replayOf?: string;
   /** Operator-injected events (test events, replays) skip the caps. */
   bypassCaps?: boolean;
-  /** Extra writes in the same transaction (a pull source's watermark). */
-  inTx?: (tx: Tx) => Promise<void>;
+  /** Extra writes in the same transaction (a pull source's watermark, an audit row). */
+  inTx?: (tx: Tx, eventIds: string[]) => Promise<void>;
 }
 
 export interface StoreResult {
@@ -53,23 +52,14 @@ interface StoredEvent {
   reason: string | null;
 }
 
-async function acceptedCounts(tx: Tx, sourceId: string, now: Date): Promise<DoorCounts> {
-  const [counts] = await tx
-    .select({
-      hour: sql<number>`count(*) filter (where ${events.receivedAt} > ${new Date(now.getTime() - HOUR_MS)})`.mapWith(
-        Number,
-      ),
-      day: sql<number>`count(*)`.mapWith(Number),
-    })
-    .from(events)
-    .where(
-      and(
-        eq(events.sourceId, sourceId),
-        gt(events.receivedAt, new Date(now.getTime() - DAY_MS)),
-        inArray(events.stage, ACCEPTED_STAGES),
-      ),
-    );
-  return { hour: counts?.hour ?? 0, day: counts?.day ?? 0 };
+function acceptedCounts(tx: Tx, sourceId: string, now: Date): Promise<DoorCounts> {
+  return hourDayCounts(
+    tx,
+    events,
+    events.receivedAt,
+    and(eq(events.sourceId, sourceId), inArray(events.stage, ACCEPTED_STAGES)),
+    now,
+  );
 }
 
 async function storeDrafts(
@@ -126,7 +116,10 @@ async function storeDrafts(
         .set({ lastEventAt: now, silenceAlertedAt: null })
         .where(eq(sources.id, row.id));
     }
-    if (options.inTx) await options.inTx(tx);
+    await options.inTx?.(
+      tx,
+      stored.map((e) => e.id),
+    );
     return stored;
   });
   const received = all.filter((e) => e.stage === 'received');
@@ -191,17 +184,17 @@ async function parseDrafts(
   return { ok: true, drafts: [] };
 }
 
-export function ingestPush(
-  ctx: Ctx,
-  sourceId: string,
-  req: RawRequest,
-): Promise<{ status: number }> {
+/**
+ * `accepted` also for a disabled source; `unavailable` when Postgres or the live instance is
+ * missing, so the sender retries.
+ */
+export function ingestPush(ctx: Ctx, sourceId: string, req: RawRequest): Promise<IngressOutcome> {
   return ctx.telemetry.span(
     'switchboard.ingest',
     { source_id: sourceId, 'switchboard.ingest.origin': 'push' },
     async (span) => {
       const out = await ingestPushInSpan(ctx, sourceId, req);
-      span.setAttributes({ 'http.response.status_code': out.status });
+      span.setAttributes({ 'switchboard.ingest.outcome': out });
       return out;
     },
   );
@@ -211,17 +204,16 @@ async function ingestPushInSpan(
   ctx: Ctx,
   sourceId: string,
   req: RawRequest,
-): Promise<{ status: number }> {
-  if (!isUuid(sourceId)) return { status: 404 };
+): Promise<IngressOutcome> {
   try {
-    const [row] = await ctx.db.select().from(sources).where(eq(sources.id, sourceId));
-    if (!row) return { status: 404 };
+    const row = await findById(ctx.db, sources, sourceId);
+    if (!row) return 'not_found';
     const live = ctx.runtime.source(sourceId);
     if (!live && !row.enabled) {
       // A disabled source always answers 200 so the sender does not enter a retry storm. With
       // no live instance the delivery cannot be verified, so its body is not kept.
       await storeRaw(ctx, sourceId, unverifiedRaw('unverified:source_disabled'));
-      return { status: 200 };
+      return 'accepted';
     }
     if (!live) {
       // The instance cannot verify or parse right now (plugin unavailable, secret error):
@@ -230,7 +222,7 @@ async function ingestPushInSpan(
         { source_id: sourceId, reason: ctx.runtime.instanceError(sourceId) },
         'hook received for a source with no live instance',
       );
-      return { status: 503 };
+      return 'unavailable';
     }
 
     const verdict = verifyDelivery(live, req);
@@ -246,7 +238,7 @@ async function ingestPushInSpan(
         .update(sources)
         .set({ lastVerifyFailureAt: ctx.clock.now() })
         .where(eq(sources.id, sourceId));
-      return { status: 401 };
+      return 'rejected';
     }
 
     const rawRef = await storeRaw(ctx, sourceId, {
@@ -257,12 +249,12 @@ async function ingestPushInSpan(
     });
     const parsed = await parseDrafts(ctx, live, req);
     // A failed parse keeps the raw body for a replay; the sender must not redeliver.
-    if (!parsed.ok) return { status: 200 };
+    if (!parsed.ok) return 'accepted';
     await storeDrafts(ctx, row, live, parsed.drafts, { rawRef });
-    return { status: 200 };
+    return 'accepted';
   } catch (err) {
     ctx.log.error({ err, source_id: sourceId }, 'ingest failed; asking the sender to retry');
-    return { status: 503 };
+    return 'unavailable';
   }
 }
 
@@ -303,27 +295,16 @@ async function pollSourceInSpan(ctx: Ctx, sourceId: string): Promise<void> {
     ctx.log.warn({ err: polled.error, source_id: sourceId }, 'poll failed');
     return;
   }
-  const out: unknown = polled.value;
-  if (out === null || typeof out !== 'object') {
-    ctx.runtime.recordPluginError(live.pluginName, 'exception', 'poll returned no result object');
+  const page = checkPollResult(polled.value, row.watermark);
+  if (!page.ok) {
+    ctx.runtime.recordPluginError(live.pluginName, 'exception', page.problem);
     return;
   }
-  const {
-    events: polledEvents,
-    watermark: next,
-    notes: rawNotes,
-  } = out as {
-    events?: unknown;
-    watermark?: unknown;
-    notes?: unknown;
-  };
-  const drafts = Array.isArray(polledEvents) ? (polledEvents as unknown[]) : [];
-  const notes = sourceNotes(rawNotes);
+  const { drafts, watermark, notes } = page.value;
   ctx.telemetry.annotate({ 'switchboard.poll.notes': notes.length });
   if (notes.length > 0) {
     ctx.log.info({ source_id: sourceId, notes }, 'poll dropped part of its results');
   }
-  const watermark = typeof next === 'string' ? next : row.watermark;
   const rawRef = await storeRaw(ctx, sourceId, {
     body: Buffer.from(JSON.stringify(drafts)),
     headers: {},
@@ -360,45 +341,37 @@ async function liveSourceOrThrow(
   ctx: Ctx,
   sourceId: string,
 ): Promise<{ row: SourceRow; live: LiveSource }> {
-  const row = await findOrThrow('source', sourceId, async () => {
-    const [found] = await ctx.db.select().from(sources).where(eq(sources.id, sourceId));
-    return found;
-  });
+  const row = await requireById(ctx.db, sources, sourceId, 'Source');
   const live = ctx.runtime.source(sourceId);
-  if (!live) throw new PipelineError('unavailable', `source ${row.name} has no live instance`);
+  if (!live) throw unavailable(`source ${row.name} has no live instance`);
   return { row, live };
 }
 
 export function replayEvent(
   ctx: Ctx,
   eventId: string,
-  actor: string,
-  reason: string,
+  meta: ChangeMeta,
 ): Promise<{ eventIds: string[] }> {
   return ctx.telemetry.span(
     'switchboard.ingest',
     { event_id: eventId, 'switchboard.ingest.origin': 'replay' },
-    () => replayEventInSpan(ctx, eventId, actor, reason),
+    () => replayEventInSpan(ctx, eventId, meta),
   );
 }
 
 async function replayEventInSpan(
   ctx: Ctx,
   eventId: string,
-  actor: string,
-  reason: string,
+  meta: ChangeMeta,
 ): Promise<{ eventIds: string[] }> {
-  const event = await findOrThrow('event', eventId, async () => {
-    const [found] = await ctx.db.select().from(events).where(eq(events.id, eventId));
-    return found;
-  });
+  const event = await requireById(ctx.db, events, eventId, 'Event');
   const [raw] = await ctx.db.select().from(eventRaw).where(eq(eventRaw.ref, event.rawRef));
   const { row, live } = await liveSourceOrThrow(ctx, event.sourceId);
 
   let drafts: unknown[];
   if (raw?.origin !== 'push' || !live.source.parse) {
     if (!raw && live.source.parse) {
-      throw new PipelineError('not_found', 'the raw body is no longer stored (retention)');
+      throw new DomainError('not_found', 'the raw body is no longer stored (retention)');
     }
     // Polled and injected events have no delivery to re-parse: re-inject the event itself.
     drafts = [
@@ -414,30 +387,26 @@ async function replayEventInSpan(
   } else {
     const parsed = await parseDrafts(ctx, live, {
       method: 'POST',
-      path: `/hooks/${event.sourceId}`,
+      path: hookPath(event.sourceId),
       headers: raw.headers,
       query: {},
       body: raw.body,
       receivedAt: raw.receivedAt.toISOString(),
     });
-    if (!parsed.ok) {
-      throw new PipelineError('invalid', `parse failed on replay: ${parsed.error}`);
-    }
+    if (!parsed.ok) throw invalid(`parse failed on replay: ${parsed.error}`);
     drafts = parsed.drafts;
   }
   const out = await storeDrafts(ctx, row, live, drafts, {
     rawRef: event.rawRef,
     replayOf: event.id,
     bypassCaps: true,
-  });
-  await recordAudit(ctx.db, {
-    actor,
-    scope: 'event',
-    targetId: event.id,
-    field: 'replay',
-    after: { eventIds: out.eventIds },
-    reason,
-    at: ctx.clock.now(),
+    inTx: (tx, eventIds) =>
+      auditChange(tx, meta, {
+        scope: 'event',
+        targetId: event.id,
+        field: 'replay',
+        after: { eventIds },
+      }),
   });
   return { eventIds: out.eventIds };
 }
@@ -446,13 +415,12 @@ export function injectTestEvent(
   ctx: Ctx,
   sourceId: string,
   type: string | undefined,
-  actor: string,
-  reason: string,
+  meta: ChangeMeta,
 ): Promise<{ eventIds: string[] }> {
   return ctx.telemetry.span(
     'switchboard.ingest',
     { source_id: sourceId, 'switchboard.ingest.origin': 'test' },
-    () => injectTestEventInSpan(ctx, sourceId, type, actor, reason),
+    () => injectTestEventInSpan(ctx, sourceId, type, meta),
   );
 }
 
@@ -460,26 +428,20 @@ async function injectTestEventInSpan(
   ctx: Ctx,
   sourceId: string,
   type: string | undefined,
-  actor: string,
-  reason: string,
+  meta: ChangeMeta,
 ): Promise<{ eventIds: string[] }> {
   const { row, live } = await liveSourceOrThrow(ctx, sourceId);
   const spec =
     type === undefined ? live.eventTypes[0] : live.eventTypes.find((t) => t.type === type);
   if (!spec) {
-    throw new PipelineError(
-      'invalid',
-      `source ${row.name} declares no event type ${type ?? ''}`.trim(),
-    );
+    throw invalid(`source ${row.name} declares no event type ${type ?? ''}`.trim());
   }
-  const now = ctx.clock.now();
   const nonce = randomUUID();
-  const attributes = structuredClone(spec.examples[0] ?? {});
   const draft: EventDraft = {
     type: spec.type,
-    occurredAt: now.toISOString(),
+    occurredAt: meta.now.toISOString(),
     artifact: { kind: `${live.typeId}.test`, id: `test-${nonce.slice(0, 8)}` },
-    attributes,
+    attributes: structuredClone(spec.examples[0] ?? {}),
     dedupeKey: `${spec.type}:test:${nonce}`,
   };
   const rawRef = await storeRaw(ctx, sourceId, {
@@ -488,15 +450,16 @@ async function injectTestEventInSpan(
     verify: 'ok',
     origin: 'test',
   });
-  const out = await storeDrafts(ctx, row, live, [draft], { rawRef, bypassCaps: true });
-  await recordAudit(ctx.db, {
-    actor,
-    scope: 'source',
-    targetId: sourceId,
-    field: 'test_event',
-    after: { type: spec.type, eventIds: out.eventIds },
-    reason,
-    at: now,
+  const out = await storeDrafts(ctx, row, live, [draft], {
+    rawRef,
+    bypassCaps: true,
+    inTx: (tx, eventIds) =>
+      auditChange(tx, meta, {
+        scope: 'source',
+        targetId: sourceId,
+        field: 'test_event',
+        after: { type: spec.type, eventIds },
+      }),
   });
   return { eventIds: out.eventIds };
 }

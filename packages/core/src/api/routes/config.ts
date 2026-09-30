@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 
+import { applyBody, type ApplyRequest } from '../../contract/index.js';
 import { applyConfiguration, exportConfiguration } from '../../services/config-io.js';
 import { changeMeta } from '../change.js';
 import type { ApiContext } from '../context.js';
-import { applyBody, type ApplyRequest } from '../../contract/index.js';
-import { allow, instanceDeps } from './options.js';
+import { allow, applyDeps } from './options.js';
 
 export function registerConfigRoutes(app: FastifyInstance, ctx: ApiContext): void {
   app.get('/api/v1/export', allow('operator'), async (_req, reply) => {
@@ -15,14 +15,12 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: ApiContext): voi
       .send(yaml);
   });
 
-  app.post<{ Body: ApplyRequest }>('/api/v1/apply', allow('admin', applyBody), async (req) => {
-    const { actor, reason, now } = changeMeta(req, ctx.clock);
-    const result = await applyConfiguration(
-      { ...instanceDeps(ctx), clock: ctx.clock },
+  app.post<{ Body: ApplyRequest }>('/api/v1/apply', allow('admin', applyBody), async (req) =>
+    applyConfiguration(
+      applyDeps(ctx),
       req.body.yaml,
-      { actor, reason, now, dryRun: req.body.dryRun === true },
-    );
-    if (!result.dryRun && result.errors.length === 0) await ctx.host.instantiateAll();
-    return result;
-  });
+      changeMeta(req, ctx.clock),
+      req.body.dryRun === true,
+    ),
+  );
 }

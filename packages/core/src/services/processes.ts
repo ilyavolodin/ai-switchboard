@@ -1,22 +1,15 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { Db, DbOrTx } from '../db/client.js';
-import {
-  approvals,
-  batches,
-  processes,
-  processVersions,
-  type GateDecisionRecord,
-} from '../db/schema.js';
+import { approvals, batches, processes, processVersions } from '../db/schema.js';
+import { appendDecisions } from '../db/tx.js';
 import type { ProcessDocument } from '../domain/process.js';
-import { recordAudit, recordAuditDiff, type ChangeMeta } from './audit.js';
+import { processDeletedRecord } from '../pipeline/decisions.js';
+import { auditChange, recordAuditDiff, type ChangeMeta } from './audit.js';
 import { conflict, notFound } from './errors.js';
 import { validateProcessDocument, type ProcessValidationDeps } from './process-validation.js';
-import { appendDecisions } from './pipeline/tx.js';
 
 type ProcessRow = typeof processes.$inferSelect;
-
-export type SaveMeta = ChangeMeta;
 
 export interface ProcessEdit {
   document: ProcessDocument;
@@ -43,9 +36,8 @@ export function flattenForAudit(doc: object): Record<string, unknown> {
 export async function insertProcess(
   tx: DbOrTx,
   doc: ProcessDocument,
-  meta: SaveMeta,
+  meta: ChangeMeta,
 ): Promise<string> {
-  const { actor, reason, now } = meta;
   const [row] = await tx
     .insert(processes)
     .values({
@@ -53,8 +45,8 @@ export async function insertProcess(
       document: doc,
       enabled: doc.enabled,
       version: 1,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: meta.now,
+      updatedAt: meta.now,
     })
     .returning({ id: processes.id });
   if (!row) throw new Error('process insert returned no row');
@@ -62,24 +54,12 @@ export async function insertProcess(
     processId: row.id,
     version: 1,
     document: doc,
-    savedBy: actor,
-    savedAt: now,
-    reason,
+    savedBy: meta.actor,
+    savedAt: meta.now,
+    reason: meta.reason,
   });
-  await recordAudit(tx, {
-    actor,
-    scope: 'process',
-    targetId: row.id,
-    field: 'created',
-    after: doc,
-    reason,
-    at: now,
-  });
+  await auditChange(tx, meta, { scope: 'process', targetId: row.id, field: 'created', after: doc });
   return row.id;
-}
-
-export async function createProcess(db: Db, doc: ProcessDocument, meta: SaveMeta): Promise<string> {
-  return db.transaction((tx) => insertProcess(tx, doc, meta));
 }
 
 /**
@@ -89,7 +69,7 @@ export async function createProcess(db: Db, doc: ProcessDocument, meta: SaveMeta
 export async function saveProcessVersion(
   db: Db,
   id: string,
-  meta: SaveMeta,
+  meta: ChangeMeta,
   edit: (before: ProcessRow) => ProcessEdit,
 ): Promise<boolean> {
   return db.transaction((tx) => saveProcessVersionIn(tx, id, meta, edit));
@@ -99,10 +79,9 @@ export async function saveProcessVersion(
 export async function saveProcessVersionIn(
   tx: DbOrTx,
   id: string,
-  meta: SaveMeta,
+  meta: ChangeMeta,
   edit: (before: ProcessRow) => ProcessEdit,
 ): Promise<boolean> {
-  const { actor, reason, now } = meta;
   const [before] = await tx.select().from(processes).where(eq(processes.id, id)).for('update');
   if (!before) return false;
   const change = edit(before);
@@ -110,21 +89,31 @@ export async function saveProcessVersionIn(
   const version = before.version + 1;
   await tx
     .update(processes)
-    .set({ name: doc.name, document: doc, enabled: doc.enabled, version, updatedAt: now })
+    .set({ name: doc.name, document: doc, enabled: doc.enabled, version, updatedAt: meta.now })
     .where(eq(processes.id, before.id));
   await tx.insert(processVersions).values({
     processId: before.id,
     version,
     document: doc,
-    savedBy: actor,
-    savedAt: now,
-    reason: change.versionReason ?? reason,
+    savedBy: meta.actor,
+    savedAt: meta.now,
+    reason: change.versionReason ?? meta.reason,
   });
-  const base = { actor, scope: 'process' as const, targetId: before.id, reason, at: now };
   if (change.audit === 'diff') {
-    await recordAuditDiff(tx, base, flattenForAudit(before.document), flattenForAudit(doc));
+    await recordAuditDiff(
+      tx,
+      {
+        actor: meta.actor,
+        scope: 'process',
+        targetId: before.id,
+        reason: meta.reason,
+        at: meta.now,
+      },
+      flattenForAudit(before.document),
+      flattenForAudit(doc),
+    );
   } else {
-    await recordAudit(tx, { ...base, ...change.audit });
+    await auditChange(tx, meta, { scope: 'process', targetId: before.id, ...change.audit });
   }
   return true;
 }
@@ -143,22 +132,11 @@ const UNFINISHED_BATCHES = ['open', 'closed', 'awaiting_approval'] as const;
  * stage re-checks `outcome = 'closed'` under a row lock, so a batch dropped here never reaches the
  * destination.
  */
-export async function deleteProcess(
-  db: Db,
-  id: string,
-  meta: SaveMeta,
-): Promise<DeletedProcess | null> {
+export async function deleteProcess(db: Db, id: string, meta: ChangeMeta): Promise<DeletedProcess> {
   const { actor, reason, now } = meta;
   return db.transaction(async (tx) => {
     const [row] = await tx.delete(processes).where(eq(processes.id, id)).returning();
-    if (!row) return null;
-    const record: GateDecisionRecord = {
-      stage: 'batch',
-      check: 'process_deleted',
-      pass: false,
-      detail: `${actor}: ${reason}`,
-      at: now.toISOString(),
-    };
+    if (!row) throw notFound('Process');
     const dropped = await tx
       .update(batches)
       .set({
@@ -166,7 +144,7 @@ export async function deleteProcess(
         outcomeReason: 'process_deleted',
         closedAt: sql`COALESCE(${batches.closedAt}, ${now.toISOString()}::timestamptz)`,
         approvalState: sql`CASE WHEN ${batches.approvalState} = 'pending' THEN 'rejected' ELSE ${batches.approvalState} END`,
-        decisions: appendDecisions([record]),
+        decisions: appendDecisions([processDeletedRecord(`${actor}: ${reason}`, now)]),
       })
       .where(and(eq(batches.processId, id), inArray(batches.outcome, [...UNFINISHED_BATCHES])))
       .returning({ id: batches.id });
@@ -176,25 +154,23 @@ export async function deleteProcess(
       .where(and(eq(approvals.processId, id), isNull(approvals.decision)))
       .returning({ batchId: approvals.batchId });
     for (const a of withdrawn) {
-      await recordAudit(tx, {
-        actor,
-        scope: 'approval',
-        targetId: a.batchId,
-        field: 'decision',
-        before: 'pending',
-        after: 'withdrawn',
-        reason: `process ${row.name} deleted: ${reason}`,
-        at: now,
-      });
+      await auditChange(
+        tx,
+        { ...meta, reason: `process ${row.name} deleted: ${reason}` },
+        {
+          scope: 'approval',
+          targetId: a.batchId,
+          field: 'decision',
+          before: 'pending',
+          after: 'withdrawn',
+        },
+      );
     }
-    await recordAudit(tx, {
-      actor,
+    await auditChange(tx, meta, {
       scope: 'process',
       targetId: row.id,
       field: 'deleted',
       before: row.document,
-      reason,
-      at: now,
     });
     return { droppedBatches: dropped.length, withdrawnApprovals: withdrawn.length };
   });
@@ -208,10 +184,10 @@ export interface ProcessDeps extends ProcessValidationDeps {
 export async function createProcessFrom(
   deps: ProcessDeps,
   document: unknown,
-  meta: SaveMeta,
+  meta: ChangeMeta,
 ): Promise<string> {
   const doc = await validateProcessDocument(deps, deps.db, document);
-  return createProcess(deps.db, doc, meta);
+  return deps.db.transaction((tx) => insertProcess(tx, doc, meta));
 }
 
 /** Optimistic concurrency: a 409 when someone saved since `expectedVersion`. */
@@ -220,7 +196,7 @@ export async function updateProcess(
   id: string,
   document: unknown,
   expectedVersion: number,
-  meta: SaveMeta,
+  meta: ChangeMeta,
 ): Promise<void> {
   const doc = await validateProcessDocument(deps, deps.db, document);
   const saved = await saveProcessVersion(deps.db, id, meta, (before) => {
@@ -238,7 +214,7 @@ export async function setProcessEnabled(
   db: Db,
   id: string,
   enabled: boolean,
-  meta: SaveMeta,
+  meta: ChangeMeta,
 ): Promise<void> {
   const saved = await saveProcessVersion(db, id, meta, (before) => ({
     document: { ...before.document, enabled },
@@ -268,7 +244,7 @@ export async function restoreProcessVersion(
   deps: ProcessDeps,
   id: string,
   version: string | number,
-  meta: SaveMeta,
+  meta: ChangeMeta,
 ): Promise<void> {
   const old = await savedVersion(deps.db, id, version);
   const doc = await validateProcessDocument(deps, deps.db, old.document);

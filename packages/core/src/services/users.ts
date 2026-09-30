@@ -6,23 +6,18 @@ import { revokeUserSessions } from '../auth/sessions.js';
 import type { Db, DbOrTx } from '../db/client.js';
 import { apiTokens, users } from '../db/schema.js';
 import type { Role } from '../domain/status.js';
-import { auditChange, recordAudit, type ChangeMeta } from './audit.js';
-import { badRequest, conflict, notFound, ServiceError } from './errors.js';
+import { isEmail, normaliseEmail } from '../util/emails.js';
+import { auditChange, type ChangeMeta } from './audit.js';
+import { badRequest, conflict, DomainError, notFound } from './errors.js';
 
 export type UserRow = typeof users.$inferSelect;
 
-export interface PasswordChangeAudit {
-  actor: string;
-  reason: string;
-  at: Date;
-}
-
 /** `temporary` (an admin or bootstrap chose it) makes the next password sign-in change it. */
-export async function storePassword(
+async function storePassword(
   db: DbOrTx,
   userId: string,
   password: string,
-  options: { temporary: boolean; keepToken?: string; field: string; audit: PasswordChangeAudit },
+  options: { temporary: boolean; keepToken?: string; field: string; meta: ChangeMeta },
 ): Promise<UserRow | undefined> {
   const passwordHash = await hashPassword(password);
   const [row] = await db
@@ -32,49 +27,29 @@ export async function storePassword(
     .returning();
   if (!row) return undefined;
   await revokeUserSessions(db, userId, options.keepToken);
-  await recordAudit(db, {
-    actor: options.audit.actor,
+  await auditChange(db, options.meta, {
     scope: 'user',
     targetId: userId,
     field: options.field,
     // Record what happened, never the value.
     after: options.temporary ? 'temporary' : 'set',
-    reason: options.audit.reason,
-    at: options.audit.at,
   });
   return row;
 }
 
-export async function removePassword(
+/** A password someone else chose for the account (an admin, the CLI): changed at next sign-in. */
+export function storeTemporaryPassword(
   db: DbOrTx,
-  userId: string,
-  audit: PasswordChangeAudit,
+  user: Pick<UserRow, 'id' | 'passwordHash'>,
+  password: string,
+  meta: ChangeMeta,
 ): Promise<UserRow | undefined> {
-  const [row] = await db
-    .update(users)
-    .set({ passwordHash: null, mustChangePassword: false })
-    .where(eq(users.id, userId))
-    .returning();
-  if (!row) return undefined;
-  await revokeUserSessions(db, userId);
-  await recordAudit(db, {
-    actor: audit.actor,
-    scope: 'user',
-    targetId: userId,
-    field: 'password',
-    before: 'set',
-    after: 'removed',
-    reason: audit.reason,
-    at: audit.at,
+  return storePassword(db, user.id, password, {
+    temporary: true,
+    field: user.passwordHash === null ? 'password' : 'password_reset',
+    meta,
   });
-  return row;
 }
-
-const passwordAudit = (meta: ChangeMeta): PasswordChangeAudit => ({
-  actor: meta.actor,
-  reason: meta.reason,
-  at: meta.now,
-});
 
 export async function getUser(db: DbOrTx, id: string): Promise<UserRow | undefined> {
   const [row] = await db.select().from(users).where(eq(users.id, id));
@@ -119,8 +94,8 @@ export async function createUser(
   input: { email: string; role: Role; password?: string | undefined },
   meta: ChangeMeta,
 ): Promise<UserRow> {
-  const email = input.email.trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+$/.test(email)) throw badRequest('A valid email is required.');
+  const email = normaliseEmail(input.email);
+  if (!isEmail(email)) throw badRequest('A valid email is required.');
   const { password } = input;
   if (password !== undefined) checkPassword(password, email);
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
@@ -138,12 +113,7 @@ export async function createUser(
       after: input.role,
     });
     if (password === undefined) return r;
-    const withPassword = await storePassword(tx, r.id, password, {
-      temporary: true,
-      field: 'password',
-      audit: passwordAudit(meta),
-    });
-    return withPassword ?? r;
+    return (await storeTemporaryPassword(tx, r, password, meta)) ?? r;
   });
 }
 
@@ -205,13 +175,7 @@ export async function setTemporaryPassword(
   if (before.id === requesterId)
     throw conflict('Change your own password from your account, not the Users tab.');
   checkPassword(password, before.email);
-  const row = await db.transaction((tx) =>
-    storePassword(tx, before.id, password, {
-      temporary: true,
-      field: before.passwordHash === null ? 'password' : 'password_reset',
-      audit: passwordAudit(meta),
-    }),
-  );
+  const row = await db.transaction((tx) => storeTemporaryPassword(tx, before, password, meta));
   if (!row) throw notFound('User');
   return row;
 }
@@ -227,7 +191,23 @@ export async function removeUserPassword(
   if (before.passwordHash === null) throw conflict(`${before.email} has no password.`);
   if (!oidcConfigured)
     throw conflict('OIDC is not configured; without a password this account could not sign in.');
-  const row = await db.transaction((tx) => removePassword(tx, before.id, passwordAudit(meta)));
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(users)
+      .set({ passwordHash: null, mustChangePassword: false })
+      .where(eq(users.id, before.id))
+      .returning();
+    if (!updated) return undefined;
+    await revokeUserSessions(tx, before.id);
+    await auditChange(tx, meta, {
+      scope: 'user',
+      targetId: before.id,
+      field: 'password',
+      before: 'set',
+      after: 'removed',
+    });
+    return updated;
+  });
   if (!row) throw notFound('User');
   return row;
 }
@@ -240,10 +220,10 @@ export async function revokeSessionsOf(db: Db, id: string, meta: ChangeMeta): Pr
   });
 }
 
-export class InvalidCurrentPasswordError extends ServiceError {
+export class InvalidCurrentPasswordError extends DomainError {
   constructor() {
     // 400, not 401: the session is fine, only the confirmation failed.
-    super(400, 'invalid_credentials', 'The current password is incorrect.');
+    super('bad_request', 'The current password is incorrect.', { code: 'invalid_credentials' });
   }
 }
 
@@ -272,15 +252,15 @@ export async function changeOwnPassword(
       temporary: false,
       keepToken: input.keepToken,
       field: 'password',
-      audit: passwordAudit(meta),
+      meta,
     }),
   );
   return updated ?? row;
 }
 
-export class OidcIdentityMismatchError extends ServiceError {
+export class OidcIdentityMismatchError extends DomainError {
   constructor() {
-    super(409, 'conflict', 'This account is linked to a different identity; ask an admin.');
+    super('conflict', 'This account is linked to a different identity; ask an admin.');
   }
 }
 
@@ -304,16 +284,17 @@ export async function userForOidcIdentity(
       .set({ oidcSubject: identity.subject })
       .where(eq(users.id, row.id))
       .returning();
-    await recordAudit(tx, {
-      actor: row.email,
-      scope: 'user',
-      targetId: row.id,
-      field: 'oidc_subject',
-      before: null,
-      after: identity.subject,
-      reason: 'first OIDC sign-in',
-      at: now,
-    });
+    await auditChange(
+      tx,
+      { actor: row.email, reason: 'first OIDC sign-in', now },
+      {
+        scope: 'user',
+        targetId: row.id,
+        field: 'oidc_subject',
+        before: null,
+        after: identity.subject,
+      },
+    );
     return bound ?? row;
   });
 }

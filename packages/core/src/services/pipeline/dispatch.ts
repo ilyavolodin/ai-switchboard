@@ -25,12 +25,18 @@ import {
   type MappingOutcome,
   type RunContext,
 } from '../../expr/index.js';
+import { appendDecisions, lockKey, withTx } from '../../db/tx.js';
 import { budget, type BudgetResult } from '../../pipeline/budget.js';
+import {
+  budgetRecord,
+  dryRunBudgetRecord,
+  gateRecord,
+  inputInvalidRecord,
+} from '../../pipeline/decisions.js';
 import {
   gate,
   settledGate,
   type ApprovalEvaluation,
-  type GateCheck,
   type GateInput,
   type SettledGateResult,
 } from '../../pipeline/gate.js';
@@ -39,6 +45,7 @@ import { trackingDeadline } from '../../pipeline/tracking.js';
 import type { LiveDestination } from '../../plugins/runtime.js';
 import type { SpanHandle } from '../../telemetry/telemetry.js';
 import { getSettings } from '../settings.js';
+import { callbackUrl } from '../urls.js';
 
 import { closeBreaker } from './breaker.js';
 import type { Ctx } from './context.js';
@@ -49,7 +56,7 @@ import { JOBS } from './jobs.js';
 import { batchEvents } from './load.js';
 import { meterSnapshots } from './meters.js';
 import { notifyProcess } from './notify.js';
-import { appendDecisions, lockClosedBatch, lockKey, withTx } from './tx.js';
+import { lockClosedBatch } from './tx.js';
 import { processView, type BatchRow, type ProcessRow } from './views.js';
 
 /**
@@ -71,7 +78,6 @@ interface Dispatch {
   batch: BatchRow;
   proc: ProcessRow;
   now: Date;
-  at: string;
   settings: Settings;
   events: Event[];
   destinationId: string;
@@ -115,7 +121,7 @@ async function dispatchBatchInSpan(
       ctx.telemetry.gauge('switchboard.breaker', 0, { process: proc.id });
     }
   }
-  const gateRecords = g.checks.map((c) => gateRecord(c, d.at));
+  const gateRecords = g.checks.map((c) => gateRecord(c, now));
   if (!g.pass) {
     const awaiting = g.reason === 'awaiting_approval';
     const preview = awaiting ? approvalPreview(await mapInput(ctx, d)) : null;
@@ -234,14 +240,13 @@ async function prepare(
     mode: batch.kind,
     processId: proc.id,
     processName: proc.name,
-    callbackUrl: `${ctx.config.publicUrl}/callbacks/${destinationId}`,
+    callbackUrl: callbackUrl(ctx.config.publicUrl, destinationId),
     deadline: trackingDeadline(now, doc.trackingDeadlineMinutes).toISOString(),
   };
   return {
     batch,
     proc,
     now,
-    at: now.toISOString(),
     settings,
     events,
     destinationId,
@@ -323,16 +328,6 @@ function gateInput(
   };
 }
 
-function gateRecord(c: GateCheck, at: string): GateDecisionRecord {
-  return {
-    stage: 'gate',
-    check: c.check,
-    pass: c.pass,
-    ...(c.detail !== undefined ? { detail: c.detail } : {}),
-    at,
-  };
-}
-
 /** Input mapping, validated before any budget is spent. */
 function mapInput(ctx: Ctx, d: Dispatch): Promise<MappingOutcome> {
   return evaluateMapping(
@@ -375,13 +370,7 @@ async function failInput(
   gateRecords: GateDecisionRecord[],
 ): Promise<DispatchResult> {
   const { batch, proc, runId } = d;
-  const record: GateDecisionRecord = {
-    stage: 'budget',
-    check: 'input',
-    pass: false,
-    detail: `input_invalid: ${mapped.errors.join('; ')}`.slice(0, 1000),
-    at: d.at,
-  };
+  const record = inputInvalidRecord(mapped.errors, d.now);
   const created = await withTx(ctx.db, async (tx) => {
     if (!(await lockClosedBatch(tx, batch.id))) return false;
     await tx.insert(runs).values(
@@ -434,7 +423,7 @@ function reserve(
       await lockKey(tx, `destination:${destinationId}`);
       if (!(await lockClosedBatch(tx, batch.id))) return { outcome: 'gone', result: null };
       const checked = batch.dryRun
-        ? { result: null, record: dryRunBudgetRecord(d.at) }
+        ? { result: null, record: dryRunBudgetRecord(d.now) }
         : await checkBudget(tx, d, live);
       const records = [...gateRecords, checked.record];
       if (checked.result && !checked.result.ok) {
@@ -513,35 +502,7 @@ async function checkBudget(
     },
     now,
   );
-  const record: GateDecisionRecord = {
-    stage: 'budget',
-    check: 'budget',
-    pass: result.ok,
-    ...(result.detail !== null ? { detail: result.detail } : {}),
-    at: d.at,
-    data: {
-      binding: result.binding,
-      checks: result.checks,
-      counters,
-      meters: Object.fromEntries(
-        Object.entries(meters).map(([id, m]) => [
-          id,
-          {
-            utilization: m.utilization,
-            observedAt: m.observedAt.toISOString(),
-            estimated: m.estimated,
-            resetsAt: m.resetsAt?.toISOString() ?? null,
-          },
-        ]),
-      ),
-      meterStale: result.meterStale,
-    },
-  };
-  return { result, record };
-}
-
-function dryRunBudgetRecord(at: string): GateDecisionRecord {
-  return { stage: 'budget', check: 'budget', pass: true, detail: 'dry run: not counted', at };
+  return { result, record: budgetRecord(result, counters, meters, now) };
 }
 
 function firstEventAt(events: readonly Event[]): Date | null {

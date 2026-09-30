@@ -41,7 +41,8 @@ export type {
 } from './plugins/install.js';
 export { accountRecovery } from './account-recovery.js';
 export type { AccountRecovery, RecoveryRequest } from './account-recovery.js';
-export { RecoveryError, isRecoveryError, closeEmails } from './services/recovery.js';
+export { RecoveryError, isRecoveryError } from './services/recovery.js';
+export { closeEmails } from './util/emails.js';
 export type {
   AccountSummary,
   TemporaryPasswordResult,

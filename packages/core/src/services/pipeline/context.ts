@@ -19,7 +19,3 @@ export interface Ctx extends PipelineDeps {
   engine: ExpressionEngine;
   log: CoreLogger;
 }
-
-/** Kept for `services/processes.ts` and `./meters.ts`; new code imports them from their modules. */
-export { appendDecisions } from './tx.js';
-export { callPlugin } from './plugin-call.js';

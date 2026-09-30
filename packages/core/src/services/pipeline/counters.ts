@@ -1,4 +1,5 @@
 import { and, eq, gt, sql, type SQL } from 'drizzle-orm';
+import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
 import type { UsageDimension } from '@ai-switchboard/sdk';
 
@@ -17,21 +18,33 @@ export function countedRun(): SQL {
   return sql`(${runs.dryRun} = false AND ${runs.status} <> 'held' AND NOT (${runs.status} = 'failed' AND ${runs.attempts} = 0))`;
 }
 
-async function runCounts(
+export interface HourDayCounts {
+  hour: number;
+  day: number;
+}
+
+/** Rows of `table` matching `where` whose `at` falls in the last hour and the last day. */
+export async function hourDayCounts(
   db: DbOrTx,
-  scope: SQL,
+  table: PgTable,
+  at: PgColumn,
+  where: SQL | undefined,
   now: Date,
-): Promise<{ hour: number; day: number }> {
+): Promise<HourDayCounts> {
   const [row] = await db
     .select({
-      hour: sql<number>`count(*) filter (where ${runs.invokedAt} > ${new Date(now.getTime() - HOUR_MS)})`.mapWith(
+      hour: sql<number>`count(*) filter (where ${at} > ${new Date(now.getTime() - HOUR_MS)})`.mapWith(
         Number,
       ),
       day: sql<number>`count(*)`.mapWith(Number),
     })
-    .from(runs)
-    .where(and(scope, gt(runs.invokedAt, new Date(now.getTime() - DAY_MS)), countedRun()));
+    .from(table)
+    .where(and(where, gt(at, new Date(now.getTime() - DAY_MS))));
   return { hour: row?.hour ?? 0, day: row?.day ?? 0 };
+}
+
+function runCounts(db: DbOrTx, scope: SQL, now: Date): Promise<HourDayCounts> {
+  return hourDayCounts(db, runs, runs.invokedAt, and(scope, countedRun()), now);
 }
 
 async function usageLastDay(

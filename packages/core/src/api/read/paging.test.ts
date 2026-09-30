@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isServiceError } from '../../services/errors.js';
+import { isDomainError } from '../../services/errors.js';
 import { decodeCursor, encodeCursor, pageLimit } from './paging.js';
 
 const raw = (s: string) => Buffer.from(s).toString('base64url');
@@ -33,7 +33,7 @@ describe('decodeCursor', () => {
     ['a JSON array', raw('[1,2]')],
   ])('answers 400 for a cursor that is not ours: %s', (_name, cursor) => {
     const err = refusal(cursor);
-    expect(isServiceError(err) && err.status).toBe(400);
+    expect(isDomainError(err) && err.kind).toBe('bad_request');
   });
 });
 

@@ -6,6 +6,7 @@ import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import { EXEC_PLUGIN, callbackRequest } from '../helpers/fake-runtime.js';
 import {
   batchesOf,
+  by,
   createHarness,
   deliver,
   resetDb,
@@ -59,7 +60,7 @@ describe('tracking', () => {
       ex.id,
       callbackRequest('wrong', { runId: run.id, state: 'ok' }),
     );
-    expect(bad.status).toBe(401);
+    expect(bad).toBe('rejected');
     const unknownRun = await h.pipeline.handleCallback(
       ex.id,
       callbackRequest('callback-token', {
@@ -67,7 +68,7 @@ describe('tracking', () => {
         state: 'ok',
       }),
     );
-    expect(unknownRun.status).toBe(404);
+    expect(unknownRun).toBe('not_found');
 
     const res = await h.pipeline.handleCallback(
       ex.id,
@@ -77,7 +78,7 @@ describe('tracking', () => {
         usage: { tokens: 1234, nope: 1 },
       }),
     );
-    expect(res.status).toBe(200);
+    expect(res).toBe('accepted');
     await h.drain();
     const closed = await onlyRun(pid);
     expect(closed).toMatchObject({ status: 'ok', usage: { tokens: 1234 } });
@@ -85,14 +86,32 @@ describe('tracking', () => {
       expect.objectContaining({ plugin: EXEC_PLUGIN, kind: 'invalid_usage' }),
     );
     expect(
-      (
-        await h.pipeline.handleCallback(
-          ex.id,
-          callbackRequest('callback-token', { runId: run.id, state: 'error' }),
-        )
-      ).status,
-    ).toBe(200);
+      await h.pipeline.handleCallback(
+        ex.id,
+        callbackRequest('callback-token', { runId: run.id, state: 'error' }),
+      ),
+    ).toBe('accepted');
     expect((await onlyRun(pid)).status).toBe('ok');
+  });
+
+  it('a running update with undeclared usage keys is counted against the plugin', async () => {
+    const src = await seedSource(h);
+    const ex = await seedDestination(h, { tracking: 'callback' });
+    const pid = await seedProcess(h, ex.id, src.id);
+    await fireOne(src.id, '1');
+    const run = await onlyRun(pid);
+    await h.pipeline.handleCallback(
+      ex.id,
+      callbackRequest('callback-token', {
+        runId: run.id,
+        state: 'running',
+        usage: { tokens: 10, nope: 1 },
+      }),
+    );
+    expect(await onlyRun(pid)).toMatchObject({ status: 'running', usage: { tokens: 10 } });
+    expect(h.runtime.errors).toContainEqual(
+      expect.objectContaining({ plugin: EXEC_PLUGIN, kind: 'invalid_usage' }),
+    );
   });
 
   it('a missing callback hits the deadline and the run is unknown', async () => {
@@ -325,11 +344,11 @@ describe('tracking', () => {
     ex.state.script.push('timeout');
     await fireOne(src.id, '1');
     const run = await onlyRun(pid);
-    await h.pipeline.closeRun(run.id, 'ok', 'op@example.com', 'checked the backend');
+    await h.pipeline.closeRun(run.id, 'ok', by(h, 'op@example.com', 'checked the backend'));
     const [row] = await h.db.select().from(runs).where(eq(runs.id, run.id));
     expect(row?.status).toBe('ok');
     await expect(
-      h.pipeline.closeRun(run.id, 'ok', 'op@example.com', 'again'),
+      h.pipeline.closeRun(run.id, 'ok', by(h, 'op@example.com', 'again')),
     ).rejects.toMatchObject({ code: 'conflict' });
   });
 });
