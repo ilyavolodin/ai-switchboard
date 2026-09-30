@@ -901,6 +901,32 @@ describe('edge cases', () => {
     }
   });
 
+  it('answers 400 for a malformed id or value in a query string', async () => {
+    for (const url of [
+      '/api/v1/events?source=not-a-uuid',
+      '/api/v1/events?process=123',
+      '/api/v1/events?destination=x',
+      '/api/v1/events?stage=nowhere',
+      '/api/v1/runs?process=not-a-uuid',
+      '/api/v1/runs?status=ok,sideways',
+      '/api/v1/runs?limit=many',
+      `/api/v1/processes/${randomUUID()}/stats?window=1y`,
+      '/api/v1/plugin-types?kind=gadget',
+    ]) {
+      const res = await h.request('GET', url, { cookie: h.adminCookie });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.json<ApiError>().error, url).toBe('bad_request');
+    }
+    for (const url of [
+      '/api/v1/events?stage=received,unmatched',
+      '/api/v1/runs?status=ok,error&limit=5',
+      `/api/v1/events?source=${randomUUID()}&unrelated=1`,
+    ]) {
+      const res = await h.request('GET', url, { cookie: h.adminCookie });
+      expect(res.statusCode, url).toBe(200);
+    }
+  });
+
   it('keeps one admin when two admins are demoted at the same time', async () => {
     const second = await h.request('POST', '/api/v1/users', {
       cookie: h.adminCookie,

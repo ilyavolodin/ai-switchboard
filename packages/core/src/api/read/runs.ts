@@ -1,4 +1,4 @@
-import type { ArtifactRef } from '@ai-switchboard/sdk';
+import { isOneOf, type ArtifactRef } from '@ai-switchboard/sdk';
 import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
 
 import {
@@ -12,7 +12,7 @@ import {
   steps,
 } from '../../db/schema.js';
 import { runStatusLabel } from '../../domain/labels.js';
-import type { RunStatusValue } from '../../domain/status.js';
+import { RUN_STATUSES } from '../../domain/status.js';
 import type { ApiContext } from '../context.js';
 import type { Page, RunDetail, RunSummary, RunsQuery } from '../../contract/index.js';
 import { notFound } from '../errors.js';
@@ -121,7 +121,10 @@ export async function listRuns(ctx: ApiContext, q: RunsQuery): Promise<Page<RunS
   const where: SQL[] = [];
   if (q.process) where.push(eq(runs.processId, q.process));
   if (q.destination) where.push(eq(runs.destinationId, q.destination));
-  if (q.status) where.push(inArray(runs.status, q.status.split(',') as RunStatusValue[]));
+  if (q.status) {
+    const statuses = q.status.split(',').filter((s) => isOneOf(RUN_STATUSES, s));
+    where.push(inArray(runs.status, statuses));
+  }
   return keysetPage(
     q,
     { time: runs.createdAt, id: runs.id, keyOf: (r: RunRow) => ({ t: r.createdAt, id: r.id }) },

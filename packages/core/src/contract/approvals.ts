@@ -1,7 +1,8 @@
 import type { ArtifactRef } from '@ai-switchboard/sdk';
 
 import type { ApprovalDecision, BatchKind } from '../domain/status.js';
-import type { Iso } from './common.js';
+import { cursorParam, limitParam, type Iso } from './common.js';
+import { querySchema } from './schema.js';
 
 export interface ApprovalItem {
   batchId: string;
@@ -30,6 +31,11 @@ export interface ApprovalHistoryQuery {
   cursor?: string;
   limit?: number;
 }
+
+export const approvalHistoryQuery = querySchema<ApprovalHistoryQuery>()({
+  type: 'object',
+  properties: { cursor: cursorParam, limit: limitParam },
+});
 
 /** `POST /approvals/:batchId/approve`: the run it started, or why none started. */
 export interface ApproveResponse {

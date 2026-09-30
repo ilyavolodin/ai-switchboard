@@ -1,3 +1,4 @@
+import { isOneOf } from '@ai-switchboard/sdk';
 import { desc, eq, gte, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 
 import {
@@ -10,7 +11,12 @@ import {
   sources,
 } from '../../db/schema.js';
 import { runStatusLabel } from '../../domain/labels.js';
-import { toneRank, type BatchOutcome, type RunStatusValue } from '../../domain/status.js';
+import {
+  EVENT_STAGES,
+  toneRank,
+  type BatchOutcome,
+  type RunStatusValue,
+} from '../../domain/status.js';
 import { summarizeWhy } from '../../views/explain.js';
 import { explanationsFor } from '../../services/explain.js';
 import type { ApiContext } from '../context.js';
@@ -201,7 +207,10 @@ export function artifactCondition(query: string): SQL {
 export async function listActivity(ctx: ApiContext, q: ActivityQuery): Promise<Page<ActivityRow>> {
   const where: SQL[] = [];
   if (q.source) where.push(eq(events.sourceId, q.source));
-  if (q.stage) where.push(inArray(events.stage, q.stage.split(',') as EventRow['stage'][]));
+  if (q.stage) {
+    const stages = q.stage.split(',').filter((s) => isOneOf(EVENT_STAGES, s));
+    where.push(inArray(events.stage, stages));
+  }
   if (q.type) where.push(eq(events.type, q.type));
   if (q.artifact) where.push(artifactCondition(q.artifact));
   if (q.from) where.push(gte(events.receivedAt, parseTime(q.from, 'from')));

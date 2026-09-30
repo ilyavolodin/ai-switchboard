@@ -1,7 +1,5 @@
 import { and, count, eq, gte, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 
-import { isOneOf } from '@ai-switchboard/sdk';
-
 import {
   batches,
   dispatches,
@@ -17,7 +15,6 @@ import {
   BATCH_OUTCOMES,
   HELD_BATCH_OUTCOMES,
   RUN_STATUSES,
-  STATS_WINDOWS,
   STOPPED_BATCH_OUTCOMES,
   type EventStage,
   type RunStatusValue,
@@ -40,10 +37,6 @@ export function windowMs(window: StatsWindow | undefined): number {
   if (window === '7d') return 7 * 86_400_000;
   if (window === '30d') return 30 * 86_400_000;
   return 86_400_000;
-}
-
-export function parseWindow(value: unknown, fallback: StatsWindow = '24h'): StatsWindow {
-  return isOneOf(STATS_WINDOWS, value) ? value : fallback;
 }
 
 const hourExpr = (col: unknown) =>
@@ -72,7 +65,7 @@ function daysBetween(from: Date, to: Date): string[] {
 export async function sourceStats(
   ctx: ApiContext,
   sourceId: string,
-  window: StatsWindow,
+  window: StatsWindow = '24h',
 ): Promise<SourceStatsResponse> {
   const now = ctx.clock.now();
   const from = new Date(now.getTime() - windowMs(window));
@@ -119,7 +112,7 @@ export async function sourceStats(
 export async function meterHistory(
   ctx: ApiContext,
   destinationId: string,
-  window: StatsWindow,
+  window: StatsWindow = '7d',
 ): Promise<MeterHistoryResponse> {
   const [ex] = await ctx.db.select().from(destinations).where(eq(destinations.id, destinationId));
   if (!ex) throw notFound('Destination');
@@ -179,7 +172,7 @@ export async function meterHistory(
 export async function usageHistory(
   ctx: ApiContext,
   destinationId: string,
-  window: StatsWindow,
+  window: StatsWindow = '7d',
 ): Promise<UsageHistoryResponse> {
   const [ex] = await ctx.db.select().from(destinations).where(eq(destinations.id, destinationId));
   if (!ex) throw notFound('Destination');
@@ -220,7 +213,7 @@ export async function usageHistory(
 export async function processFunnel(
   ctx: ApiContext,
   processId: string,
-  window: StatsWindow,
+  window: StatsWindow = '24h',
 ): Promise<FunnelResponse> {
   const now = ctx.clock.now();
   const from = new Date(now.getTime() - windowMs(window));
@@ -291,7 +284,7 @@ function median(values: number[]): number | null {
 export async function processStats(
   ctx: ApiContext,
   processId: string,
-  window: StatsWindow,
+  window: StatsWindow = '7d',
 ): Promise<ProcessStatsResponse> {
   const [proc] = await ctx.db.select().from(processes).where(eq(processes.id, processId));
   if (!proc) throw notFound('Process');

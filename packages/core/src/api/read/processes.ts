@@ -292,7 +292,7 @@ export async function processVersion(
 export async function recentBatches(
   ctx: ApiContext,
   processId: string,
-  limit: number | string | undefined,
+  limit: number | undefined,
 ): Promise<RecentBatchDTO[]> {
   const rows = await ctx.db
     .select()

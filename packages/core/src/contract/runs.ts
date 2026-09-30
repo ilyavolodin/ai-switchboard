@@ -1,14 +1,22 @@
 import type { ArtifactRef, UsageReport } from '@ai-switchboard/sdk';
 
 import {
+  RUN_STATUSES,
   SETTLED_RUN_STATUSES,
   type BatchKind,
   type RunStatusValue,
   type SettledRunStatus,
   type StepStatus,
 } from '../domain/status.js';
-import type { Iso, Reasoned, StatusLabel } from './common.js';
-import { bodySchema } from './schema.js';
+import {
+  cursorParam,
+  limitParam,
+  uuidParam,
+  type Iso,
+  type Reasoned,
+  type StatusLabel,
+} from './common.js';
+import { bodySchema, csvPattern, querySchema } from './schema.js';
 
 export interface RunSummary {
   id: string;
@@ -62,6 +70,17 @@ export interface RunsQuery {
   cursor?: string;
   limit?: number;
 }
+
+export const runsQuery = querySchema<RunsQuery>()({
+  type: 'object',
+  properties: {
+    process: uuidParam,
+    destination: uuidParam,
+    status: { type: 'string', pattern: csvPattern(RUN_STATUSES) },
+    cursor: cursorParam,
+    limit: limitParam,
+  },
+});
 
 export interface CloseRunRequest extends Reasoned {
   status: SettledRunStatus;

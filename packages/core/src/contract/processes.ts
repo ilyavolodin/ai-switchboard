@@ -8,9 +8,15 @@ import type {
   RunStatusValue,
 } from '../domain/status.js';
 import type { PipelineDots } from './board.js';
-import type { Iso, Reasoned, StatsWindow, StatusLabel } from './common.js';
+import {
+  limitParam,
+  type Iso,
+  type Reasoned,
+  type StatsWindow,
+  type StatusLabel,
+} from './common.js';
 import type { RunSummary } from './runs.js';
-import { bodySchema } from './schema.js';
+import { bodySchema, querySchema } from './schema.js';
 
 export interface ProcessSummary {
   id: string;
@@ -240,3 +246,8 @@ export interface RecentBatchDTO {
 export interface LimitQuery {
   limit?: number;
 }
+
+export const limitQuery = querySchema<LimitQuery>()({
+  type: 'object',
+  properties: { limit: limitParam },
+});

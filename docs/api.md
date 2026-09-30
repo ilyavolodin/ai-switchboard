@@ -6,12 +6,13 @@ All routes live under `/api/v1` unless noted. Request and response types are in
 layer-neutral: routes, services and the UI import it. `ApiRoutes` maps every route
 (`'POST /api/v1/sources'`) to its body, query and response types; a core test fails when it and
 the registered routes differ. Each request body's JSON Schema sits next to its type
-(`createSourceBody` next to `CreateSourceRequest`) and is checked against it at compile time.
+(`createSourceBody` next to `CreateSourceRequest`) and is checked against it at compile time, and
+so does each query string's (`runsQuery` next to `RunsQuery`).
 
 - Auth: a session cookie (`sb_session`) from sign-in, or `Authorization: Bearer <api token>`.
 - Roles: `viewer` reads; `operator` also changes sources, destinations, processes, approvals, manual runs and replays; `admin` also manages plugins, users, secret providers, notifiers and settings.
 - Every state-changing body carries `reason` (non-empty). Every change writes `audit_log` rows. An admin can make reasons optional (`GlobalSettings.requireReasons: false`, Settings › General): then a missing or blank `reason` is accepted (a `DELETE` may omit the body) and audited as `(no reason given)`. `MeResponse.requireReasons` tells a client whether to ask. Each replica caches the setting for 5 s; the replica that saves it applies it at once, the others within the cache window.
-- Errors: `{ error, message, details?, usedBy? }` with 400 (validation: a body that does not match its schema answers `The request did not validate.` with one `details` line per problem; also a malformed time, or a cursor this API did not issue), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, a name already taken, or deleting a source, destination or notifier that processes still use: `usedBy` lists them as `{ id, name }`), 422 (semantic), 429 (too many sign-in attempts), 503.
+- Errors: `{ error, message, details?, usedBy? }` with 400 (validation: a body or query string that does not match its schema answers `The request did not validate.` with one `details` line per problem, for example a filter id that is not a UUID, a `stage` or `status` list with an unknown value, a `window` other than `24h`, `7d` or `30d`, or a `limit` that is not a positive integer; unknown query parameters are ignored; also a malformed time, or a cursor this API did not issue), 401, 403, 404 (also for a malformed id in the path), 409 (version conflict, a name already taken, or deleting a source, destination or notifier that processes still use: `usedBy` lists them as `{ id, name }`), 422 (semantic), 429 (too many sign-in attempts), 503.
 - Lists: `?cursor=&limit=` → `Page<T>` (`{ items, nextCursor }`). Filters apply before paging, and a cursor is keyed by time and id, so rows that share a timestamp are neither skipped nor repeated. A cursor that is not one this API returned is a 400, not a restart at the first page.
 
 ## Unauthenticated surfaces

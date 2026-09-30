@@ -3,7 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { actorOf } from '../../auth/fastify.js';
 import type { ApiContext } from '../context.js';
 import {
+  activityQuery,
   reasonedBody,
+  traceQuery,
   type ActivityQuery,
   type EventIdsResponse,
   type Reasoned,
@@ -14,8 +16,10 @@ import { eventDetail, eventExists, listActivity } from '../read/activity.js';
 import { allow } from './options.js';
 
 export function registerEventRoutes(app: FastifyInstance, ctx: ApiContext): void {
-  app.get<{ Querystring: ActivityQuery }>('/api/v1/events', allow('viewer'), async (req) =>
-    listActivity(ctx, req.query),
+  app.get<{ Querystring: ActivityQuery }>(
+    '/api/v1/events',
+    allow('viewer', { querystring: activityQuery }),
+    async (req) => listActivity(ctx, req.query),
   );
   app.get<{ Params: { id: string } }>('/api/v1/events/:id', allow('viewer'), async (req) =>
     eventDetail(ctx, req.params.id),
@@ -32,9 +36,13 @@ export function registerEventRoutes(app: FastifyInstance, ctx: ApiContext): void
   app.get<{ Params: { id: string } }>('/api/v1/events/:id/trace', allow('viewer'), async (req) =>
     ctx.preview.traceForEvent(req.params.id),
   );
-  app.get<{ Querystring: TraceQuery }>('/api/v1/trace', allow('viewer'), async (req) => {
-    const q = req.query.artifact?.trim();
-    if (!q) throw badRequest('Give an artifact id, e.g. LOL-1712 or #482.');
-    return ctx.preview.traceForArtifact(q);
-  });
+  app.get<{ Querystring: TraceQuery }>(
+    '/api/v1/trace',
+    allow('viewer', { querystring: traceQuery }),
+    async (req) => {
+      const q = req.query.artifact?.trim();
+      if (!q) throw badRequest('Give an artifact id, e.g. LOL-1712 or #482.');
+      return ctx.preview.traceForArtifact(q);
+    },
+  );
 }
