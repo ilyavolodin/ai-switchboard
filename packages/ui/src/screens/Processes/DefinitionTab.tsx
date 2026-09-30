@@ -8,7 +8,8 @@ import { LinkButton } from '../../components/LinkButton.js';
 import { QuietHoursBar } from '../../components/QuietHoursBar.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { describeCron } from '../../lib/cron.js';
-import { batchingSummary, budgetsSummary } from './editorModel.js';
+import { asRecord } from '../../lib/instances.js';
+import { approvalMode, batchingSummary, budgetsSummary } from './editorModel.js';
 import styles from './ProcessDetail.module.css';
 
 function Expr({ value }: { value: string | undefined }) {
@@ -32,10 +33,7 @@ export function DefinitionTab({ processId, doc }: { processId: string; doc: Proc
     destinations.data?.find((x) => x.id === doc.destination.instanceId)?.name ??
     doc.destination.instanceId;
   const g = doc.gates;
-  const target =
-    typeof doc.destination.target === 'object' && doc.destination.target !== null
-      ? (doc.destination.target as Record<string, unknown>)
-      : {};
+  const target = asRecord(doc.destination.target);
 
   return (
     <div className={styles.definition}>
@@ -113,10 +111,10 @@ export function DefinitionTab({ processId, doc }: { processId: string; doc: Proc
             data={[
               [
                 'approval',
-                g.approval === 'none' || g.approval === 'always' ? (
-                  g.approval
-                ) : (
+                approvalMode(g.approval) === 'expression' ? (
                   <Expr key="a" value={g.approval} />
+                ) : (
+                  g.approval
                 ),
               ],
               [

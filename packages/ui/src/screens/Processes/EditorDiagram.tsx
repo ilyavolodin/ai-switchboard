@@ -12,7 +12,14 @@ import { SourceNode } from '../../components/SourceNode.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { cx } from '../../lib/cx.js';
 import { describeCron } from '../../lib/cron.js';
-import { batchingOn, batchingSummary, budgetsOn } from './editorModel.js';
+import {
+  batchingOn,
+  batchingSummary,
+  budgetsBrief,
+  budgetsOn,
+  draftMeterCeilings,
+  gatesBrief,
+} from './editorModel.js';
 import styles from './ProcessEditor.module.css';
 
 export interface EditorDiagramProps {
@@ -54,31 +61,14 @@ export function EditorDiagram({
     bySource.set(t.sourceId, cur);
   }
   const g = doc.gates;
-  const gateParts = [
-    g.quietHours ? `quiet hours ${g.quietHours.start}–${g.quietHours.end}` : null,
-    `approval ${g.approval === 'none' || g.approval === 'always' ? g.approval : 'expression'}`,
-    `breaker ${g.breaker.threshold}/${g.breaker.cooldownMinutes} min`,
-  ].filter(Boolean);
-  const b = doc.budgets;
-  const budgetParts = [
-    b.runsPerHour != null ? `${b.runsPerHour}/h` : null,
-    b.runsPerDay != null ? `${b.runsPerDay}/d` : null,
-    Object.keys(b.usagePerDay ?? {}).length > 0 ? 'usage caps' : null,
-  ].filter(Boolean);
+  const gateParts = gatesBrief(g);
+  const budgetParts = budgetsBrief(doc.budgets);
   const sweep = doc.schedules.find((s) => s.enabled);
   const sweepText = sweep ? describeCron(sweep.cron) : null;
 
   const destinationWithDraft = destination && {
     ...destination,
-    meters: destination.meters.map((m) => {
-      const c = doc.budgets.meterCeilings[m.meterId];
-      return {
-        ...m,
-        ceilings: c
-          ? [{ processId: pid, processName: doc.name, events: c.events, sweeps: c.sweeps }]
-          : [],
-      };
-    }),
+    meters: draftMeterCeilings(destination.meters, doc, pid),
   };
 
   return (
