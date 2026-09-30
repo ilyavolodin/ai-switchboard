@@ -9,8 +9,9 @@ import {
 } from '@ai-switchboard/sdk';
 
 import type { CoreLogger } from '../logger.js';
-import { collectSecretRefs, parseSecretRef, redactSecretValues } from '../secrets/refs.js';
 import { errorText } from '../util/errors.js';
+
+import { collectSecretRefs, parseSecretRef, redactSecretValues } from './refs.js';
 
 /** Where `ctx.secrets.set(key)` lands in the provider: one name per instance and key. */
 export function instanceSecretName(instanceId: string, key: string): string {
@@ -19,6 +20,30 @@ export function instanceSecretName(instanceId: string, key: string): string {
 
 export function instanceSecretPrefix(instanceId: string): string {
   return `switchboard-${instanceId}-`;
+}
+
+/**
+ * Deletes what a deleted instance rotated into writable providers (`ctx.secrets`). Every replica
+ * may do it; deletes are idempotent. Never throws.
+ */
+export async function forgetInstanceSecrets(
+  providers: readonly NamedProvider[],
+  instanceId: string,
+  logger: CoreLogger,
+): Promise<void> {
+  const prefix = instanceSecretPrefix(instanceId);
+  for (const { name: providerName, provider } of providers) {
+    if (!isWritableSecretProvider(provider) || typeof provider.list !== 'function') continue;
+    try {
+      for (const { name } of await provider.list())
+        if (name.startsWith(prefix)) await provider.delete(name);
+    } catch (err) {
+      logger.warn(
+        { err, instance_id: instanceId, provider: providerName },
+        'could not delete the credentials of a deleted instance',
+      );
+    }
+  }
 }
 
 /** The providers an instance's settings reference, in the order the references appear. */

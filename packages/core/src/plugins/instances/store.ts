@@ -1,9 +1,10 @@
-import type { Health } from '@ai-switchboard/sdk';
-import { eq, inArray, type SQL } from 'drizzle-orm';
+import type { Health, InstanceState } from '@ai-switchboard/sdk';
+import { and, eq, inArray, type SQL } from 'drizzle-orm';
 
+import type { Clock } from '../../clock.js';
 import type { Db } from '../../db/client.js';
 import { INSTANCE_TABLES } from '../../db/instance-tables.js';
-import { destinations, secretProviders, sources } from '../../db/schema.js';
+import { destinations, instanceState, secretProviders, sources } from '../../db/schema.js';
 import type { InstanceKind } from '../../domain/status.js';
 
 import type { ResolutionKind } from './kind-specs.js';
@@ -87,6 +88,28 @@ export function createInstanceStore(db: Db): InstanceStore {
           updatedAt: now,
         })
         .onConflictDoNothing();
+    },
+  };
+}
+
+/** A plugin's `ctx.state`: one row per instance and key. */
+export function createInstanceStateStore(db: Db, clock: Clock, instanceId: string): InstanceState {
+  return {
+    get: async <T>(key: string) => {
+      const rows = await db
+        .select({ value: instanceState.value })
+        .from(instanceState)
+        .where(and(eq(instanceState.instanceId, instanceId), eq(instanceState.key, key)));
+      return rows[0]?.value as T | undefined;
+    },
+    set: async (key: string, value: unknown) => {
+      await db
+        .insert(instanceState)
+        .values({ instanceId, key, value, updatedAt: clock.now() })
+        .onConflictDoUpdate({
+          target: [instanceState.instanceId, instanceState.key],
+          set: { value, updatedAt: clock.now() },
+        });
     },
   };
 }

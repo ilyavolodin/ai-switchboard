@@ -3,28 +3,29 @@ import type { InstanceKind } from '../../domain/status.js';
 import type { CoreLogger } from '../../logger.js';
 import { referencesProvider } from '../../secrets/refs.js';
 import type { Telemetry } from '../../telemetry/telemetry.js';
-import { diffInstances } from '../reconcile.js';
 
 import { DISABLED, buildError, type InstanceBuilder } from './builder.js';
 import { BUILD_ORDER, recordsResolution } from './kind-specs.js';
 import type { BuiltInstance, LiveSet } from './live-set.js';
+import { diffInstances } from './reconcile.js';
 import type { InstanceRowHead, InstanceStore } from './store.js';
 
-export interface ReconciledInstance {
-  kind: InstanceKind;
+export interface ReconciledInstance<K extends InstanceKind = InstanceKind> {
+  kind: K;
   id: string;
   name: string;
 }
+
+/** The kinds whose settings may reference a secret provider. */
+export type DependentKind = Exclude<InstanceKind, 'secret_provider'>;
 
 export interface ReconcileResult {
   built: ReconciledInstance[];
   rebuilt: ReconciledInstance[];
   dropped: ReconciledInstance[];
   /** Instances rebuilt because a secret provider they reference changed. */
-  dependents: ReconciledInstance[];
+  dependents: ReconciledInstance<DependentKind>[];
 }
-
-type DependentKind = Exclude<InstanceKind, 'secret_provider'>;
 
 const DEPENDENT_KINDS: readonly DependentKind[] = ['source', 'destination', 'notifier'];
 
@@ -109,7 +110,7 @@ export class InstanceManager {
    */
   async reloadDependentsOf(
     providerNames: string | readonly string[],
-  ): Promise<{ kind: DependentKind; id: string; name: string }[]> {
+  ): Promise<ReconciledInstance<DependentKind>[]> {
     const { live, store, logger } = this.deps;
     const names = new Set(typeof providerNames === 'string' ? [providerNames] : providerNames);
     if (names.size === 0) return [];
@@ -120,7 +121,7 @@ export class InstanceManager {
         if (referencesProvider(row.settings, names)) targets.push({ kind, row });
     const ids = targets.map((t) => t.row.id);
     for (const id of ids) live.claim(id, ticket);
-    const rebuilt: { kind: DependentKind; id: string; name: string }[] = [];
+    const rebuilt: ReconciledInstance<DependentKind>[] = [];
     await live.withPending(ids, async () => {
       for (const { kind, row } of targets) {
         await this.build(kind, row, ticket);

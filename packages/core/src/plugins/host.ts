@@ -1,4 +1,4 @@
-import { isWritableSecretProvider, type Settings } from '@ai-switchboard/sdk';
+import type { Settings } from '@ai-switchboard/sdk';
 
 import type { Clock } from '../clock.js';
 import type { CoreConfig } from '../config.js';
@@ -6,43 +6,38 @@ import type { Db } from '../db/client.js';
 import type { InstanceError } from '../domain/instance-error.js';
 import type { InstanceKind } from '../domain/status.js';
 import type { CoreLogger } from '../logger.js';
+import { forgetInstanceSecrets } from '../secrets/instance-secrets.js';
 import { parseSecretRef, resolveSecretRefs } from '../secrets/refs.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
 import { errorText } from '../util/errors.js';
-import { exists } from '../util/fs.js';
 
 import type { PluginAdminPort, PreviewSourceResult } from './admin-port.js';
+import { createPluginCatalog, readOnlyPluginCatalog, type PluginCatalog } from './catalog-store.js';
 import {
-  createPluginCatalog,
-  readOnlyPluginCatalog,
-  REMOVED_MESSAGE,
-  type PluginCatalog,
-} from './catalog-store.js';
-import { discoverPlugins } from './discovery.js';
-import { PluginErrorCounter, type PluginErrorKind } from './error-counter.js';
+  PluginErrorCounter,
+  type PluginErrorContext,
+  type PluginErrorKind,
+} from './error-counter.js';
 import { checkAllHealth } from './health.js';
-import { PluginInstallError, type InstallResult, type RunNpm } from './install.js';
-import { InstallSync, type HotLoadResult } from './install-sync.js';
-import { instanceSecretPrefix } from './instance-secrets.js';
+import type { InstallResult, RunNpm } from './install.js';
+import { InstallSync } from './install-sync.js';
 import { InstanceBuilder } from './instances/builder.js';
+import { ensureDefaultSecretProviders } from './instances/default-providers.js';
 import { LiveSet, type LiveByKind } from './instances/live-set.js';
-import { InstanceManager, type ReconcileResult } from './instances/manager.js';
+import {
+  InstanceManager,
+  type DependentKind,
+  type ReconciledInstance,
+  type ReconcileResult,
+} from './instances/manager.js';
 import {
   createInstanceStore,
   readOnlyInstanceStore,
   type InstanceStore,
 } from './instances/store.js';
-import {
-  defaultScanDirs,
-  PluginLoader,
-  type BuiltinPlugin,
-  type Candidate,
-  type EvaluatedPlugin,
-  type LoadedPlugin,
-  type ScanDir,
-} from './loader.js';
+import type { BuiltinPlugin, LoadedPlugin, ScanDir } from './loader.js';
 import { createPluginContext } from './plugin-context.js';
-import { installedModulesDir } from './plugin-paths.js';
+import { PluginSet, type HotLoadResult } from './plugin-set.js';
 import type {
   LiveDestination,
   LiveNotifier,
@@ -50,15 +45,10 @@ import type {
   LiveSource,
   PluginRuntime,
 } from './runtime.js';
-import {
-  TypeRegistry,
-  type RegisteredType,
-  type TypeByKind,
-  type TypeEntry,
-} from './type-registry.js';
+import { TypeRegistry, type TypeByKind, type TypeEntry } from './type-registry.js';
 
 export type { LoadedPlugin } from './loader.js';
-export type { HotLoadResult } from './install-sync.js';
+export type { HotLoadResult } from './plugin-set.js';
 export type { ReconcileResult, ReconciledInstance } from './instances/manager.js';
 
 export interface PluginHostOptions {
@@ -80,25 +70,20 @@ export interface BootOptions {
   sync?: boolean;
 }
 
-const DEFAULT_PROVIDER_TYPES = ['env', 'file'] as const;
-const SECRETS_MOUNT = '/run/secrets';
-
 /**
- * The plugin host: loads packages, keeps their types, builds a live object per instance row and
- * converges them across replicas. A facade over the loader, registry, instance manager, install
- * sync and error counter; the pipeline and the API see it as `PluginRuntime` and
- * `PluginAdminPort`.
+ * The plugin host: a facade over the plugin set (packages and their lifecycle), the type registry,
+ * the instance manager (live objects, converged across replicas), install sync and the error
+ * counter. The pipeline and the API see it as `PluginRuntime` and `PluginAdminPort`.
  */
 export class PluginHost implements PluginRuntime, PluginAdminPort {
   private readonly registry = new TypeRegistry();
   private readonly live = new LiveSet();
-  private readonly plugins: LoadedPlugin[] = [];
-  private readonly loader: PluginLoader;
   private readonly errorCounter: PluginErrorCounter;
   private readonly catalog: PluginCatalog;
   private readonly store: InstanceStore;
   private readonly builder: InstanceBuilder;
   private readonly instances: InstanceManager;
+  private readonly plugins: PluginSet;
   private readonly installs: InstallSync;
   private reconcileTimer: NodeJS.Timeout | undefined;
 
@@ -107,7 +92,6 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
     const persist = opts.persist ?? true;
     this.catalog = persist ? createPluginCatalog(db) : readOnlyPluginCatalog;
     this.store = persist ? createInstanceStore(db) : readOnlyInstanceStore(createInstanceStore(db));
-    this.loader = new PluginLoader({ config, registry: this.registry, logger });
     this.errorCounter = new PluginErrorCounter({
       telemetry,
       logger,
@@ -128,7 +112,7 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
           },
           target,
         ),
-      networkOf: (pluginName) => this.loadedPlugin(pluginName)?.definition?.capabilities.network,
+      networkOf: (pluginName) => this.plugins.networkOf(pluginName),
       resolveSettings: (settings) => this.resolveSettings(settings),
       onPluginError: (pluginName, err, context) => {
         this.errorCounter.record(
@@ -144,9 +128,30 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
       builder: this.builder,
       store: this.store,
       clock,
-      ...(persist ? { onDropped: (id: string) => this.forgetInstanceSecrets(id) } : {}),
+      ...(persist
+        ? {
+            onDropped: (id: string) =>
+              forgetInstanceSecrets(
+                this.live
+                  .values('secret_provider')
+                  .map((p) => ({ name: p.name, provider: p.provider })),
+                id,
+                logger,
+              ),
+          }
+        : {}),
       logger,
       telemetry,
+    });
+    this.plugins = new PluginSet({
+      config,
+      clock,
+      logger,
+      registry: this.registry,
+      catalog: this.catalog,
+      rebuildTypes: (types) => this.instances.buildTypes(types),
+      ...(opts.builtin ? { builtin: opts.builtin } : {}),
+      ...(opts.scanDirs ? { scanDirs: opts.scanDirs } : {}),
     });
     this.installs = new InstallSync({
       config,
@@ -154,70 +159,27 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
       logger,
       catalog: this.catalog,
       runNpm: opts.runNpm,
-      loaded: (name) => this.loadedPlugin(name),
-      loadInstalled: (name) => this.loadInstalled(name),
-      unregister: (name) => this.unregister(name),
+      plugins: this.plugins,
     });
   }
 
   /** Every package this process evaluated, in discovery order. */
   get loaded(): readonly LoadedPlugin[] {
-    return this.plugins;
+    return this.plugins.loaded;
   }
 
   async boot(options: BootOptions = {}): Promise<void> {
     // Install what other replicas recorded first, so this start loads it like any other package.
     if (options.sync ?? true) await this.installs.syncInstalled({ load: false });
-    await this.loadPlugins();
-    await this.ensureDefaultSecretProviders();
+    await this.plugins.loadAll();
+    await ensureDefaultSecretProviders({
+      store: this.store,
+      registry: this.registry,
+      clock: this.opts.clock,
+    });
     await this.instances.instantiateAll();
     // Anything another replica changed while this one was building.
     await this.instances.reconcile();
-  }
-
-  private async loadPlugins(): Promise<void> {
-    const discovered = await discoverPlugins(
-      this.opts.scanDirs ?? defaultScanDirs(this.opts.config),
-    );
-    const candidates: Candidate[] = this.loader.candidates(this.opts.builtin ?? [], discovered);
-    const evaluated: { plugin: EvaluatedPlugin; sdkRange: string }[] = [];
-    for (const candidate of candidates)
-      evaluated.push({
-        plugin: await this.loader.evaluate(candidate),
-        sdkRange: candidate.pkg.sdk,
-      });
-    this.plugins.length = 0;
-    this.plugins.push(...evaluated.map((e) => e.plugin));
-    await this.catalog.replaceLoaded(evaluated, this.registry.list(), this.opts.clock.now());
-  }
-
-  /** Without a restart; a package whose other version is loaded waits for the next start. */
-  async loadInstalled(name: string): Promise<HotLoadResult> {
-    const { clock, logger, config } = this.opts;
-    const dir = installedModulesDir(config.home);
-    const pkg = (await discoverPlugins([{ path: dir, origin: 'installed' }])).find(
-      (p) => p.name === name,
-    );
-    if (!pkg) throw new PluginInstallError(`${name} is not installed in ${dir}`);
-
-    const index = this.plugins.findIndex((p) => p.name === name);
-    const existing = index === -1 ? undefined : this.plugins[index];
-    if (existing?.status === 'loaded') {
-      return { plugin: existing, pendingRestart: existing.version !== pkg.version };
-    }
-    const record = await this.loader.evaluate(
-      this.loader.candidate({ ...pkg, origin: 'installed' }, existing !== undefined),
-    );
-    if (index === -1) this.plugins.push(record);
-    else this.plugins[index] = record;
-
-    const types: RegisteredType[] = this.registry.list(name);
-    await this.catalog.upsertLoaded(record, pkg.switchboard.sdk, types, clock.now());
-    if (record.status === 'loaded') {
-      logger.info({ plugin: name, version: record.version }, 'plugin hot-loaded');
-      await this.instances.buildTypes(types);
-    }
-    return { plugin: record, pendingRestart: false };
   }
 
   installAndLoad(
@@ -237,59 +199,6 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
 
   startSync(seconds?: number): void {
     this.installs.start(seconds);
-  }
-
-  /**
-   * Idempotent. Instances that used its types rebuild and report `plugin_unavailable`. The ES
-   * module cache keeps its code; a later re-install imports a fresh copy.
-   */
-  private async unregister(name: string): Promise<void> {
-    const record = this.loadedPlugin(name);
-    const dropped = this.registry.unregister(name);
-    if (record && record.status !== 'removed') {
-      record.status = 'removed';
-      record.message = REMOVED_MESSAGE;
-      delete record.definition;
-      this.opts.logger.info({ plugin: name }, 'plugin removed; types unregistered');
-    }
-    if (dropped.length > 0) await this.instances.buildTypes(dropped);
-    await this.catalog.markRemoved(name, this.opts.clock.now());
-  }
-
-  private loadedPlugin(name: string): LoadedPlugin | undefined {
-    return this.plugins.find((p) => p.name === name);
-  }
-
-  /**
-   * Deletes what a deleted instance rotated into a writable provider (`ctx.secrets`). Every
-   * replica may do it; deletes are idempotent.
-   */
-  private async forgetInstanceSecrets(instanceId: string): Promise<void> {
-    const prefix = instanceSecretPrefix(instanceId);
-    for (const live of this.live.values('secret_provider')) {
-      const provider = live.provider;
-      if (!isWritableSecretProvider(provider) || typeof provider.list !== 'function') continue;
-      try {
-        for (const { name } of await provider.list())
-          if (name.startsWith(prefix)) await provider.delete(name);
-      } catch (err) {
-        this.opts.logger.warn(
-          { err, instance_id: instanceId, provider: live.name },
-          'could not delete the credentials of a deleted instance',
-        );
-      }
-    }
-  }
-
-  /** First boot only: runs when no secret provider is configured. */
-  private async ensureDefaultSecretProviders(): Promise<void> {
-    if (await this.store.hasSecretProviders()) return;
-    for (const typeId of DEFAULT_PROVIDER_TYPES) {
-      if (!this.registry.has('secret_provider', typeId)) continue;
-      // The file provider reads mounted secrets; only default it on where the mount exists.
-      if (typeId === 'file' && !(await exists(SECRETS_MOUNT))) continue;
-      await this.store.addSecretProvider(typeId, this.opts.clock.now());
-    }
   }
 
   instantiateAll(): Promise<void> {
@@ -372,7 +281,7 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
 
   reloadDependentsOf(
     providerNames: string | readonly string[],
-  ): Promise<{ kind: Exclude<InstanceKind, 'secret_provider'>; id: string; name: string }[]> {
+  ): Promise<ReconciledInstance<DependentKind>[]> {
     return this.instances.reloadDependentsOf(providerNames);
   }
 
@@ -388,8 +297,13 @@ export class PluginHost implements PluginRuntime, PluginAdminPort {
     this.reconcileTimer.unref();
   }
 
-  recordPluginError(pluginName: string, kind: PluginErrorKind, detail?: string): void {
-    this.errorCounter.record(pluginName, kind, detail);
+  recordPluginError(
+    pluginName: string,
+    kind: PluginErrorKind,
+    detail?: string,
+    context?: PluginErrorContext,
+  ): void {
+    this.errorCounter.record(pluginName, kind, detail, context);
   }
 
   checkHealth(): Promise<void> {

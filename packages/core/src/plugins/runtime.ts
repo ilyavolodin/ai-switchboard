@@ -16,6 +16,7 @@ import type {
 import type { InstanceError } from '../domain/instance-error.js';
 import type { InstanceKind, PluginErrorKind } from '../domain/status.js';
 
+import type { PluginErrorContext } from './error-counter.js';
 import type { TypeEntry } from './type-registry.js';
 
 /** What every live instance carries: its row's identity and the plugin type it was built from. */
@@ -76,7 +77,13 @@ export interface PluginRuntime {
 
   reload(kind: InstanceKind, id: string): Promise<void>;
 
-  recordPluginError(pluginName: string, kind: PluginErrorKind, detail?: string): void;
+  /** `context` names the instance and method on the decision's log line when they are known. */
+  recordPluginError(
+    pluginName: string,
+    kind: PluginErrorKind,
+    detail?: string,
+    context?: PluginErrorContext,
+  ): void;
 }
 
 function positiveSeconds(n: unknown): number | undefined {
