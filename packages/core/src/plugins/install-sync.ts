@@ -54,7 +54,13 @@ export class InstallSync {
         locked: true,
       });
       await catalog.recordInstall(
-        { name: install.name, spec, version: install.version, sdkRange: install.sdkRange },
+        {
+          name: install.name,
+          spec,
+          version: install.version,
+          sdkRange: install.sdkRange,
+          integrity: install.integrity,
+        },
         clock.now(),
       );
       const loaded = await this.deps.plugins.hotLoad(install.name);
