@@ -1,28 +1,25 @@
 import { resolveSecretMarkers } from '../../expr/index.js';
+import { PLUGIN_CALL_TIMEOUT_MS } from '../../plugins/attribution.js';
 import { errorText } from '../../util/errors.js';
 import { SECOND_MS } from '../../util/time.js';
 import { isTimeoutError, withTimeout } from '../../util/timeout.js';
 
 import type { Ctx } from './context.js';
 
-/** Not for invoke, which has its own per-destination limit (`effectiveInvokeTimeoutSeconds`). */
-export const PLUGIN_CALL_TIMEOUT_MS = 45_000;
+export { PLUGIN_CALL_TIMEOUT_MS } from '../../plugins/attribution.js';
 
 /** Per `before` step, on top of its action's time limit, for evaluating `when` and args. */
 export const STEP_EVAL_BUDGET_SECONDS = 10;
 
-export function beforeStepBudgetSeconds(
-  ctx: Pick<Ctx, 'pluginCallTimeoutMs'>,
-  stepCount: number,
-): number {
-  const perStep = (ctx.pluginCallTimeoutMs ?? PLUGIN_CALL_TIMEOUT_MS) / SECOND_MS;
-  return stepCount * (perStep + STEP_EVAL_BUDGET_SECONDS);
+export function beforeStepBudgetSeconds(stepCount: number): number {
+  return stepCount * (PLUGIN_CALL_TIMEOUT_MS / SECOND_MS + STEP_EVAL_BUDGET_SECONDS);
 }
 
 export type TimedCall<T> = { timedOut: false; value: T } | { timedOut: true };
 
 /**
- * A plugin that returns a plain value or throws synchronously is handled too. On timeout the call
+ * For `invoke`, which the plugin call wrapper never cuts short: its limit is per destination. A
+ * plugin that returns a plain value or throws synchronously is handled too. On timeout the call
  * keeps running and its result is ignored.
  */
 export async function timedCall<T>(ms: number, call: () => Promise<T> | T): Promise<TimedCall<T>> {
@@ -36,22 +33,15 @@ export async function timedCall<T>(ms: number, call: () => Promise<T> | T): Prom
 }
 
 /**
- * A timeout is counted against the plugin here; a throw was already counted by the runtime's
- * attribution wrapper. Either way the failure comes back as a value, never a rejection.
+ * A plugin call's outcome as a value, never a rejection. Timeouts and throws were already counted
+ * against the plugin by the runtime's call wrapper (`plugins/attribution.ts`).
  */
 export async function callPlugin<T>(
-  ctx: Pick<Ctx, 'runtime' | 'pluginCallTimeoutMs'>,
-  pluginName: string,
   method: string,
   call: () => Promise<T> | T,
 ): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
-  const ms = ctx.pluginCallTimeoutMs ?? PLUGIN_CALL_TIMEOUT_MS;
   try {
-    const out = await timedCall(ms, call);
-    if (!out.timedOut) return { ok: true, value: out.value };
-    const error = `${method}: timed out after ${ms} ms`;
-    ctx.runtime.recordPluginError(pluginName, 'exception', error);
-    return { ok: false, error };
+    return { ok: true, value: await call() };
   } catch (err) {
     return { ok: false, error: `${method}: ${errorText(err)}` };
   }

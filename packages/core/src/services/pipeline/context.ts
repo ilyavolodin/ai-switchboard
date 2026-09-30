@@ -12,7 +12,6 @@ export interface PipelineDeps extends Deps {
   heartbeatIntervalMs?: number;
   /** Non-secret values for `$env`; defaults to `process.env` filtered by prefix. */
   env?: Record<string, string | undefined>;
-  pluginCallTimeoutMs?: number;
 }
 
 export interface Ctx extends PipelineDeps {

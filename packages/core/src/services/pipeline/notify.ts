@@ -124,8 +124,7 @@ async function send(
   const live = ctx.runtime.notifier(notifierId);
   if (!live) return { status: 'error', error: unavailable };
   const notifier = live.notifier;
-  const plugin = ctx.runtime.notifierType(live.typeId)?.pluginName ?? live.typeId;
-  const out = await callPlugin(ctx, plugin, 'send', () => notifier.send(message));
+  const out = await callPlugin('send', () => notifier.send(message));
   return out.ok ? { status: 'sent', error: null } : { status: 'error', error: out.error };
 }
 

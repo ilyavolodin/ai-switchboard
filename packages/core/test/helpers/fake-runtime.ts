@@ -31,7 +31,7 @@ import { rawRequest } from '@ai-switchboard/sdk/testing';
 
 import type { InstanceError } from '../../src/domain/instance-error.js';
 import { guardActions } from '../../src/plugins/actions.js';
-import { attribute } from '../../src/plugins/attribution.js';
+import { attribute, callTimeoutMs } from '../../src/plugins/attribution.js';
 import type {
   LiveDestination,
   LiveNotifier,
@@ -258,17 +258,32 @@ async function behave(
   }
 }
 
-/** The host's own wrappers: exceptions count against the plugin and actions are checked. */
+/**
+ * The host's own wrappers: exceptions and timeouts count against the plugin and actions are
+ * checked. `pluginCallTimeoutMs` on the runtime shortens every limit but invoke's (tests).
+ */
 function attributed<T extends object>(
   target: T,
   pluginName: string,
-  runtime: { recordPluginError: PluginRuntime['recordPluginError'] },
+  runtime: {
+    recordPluginError: PluginRuntime['recordPluginError'];
+    pluginCallTimeoutMs: number | undefined;
+  },
   actions?: readonly ActionSpec[],
 ): T {
   return guardActions(
-    attribute(target, (err, method) => {
-      runtime.recordPluginError(pluginName, 'exception', `${method}: ${errorText(err)}`);
-    }),
+    attribute(
+      target,
+      (err, method) => {
+        runtime.recordPluginError(pluginName, 'exception', `${method}: ${errorText(err)}`);
+      },
+      {
+        timeoutFor: (method) => {
+          const ms = callTimeoutMs(method);
+          return ms === undefined ? undefined : (runtime.pluginCallTimeoutMs ?? ms);
+        },
+      },
+    ),
     actions,
   );
 }
@@ -288,6 +303,7 @@ export class FakeRuntime implements PluginRuntime {
   readonly instanceErrors = new Map<string, InstanceError>();
   /** Types whose plugin is "uninstalled". */
   readonly unavailableTypes = new Set<string>();
+  pluginCallTimeoutMs: number | undefined;
 
   sourceType(typeId: string) {
     return typeId === HOOK_TYPE && !this.unavailableTypes.has(typeId)

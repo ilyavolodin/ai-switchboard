@@ -89,10 +89,12 @@ export class InstanceBuilder {
                 this.deps.onPluginError(entry.pluginName, err, { instanceId: row.id, method });
               },
               {
-                telemetry: this.deps.telemetry,
-                kind,
-                plugin: entry.pluginName,
-                instanceId: row.id,
+                spans: {
+                  telemetry: this.deps.telemetry,
+                  kind,
+                  plugin: entry.pluginName,
+                  instanceId: row.id,
+                },
               },
             ),
             spec.actions(entry.type),

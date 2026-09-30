@@ -4,23 +4,19 @@ import type { Clock } from '../clock.js';
 import { INSTANCE_KINDS, type InstanceKind } from '../domain/status.js';
 import type { GaugeName, Telemetry } from '../telemetry/telemetry.js';
 import { errorText } from '../util/errors.js';
-import { withTimeout } from '../util/timeout.js';
 
 import { KIND_SPECS } from './instances/kind-specs.js';
 import type { LiveSet } from './instances/live-set.js';
 import type { InstanceStore } from './instances/store.js';
 
-export const HEALTH_TIMEOUT_MS = 10_000;
-
-/** Never throws: a thrown or timed-out check is `unhealthy` with the reason. */
-export async function probeHealth(
-  check: () => Promise<Health>,
-  clock: Clock,
-  timeoutMs = HEALTH_TIMEOUT_MS,
-): Promise<Health> {
+/**
+ * Never throws: a thrown or timed-out check is `unhealthy` with the reason. The limit comes from
+ * the plugin call wrapper (`HEALTH_TIMEOUT_MS`), which also counts it against the plugin.
+ */
+export async function probeHealth(check: () => Promise<Health>, clock: Clock): Promise<Health> {
   const checkedAt = clock.now().toISOString();
   try {
-    return await withTimeout(check(), timeoutMs, 'health check timed out');
+    return await check();
   } catch (err) {
     return { status: 'unhealthy', message: errorText(err), checkedAt };
   }

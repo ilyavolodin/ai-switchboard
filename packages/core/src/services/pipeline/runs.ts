@@ -366,9 +366,7 @@ async function pollRunInSpan(ctx: Ctx, runId: string): Promise<void> {
     .returning({ id: runs.id });
   if (claimed.length === 0) return;
 
-  const out = await callPlugin(ctx, live.pluginName, 'poll', () =>
-    poll(runHandle(ctx, run, proc.name)),
-  );
+  const out = await callPlugin('poll', () => poll(runHandle(ctx, run, proc.name)));
   let status: RunStatus | null = null;
   if (out.ok) {
     status = validStatus(out.value);

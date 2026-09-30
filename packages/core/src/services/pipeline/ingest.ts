@@ -183,7 +183,7 @@ async function parseDrafts(
 ): Promise<{ ok: true; drafts: unknown[] } | { ok: false; error: string }> {
   const parse = live.source.parse?.bind(live.source);
   if (!parse) return { ok: true, drafts: [] };
-  const out = await callPlugin(ctx, live.pluginName, 'parse', () => parse(req));
+  const out = await callPlugin('parse', () => parse(req));
   if (!out.ok) return out;
   const parsed: unknown = out.value;
   if (Array.isArray(parsed)) return { ok: true, drafts: parsed as unknown[] };
@@ -298,7 +298,7 @@ async function pollSourceInSpan(ctx: Ctx, sourceId: string): Promise<void> {
   const live = ctx.runtime.source(sourceId);
   if (!live?.source.poll) return;
   const poll = live.source.poll.bind(live.source);
-  const polled = await callPlugin(ctx, live.pluginName, 'poll', () => poll(row.watermark));
+  const polled = await callPlugin('poll', () => poll(row.watermark));
   if (!polled.ok) {
     ctx.log.warn({ err: polled.error, source_id: sourceId }, 'poll failed');
     return;

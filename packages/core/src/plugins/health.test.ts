@@ -4,6 +4,7 @@ import type { Health } from '@ai-switchboard/sdk';
 
 import { FakeClock } from '../clock.js';
 
+import { attribute, HEALTH_TIMEOUT_MS } from './attribution.js';
 import { probeHealth } from './health.js';
 
 describe('probeHealth', () => {
@@ -22,15 +23,21 @@ describe('probeHealth', () => {
     });
   });
 
-  it('turns a hang into unhealthy after the timeout', async () => {
+  it('turns a hang into unhealthy after the health limit, counted against the plugin', async () => {
     vi.useFakeTimers();
     try {
-      const pending = probeHealth(() => new Promise<Health>(() => undefined), clock, 1_000);
-      await vi.advanceTimersByTimeAsync(1_000);
+      const counted: string[] = [];
+      const object = attribute(
+        { health: () => new Promise<Health>(() => undefined) },
+        (_err, method) => counted.push(method),
+      );
+      const pending = probeHealth(() => object.health(), clock);
+      await vi.advanceTimersByTimeAsync(HEALTH_TIMEOUT_MS);
       await expect(pending).resolves.toMatchObject({
         status: 'unhealthy',
-        message: 'health check timed out',
+        message: `timed out after ${HEALTH_TIMEOUT_MS} ms`,
       });
+      expect(counted).toEqual(['health']);
     } finally {
       vi.useRealTimers();
     }
