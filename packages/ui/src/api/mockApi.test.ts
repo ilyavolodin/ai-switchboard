@@ -36,8 +36,24 @@ describe('createMockApi', () => {
       name: 'Hook',
       settings: {},
     });
-    expect(created).toMatchObject({ id: 'ex-new-1', name: 'Hook', typeId: 'http' });
-    expect(await send(api, 'GET', '/destinations/ex-new-1')).toMatchObject({ name: 'Hook' });
+    expect(created).toMatchObject({ id: 'dst-new-1', name: 'Hook', typeId: 'http' });
+    expect(await send(api, 'GET', '/destinations/dst-new-1')).toMatchObject({ name: 'Hook' });
+  });
+
+  it.each([
+    ['/sources', IDS.sources.linear],
+    ['/destinations', IDS.destinations.http],
+    ['/processes', IDS.processes.autofix],
+  ])('deletes a row from %s: the detail answers 404 and the list drops it', async (base, id) => {
+    const api = createMockApi({ fixtures: buildFixtures(TEST_NOW) });
+    const res = await api.fetch(`/api/v1${base}/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ reason: 'gone' }),
+    });
+    expect(res.status).toBe(204);
+    expect((await api.fetch(`/api/v1${base}/${id}`)).status).toBe(404);
+    const list = (await (await api.fetch(`/api/v1${base}`)).json()) as { id: string }[];
+    expect(list.map((x) => x.id)).not.toContain(id);
   });
 
   it('bumps the version when a process document is saved', async () => {
