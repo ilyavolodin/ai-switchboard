@@ -24,6 +24,10 @@ export function DefinitionTab({ processId, doc }: { processId: string; doc: Proc
   const destinations = useDestinations();
   const notifiers = useNotifiers();
   const sourceName = (id: string) => sources.data?.find((s) => s.id === id)?.name ?? id;
+  const providerName = (id: string) =>
+    sources.data?.find((s) => s.id === id)?.name ??
+    destinations.data?.find((x) => x.id === id)?.name ??
+    id;
   const destinationName =
     destinations.data?.find((x) => x.id === doc.destination.instanceId)?.name ??
     doc.destination.instanceId;
@@ -159,7 +163,7 @@ export function DefinitionTab({ processId, doc }: { processId: string; doc: Proc
                   <span>
                     <span className="t-overline">{phase}</span>{' '}
                     <span className="mono">
-                      {sourceName(s.provider)} · {s.action}
+                      {providerName(s.provider)} · {s.action}
                     </span>
                   </span>
                   <Expr value={s.args} />

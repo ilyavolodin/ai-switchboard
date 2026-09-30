@@ -242,7 +242,7 @@ function Detail({
         )}
       </Card>
 
-      <DetailCharts stats={stats.data} window={window} loading={stats.isPending} />
+      <DetailCharts stats={stats} window={window} />
 
       <RoutedTabs
         label="Process sections"
