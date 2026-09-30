@@ -5,12 +5,14 @@ export {
   validateAgainst,
   isValidSchema,
   formatErrors,
-  secretPaths,
   parseWith,
   tryParse,
   SchemaMismatchError,
 } from './ajv.js';
 export type { CreateAjvOptions, SchemaCheck, ParseWithOptions } from './ajv.js';
+
+export { schemaFields, secretPaths } from './fields.js';
+export type { SchemaField } from './fields.js';
 
 export {
   UI_KEYWORDS,

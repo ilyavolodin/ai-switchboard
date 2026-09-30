@@ -1,6 +1,6 @@
 {
   "name": "@ai-switchboard/sdk",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Interfaces, definePlugin, HttpClient and the conformance kit for AI Switchboard plugins.",
   "license": "Apache-2.0",
   "type": "module",
@@ -45,6 +45,11 @@
       "@ai-switchboard/source": "./src/constants.ts",
       "types": "./dist/constants.d.ts",
       "default": "./dist/constants.js"
+    },
+    "./custom-events": {
+      "@ai-switchboard/source": "./src/custom-events.ts",
+      "types": "./dist/custom-events.d.ts",
+      "default": "./dist/custom-events.js"
     }
   },
   "scripts": {

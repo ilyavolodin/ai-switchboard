@@ -4,6 +4,7 @@ import {
   type ContextField,
   type ExpressionContextKind,
 } from '@ai-switchboard/core/expr-contexts';
+import { isRecord } from '@ai-switchboard/sdk/json';
 
 export interface Suggestion {
   value: string;
@@ -32,10 +33,6 @@ function example(value: unknown): string {
         ? String(value)
         : JSON.stringify(value);
   return text.length > 40 ? `${text.slice(0, 37)}…` : text;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

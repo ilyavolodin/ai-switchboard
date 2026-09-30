@@ -14,9 +14,9 @@ import { pluginsCommand } from './commands/plugins.js';
 import { serveCommand } from './commands/serve.js';
 import { usersCommand } from './commands/users.js';
 import { defaultDeps, type CliDeps } from './deps.js';
+import { CLI_VERSION } from './version.js';
 
-/** The CLI and the core release together, so this is also the core version. */
-export const CLI_VERSION = '1.0.0';
+export { CLI_VERSION };
 
 /** Every side effect goes through `deps`, so tests can stub them. */
 export function buildProgram(
