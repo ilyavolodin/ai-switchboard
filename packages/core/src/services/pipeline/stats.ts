@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 
 import { statsHourly } from '../../db/schema.js';
 import type { Deps } from '../../deps.js';
+import type { StatsDimension } from '../../domain/status.js';
 import { periodBounds } from '../../pipeline/meters.js';
 
 import { countedRun } from './counters.js';
@@ -26,10 +27,16 @@ type Counters = Record<string, number>;
 class Buckets {
   readonly rows = new Map<
     string,
-    { dimension: string; key: string; hour: Date; counters: Counters }
+    { dimension: StatsDimension; key: string; hour: Date; counters: Counters }
   >();
 
-  add(dimension: string, key: string, hour: Date | string, name: string, value: number): void {
+  add(
+    dimension: StatsDimension,
+    key: string,
+    hour: Date | string,
+    name: string,
+    value: number,
+  ): void {
     if (!Number.isFinite(value)) return;
     const h = new Date(hour);
     const id = `${dimension}\u0000${key}\u0000${h.toISOString()}`;
@@ -42,7 +49,7 @@ class Buckets {
   }
 
   set(
-    dimension: string,
+    dimension: StatsDimension,
     key: string,
     hour: Date | string,
     name: string,

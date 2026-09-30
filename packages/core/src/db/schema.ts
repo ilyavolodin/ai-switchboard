@@ -24,6 +24,7 @@ import type { ProcessDocument } from '../domain/process.js';
 import type {
   ApprovalDecision,
   ApprovalState,
+  AuditScope,
   BatchKind,
   BatchOutcome,
   BreakerStateValue,
@@ -39,6 +40,7 @@ import type {
   RunStatusValue,
   RunUpdateSource,
   SessionMethodValue,
+  StatsDimension,
   StepPhase,
   StepStatus,
 } from '../domain/status.js';
@@ -489,8 +491,7 @@ export const auditLog = pgTable(
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     actor: text('actor').notNull(),
     at: ts('at').notNull().defaultNow(),
-    /** An `AuditScope`; untyped here so the API can filter by whatever a caller asks for. */
-    scope: text('scope').notNull(),
+    scope: text('scope').$type<AuditScope>().notNull(),
     targetId: text('target_id'),
     field: text('field'),
     before: jsonb('before'),
@@ -509,8 +510,7 @@ export const settings = pgTable('settings', {
 export const statsHourly = pgTable(
   'stats_hourly',
   {
-    /** `source` | `event_type` | `process` | `destination` | `meter` | `plugin` */
-    dimension: text('dimension').notNull(),
+    dimension: text('dimension').$type<StatsDimension>().notNull(),
     key: text('key').notNull(),
     hour: ts('hour').notNull(),
     counters: jsonb('counters').$type<Record<string, number>>().notNull(),

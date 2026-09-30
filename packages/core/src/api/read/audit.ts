@@ -1,9 +1,11 @@
 import { desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 
+import { isOneOf } from '@ai-switchboard/sdk';
+
 import type { AuditEntry, AuditQuery, Page } from '../../contract/index.js';
 import { selectFromEachInstanceTable } from '../../db/instance-tables.js';
 import { auditLog, processes, users } from '../../db/schema.js';
-import { INSTANCE_KINDS } from '../../domain/status.js';
+import { AUDIT_SCOPES, INSTANCE_KINDS } from '../../domain/status.js';
 import { isUuid } from '../../util/uuid.js';
 import type { ReadDeps } from './deps.js';
 import { keysetPage } from './paging.js';
@@ -36,7 +38,9 @@ async function targetNames(
 /** Newest first, paged by `(at, id)`. The actor filter is a substring match with literal wildcards. */
 export async function listAudit(ctx: ReadDeps, q: AuditQuery): Promise<Page<AuditEntry>> {
   const where: SQL[] = [];
-  if (q.scope) where.push(eq(auditLog.scope, q.scope));
+  // An unknown scope matches nothing, as it did when the column was untyped.
+  if (q.scope)
+    where.push(isOneOf(AUDIT_SCOPES, q.scope) ? eq(auditLog.scope, q.scope) : sql`false`);
   if (q.target) where.push(eq(auditLog.targetId, q.target));
   if (q.actor) {
     const escaped = q.actor.replace(/[\\%_]/g, (c) => `\\${c}`);

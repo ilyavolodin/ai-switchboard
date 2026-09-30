@@ -237,6 +237,16 @@ export const AUDIT_SCOPES = [
 ] as const;
 export type AuditScope = (typeof AUDIT_SCOPES)[number];
 
+/** `stats_hourly.dimension`: what a row's `key` names. */
+export const STATS_DIMENSIONS = [
+  'source',
+  'event_type',
+  'process',
+  'destination',
+  'meter',
+] as const;
+export type StatsDimension = (typeof STATS_DIMENSIONS)[number];
+
 export const STATS_WINDOWS = ['24h', '7d', '30d'] as const;
 export type StatsWindow = (typeof STATS_WINDOWS)[number];
 
