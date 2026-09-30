@@ -4,4 +4,5 @@ export * from './labels.js';
 export * from './defaults.js';
 export * from './process.js';
 export * from './instance-error.js';
+export * from './recovery.js';
 export { coalesceArrivals, type CoalescedBatch } from '../pipeline/batch.js';

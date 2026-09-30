@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 
 import type { TemporaryPasswordResult } from '@ai-switchboard/core';
+import { isRecoveryError } from '@ai-switchboard/core/domain';
 
 import type { CliDeps } from '../deps.js';
 import { table } from '../output.js';
@@ -14,14 +15,6 @@ interface PasswordOptions {
   passwordStdin?: boolean;
   generate?: boolean;
   reason: string;
-}
-
-/** Reads the core's `RecoveryError` by shape, since it crosses the package boundary. */
-function suggestionsOf(err: unknown): string[] | undefined {
-  if (typeof err !== 'object' || err === null) return undefined;
-  const e = err as { name?: unknown; code?: unknown; suggestions?: unknown };
-  if (e.name !== 'RecoveryError' || e.code !== 'unknown_user') return undefined;
-  return Array.isArray(e.suggestions) ? e.suggestions.map(String) : [];
 }
 
 const yesNo = (value: boolean): string => (value ? 'yes' : 'no');
@@ -125,12 +118,11 @@ export function usersCommand(deps: CliDeps): Command {
         });
         printTemporary(deps, result, `Reset the password of ${result.email} (${result.role}).`);
       } catch (err) {
-        const suggestions = suggestionsOf(err);
-        if (suggestions === undefined) throw err;
+        if (!isRecoveryError(err) || err.code !== 'unknown_user') throw err;
         io.err(`error: no account has the email ${email.trim().toLowerCase()}.`);
-        if (suggestions.length > 0) {
+        if (err.suggestions.length > 0) {
           io.err('Did you mean:');
-          for (const s of suggestions) io.err(`  ${s}`);
+          for (const s of err.suggestions) io.err(`  ${s}`);
         }
         io.err('Run `switchboard users list` to see every account.');
         io.setExitCode(1);

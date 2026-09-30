@@ -5,6 +5,7 @@ import { passwordProblem } from '../auth/password-policy.js';
 import { emailKey } from '../auth/throttle.js';
 import type { Db } from '../db/client.js';
 import { loginAttempts, users } from '../db/schema.js';
+import type { RecoveryErrorCode, RecoveryErrorShape } from '../domain/recovery.js';
 import type { Role } from '../domain/status.js';
 import { closeEmails, isEmail, normaliseEmail } from '../util/emails.js';
 import { auditChange, type ChangeMeta } from './audit.js';
@@ -44,7 +45,7 @@ export interface TemporaryPasswordResult {
   change?: 'created' | 'promoted' | 'unchanged';
 }
 
-export type RecoveryErrorCode = 'unknown_user' | 'invalid_password' | 'invalid_email' | 'no_reason';
+export { isRecoveryError, type RecoveryErrorCode } from '../domain/recovery.js';
 
 const KIND_OF: Readonly<Record<RecoveryErrorCode, ErrorKind>> = {
   unknown_user: 'not_found',
@@ -54,7 +55,7 @@ const KIND_OF: Readonly<Record<RecoveryErrorCode, ErrorKind>> = {
 };
 
 /** The CLI prints the message as is. `suggestions` are close existing emails for `unknown_user`. */
-export class RecoveryError extends DomainError {
+export class RecoveryError extends DomainError implements RecoveryErrorShape {
   override readonly name = 'RecoveryError';
   declare readonly code: RecoveryErrorCode;
 
@@ -65,15 +66,6 @@ export class RecoveryError extends DomainError {
   ) {
     super(KIND_OF[code], message, { code });
   }
-}
-
-export function isRecoveryError(err: unknown): err is RecoveryError {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as { name?: unknown }).name === 'RecoveryError' &&
-    typeof (err as { code?: unknown }).code === 'string'
-  );
 }
 
 function toSummary(row: typeof users.$inferSelect): AccountSummary {
