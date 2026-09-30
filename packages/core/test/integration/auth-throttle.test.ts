@@ -63,6 +63,26 @@ describe('sign-in throttle across replicas', () => {
     expect(other.statusCode, other.body).toBe(200);
   });
 
+  it('counts guesses sent at the same time against the limit', async () => {
+    const email = 'burst@example.com';
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        login(i % 2 === 0 ? a : b, email, 'wrong-guess', `10.0.3.${i}`),
+      ),
+    );
+    const codes = results.map((r) => r.statusCode);
+    expect(codes.filter((c) => c === 401)).toHaveLength(5);
+    expect(codes.filter((c) => c === 429)).toHaveLength(15);
+  });
+
+  it('keeps no failure for a sign-in that succeeded', async () => {
+    const ip = '10.0.4.1';
+    for (let i = 0; i < 12; i++) {
+      const res = await login(i % 2 === 0 ? a : b, ADMIN_EMAIL, ADMIN_PASSWORD, ip);
+      expect(res.statusCode, res.body).toBe(200);
+    }
+  });
+
   it('prunes attempts no window counts any more', async () => {
     expect((await tdb.db.select().from(loginAttempts)).length).toBeGreaterThan(0);
     await pruneLoginAttempts(tdb.db, new Date(a.clock.now().getTime() + 2 * 60 * 60_000));

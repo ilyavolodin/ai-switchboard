@@ -1,14 +1,5 @@
 import { count, eq } from 'drizzle-orm';
 
-import { INSTANCE_TABLES } from '../../db/instance-tables.js';
-import { plugins, pluginTypes } from '../../db/schema.js';
-import { pluginStatusLabel } from '../../domain/labels.js';
-import { INSTANCE_KINDS } from '../../domain/status.js';
-import { listInstalled, type InstalledPlugin } from '../../plugins/install.js';
-import { pluginKindOf } from '../../plugins/naming.js';
-import type { RegistryPackage } from '../../plugins/search.js';
-import { CATALOGUE } from '../../services/catalogue.js';
-import type { ApiContext } from '../context.js';
 import type {
   CatalogueEntry,
   PluginKind,
@@ -16,6 +7,16 @@ import type {
   PluginSummary,
   PluginTypeDTO,
 } from '../../contract/index.js';
+import { selectFromEachInstanceTable } from '../../db/instance-tables.js';
+import { plugins, pluginTypes } from '../../db/schema.js';
+import { pluginStatusLabel } from '../../domain/labels.js';
+import { INSTANCE_KINDS } from '../../domain/status.js';
+import { listInstalled, type InstalledPlugin } from '../../plugins/install.js';
+import { pluginKindOf } from '../../plugins/naming.js';
+import type { RegistryPackage } from '../../plugins/search.js';
+import { CATALOGUE } from '../../services/catalogue.js';
+import { groupBy } from '../../util/collections.js';
+import type { ReadDeps } from './deps.js';
 
 export function typeDTO(kind: PluginKind, row: typeof pluginTypes.$inferSelect): PluginTypeDTO {
   const m = row.manifest;
@@ -55,7 +56,7 @@ export function typeDTO(kind: PluginKind, row: typeof pluginTypes.$inferSelect):
 }
 
 export async function pluginTypeList(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   kind: PluginKind | undefined,
 ): Promise<PluginTypeDTO[]> {
   const rows = await ctx.db
@@ -67,34 +68,40 @@ export async function pluginTypeList(
 }
 
 /** `kind:typeId` → how many instances use the type. */
-async function instanceCounts(ctx: ApiContext): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  for (const kind of INSTANCE_KINDS) {
-    const t = INSTANCE_TABLES[kind];
-    const rows = await ctx.db.select({ typeId: t.typeId, n: count() }).from(t).groupBy(t.typeId);
-    for (const r of rows) out.set(`${kind}:${r.typeId}`, r.n);
-  }
-  return out;
+async function instanceCounts(ctx: ReadDeps): Promise<Map<string, number>> {
+  const rows = await selectFromEachInstanceTable(INSTANCE_KINDS, (t) =>
+    ctx.db.select({ typeId: t.typeId, n: count() }).from(t).groupBy(t.typeId),
+  );
+  return new Map(rows.map((r) => [`${r.kind}:${r.typeId}`, r.n]));
 }
 
-function installedOn(ctx: ApiContext): Promise<InstalledPlugin[]> {
+function installedOn(ctx: ReadDeps): Promise<InstalledPlugin[]> {
   return listInstalled(ctx.config.home).catch(() => []);
 }
 
-export async function pluginSummaries(ctx: ApiContext): Promise<PluginSummary[]> {
-  const [rows, types, counts, lock] = await Promise.all([
-    ctx.db.select().from(plugins).orderBy(plugins.displayName),
-    ctx.db.select().from(pluginTypes),
+/** Every plugin, or only the one named. */
+export async function pluginSummaries(ctx: ReadDeps, name?: string): Promise<PluginSummary[]> {
+  const [rows, types, counts, installed] = await Promise.all([
+    ctx.db
+      .select()
+      .from(plugins)
+      .where(name === undefined ? undefined : eq(plugins.name, name))
+      .orderBy(plugins.displayName),
+    ctx.db
+      .select()
+      .from(pluginTypes)
+      .where(name === undefined ? undefined : eq(pluginTypes.plugin, name)),
     instanceCounts(ctx),
     installedOn(ctx),
   ]);
+  const lock = name === undefined ? installed : installed.filter((l) => l.name === name);
+  const lockedByName = new Map(lock.map((l) => [l.name, l]));
+  const typesOf = groupBy(types, (t) => t.plugin);
   // A removed plugin leaves the list once this replica's copy is gone (its row stays as the
   // tombstone other replicas act on).
-  const listed = rows.filter(
-    (p) => p.removeRequestedAt === null || lock.some((l) => l.name === p.name),
-  );
+  const listed = rows.filter((p) => p.removeRequestedAt === null || lockedByName.has(p.name));
   const summaries: PluginSummary[] = listed.map((p) => {
-    const locked = lock.find((l) => l.name === p.name);
+    const locked = lockedByName.get(p.name);
     const pendingRestart =
       p.origin === 'installed' && locked !== undefined && locked.version !== p.version;
     return {
@@ -112,14 +119,12 @@ export async function pluginSummaries(ctx: ApiContext): Promise<PluginSummary[]>
       origin: p.origin,
       sdkRange: p.sdkRange,
       capabilities: p.capabilities,
-      types: types
-        .filter((t) => t.plugin === p.name)
-        .map((t) => ({
-          kind: t.kind,
-          typeId: t.typeId,
-          displayName: t.displayName,
-          instanceCount: counts.get(`${t.kind}:${t.typeId}`) ?? 0,
-        })),
+      types: (typesOf.get(p.name) ?? []).map((t) => ({
+        kind: t.kind,
+        typeId: t.typeId,
+        displayName: t.displayName,
+        instanceCount: counts.get(`${t.kind}:${t.typeId}`) ?? 0,
+      })),
       errorCount: p.errorCount,
       invalidEventCount: p.invalidEventCount,
       integrity: locked?.integrity ?? p.integrity,
@@ -127,8 +132,9 @@ export async function pluginSummaries(ctx: ApiContext): Promise<PluginSummary[]>
     };
   });
   // Added with the CLI since the last start: in the lockfile, not yet loaded.
+  const known = new Set(rows.map((r) => r.name));
   for (const l of lock) {
-    if (rows.some((r) => r.name === l.name)) continue;
+    if (known.has(l.name)) continue;
     summaries.push({
       name: l.name,
       pluginId: l.name,
@@ -151,15 +157,16 @@ export async function pluginSummaries(ctx: ApiContext): Promise<PluginSummary[]>
 }
 
 export async function pluginSummary(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   name: string,
 ): Promise<PluginSummary | undefined> {
-  return (await pluginSummaries(ctx)).find((p) => p.name === name);
+  const [one] = await pluginSummaries(ctx, name);
+  return one;
 }
 
 /** Registry hits, marked installed (loaded, or waiting for a restart) and reviewed. */
 export async function searchResults(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   found: RegistryPackage[],
 ): Promise<PluginSearchResult[]> {
   const [rows, lock] = await Promise.all([
@@ -169,10 +176,10 @@ export async function searchResults(
     installedOn(ctx),
   ]);
   const reviewed = new Set(CATALOGUE.map((c) => c.package));
+  const loaded = new Map(rows.filter((r) => r.status === 'loaded').map((r) => [r.name, r]));
+  const locked = new Map(lock.map((l) => [l.name, l]));
   return found.map((pkg) => {
-    const row = rows.find((r) => r.name === pkg.name && r.status === 'loaded');
-    const locked = lock.find((l) => l.name === pkg.name);
-    const installedVersion = locked?.version ?? row?.version ?? null;
+    const installedVersion = locked.get(pkg.name)?.version ?? loaded.get(pkg.name)?.version ?? null;
     return {
       package: pkg.name,
       kind: pluginKindOf(pkg.kind),
@@ -189,10 +196,11 @@ export async function searchResults(
   });
 }
 
-export async function catalogue(ctx: ApiContext): Promise<CatalogueEntry[]> {
-  const rows = await ctx.db.select({ name: plugins.name, status: plugins.status }).from(plugins);
-  return CATALOGUE.map((c) => ({
-    ...c,
-    installed: rows.some((r) => r.name === c.package && r.status === 'loaded'),
-  }));
+export async function catalogue(ctx: ReadDeps): Promise<CatalogueEntry[]> {
+  const rows = await ctx.db
+    .select({ name: plugins.name })
+    .from(plugins)
+    .where(eq(plugins.status, 'loaded'));
+  const loaded = new Set(rows.map((r) => r.name));
+  return CATALOGUE.map((c) => ({ ...c, installed: loaded.has(c.package) }));
 }

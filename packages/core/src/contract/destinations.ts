@@ -175,6 +175,7 @@ export interface MeterHistoryResponse {
 }
 
 export interface UsageHistoryResponse {
+  /** The window the days cover: at least `7d`, whatever was asked. */
   window: StatsWindow;
   dimensions: { id: string; title: string; unit: string; days: { day: Iso; value: number }[] }[];
   runsByStatus: { day: Iso; counts: Partial<Record<RunStatusValue, number>> }[];

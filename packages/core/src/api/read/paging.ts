@@ -46,10 +46,9 @@ export function afterCursor(
   return or(lt(time, t), and(eq(time, t), lt(id, cursor.id))) ?? lt(time, t);
 }
 
-export function pageLimit(limit: number | string | undefined, fallback = 50, max = 200): number {
-  const n = Number(limit ?? fallback);
-  if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.min(Math.floor(n), max);
+/** The query schema has already checked that `limit` is a positive integer. */
+export function pageLimit(limit: number | undefined, fallback = 50, max = 200): number {
+  return Math.min(limit ?? fallback, max);
 }
 
 export interface KeysetOrder<Row> {
@@ -65,7 +64,7 @@ export interface KeysetOrder<Row> {
  * the cursor is only issued when another page exists).
  */
 export async function keysetPage<Row, Item>(
-  query: { cursor?: string | undefined; limit?: number | string | undefined },
+  query: { cursor?: string | undefined; limit?: number | undefined },
   order: KeysetOrder<Row>,
   filters: SQL[],
   fetch: (where: SQL | undefined, take: number) => Promise<Row[]>,

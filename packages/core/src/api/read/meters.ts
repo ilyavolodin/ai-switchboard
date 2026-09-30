@@ -6,13 +6,13 @@ import { destinationSpecs } from '../../services/destination-specs.js';
 import { latestReadings } from '../../services/pipeline/meters.js';
 import { loadProcessRefs, type ProcessRef } from '../../services/process-refs.js';
 import { getSettings } from '../../services/settings.js';
-import type { ApiContext } from '../context.js';
+import type { ReadDeps } from './deps.js';
 import type { MeterGaugeDTO } from '../../contract/index.js';
 import { ceilingState } from './ceiling-state.js';
 
 /** Gauges for the given destinations, with process ceilings as marks and staleness applied. */
 export async function meterGauges(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   destinationIds?: string[],
   processList?: ProcessRef[],
 ): Promise<MeterGaugeDTO[]> {

@@ -1,27 +1,19 @@
-import type { ArtifactRef } from '@ai-switchboard/sdk';
+import { isOneOf, type ArtifactRef } from '@ai-switchboard/sdk';
 import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
 
-import {
-  batches,
-  dispatches,
-  events,
-  destinations,
-  processes,
-  runs,
-  runUpdates,
-  steps,
-} from '../../db/schema.js';
-import { runStatusLabel } from '../../domain/labels.js';
-import type { RunStatusValue } from '../../domain/status.js';
-import type { ApiContext } from '../context.js';
 import type { Page, RunDetail, RunSummary, RunsQuery } from '../../contract/index.js';
+import { batches, dispatches, events, runs, runUpdates, steps } from '../../db/schema.js';
+import { runStatusLabel } from '../../domain/labels.js';
+import { RUN_STATUSES } from '../../domain/status.js';
 import { notFound } from '../errors.js';
+import type { ReadDeps } from './deps.js';
+import { namesById } from './names.js';
 import { keysetPage } from './paging.js';
 
 type RunRow = typeof runs.$inferSelect;
 
 export async function batchArtifacts(
-  ctx: ApiContext,
+  ctx: ReadDeps,
   batchIds: string[],
 ): Promise<Map<string, { count: number; artifacts: ArtifactRef[] }>> {
   const out = new Map<string, { count: number; artifacts: ArtifactRef[] }>();
@@ -71,19 +63,19 @@ export async function batchArtifacts(
   return out;
 }
 
-export async function runSummaries(ctx: ApiContext, rows: RunRow[]): Promise<RunSummary[]> {
+export async function runSummaries(ctx: ReadDeps, rows: RunRow[]): Promise<RunSummary[]> {
   if (rows.length === 0) return [];
-  const procIds = [...new Set(rows.map((r) => r.processId))];
-  const exIds = [...new Set(rows.map((r) => r.destinationId))];
-  const [procs, exs, arts] = await Promise.all([
-    ctx.db
-      .select({ id: processes.id, name: processes.name })
-      .from(processes)
-      .where(inArray(processes.id, procIds)),
-    ctx.db
-      .select({ id: destinations.id, name: destinations.name })
-      .from(destinations)
-      .where(inArray(destinations.id, exIds)),
+  const [processNames, destinationNames, arts] = await Promise.all([
+    namesById(
+      ctx.db,
+      'process',
+      rows.map((r) => r.processId),
+    ),
+    namesById(
+      ctx.db,
+      'destination',
+      rows.map((r) => r.destinationId),
+    ),
     batchArtifacts(
       ctx,
       rows.map((r) => r.batchId),
@@ -94,9 +86,9 @@ export async function runSummaries(ctx: ApiContext, rows: RunRow[]): Promise<Run
     return {
       id: r.id,
       processId: r.processId,
-      processName: procs.find((p) => p.id === r.processId)?.name ?? '(deleted process)',
+      processName: processNames.of(r.processId),
       destinationId: r.destinationId,
-      destinationName: exs.find((e) => e.id === r.destinationId)?.name ?? '(deleted destination)',
+      destinationName: destinationNames.of(r.destinationId),
       kind: r.kind,
       status: r.status,
       statusLabel: runStatusLabel(r.status),
@@ -117,11 +109,14 @@ export async function runSummaries(ctx: ApiContext, rows: RunRow[]): Promise<Run
   });
 }
 
-export async function listRuns(ctx: ApiContext, q: RunsQuery): Promise<Page<RunSummary>> {
+export async function listRuns(ctx: ReadDeps, q: RunsQuery): Promise<Page<RunSummary>> {
   const where: SQL[] = [];
   if (q.process) where.push(eq(runs.processId, q.process));
   if (q.destination) where.push(eq(runs.destinationId, q.destination));
-  if (q.status) where.push(inArray(runs.status, q.status.split(',') as RunStatusValue[]));
+  if (q.status) {
+    const statuses = q.status.split(',').filter((s) => isOneOf(RUN_STATUSES, s));
+    where.push(inArray(runs.status, statuses));
+  }
   return keysetPage(
     q,
     { time: runs.createdAt, id: runs.id, keyOf: (r: RunRow) => ({ t: r.createdAt, id: r.id }) },
@@ -137,7 +132,7 @@ export async function listRuns(ctx: ApiContext, q: RunsQuery): Promise<Page<RunS
   );
 }
 
-export async function runDetail(ctx: ApiContext, id: string): Promise<RunDetail> {
+export async function runDetail(ctx: ReadDeps, id: string): Promise<RunDetail> {
   const [row] = await ctx.db.select().from(runs).where(eq(runs.id, id));
   if (!row) throw notFound('Run');
   const [summary] = await runSummaries(ctx, [row]);

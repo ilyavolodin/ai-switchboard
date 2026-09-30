@@ -1,7 +1,13 @@
 import type { ArtifactRef, Attributes } from '@ai-switchboard/sdk';
 
-import type { EventStage, RunStatusValue, StatusTone } from '../domain/status.js';
-import type { Iso, StatusLabel } from './common.js';
+import {
+  EVENT_STAGES,
+  type EventStage,
+  type RunStatusValue,
+  type StatusTone,
+} from '../domain/status.js';
+import { cursorParam, limitParam, uuidParam, type Iso, type StatusLabel } from './common.js';
+import { csvPattern, querySchema } from './schema.js';
 
 /** Five stops: received → matched → batched → gated → invoked; `reached` is how far it got. */
 export interface StageIndicator {
@@ -51,6 +57,22 @@ export interface ActivityQuery {
   cursor?: string;
   limit?: number;
 }
+
+export const activityQuery = querySchema<ActivityQuery>()({
+  type: 'object',
+  properties: {
+    source: uuidParam,
+    process: uuidParam,
+    destination: uuidParam,
+    stage: { type: 'string', pattern: csvPattern(EVENT_STAGES) },
+    type: { type: 'string' },
+    artifact: { type: 'string' },
+    from: { type: 'string' },
+    to: { type: 'string' },
+    cursor: cursorParam,
+    limit: limitParam,
+  },
+});
 
 /**
  * `basis: 'recorded'` is what was recorded when the event arrived; `'now'` is computed from the
@@ -118,3 +140,8 @@ export interface TraceResponse {
 export interface TraceQuery {
   artifact?: string;
 }
+
+export const traceQuery = querySchema<TraceQuery>()({
+  type: 'object',
+  properties: { artifact: { type: 'string' } },
+});
